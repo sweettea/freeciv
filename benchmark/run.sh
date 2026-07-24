@@ -140,8 +140,15 @@ for seed in "${seeds[@]}"; do
   done
 done
 
+# Per-player final metrics for every completed game.
+extractfail=0
+if ls "$OUT/$cfgdir"/*/seed-*/DONE >/dev/null 2>&1; then
+  "$here/extract.py" --root "$OUT/$cfgdir" --csv "$OUT/$cfgdir/metrics.csv" \
+    || extractfail=1
+fi
+
 echo "----------------------------------------------------------------"
 echo "completed: $((total - failed))/$total   pairing violations: $pairfail"
-if [ "$failed" -gt 0 ] || [ "$pairfail" -gt 0 ]; then
+if [ "$failed" -gt 0 ] || [ "$pairfail" -gt 0 ] || [ "$extractfail" -gt 0 ]; then
   exit 1
 fi
