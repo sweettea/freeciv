@@ -1656,6 +1656,9 @@ ais_baseline = static_library('fc_ai_baseline',
                         server_inc]
   )
 ais = [ais, ais_baseline]
+
+test('baseline-frozen',
+     find_program('scripts/check-baseline-frozen.sh'))
 endif
 
 endif
