@@ -44,7 +44,12 @@ ai/default and ai/classic objects at the snapshot commit.
 
 The only new code is baselineai.c, a shim that calls the (renamed)
 vendored fc_ai_classic_setup() and then renames the module to
-"baseline".
+"baseline". It also replaces the four savegame hooks
+(player_save/load_relations, city_save/load) with wrappers using a
+"baseline" savefile prefix: the vendored classic wrappers hardcode the
+"ai" prefix, which the live classic module already writes, and every
+registered module's save hook runs for every player, so sharing the
+prefix produces duplicate savefile keys and an unloadable save.
 
 Freeze enforcement
 ------------------
