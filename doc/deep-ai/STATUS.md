@@ -70,7 +70,24 @@ Format:
       TUNING change produced a separate keyed dir. Note: hashing the
       server binary over-invalidates on rebuild — deliberate
       (correctness over cache hits).
-- [ ] E00.5 regression corpus loader + first three positions
+- [x] E00.5 regression corpus loader + first three positions (4 commits)
+      — corpus-run.sh (load position, advance 1 turn, run assert.sh;
+      runner asserts clean advance + correct post-turn) + savequery.py
+      (turn, extra counts from hex layers, cities, captured, wars, min
+      cross-owner distance). Positions checked in with PROVENANCE:
+      hut-rich-start (64x64 T1, 63 huts), contested-border (6p T30,
+      cross-owner cities 3.16 apart), losing-war (T140, 2 captured
+      cities, 7 war pairs). All pass in ~5 s; a deliberately-broken
+      assertion was shown to fail. Two harness bugs found and fixed
+      along the way: (1) civ2civ3 sets mapsize=PLAYER so xsize/ysize
+      were silently ignored in every earlier game — run-game.sh now
+      forces mapsize XYSIZE; (2) run-game.sh wasn't part of the result
+      cache key, so command-template edits could silently reuse stale
+      results — it's hashed into the key now.
+- Note: corpus positions currently play all players as classic (the
+      aitype recorded at generation). When ai/deep exists, the loader
+      will need a way to reassign a position's players to the arm under
+      test — likely a small server patch or regenerated positions.
 - [ ] **HUMAN VERIFICATION GATE** — see workstreams/W00-harness.md §5
 
 ## W00 — Module skeleton
