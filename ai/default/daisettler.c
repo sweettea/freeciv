@@ -85,16 +85,6 @@
    time and instead try to complete what it has started.
 */
 
-/* Stop looking too hard for better tiles to found a new city at when
- * settler finds location with at least RESULT_IS_ENOUGH want
- * points. See city_desirability() for how base want is computed
- * before amortizing it.
- *
- * This is a big WAG to save a big amount of CPU. */
-#define RESULT_IS_ENOUGH 250
-
-#define FERRY_TECH_WANT 500
-
 #define GROWTH_PRIORITY 15
 
 /* Perfection gives us an idea of how long to search for optimal
@@ -153,37 +143,6 @@ struct ai_settler {
 #endif /* FREECIV_DEBUG */
 };
 
-struct cityresult {
-  struct tile *tile;
-  adv_want total;              /* Total value of position */
-  adv_want result;             /* Amortized and adjusted total value */
-  int corruption, waste;
-  bool overseas;               /* Have to use boat to get there */
-  bool virt_boat;              /* Virtual boat was used in search,
-                                * so need to build one */
-
-  struct {
-    struct tile_data_cache *tdc;  /* Values of city center; link to the data
-                                   * in tdc_hash. */
-  } city_center;
-
-  struct {
-    struct tile *tile;            /* Best other tile */
-    int cindex;                   /* City-relative index for other tile */
-    struct tile_data_cache *tdc;  /* Value of best other tile; link to the
-                                   * data in tdc_hash. */
-  } best_other;
-
-  adv_want remaining;             /* Value of all other tiles */
-
-  /* Save the result for print_citymap(). */
-  struct tile_data_cache_hash *tdc_hash;
-
-  int city_radius_sq;             /* Current squared radius of the city */
-};
-
-enum cb_error_level { CBE_OK, CBE_RECOVERABLE, CBE_FATAL };
-
 static const struct tile_data_cache *tdc_plr_get(struct ai_type *ait,
                                                  struct player *plr,
                                                  int tindex);
@@ -191,7 +150,6 @@ static void tdc_plr_set(struct ai_type *ait, struct player *plr, int tindex,
                         const struct tile_data_cache *tdcache);
 
 static struct cityresult *cityresult_new(struct tile *ptile);
-static void cityresult_destroy(struct cityresult *result);
 
 static struct cityresult *cityresult_fill(struct ai_type *ait,
                                           struct player *pplayer,
@@ -206,17 +164,10 @@ static void print_cityresult(struct player *pplayer,
 struct cityresult *city_desirability(struct ai_type *ait,
                                      struct player *pplayer,
                                      struct unit *punit, struct tile *ptile);
-static struct cityresult *settler_map_iterate(struct ai_type *ait,
-                                              struct pf_parameter *parameter,
-                                              struct unit *punit,
-                                              int boat_cost);
 static struct cityresult *find_best_city_placement(struct ai_type *ait,
                                                    struct unit *punit,
                                                    bool look_for_boat,
                                                    bool use_virt_boat);
-static enum cb_error_level dai_do_build_city(struct ai_type *ait,
-                                             struct player *pplayer,
-                                             struct unit *punit);
 
 /*************************************************************************//**
   Allocated a city result.
@@ -254,7 +205,7 @@ static struct cityresult *cityresult_new(struct tile *ptile)
 /*************************************************************************//**
   Destroy a city result.
 *****************************************************************************/
-static void cityresult_destroy(struct cityresult *result)
+void cityresult_destroy(struct cityresult *result)
 {
   if (result != NULL) {
     if (result->tdc_hash != NULL) {
@@ -787,10 +738,10 @@ struct cityresult *city_desirability(struct ai_type *ait, struct player *pplayer
 
   TODO: Transparently check if we should add ourselves to an existing city.
 *****************************************************************************/
-static struct cityresult *settler_map_iterate(struct ai_type *ait,
-                                              struct pf_parameter *parameter,
-                                              struct unit *punit,
-                                              int boat_cost)
+struct cityresult *settler_map_iterate(struct ai_type *ait,
+                                       struct pf_parameter *parameter,
+                                       struct unit *punit,
+                                       int boat_cost)
 {
   struct cityresult *cr = NULL, *best = NULL;
   int best_turn = 0; /* Which turn we found the best fit */
@@ -1265,9 +1216,9 @@ void dai_auto_settler_free(struct ai_plr *ai)
 /*************************************************************************//**
   Build a city and initialize AI infrastructure cache.
 *****************************************************************************/
-static enum cb_error_level dai_do_build_city(struct ai_type *ait,
-                                             struct player *pplayer,
-                                             struct unit *punit)
+enum cb_error_level dai_do_build_city(struct ai_type *ait,
+                                      struct player *pplayer,
+                                      struct unit *punit)
 {
   struct tile *ptile = unit_tile(punit);
   struct city *pcity;
