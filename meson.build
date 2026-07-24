@@ -309,6 +309,13 @@ else
     aimodcount = aimodcount + 1
     aisrc = [ aisrc, 'ai/stub/stubai.c' ]
   endif
+  if get_option('aimodules').contains('baseline')
+    priv_conf_data.set('AI_MOD_STATIC_BASELINE', 1)
+    if aimodcount == 0
+      priv_conf_data.set('AI_MOD_DEFAULT', '"baseline"')
+    endif
+    aimodcount = aimodcount + 1
+  endif
 
   if aimodcount == 0
     error('No AI modules enabled, but at least one needed')
@@ -1611,6 +1618,45 @@ ais = static_library('fc_ai',
   sources: [verhdr, specenum],
   include_directories: [server_inc, include_directories('ai/default')]
   )
+
+if get_option('aimodules').contains('baseline')
+# Vendored snapshot of the stock AI (see ai/baseline/README.baseline).
+# The force-included baseline_syms.h renames every global the vendored
+# objects define, so the sources stay byte-identical to the snapshot
+# commit while linking alongside the live ai/default and ai/classic.
+ais_baseline = static_library('fc_ai_baseline',
+  'ai/baseline/baselineai.c',
+  'ai/baseline/classic/classicai.c',
+  'ai/baseline/default/daiair.c',
+  'ai/baseline/default/daiactions.c',
+  'ai/baseline/default/daicity.c',
+  'ai/baseline/default/daidata.c',
+  'ai/baseline/default/daidiplomacy.c',
+  'ai/baseline/default/daidiplomat.c',
+  'ai/baseline/default/daidomestic.c',
+  'ai/baseline/default/daieffects.c',
+  'ai/baseline/default/daiferry.c',
+  'ai/baseline/default/daiguard.c',
+  'ai/baseline/default/daihand.c',
+  'ai/baseline/default/daihunter.c',
+  'ai/baseline/default/dailog.c',
+  'ai/baseline/default/daimilitary.c',
+  'ai/baseline/default/daiparadrop.c',
+  'ai/baseline/default/daiplayer.c',
+  'ai/baseline/default/daisanity.c',
+  'ai/baseline/default/daisettler.c',
+  'ai/baseline/default/daitech.c',
+  'ai/baseline/default/daitools.c',
+  'ai/baseline/default/daiunit.c',
+  sources: [verhdr, specenum],
+  c_args: ['-include',
+           meson.current_source_dir() / 'ai' / 'baseline' / 'baseline_syms.h'],
+  include_directories: [include_directories('ai/baseline/default',
+                                            'ai/baseline/classic'),
+                        server_inc]
+  )
+ais = [ais, ais_baseline]
+endif
 
 endif
 
