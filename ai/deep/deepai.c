@@ -399,6 +399,16 @@ static void dpai_ferry_lost(struct unit *punit)
 {
   struct ai_type *deftype = deep_ai_get_self();
 
+  /* Loss-rate bookkeeping (benchmark/losses.py). The hook fires for
+   * every loss cause; the cause itself is not available here. */
+  log_base(LOG_NORMAL,
+           "deep-loss turn=%d player=\"%s\" unit=\"%s\" founder=%d"
+           " at=(%d,%d)",
+           game.info.turn, player_name(unit_owner(punit)),
+           unit_rule_name(punit),
+           unit_is_cityfounder(punit) ? 1 : 0,
+           TILE_XY(unit_tile(punit)));
+
   dai_ferry_lost(deftype, punit);
 }
 
