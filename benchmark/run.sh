@@ -65,17 +65,19 @@ server_bin=$(readlink -f "$server_bin")
 [ -r "$server_bin" ] || { echo "server not readable: $server_bin" >&2; exit 1; }
 confhash=$(sha256sum "$CONFIG" | cut -d' ' -f1)
 srvhash=$(sha256sum "$server_bin" | cut -d' ' -f1)
+runhash=$(sha256sum "$here/run-game.sh" | cut -d' ' -f1)
 if [ -n "${TUNING:-}" ]; then
   tunhash=$(sha256sum "$TUNING" | cut -d' ' -f1)
 else
   tunhash=none
 fi
-key=$(printf '%s %s %s\n' "$confhash" "$srvhash" "$tunhash" | sha256sum | cut -d' ' -f1)
+key=$(printf '%s %s %s %s\n' "$confhash" "$srvhash" "$runhash" "$tunhash" | sha256sum | cut -d' ' -f1)
 cfgdir=$cfgname-${key:0:12}
 mkdir -p "$OUT/$cfgdir"
 {
   echo "config=$CONFIG sha256=$confhash"
   echo "server=$server_bin sha256=$srvhash"
+  echo "runner=$here/run-game.sh sha256=$runhash"
   echo "tuning=${TUNING:-none} sha256=$tunhash"
 } > "$OUT/$cfgdir/key.txt"
 
