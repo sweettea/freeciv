@@ -43,7 +43,20 @@ Format:
       mid-fix — the guard works.
 
 ## W00 — Harness
-- [ ] E00.3 headless batch runner with paired seeds
+- [x] E00.3 headless batch runner with paired seeds (2 commits)
+      — benchmark/run-game.sh (one deterministic game: seeds pinned,
+      per-game cwd, SCORELOG2 for all players, map hash from the turn-1
+      autosave) + benchmark/run.sh (paired batch, parallel with unique
+      ports, resume via DONE markers, automatic map-pairing check).
+      configs/smoke.conf: 4p/32x32/hard/T100, ~40 s per game; --quick
+      (10 seeds x 2 arms) ≈ 2 min at 12 jobs. Verified: 6/6 games,
+      0 pairing violations; rerun of same (config,seed,arm) is
+      byte-identical; classic vs baseline scorelogs byte-identical per
+      seed — re-proving the vendored baseline behaviourally identical.
+      Gotchas encoded in the scripts: parallel servers need distinct
+      TCP ports; `save` in a --read script runs in pregame (no map), so
+      the turn-1 autosave is the map-identity source; FREECIV_DATA_PATH
+      must point at src/data when cwd is elsewhere.
 - [ ] E00.4 metric extraction + content-addressed result cache
 - [ ] E00.5 regression corpus loader + first three positions
 - [ ] **HUMAN VERIFICATION GATE** — see workstreams/W00-harness.md §5
