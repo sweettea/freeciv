@@ -88,9 +88,9 @@ Format:
       aitype recorded at generation). When ai/deep exists, the loader
       will need a way to reassign a position's players to the arm under
       test — likely a small server patch or regenerated positions.
-- [~] **HUMAN VERIFICATION GATE** — see workstreams/W00-harness.md §5.
-      Checks executed 2026-07-24; evidence below. **Awaiting human
-      sign-off.**
+- [x] **HUMAN VERIFICATION GATE** — see workstreams/W00-harness.md §5.
+      Checks executed 2026-07-24; evidence below. **Confirmed by human
+      2026-07-24.**
       1. Determinism: PASS — two fresh --quick batches (20 games each),
          metrics.csv byte-identical (80 rows).
       2. Pairing: PASS — per-seed map hashes identical across arms for
