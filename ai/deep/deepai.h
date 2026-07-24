@@ -13,7 +13,32 @@
 #ifndef FC__DEEPAI_H
 #define FC__DEEPAI_H
 
+/* common */
+#include "player.h"
+
+/* ai/default */
+#include "daidata.h"
+
 struct ai_type;
+struct section_file;
+
+struct ai_type *deep_ai_get_self(void);
+
+/* Per-player state of the deep AI. The embedded default-AI state must
+ * stay the first member: every forwarded dai_* call finds its data in
+ * this module's player slot and casts it to struct ai_plr. */
+struct deep_plr {
+  struct ai_plr defai;          /* Keep first */
+
+  /* Deep-only state below. Everything here must either be saved in
+   * dpai_player_save() or be recomputable. */
+  int dv_turns_logged;          /* Decision-vector lines emitted */
+};
+
+static inline struct deep_plr *deep_plr_data(const struct player *pplayer)
+{
+  return (struct deep_plr *) player_ai_data(pplayer, deep_ai_get_self());
+}
 
 bool fc_ai_deep_setup(struct ai_type *ai);
 

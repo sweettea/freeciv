@@ -69,7 +69,7 @@ static void deep_ai_set_self(struct ai_type *ai)
 /**********************************************************************//**
   Get pointer to ai type of the deep ai.
 **************************************************************************/
-static struct ai_type *deep_ai_get_self(void)
+struct ai_type *deep_ai_get_self(void)
 {
   return self;
 }
@@ -98,8 +98,12 @@ static void dpai_module_close(void)
 static void dpai_player_alloc(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  struct deep_plr *plr_data = fc_calloc(1, sizeof(struct deep_plr));
 
-  dai_player_alloc(deftype, pplayer);
+  /* struct deep_plr embeds struct ai_plr as its first member, so the
+   * forwarded default AI finds its data in the same slot. */
+  player_set_ai_data(pplayer, deftype, plr_data);
+  dai_data_init(deftype, pplayer);
 }
 
 /**********************************************************************//**
@@ -137,6 +141,35 @@ static void dpai_player_load_relations(struct player *pplayer,
   struct ai_type *deftype = deep_ai_get_self();
 
   dai_player_load_relations(deftype, "deep", pplayer, other, file, plrno);
+}
+
+/**********************************************************************//**
+  Save deep-only per-player state under the "deep_state" namespace.
+  (Relations flow through dpai_player_save_relations; this hook holds
+  what no dai function knows about.)
+**************************************************************************/
+static void dpai_player_save(struct player *pplayer,
+                             struct section_file *file, int plrno)
+{
+  struct deep_plr *plr_data = deep_plr_data(pplayer);
+
+  secfile_insert_int(file, plr_data->dv_turns_logged,
+                     "player%d.deep_state.dv_turns_logged", plrno);
+}
+
+/**********************************************************************//**
+  Load deep-only per-player state; every key is defaulted so saves
+  written without this module load cleanly.
+**************************************************************************/
+static void dpai_player_load(struct player *pplayer,
+                             const struct section_file *file, int plrno)
+{
+  struct deep_plr *plr_data = deep_plr_data(pplayer);
+
+  plr_data->dv_turns_logged
+    = secfile_lookup_int_default(file, 0,
+                                 "player%d.deep_state.dv_turns_logged",
+                                 plrno);
 }
 
 /**********************************************************************//**
@@ -637,8 +670,8 @@ bool fc_ai_deep_setup(struct ai_type *ai)
 
   ai->funcs.player_alloc = dpai_player_alloc;
   ai->funcs.player_free = dpai_player_free;
-  /* ai->funcs.player_save = NULL; */
-  /* ai->funcs.player_load = NULL; */
+  ai->funcs.player_save = dpai_player_save;
+  ai->funcs.player_load = dpai_player_load;
   ai->funcs.player_save_relations = dpai_player_save_relations;
   ai->funcs.player_load_relations = dpai_player_load_relations;
   ai->funcs.gained_control = dpai_gained_control;
