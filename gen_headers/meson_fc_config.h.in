@@ -21,6 +21,7 @@
 #mesondefine AI_MOD_STATIC_TEX
 #mesondefine AI_MOD_STATIC_STUB
 #mesondefine AI_MOD_STATIC_BASELINE
+#mesondefine AI_MOD_STATIC_DEEP
 
 /* Enable AI modules */
 #mesondefine AI_MODULES

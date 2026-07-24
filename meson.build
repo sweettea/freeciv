@@ -309,6 +309,14 @@ else
     aimodcount = aimodcount + 1
     aisrc = [ aisrc, 'ai/stub/stubai.c' ]
   endif
+  if get_option('aimodules').contains('deep')
+    priv_conf_data.set('AI_MOD_STATIC_DEEP', 1)
+    if aimodcount == 0
+      priv_conf_data.set('AI_MOD_DEFAULT', '"deep"')
+    endif
+    aimodcount = aimodcount + 1
+    aisrc = [ aisrc, 'ai/deep/deepai.c' ]
+  endif
   if get_option('aimodules').contains('baseline')
     priv_conf_data.set('AI_MOD_STATIC_BASELINE', 1)
     if aimodcount == 0

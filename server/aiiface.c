@@ -44,6 +44,10 @@ bool fc_ai_stub_setup(struct ai_type *ai);
 bool fc_ai_baseline_setup(struct ai_type *ai);
 #endif
 
+#ifdef AI_MOD_STATIC_DEEP
+bool fc_ai_deep_setup(struct ai_type *ai);
+#endif
+
 static struct ai_type *default_ai = NULL;
 
 #ifdef AI_MODULES
@@ -131,7 +135,7 @@ bool load_ai_module(const char *modname)
 void ai_init(void)
 {
   bool failure = FALSE;
-#if !defined(AI_MODULES) || defined(AI_MOD_STATIC_CLASSIC) || defined(AI_MOD_STATIC_TEX) || defined(AI_MOD_STATIC_STUB) || defined(AI_MOD_STATIC_BASELINE)
+#if !defined(AI_MODULES) || defined(AI_MOD_STATIC_CLASSIC) || defined(AI_MOD_STATIC_TEX) || defined(AI_MOD_STATIC_STUB) || defined(AI_MOD_STATIC_BASELINE) || defined(AI_MOD_STATIC_DEEP)
   /* First !defined(AI_MODULES) case is for default ai support. */
   struct ai_type *ai;
 #endif
@@ -205,6 +209,17 @@ void ai_init(void)
     }
   }
 #endif /* AI_MOD_STATIC_BASELINE */
+
+#ifdef AI_MOD_STATIC_DEEP
+  ai = ai_type_alloc();
+  if (ai != NULL) {
+    init_ai(ai);
+    if (!fc_ai_deep_setup(ai)) {
+      log_error(_("Failed to setup \"%s\" AI module"), "deep");
+      ai_type_dealloc();
+    }
+  }
+#endif /* AI_MOD_STATIC_DEEP */
 
   set_default_ai_type_name(AI_MOD_DEFAULT);
 #ifdef AI_MODULES
