@@ -60,6 +60,7 @@ OUT=$(readlink -f "$OUT")
   [ -n "$RULESET" ] && echo "rulesetdir $RULESET"
   echo "set minplayers 0"
   echo "set timeout -1"
+  echo "set mapsize XYSIZE"
   echo "set xsize $XSIZE"
   echo "set ysize $YSIZE"
   echo "set aifill $PLAYERS"
