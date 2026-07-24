@@ -57,7 +57,19 @@ Format:
       TCP ports; `save` in a --read script runs in pregame (no map), so
       the turn-1 autosave is the map-identity source; FREECIV_DATA_PATH
       must point at src/data when cwd is elsewhere.
-- [ ] E00.4 metric extraction + content-addressed result cache
+- [x] E00.4 metric extraction + content-addressed result cache (3 commits)
+      — extract.py: one CSV row per player per game with all 31 scorelog
+      tags at last logged turn + alive + mean_city_size derived from
+      citizen-class tags / cities (cross-checked against final-save city
+      sizes: 5.2 both ways). run.sh results now live in
+      results/<config>-<key12>/ keyed on sha256(config, server binary,
+      tuning [env TUNING, "none" until W25]); DONE-marker resume doubles
+      as the cache, key change → fresh directory, key.txt records
+      components, metrics.csv written after every batch (works from
+      cache too). Verified: fresh 4-game batch, full cache-hit rerun,
+      TUNING change produced a separate keyed dir. Note: hashing the
+      server binary over-invalidates on rebuild — deliberate
+      (correctness over cache hits).
 - [ ] E00.5 regression corpus loader + first three positions
 - [ ] **HUMAN VERIFICATION GATE** — see workstreams/W00-harness.md §5
 
