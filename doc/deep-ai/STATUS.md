@@ -88,7 +88,30 @@ Format:
       aitype recorded at generation). When ai/deep exists, the loader
       will need a way to reassign a position's players to the arm under
       test — likely a small server patch or regenerated positions.
-- [ ] **HUMAN VERIFICATION GATE** — see workstreams/W00-harness.md §5
+- [~] **HUMAN VERIFICATION GATE** — see workstreams/W00-harness.md §5.
+      Checks executed 2026-07-24; evidence below. **Awaiting human
+      sign-off.**
+      1. Determinism: PASS — two fresh --quick batches (20 games each),
+         metrics.csv byte-identical (80 rows).
+      2. Pairing: PASS — per-seed map hashes identical across arms for
+         all 10 seeds (and the automatic check runs every batch).
+         Bonus: classic vs baseline scorelogs byte-identical 10/10.
+      3. Holdout isolation: PASS (caveat) — only holdout reference in
+         the harness is run.sh's usage warning; tune.py doesn't exist
+         yet. **Re-run this check when W25 lands.**
+      4. Sensitivity: PASS, with a finding. founder_want/2 (the
+         suggested regression) changed behaviour in 10/10 games (arms
+         stopped being byte-identical, first divergence ~T44) but had
+         NO measurable score effect at n=10/T100/smoke (mean +3.4,
+         sd 28 → effect ≈ 0.1σ). founder_want/100 was caught loudly:
+         score worse 10/10 seeds, paired-t −9.96; cities −24.0 mean,
+         t −12.8. Two lessons recorded: (a) the byte-identity check is
+         the most sensitive behaviour-change tripwire the harness has;
+         (b) settler-want magnitude is score-neutral on smoke at T100 —
+         W05/W02 need their proxy metrics, exactly as 00-context §8
+         predicts. Regression reverted; tree verified clean (git diff
+         empty, baseline-frozen Ok, classic==baseline byte-identical
+         again on a fresh run).
 
 ## W00 — Module skeleton
 - [ ] E00.6 ai/deep forwarding all hooks to dai_*
