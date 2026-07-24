@@ -114,10 +114,25 @@ Format:
          again on a fresh run).
 
 ## W00 — Module skeleton
-- [ ] E00.6 ai/deep forwarding all hooks to dai_*
-- [ ] E00.7 wire player_save / player_load
-- [ ] E00.8 per-turn decision vector logging
-- [ ] **GATE**: deep must measure identical to baseline (+/- 2%, 50 paired seeds)
+- [x] E00.6 ai/deep forwarding all hooks to dai_* (2 commits)
+      — deepai.c derived from classicai.c: every hook forwards to dai_*
+      with deep's own ai_type; own savegame namespaces ("deep"/"deep_")
+      per the E00.2 lesson. Registered behind -Daimodules=...,deep.
+- [x] E00.7 wire player_save / player_load (1 commit)
+      — struct deep_plr embeds struct ai_plr first (tex pattern);
+      player_save/load (wired by no module before) persist deep state
+      under player%d.deep_state, all keys defaulted on load.
+- [x] E00.8 per-turn decision vector logging (1 commit)
+      — one parseable deep-dv line per player per turn at LOG_VERBOSE
+      (-d 4): turn/player/cities/units/gold/techs/science. Persisted
+      dv_turns_logged counter proves the save path: 8 at a T8 save,
+      resumes to 12 after reload.
+- [x] **GATE**: deep vs baseline, 50 paired seeds: scorelogs
+      byte-identical 50/50, aggregate score ratio 1.000000 (+0.000%) —
+      well inside ±2%. Harness fix en route: a game ending early
+      (seed 49: allied victory T58) was misclassified as failed; the
+      GAMEOVER autosave is now the completion signal (run-game.sh),
+      cache key rotated automatically.
 
 ## W25 — Tuning harness
 - [ ] E25.1 struct tuning + file loading
