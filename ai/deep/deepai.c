@@ -212,6 +212,21 @@ static void dpai_data_phase_begin(struct player *pplayer, bool is_new_phase)
   struct ai_type *deftype = deep_ai_get_self();
 
   dai_data_phase_begin(deftype, pplayer, is_new_phase);
+
+  if (is_new_phase) {
+    struct deep_plr *plr_data = deep_plr_data(pplayer);
+
+    plr_data->dv_turns_logged++;
+    log_base(LOG_VERBOSE,
+             "deep-dv turn=%d player=\"%s\" cities=%d units=%d gold=%d"
+             " techs=%d science=%d",
+             game.info.turn, player_name(pplayer),
+             city_list_size(pplayer->cities),
+             unit_list_size(pplayer->units),
+             pplayer->economic.gold,
+             research_get(pplayer)->techs_researched,
+             pplayer->economic.science);
+  }
 }
 
 /**********************************************************************//**
