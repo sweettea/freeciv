@@ -90,8 +90,11 @@ if ! (cd "$OUT" \
   exit 1
 fi
 
-if ! grep -q "Game ended" "$OUT/game.log"; then
-  echo "FAILED: game did not reach its end: $OUT/game.log" >&2
+# A game can end at the turn limit or early (conquest, allied victory,
+# spaceship); the GAMEOVER autosave is the completion signal for all of
+# them, where log wording differs.
+if ! ls "$OUT"/saves/*-final.sav* >/dev/null 2>&1; then
+  echo "FAILED: game did not reach an ending (no final save): $OUT" >&2
   exit 1
 fi
 
