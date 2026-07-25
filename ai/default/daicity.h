@@ -86,6 +86,8 @@ void resolve_city_emergency(struct ai_type *ait, struct player *pplayer,
                             struct city *pcity);
 void dai_city_choose_build(struct ai_type *ait, struct player *pplayer,
                            struct city *pcity);
+void dai_barbarian_choose_build(struct player *pplayer, struct city *pcity,
+                                struct adv_choice *choice);
 void dai_spend_gold(struct ai_type *ait, struct player *pplayer);
 void contemplate_terrain_improvements(struct ai_type *ait,
                                       struct city *pcity);

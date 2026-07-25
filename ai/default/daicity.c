@@ -192,7 +192,7 @@ void dont_want_tech_obsoleting_impr(struct ai_type *ait,
   maybe cache it? Although barbarians don't normally have many cities,
   so can be a bigger bother to cache it.
 **************************************************************************/
-static void dai_barbarian_choose_build(struct player *pplayer,
+void dai_barbarian_choose_build(struct player *pplayer,
                                        struct city *pcity,
                                        struct adv_choice *choice)
 {
