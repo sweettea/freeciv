@@ -306,7 +306,34 @@ Format:
 - [ ] not started
 
 ## W09-lite — City manager parameters
-- [ ] not started
+- [x] implemented (3 commits on `epic/w09-lite-city-manager`, forked
+      from the W28 tip in parallel with W06 — needs a trivial rebase
+      after w06 merges): deep_set_city_manager_params() fills
+      pcity->cm_parameter each phase from city state (shields under
+      urgency/grave danger, shields+trade at the growth cap and under
+      wonder builds, happy factor above zero in every matched rule;
+      unmatched cities get the parameter cleared = stock default).
+      auto_arrange_workers() honours the parameter, and NOTHING in the
+      stock AI ever set it (the cityturn.c comment says priorities
+      should someday flow in this way). All factors are deep_tuning
+      placeholders. Second commit rearranges citizens on rule
+      transitions after the first after-run measured a completely flat
+      metric: setting the parameter without rearranging leaves old
+      citizen layouts running for many turns.
+- [x] acceptance, measured (contested, 20 seeds, before = instr-only
+      pinned binary, after = v2 with transition rearrange):
+      - urgency-city shield output 4.773 -> 4.934 per city-turn
+        (**+3.4%**; target >= +15%) — mechanism verified live (was
+        +0.0% before the rearrange fix) but magnitude gated on W25
+        factor tuning, same as W05/W06.
+      - starvation guard: PASSED with margin — starved-unit deaths
+        544 -> 435 (-20%); food-deficit city-turns flat (4287 -> 4367).
+      - all-city shields +2.2%.
+      - score: contested deep/baseline 1.0110 (t=+0.40 n=20), smoke
+        0.9836 (t=-0.51 n=10) — neutral.
+- Note: fourth epic gated on W25 tuning; the headline-number hope in
+      the workstream likely needs tuned factors + the wonder/cap rules
+      firing more often in longer games.
 
 ---
 
