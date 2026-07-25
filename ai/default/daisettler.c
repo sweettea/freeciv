@@ -85,13 +85,7 @@
    time and instead try to complete what it has started.
 */
 
-#define GROWTH_PRIORITY 15
 
-/* Perfection gives us an idea of how long to search for optimal
- * solutions, instead of going for quick and dirty solutions that
- * waste valuable time. Decrease for maps where good city placements
- * are hard to find. Lower means more perfection. */
-#define PERFECTION 3
 
 /* How much to deemphasise the potential for city growth for city
  * placements. Decrease this value if large cities are important
@@ -130,22 +124,22 @@ struct ai_settler {
 #endif /* FREECIV_DEBUG */
 };
 
-static const struct tile_data_cache *tdc_plr_get(struct ai_type *ait,
+const struct tile_data_cache *tdc_plr_get(struct ai_type *ait,
                                                  struct player *plr,
                                                  int tindex);
-static void tdc_plr_set(struct ai_type *ait, struct player *plr, int tindex,
+void tdc_plr_set(struct ai_type *ait, struct player *plr, int tindex,
                         const struct tile_data_cache *tdcache);
 
-static struct cityresult *cityresult_new(struct tile *ptile);
+struct cityresult *cityresult_new(struct tile *ptile);
 
 static struct cityresult *cityresult_fill(struct ai_type *ait,
                                           struct player *pplayer,
                                           struct tile *center);
-static bool food_starvation(const struct cityresult *result);
-static bool shield_starvation(const struct cityresult *result);
-static adv_want result_defense_bonus(struct player *pplayer,
+bool food_starvation(const struct cityresult *result);
+bool shield_starvation(const struct cityresult *result);
+adv_want result_defense_bonus(struct player *pplayer,
                                      const struct cityresult *result);
-static adv_want naval_bonus(const struct cityresult *result);
+adv_want naval_bonus(const struct cityresult *result);
 static void print_cityresult(struct player *pplayer,
                              const struct cityresult *cr);
 struct cityresult *city_desirability(struct ai_type *ait,
@@ -159,7 +153,7 @@ static struct cityresult *find_best_city_placement(struct ai_type *ait,
 /*************************************************************************//**
   Allocated a city result.
 *****************************************************************************/
-static struct cityresult *cityresult_new(struct tile *ptile)
+struct cityresult *cityresult_new(struct tile *ptile)
 {
   struct cityresult *result;
 
@@ -449,7 +443,7 @@ static void tile_data_cache_destroy(struct tile_data_cache *ptdc)
 /*************************************************************************//**
   Return player's tile data cache
 *****************************************************************************/
-static const struct tile_data_cache *tdc_plr_get(struct ai_type *ait,
+const struct tile_data_cache *tdc_plr_get(struct ai_type *ait,
                                                  struct player *plr,
                                                  int tindex)
 {
@@ -484,7 +478,7 @@ static const struct tile_data_cache *tdc_plr_get(struct ai_type *ait,
 /*************************************************************************//**
   Store player's tile data cache
 *****************************************************************************/
-static void tdc_plr_set(struct ai_type *ait, struct player *plr, int tindex,
+void tdc_plr_set(struct ai_type *ait, struct player *plr, int tindex,
                         const struct tile_data_cache *ptdc)
 {
   struct ai_plr *ai = dai_plr_data_get(ait, plr, NULL);
@@ -504,7 +498,7 @@ static void tdc_plr_set(struct ai_type *ait, struct player *plr, int tindex,
 /*************************************************************************//**
   Check if a city on this location would starve.
 *****************************************************************************/
-static bool food_starvation(const struct cityresult *result)
+bool food_starvation(const struct cityresult *result)
 {
   /* Avoid starvation: We must have enough food to grow.
    *   Note: this does not handle the case of a newly founded city breaking
@@ -519,7 +513,7 @@ static bool food_starvation(const struct cityresult *result)
 /*************************************************************************//**
   Check if a city on this location would lack shields.
 *****************************************************************************/
-static bool shield_starvation(const struct cityresult *result)
+bool shield_starvation(const struct cityresult *result)
 {
   /* Avoid resource starvation. */
   return (result->city_center.tdc->shield
@@ -531,7 +525,7 @@ static bool shield_starvation(const struct cityresult *result)
   Calculate defense bonus, which is a % of total results equal to a
   given % of the defense bonus %.
 *****************************************************************************/
-static adv_want result_defense_bonus(struct player *pplayer,
+adv_want result_defense_bonus(struct player *pplayer,
                                      const struct cityresult *result)
 {
   /* Defense modification (as tie breaker mostly) */
@@ -560,7 +554,7 @@ static adv_want result_defense_bonus(struct player *pplayer,
 /*************************************************************************//**
   Add bonus for coast.
 *****************************************************************************/
-static adv_want naval_bonus(const struct cityresult *result)
+adv_want naval_bonus(const struct cityresult *result)
 {
   bool ocean_adjacent = is_terrain_class_near_tile(&(wld.map),
                                                    result->tile, TC_OCEAN);

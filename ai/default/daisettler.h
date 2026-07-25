@@ -47,6 +47,14 @@ struct tile_data_cache {
 
 #define FERRY_TECH_WANT 500
 
+#define GROWTH_PRIORITY 15
+
+/* Perfection gives us an idea of how long to search for optimal
+ * solutions, instead of going for quick and dirty solutions that
+ * waste valuable time. Decrease for maps where good city placements
+ * are hard to find. Lower means more perfection. */
+#define PERFECTION 3
+
 struct cityresult {
   struct tile *tile;
   adv_want total;              /* Total value of position */
@@ -79,6 +87,20 @@ struct cityresult {
 enum cb_error_level { CBE_OK, CBE_RECOVERABLE, CBE_FATAL };
 
 void cityresult_destroy(struct cityresult *result);
+
+struct cityresult *cityresult_new(struct tile *ptile);
+const struct tile_data_cache *tdc_plr_get(struct ai_type *ait,
+                                          struct player *plr, int tindex);
+void tdc_plr_set(struct ai_type *ait, struct player *plr, int tindex,
+                 const struct tile_data_cache *tdcache);
+bool food_starvation(const struct cityresult *result);
+bool shield_starvation(const struct cityresult *result);
+adv_want result_defense_bonus(struct player *pplayer,
+                              const struct cityresult *result);
+adv_want naval_bonus(const struct cityresult *result);
+struct tile_data_cache *tile_data_cache_new(void);
+struct tile_data_cache *
+  tile_data_cache_copy(const struct tile_data_cache *ptdc);
 
 struct cityresult *settler_map_iterate(struct ai_type *ait,
                                        struct pf_parameter *parameter,
