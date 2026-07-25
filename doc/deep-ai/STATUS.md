@@ -419,12 +419,25 @@ Format:
       empirically exact, far stronger than the PRD's own ±2% gate.
       Grep invariant: DAI_WANT_* magnitudes appear only in the
       conversion table (deepwant.c).
-- [ ] next landings (calibration-driven): replace identity maps with
-      real shield-equivalent valuations per producer, starting from
-      the deep-want corpus; re-express the explorer want (W06's
-      auction problem) in shield-equivalents — the directional
-      acceptance check for that lives here, and it feeds directly
-      into W02.
+- [x] calibration corpus recorded (10 contested games, 45k decisions).
+      Native want scale per producer — the disease, quantified:
+        buildings (delta-measured)  median 10-48
+        Workers                     median 47
+        Phalanx (defender %)        median 155, p90 1224
+        Settlers (trait-rigged)     median 311, p90 473
+        Diplomat                    median 1101, p90 16000
+        Trireme (ferry wants)       max 63505
+        Barracks                    max 14673
+      9% of decisions ride the emergency tier. Buildings vs settlers
+      alone is a 10-20x scale gap; diplomats/ferries are a different
+      currency entirely. W06's explorer want (39-94) never stood a
+      chance against 311-median settlers.
+- [ ] next landings (calibration-driven, each measured separately):
+      real shield-equivalent conversions per producer, starting where
+      the distortion is largest (diplomat, ferry, settler); the
+      explorer re-pricing (W06's auction) likely becomes winnable as a
+      side effect of deflating those, not by inflating itself. Feeds
+      directly into W02.
 
 ---
 
