@@ -19,6 +19,7 @@
 #include "city.h"
 #include "game.h"
 #include "map.h"
+#include "movement.h"
 #include "player.h"
 #include "tile.h"
 
@@ -169,6 +170,41 @@ static adv_want adv_calc_transform(const struct city *pcity,
   tile_change_terrain(vtile, new_terrain);
   goodness = city_tile_value(pcity, vtile, 0, 0);
   tile_virtual_destroy(vtile);
+
+  /* Value the CHAIN, not the step (W29): a transform whose first step
+   * looks unappealing alone (Mountains -> Hills en route to Plains)
+   * is worth what the best reachable terrain yields, with the
+   * remaining chain time beyond this first step amortized.
+   * Worker-turn points convert to turns at the green single-mover
+   * rate (SINGLE_MOVE points per turn). Feasibility of later steps is
+   * assumed optimistically; the evaluator reruns every turn as the
+   * terrain actually changes, which self-corrects. When the immediate
+   * result is the best reachable, this is exactly the stock value. */
+  {
+    struct terrain *chain[ADV_TRANSFORM_CHAIN_MAX];
+    int total_time[ADV_TRANSFORM_CHAIN_MAX];
+    int n = adv_transform_chain(tile_terrain(ptile), chain, total_time);
+    int i;
+
+    for (i = 1; i < n; i++) {
+      adv_want reach;
+
+      if (tile_city(ptile)
+          && terrain_has_flag(chain[i], TER_NO_CITIES)) {
+        continue;
+      }
+      vtile = tile_virtual_new(ptile);
+      tile_change_terrain(vtile, chain[i]);
+      reach = city_tile_value(pcity, vtile, 0, 0);
+      tile_virtual_destroy(vtile);
+
+      reach = amortize(reach,
+                       (total_time[i] - total_time[0]) / SINGLE_MOVE);
+      if (reach > goodness) {
+        goodness = reach;
+      }
+    }
+  }
 
   return goodness;
 }
