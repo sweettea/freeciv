@@ -151,7 +151,45 @@ Format:
 ## Phase 1 — First demonstrable win
 
 ## W05 — Settler routing
-- [ ] not started
+- [x] implemented (11 commits on `epic/w05-settler-routing`, based on the
+      W00 tip 81adeb1ced): risk-aware site search (get_TB refusing
+      non-allied territory/unit tiles, adv_avoid_risks at tuned
+      fearfulness, is_pos_dangerous wrapping adv_danger_at — assigned by
+      nothing in stock), risk-aware execution leg replacing dai_gothere
+      for founders, bodyguard requests sampling the whole planned route,
+      loss instrumentation (deep-loss lines + server loss_reason
+      extension point + benchmark/losses.py), contested.conf (8p/32x32/
+      T150), corpus position hostile-corridor (4/4 corpus pass),
+      --portbase for concurrent batches.
+- [ ] **ACCEPTANCE PARTIALLY MET — stopped per protocol.** Contested,
+      30 paired seeds, matched before (stock deep, pre-W05 binary
+      rebuilt in a worktree; byte-reproduces stock: seed-1 scorelog
+      identical) vs after:
+      - hostile founder losses 107 -> 63 per 4530 turns
+        (2.36 -> 1.39 /100t, **-41.1%**; target was >=60%).
+        By reason: killed 97->60, bribed 10->3.
+      - foundings 27.62 -> 26.95 /100t (-2.4%): no over-timidity
+        collapse; smoke foundings 38.3 -> 39.4 /100t.
+      - starvation deaths 51 -> 74: timid settlers sit in cities
+        longer; the real cost of the change so far.
+      - score: smoke deep/baseline 0.9832 (t=-0.98 n=30), contested
+        1.0137 (t=+0.71 n=30) — both noise, no regression.
+      Pushing 41% -> 60% means raising settler_fearfulness_mult (2.0,
+      PLACEHOLDER, deeptuning.c) or similar — hand-tuning that rule 7
+      reserves for W25 tune.py, which does not exist yet (W25 is
+      unstarted Phase-0 work). Flagged; do a W25 pass then re-measure.
+- Note: measurement integrity incident: the first contested before-run
+      mixed binaries (run-game.sh resolves build/freeciv-server at game
+      exec; a mid-batch rebuild swapped behaviour under it). Detected
+      via the byte-identity tripwire (8/10 pairs identical = stock),
+      redone properly with a pinned worktree binary. Lesson: do not
+      rebuild while batches run, or pass --server explicitly.
+- Note: remaining hostile losses look structural for routing alone:
+      mobile attackers catch 1-move settlers regardless of planning;
+      guard requests are made but stock guard fulfilment is weak
+      (W11 territory).
+- Note: contemplate_new_city() (production want) still uses the stock
+      bare search; only actual settler units use the risk-aware one.
 
 ## W11 — Defence bookkeeping
 - [ ] not started
