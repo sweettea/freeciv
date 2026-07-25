@@ -303,7 +303,35 @@ Format:
         only as a score-regression guard.
 
 ## W06 — Exploration
-- [ ] not started
+- [x] implemented (4 commits on `epic/w06-exploration`, stacked on
+      W28): deep_explore_want() (visible unclaimed huts + unexplored
+      area, per-unit values as deep_tuning placeholders, diminishing
+      returns per explorer, zero-gated on hutless maps) competing for
+      the city build choice in deep_manage_cities();
+      deep_spend_gold() derived from stock with the
+      disband-explorers-at-home hack gated on want==0; huts/hutfree
+      benchmark configs (run-game.sh HUTS support) + hutstats.py
+      (techs@T50, huts remaining, explored fraction from the [map]
+      known layers, max want).
+- [x] acceptance, measured (10 seeds/config, before = W28-tip pinned,
+      after = W06):
+      - **Hut-free requirement: MET exactly** — zero nonzero want
+        lines across all hut-free games AND deep scorelogs
+        byte-identical before/after.
+      - Smoke score guard: deep/baseline 1.0088 (t=+0.40 n=10) — fine.
+      - **Hut-heavy metrics: unchanged** (techs@T50 6.00 -> 6.00, huts
+        left 4.8 -> 4.8, before/after byte-identical): the want fires
+        every turn (logged 39..94) but never wins a build auction
+        against early settler/military wants at placeholder
+        magnitudes. Raising them to force a win is exactly the
+        hand-tuning rule 7 forbids — third epic now gated on W25.
+      - Finding: under fog the huts_visible term is structurally ~0
+        (an explorer that sees a hut pops it), so the discovery term
+        must carry the want; fold hut density into it at tuning time
+        (the workstream's design point 4 says as much).
+      - Explorer-disband gate is live but unobserved in these games
+        (stock's hack never fired on these seeds either — explorers
+        stay out exploring the whole T80 horizon).
 
 ## W09-lite — City manager parameters
 - [ ] not started
