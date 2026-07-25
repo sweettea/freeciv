@@ -72,6 +72,12 @@
 struct workermap {
   int enroute; /* Unit ID of worker en route to this tile */
   int eta;     /* Estimated number of turns until enroute arrives */
+
+  /* Workers stacking onto this tile in addition to the primary claim
+   * (W28). Joiners never displace and are never displaced; the map is
+   * rebuilt every phase, so this is transient bookkeeping. */
+  int extra_rate; /* Sum of joiners' activity rates */
+  int extra_n;    /* Number of joiners */
 };
 
 action_id aw_actions_transform[MAX_NUM_ACTIONS];
@@ -1049,52 +1055,69 @@ bool auto_worker_setup_work(const struct civ_map *nmap,
     displaced = player_unit_by_number(pplayer,
                                       state[tile_index(best_tile)].enroute);
 
-    if (displaced) {
-      fc_assert(state[tile_index(best_tile)].enroute == displaced->id);
-      fc_assert(state[tile_index(best_tile)].eta > completion_time
-                || (state[tile_index(best_tile)].eta == completion_time
-                    && (real_map_distance(best_tile, unit_tile(punit))
-                        < real_map_distance(best_tile,
-                                            unit_tile(displaced)))));
-      UNIT_LOG(displaced->server.debug ? LOG_AI_TEST : LOG_DEBUG, punit,
-               "%d (%d,%d) has displaced %d (%d,%d) for worksite %d,%d",
-               punit->id, completion_time,
-               real_map_distance(best_tile, unit_tile(punit)),
-               displaced->id, state[tile_index(best_tile)].eta,
-               real_map_distance(best_tile, unit_tile(displaced)),
-               TILE_XY(best_tile));
-    }
+    if (displaced && displaced->id != punit->id
+        && !(state[tile_index(best_tile)].eta > completion_time
+             || (state[tile_index(best_tile)].eta == completion_time
+                 && (real_map_distance(best_tile, unit_tile(punit))
+                     < real_map_distance(best_tile,
+                                         unit_tile(displaced)))))) {
+      /* We are not entitled to displace the primary claim, so we chose
+       * this tile as a stacking joiner: record our rate and leave the
+       * claim alone. */
+      state[tile_index(best_tile)].extra_rate += get_activity_rate(punit);
+      state[tile_index(best_tile)].extra_n++;
+      UNIT_LOG(LOG_DEBUG, punit, "joins worksite %d,%d (%d other(s))",
+               TILE_XY(best_tile),
+               state[tile_index(best_tile)].extra_n);
+    } else {
 
-    state[tile_index(best_tile)].enroute = punit->id;
-    state[tile_index(best_tile)].eta = completion_time;
-
-    if (displaced) {
-      struct tile *goto_tile = punit->goto_tile;
-      int saved_id = punit->id;
-      struct tile *old_pos = unit_tile(punit);
-
-      displaced->goto_tile = NULL;
-      auto_worker_findwork(nmap, pplayer, displaced, state, recursion + 1);
-      if (NULL == player_unit_by_number(pplayer, saved_id)) {
-        /* Actions of the displaced worker somehow caused this worker
-         * to die. (maybe by recursively giving control back to this unit)
-         */
-        return FALSE;
+      if (displaced) {
+        fc_assert(state[tile_index(best_tile)].enroute == displaced->id);
+        fc_assert(state[tile_index(best_tile)].eta > completion_time
+                  || (state[tile_index(best_tile)].eta == completion_time
+                      && (real_map_distance(best_tile, unit_tile(punit))
+                          < real_map_distance(best_tile,
+                                              unit_tile(displaced)))));
+        UNIT_LOG(displaced->server.debug ? LOG_AI_TEST : LOG_DEBUG, punit,
+                 "%d (%d,%d) has displaced %d (%d,%d) for worksite %d,%d",
+                 punit->id, completion_time,
+                 real_map_distance(best_tile, unit_tile(punit)),
+                 displaced->id, state[tile_index(best_tile)].eta,
+                 real_map_distance(best_tile, unit_tile(displaced)),
+                 TILE_XY(best_tile));
       }
-      if (goto_tile != punit->goto_tile || old_pos != unit_tile(punit)
-          || punit->activity != ACTIVITY_IDLE) {
-        /* Actions of the displaced worker somehow caused this worker
-         * to get a new job, or to already move toward current job.
-         * (A displaced B, B displaced C, C displaced A)
-         */
-        UNIT_LOG(LOG_DEBUG, punit,
-                 "%d itself acted due to displacement recursion. "
-                 "Was going from (%d, %d) to (%d, %d). "
-                 "Now heading from (%d, %d) to (%d, %d).",
-                 punit->id,
-                 TILE_XY(old_pos), TILE_XY(goto_tile),
-                 TILE_XY(unit_tile(punit)), TILE_XY(punit->goto_tile));
-        return FALSE;
+
+      state[tile_index(best_tile)].enroute = punit->id;
+      state[tile_index(best_tile)].eta = completion_time;
+
+      if (displaced) {
+        struct tile *goto_tile = punit->goto_tile;
+        int saved_id = punit->id;
+        struct tile *old_pos = unit_tile(punit);
+
+        displaced->goto_tile = NULL;
+        auto_worker_findwork(nmap, pplayer, displaced, state, recursion + 1);
+        if (NULL == player_unit_by_number(pplayer, saved_id)) {
+          /* Actions of the displaced worker somehow caused this worker
+           * to die. (maybe by recursively giving control back to this unit)
+           */
+          return FALSE;
+        }
+        if (goto_tile != punit->goto_tile || old_pos != unit_tile(punit)
+            || punit->activity != ACTIVITY_IDLE) {
+          /* Actions of the displaced worker somehow caused this worker
+           * to get a new job, or to already move toward current job.
+           * (A displaced B, B displaced C, C displaced A)
+           */
+          UNIT_LOG(LOG_DEBUG, punit,
+                   "%d itself acted due to displacement recursion. "
+                   "Was going from (%d, %d) to (%d, %d). "
+                   "Now heading from (%d, %d) to (%d, %d).",
+                   punit->id,
+                   TILE_XY(old_pos), TILE_XY(goto_tile),
+                   TILE_XY(unit_tile(punit)), TILE_XY(punit->goto_tile));
+          return FALSE;
+        }
       }
     }
 
