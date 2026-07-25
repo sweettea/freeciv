@@ -361,3 +361,23 @@ See `PRD-v3.md`. Extract workstream files as you reach them.
   of the starter kit — delete or keep as reference?
 - Autotools (ai/Makefile.am) was NOT taught about ai/baseline; the project
   builds with meson per CLAUDE.md. Flagging in case autotools parity matters.
+
+---
+
+## Agreed roadmap (human, 2026-07-25)
+
+1. Finish W09-lite measurement; hand the five Phase-1 branches over for
+   review (linear stack e00.1 -> w05 -> w11 -> w28 -> w06; w09-lite
+   forks from the w28 tip and needs a trivial rebase after w06 lands).
+2. Fast-forward main to 0896b34, then merge the stack after review.
+3. Parallel track: minimal-effort upstream fixes as clean patches on a
+   branch off 0896b34 (dead long_path branch, dead is_req_active
+   mutex, README.AI rot, ...) intended for upstream submission — NEVER
+   merged into this measurement line; ai/baseline stays frozen across
+   any future rebase.
+4. Next epic after merge: W25 tuning harness — three Phase-1 epics are
+   implemented-but-inert on ~15 deep_tuning placeholders; one training
+   pass + holdout report converts them and re-baselines the plan-time
+   acceptance percentages.
+5. Then Tier B purity items, then Phase 2 (W13 campaigns also create
+   the dynamic W11's credit is pre-positioned to count).
