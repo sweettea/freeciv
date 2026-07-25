@@ -3,6 +3,7 @@
 #
 #   run.sh [--quick | --full | --count N] [--seeds FILE] [--config FILE]
 #          [--arms A,B,...] [--jobs N] [--out DIR] [--server BIN]
+#          [--portbase N]
 #
 #   --quick     first 10 seeds of the seed file (default)
 #   --full      first 100 seeds
@@ -35,6 +36,7 @@ ARMS=classic,baseline
 JOBS=$(nproc 2>/dev/null || echo 4)
 OUT=$here/results
 SERVER=
+PORTBASE=5600
 
 usage() { grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 
@@ -49,6 +51,7 @@ while [ $# -gt 0 ]; do
     --jobs)   JOBS=$2; shift 2;;
     --out)    OUT=$2; shift 2;;
     --server) SERVER=$2; shift 2;;
+    --portbase) PORTBASE=$2; shift 2;;
     *) usage;;
   esac
 done
@@ -92,7 +95,7 @@ echo "config=$cfgdir arms=$ARMS seeds=${#seeds[@]} jobs=$JOBS out=$OUT"
 
 joblist=$(mktemp)
 trap 'rm -f "$joblist"' EXIT
-total=0 skipped=0 port=5600
+total=0 skipped=0 port=$PORTBASE
 for arm in "${arms[@]}"; do
   for seed in "${seeds[@]}"; do
     dir=$OUT/$cfgdir/$arm/seed-$seed
