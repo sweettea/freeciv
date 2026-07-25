@@ -66,3 +66,8 @@ Agent: append newly-found bugs here rather than fixing them.
     strip settler protection, so any fix must delete the branch, not
     repair the condition. ai/deep makes the safe behaviour explicit
     (deepsettler.c).
+27. **`cityresult_fill()` leaks its government override** — the
+    "all tiles worked" early return (`result->total = 0`) skips both
+    the `pplayer->government = curr_govt` restore and the virtual-city
+    teardown, leaving the player's government set to the goal
+    government for the rest of the evaluation pass.
