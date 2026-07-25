@@ -76,6 +76,11 @@ struct ai_city {
 
 void dai_manage_cities(struct ai_type *ait, struct player *pplayer);
 
+void dai_upgrade_units(struct city *pcity, int limit, bool military);
+void try_to_sell_stuff(struct player *pplayer, struct city *pcity);
+void increase_maxbuycost(struct player *pplayer, int new_value);
+void unit_do_disband_trad(struct player *owner, struct unit *punit,
+                          const enum action_requester requester);
 void dai_city_sell_noncritical(struct city *pcity, bool redundant_only);
 void resolve_city_emergency(struct ai_type *ait, struct player *pplayer,
                             struct city *pcity);

@@ -352,7 +352,7 @@ void dai_city_choose_build(struct ai_type *ait,
 /**********************************************************************//**
   Sell building from city
 **************************************************************************/
-static void try_to_sell_stuff(struct player *pplayer, struct city *pcity)
+void try_to_sell_stuff(struct player *pplayer, struct city *pcity)
 {
   improvement_iterate(pimprove) {
     if (can_city_sell_building(pcity, pimprove)
@@ -368,7 +368,7 @@ static void try_to_sell_stuff(struct player *pplayer, struct city *pcity)
   Increase maxbuycost. This variable indicates (via ai_gold_reserve) to
   the tax selection code how much money do we need for buying stuff.
 **************************************************************************/
-static void increase_maxbuycost(struct player *pplayer, int new_value)
+void increase_maxbuycost(struct player *pplayer, int new_value)
 {
   pplayer->ai_common.maxbuycost = MAX(pplayer->ai_common.maxbuycost, new_value);
 }
@@ -378,7 +378,7 @@ static void increase_maxbuycost(struct player *pplayer, int new_value)
   end up with after the upgrade. military is if we want to upgrade non-
   military or military units.
 **************************************************************************/
-static void dai_upgrade_units(struct city *pcity, int limit, bool military)
+void dai_upgrade_units(struct city *pcity, int limit, bool military)
 {
   action_id upgrade_actions[MAX_NUM_ACTIONS];
   struct player *pplayer = city_owner(pcity);
@@ -451,8 +451,8 @@ static void dai_upgrade_units(struct city *pcity, int limit, bool military)
   Try to disband the specified unit. Match the old behavior in what kind
   of disbanding is tried and who benefits from it.
 **************************************************************************/
-static void unit_do_disband_trad(struct player *owner, struct unit *punit,
-                                 const enum action_requester requester)
+void unit_do_disband_trad(struct player *owner, struct unit *punit,
+                          const enum action_requester requester)
 {
   const int punit_id_stored = punit->id;
   const struct civ_map *nmap = &(wld.map);
