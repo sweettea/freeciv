@@ -95,7 +95,7 @@
 /*************************************************************************//**
   Handle spaceship related stuff
 *****************************************************************************/
-static void dai_manage_spaceship(struct player *pplayer)
+void dai_manage_spaceship(struct player *pplayer)
 {
   if (victory_enabled(VC_SPACERACE)) {
     if (pplayer->spaceship.state == SSHIP_STARTED) {
@@ -208,7 +208,7 @@ enum celebration {
   At the end the remaining is divided on science/gold/luxury depending on the
   AI settings.
 *****************************************************************************/
-static void dai_manage_taxes(struct ai_type *ait, struct player *pplayer)
+void dai_manage_taxes(struct ai_type *ait, struct player *pplayer)
 {
   int maxrate = (has_handicap(pplayer, H_RATES)
                  ? get_player_bonus(pplayer, EFT_MAX_RATES) : 100);
@@ -704,7 +704,7 @@ static void dai_manage_taxes(struct ai_type *ait, struct player *pplayer)
 /*************************************************************************//**
   Change the government form, if it can and there is a good reason.
 *****************************************************************************/
-static void dai_manage_government(struct ai_type *ait, struct player *pplayer)
+void dai_manage_government(struct ai_type *ait, struct player *pplayer)
 {
   struct adv_data *adv = adv_data_get(pplayer, nullptr);
 

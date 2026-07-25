@@ -71,7 +71,6 @@
 
 /* TODO:  AI_CITY_RECALC_SPEED should be configurable to ai difficulty.
           -kauf  */
-#define AI_CITY_RECALC_SPEED 5
 
 #define AI_BA_RECALC_SPEED 5
 
@@ -105,15 +104,7 @@
   } city_list_iterate_end;                                              \
 }
 
-#define CITY_EMERGENCY(pcity)                                           \
- (pcity->surplus[O_SHIELD] < 0 || city_unhappy(pcity)                   \
-  || pcity->food_stock + pcity->surplus[O_FOOD] < 0)
 
-static void dai_city_sell_noncritical(struct city *pcity,
-                                      bool redundant_only);
-static void resolve_city_emergency(struct ai_type *ait,
-                                   struct player *pplayer,
-                                   struct city *pcity);
 
 /**********************************************************************//**
   Increase want for a technology because of the value of that technology
@@ -253,7 +244,7 @@ static void dai_barbarian_choose_build(struct player *pplayer,
   Note that AI cheats -- it suffers no penalty for switching from unit to
   improvement, etc.
 **************************************************************************/
-static void dai_city_choose_build(struct ai_type *ait,
+void dai_city_choose_build(struct ai_type *ait,
                                   struct player *pplayer,
                                   struct city *pcity)
 {
@@ -532,7 +523,7 @@ static void unit_do_disband_trad(struct player *owner, struct unit *punit,
 /**********************************************************************//**
   Buy and upgrade stuff!
 **************************************************************************/
-static void dai_spend_gold(struct ai_type *ait, struct player *pplayer)
+void dai_spend_gold(struct ai_type *ait, struct player *pplayer)
 {
   struct adv_choice bestchoice;
   int cached_limit = dai_gold_reserve(pplayer);
@@ -762,7 +753,7 @@ static int unit_foodbox_cost(struct unit *punit)
 
   TODO: AI does not ship UTYF_WORKERS around, only UTYF_CITIES - Per
 **************************************************************************/
-static void contemplate_terrain_improvements(struct ai_type *ait,
+void contemplate_terrain_improvements(struct ai_type *ait,
                                              struct city *pcity)
 {
   struct unit *virtualunit;
@@ -1007,8 +998,8 @@ static bool building_crucial(const struct player *plr,
 /**********************************************************************//**
   Sell an noncritical building if there are any in the city.
 **************************************************************************/
-static void dai_city_sell_noncritical(struct city *pcity,
-                                      bool redundant_only)
+void dai_city_sell_noncritical(struct city *pcity,
+                               bool redundant_only)
 {
   struct player *pplayer = city_owner(pcity);
 
@@ -1050,9 +1041,9 @@ static void dai_city_sell_noncritical(struct city *pcity,
   Syela is wrong. It happens quite too often, mostly due to unhappiness.
   Also, most of the time we are unable to resolve the situation.
 **************************************************************************/
-static void resolve_city_emergency(struct ai_type *ait,
-                                   struct player *pplayer,
-                                   struct city *pcity)
+void resolve_city_emergency(struct ai_type *ait,
+                            struct player *pplayer,
+                            struct city *pcity)
 {
   struct tile *pcenter = city_tile(pcity);
   const struct civ_map *nmap = &(wld.map);

@@ -68,7 +68,22 @@ struct ai_city {
   struct unit_type *worker_type;
 };
 
+#define AI_CITY_RECALC_SPEED 5
+
+#define CITY_EMERGENCY(pcity)                                           \
+ (pcity->surplus[O_SHIELD] < 0 || city_unhappy(pcity)                   \
+  || pcity->food_stock + pcity->surplus[O_FOOD] < 0)
+
 void dai_manage_cities(struct ai_type *ait, struct player *pplayer);
+
+void dai_city_sell_noncritical(struct city *pcity, bool redundant_only);
+void resolve_city_emergency(struct ai_type *ait, struct player *pplayer,
+                            struct city *pcity);
+void dai_city_choose_build(struct ai_type *ait, struct player *pplayer,
+                           struct city *pcity);
+void dai_spend_gold(struct ai_type *ait, struct player *pplayer);
+void contemplate_terrain_improvements(struct ai_type *ait,
+                                      struct city *pcity);
 
 void dai_city_alloc(struct ai_type *ait, struct city *pcity);
 void dai_city_free(struct ai_type *ait, struct city *pcity);

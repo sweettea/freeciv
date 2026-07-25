@@ -16,6 +16,10 @@
 /* common */
 #include "fc_types.h"
 
+void dai_manage_spaceship(struct player *pplayer);
+void dai_manage_taxes(struct ai_type *ait, struct player *pplayer);
+void dai_manage_government(struct ai_type *ait, struct player *pplayer);
+
 void dai_do_first_activities(struct ai_type *ait, struct player *pplayer);
 void dai_do_last_activities(struct ai_type *ait, struct player *pplayer);
 
