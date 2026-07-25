@@ -320,6 +320,7 @@ else
       'ai/deep/deepcm.c',
       'ai/deep/deepdefence.c',
       'ai/deep/deepexplore.c',
+      'ai/deep/deephorizon.c',
       'ai/deep/deepsite.c',
       'ai/deep/deepsettler.c',
       'ai/deep/deeptuning.c',

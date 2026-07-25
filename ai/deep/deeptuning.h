@@ -42,6 +42,14 @@ struct deep_tuning {
   double site_special_bonus;
   double site_special_cluster;
 
+  /* Horizon credits for buildings (W03), in the tile-sum currency:
+   * scale on the unlocked-growth credit for capacity buildings, the
+   * relative share for growth accelerators, and the per-viable-tile
+   * weight on co-investment bundle effects. */
+  double horizon_capacity_weight;
+  double horizon_growth_weight;
+  double horizon_bundle_weight;
+
   /* Defensive-diplomat priority (W01): stock prices it at a
    * self-described 'totally arbitrary' 16000 that outranks even
    * military emergencies. Deep re-expresses it as an emergency-tier

@@ -73,6 +73,7 @@
 
 #include "deepai.h"
 #include "deepexplore.h"
+#include "deephorizon.h"
 #include "deepsite.h"
 #include "deepcm.h"
 #include "deeptuning.h"
@@ -938,6 +939,7 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
 
   TIMING_LOG(AIT_BUILDINGS, TIMER_START);
   building_advisor(pplayer);
+  deep_adjust_building_wants(ait, pplayer);
   TIMING_LOG(AIT_BUILDINGS, TIMER_STOP);
 
   /* Initialize the infrastructure cache, which is used shortly. */
