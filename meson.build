@@ -321,7 +321,8 @@ else
       'ai/deep/deepdefence.c',
       'ai/deep/deepexplore.c',
       'ai/deep/deepsettler.c',
-      'ai/deep/deeptuning.c'
+      'ai/deep/deeptuning.c',
+      'ai/deep/deepwant.c'
     ]
   endif
   if get_option('aimodules').contains('baseline')
