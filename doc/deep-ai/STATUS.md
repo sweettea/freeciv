@@ -192,7 +192,51 @@ Format:
       bare search; only actual settler units use the risk-aware one.
 
 ## W11 — Defence bookkeeping
-- [ ] not started
+- [x] implemented (7 commits on `epic/w11-defence-bookkeeping`, stacked
+      on the W05 tip for the shared measurement harness — review W05
+      first): deep turn drivers (first/last activities), per-city
+      deep-def instrumentation + benchmark/defence.py, en-route
+      defender credit (deep_incoming_defence_credit, ETA/survival
+      discounts as deep_tuning placeholders), ranked two-pass emergency
+      resolution in deep_manage_cities (lexicographic: grave danger,
+      urgency, capital, worth — no invented weights), and
+      deep_military_choose_build derived from stock so the credit is
+      applied where production actually reads danger (the stock
+      function re-runs assess_danger() internally — first after-run
+      measured the phase-level credit as a no-op because of this).
+      Corpus position twin-emergencies asserts the ordering invariant;
+      5/5 corpus pass. Visibility-only exposure of daicity/daihand/
+      daimilitary statics.
+- [ ] **ACCEPTANCE NOT MET — mechanism-A premise is empirically hollow;
+      stopped per protocol.** Contested, 30 paired seeds, matched
+      before/after with pinned binaries:
+      - surplus defenders per city-turn 0.4504 -> 0.4512 (target -40%);
+        oscillation 2.383 -> 2.404 changes per city per 10 turns.
+      - score: contested deep/baseline 1.0174 (t=+0.91 n=30), smoke
+        0.9555 (t=-1.18 n=10; W11 paths never fire on smoke — deep
+        games there are unchanged).
+      - Root cause, instrumented directly: the state the credit counts
+        (AIUNIT_DEFEND_HOME with a remote goto to an own city)
+        essentially never exists — a full T100 smoke game showed 61
+        DEFEND_HOME city-turn sightings, 51 with no goto at all, rest
+        already arrived; a full T150 contested game produced ZERO
+        credit hits. Stock cities do not dispatch defenders; they
+        produce them locally and never disband them. The workstream's
+        premise ("a defender two turns out contributes nothing") is
+        code-true but dynamics-false in stock play.
+- Note for the human — three options:
+      (a) accept W11 as Problem-B-only (ranking works, proven by
+          corpus; measurably inert on aggregate score so far);
+      (b) redesign Problem A as defender dispatch + surplus disband
+          policy (new scope, not in the workstream's design);
+      (c) treat the credit as pre-positioned infrastructure for W13:
+          the workstream's own "why before W13" note says campaigns
+          drawing units away create exactly the en-route dynamic the
+          credit needs — it may only become measurable then.
+- Note: standing-surplus operationalisation of "defenders produced
+      beyond assessed need" is recorded in defence.py's docstring; the
+      40% target, like W05's 60%, predates any instrument and should be
+      re-baselined (user discussion 2026-07-25).
 
 ## W28 — Worker stacking
 - [ ] not started
