@@ -111,4 +111,29 @@ for seed in 1 2 3 42 5 6; do
 done
 [ -n "$found" ] || { echo "no seed produced a losing-war position" >&2; exit 1; }
 
+# --- hostile-corridor: warriors across a deep settler's route (W05) --
+name=hostile-corridor
+echo "== $name"
+found=
+for seed in 7042 7043 7044 7045; do
+  rm -rf "$tmp/$name"
+  playout "$tmp/$name" 30 1 2 $seed "create P1 deep" "create P2 classic"
+  for save in $(ls "$tmp/$name"/saves/freeciv-T*-auto.sav* | sort -r); do
+    if out=$(python3 "$here/make-corridor.py" "$save" "$tmp/$name/corridor.sav"); then
+      zstd -q -f "$tmp/$name/corridor.sav" \
+        -o "$here/$name/position.sav.zst"
+      provenance "$here/$name" \
+        "settings: 32x32, P1=deep + P2=classic, hard, seed $seed, turn $("$SQ" "$save" turn)
+edit: make-corridor.py -- $out
+NOTE: revalidate assert.sh observations after regenerating; see the
+checked-in PROVENANCE for the behavioural contrast recorded at first
+generation."
+      found=1
+      break 2
+    fi
+  done
+  echo "  seed $seed: no travelling settler to ambush"
+done
+[ -n "$found" ] || { echo "no seed produced a corridor position" >&2; exit 1; }
+
 echo "done"

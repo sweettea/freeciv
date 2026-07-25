@@ -7,6 +7,7 @@
     savequery.py SAVE captured              # cities whose founder != owner
     savequery.py SAVE wars                  # player pairs currently at War
     savequery.py SAVE min-cross-distance    # min city distance across owners
+    savequery.py SAVE units [OWNER] [TYPE]  # owner,type,x,y per unit
 
 Used by the L1 corpus assertions (see corpus-run.sh). Parsing is
 deliberately tolerant: it reads only the fields it needs.
@@ -102,6 +103,15 @@ def wars(text):
     return sorted(out)
 
 
+def units(text):
+    """[(owner, type, x, y)] for every unit."""
+    out = []
+    for plr, section in _player_sections(text):
+        for row in _table(section, "u"):
+            out.append((plr, row["type_by_name"], int(row["x"]), int(row["y"])))
+    return out
+
+
 def min_cross_distance(text):
     """Smallest euclidean city distance between different owners."""
     cs = cities(text)
@@ -138,6 +148,13 @@ def main():
     elif q == "min-cross-distance":
         d = min_cross_distance(text)
         print("inf" if d is None else round(d, 2))
+    elif q == "units":
+        for owner, typ, x, y in units(text):
+            if len(sys.argv) > 3 and owner != int(sys.argv[3]):
+                continue
+            if len(sys.argv) > 4 and typ != sys.argv[4]:
+                continue
+            print(f"{owner},{typ},{x},{y}")
     else:
         raise SystemExit(f"unknown query: {q}")
 
