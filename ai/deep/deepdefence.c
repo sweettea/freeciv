@@ -105,11 +105,13 @@ static void deep_log_defence(struct ai_type *ait, struct player *pplayer)
 
     log_base(LOG_NORMAL,
              "deep-def turn=%d player=\"%s\" city=%d danger=%u"
-             " urgency=%u defense=%d ndef=%d prod=\"%s\"",
+             " urgency=%u defense=%d ndef=%d prod=\"%s\""
+             " shield=%d food=%d",
              game.info.turn, player_name(pplayer), pcity->id,
              city_data->danger, city_data->urgency,
              assess_defense(ait, pcity), ndef,
-             universal_rule_name(&pcity->production));
+             universal_rule_name(&pcity->production),
+             pcity->surplus[O_SHIELD], pcity->surplus[O_FOOD]);
   } city_list_iterate_end;
 }
 
