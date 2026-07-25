@@ -24,6 +24,15 @@ static const struct deep_tuning deep_tuning_defaults = {
   .settler_fearfulness_mult = 2.0,      /* PLACEHOLDER, untuned */
   .incoming_defence_eta_weight = 0.5,   /* PLACEHOLDER, untuned */
   .incoming_defence_survival = 0.9,     /* PLACEHOLDER, untuned */
+  .cm_happy_factor = 1,                 /* PLACEHOLDER, untuned */
+  .cm_war_food = 10,                    /* PLACEHOLDER, untuned */
+  .cm_war_shield = 12,                  /* PLACEHOLDER, untuned */
+  .cm_war_trade = 1,                    /* PLACEHOLDER, untuned */
+  .cm_cap_food = 2,                     /* PLACEHOLDER, untuned */
+  .cm_cap_shield = 8,                   /* PLACEHOLDER, untuned */
+  .cm_cap_trade = 8,                    /* PLACEHOLDER, untuned */
+  .cm_wonder_shield = 10,               /* PLACEHOLDER, untuned */
+  .cm_wonder_trade = 4,                 /* PLACEHOLDER, untuned */
 };
 
 /**********************************************************************//**

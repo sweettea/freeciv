@@ -30,6 +30,18 @@ struct deep_tuning {
    * (W11): credit = power * survival^eta / (1 + eta_weight * eta). */
   double incoming_defence_eta_weight;
   double incoming_defence_survival;
+
+  /* City manager factors by city state (W09-lite); the stock
+   * hardcoded default is food 10-20, shield 5, trade 0, happy 0. */
+  int cm_happy_factor;
+  int cm_war_food;
+  int cm_war_shield;
+  int cm_war_trade;
+  int cm_cap_food;
+  int cm_cap_shield;
+  int cm_cap_trade;
+  int cm_wonder_shield;
+  int cm_wonder_trade;
 };
 
 const struct deep_tuning *deep_tuning_get(void);

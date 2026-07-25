@@ -69,6 +69,7 @@
 #include "daiunit.h"
 
 #include "deepai.h"
+#include "deepcm.h"
 #include "deeptuning.h"
 
 #include "deepdefence.h"
@@ -186,6 +187,7 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
 
   deep_log_defence(ait, pplayer);
   deep_credit_incoming_defence(ait, pplayer);
+  deep_set_city_manager_params(ait, pplayer);
 
   TIMING_LOG(AIT_UNITS, TIMER_START);
   dai_manage_units(ait, pplayer);
