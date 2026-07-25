@@ -32,6 +32,9 @@
 #include "player.h"
 #include "research.h"
 
+/* server */
+#include "unittools.h"
+
 /* server/advisors */
 #include "advdata.h"
 
@@ -399,14 +402,18 @@ static void dpai_ferry_lost(struct unit *punit)
 {
   struct ai_type *deftype = deep_ai_get_self();
 
-  /* Loss-rate bookkeeping (benchmark/losses.py). The hook fires for
-   * every loss cause; the cause itself is not available here. */
+  /* Loss-rate bookkeeping (benchmark/losses.py). The hook also fires
+   * when a unit merely changes owner (capture, bribe); the server then
+   * leaves loss_reason at -1. */
   log_base(LOG_NORMAL,
            "deep-loss turn=%d player=\"%s\" unit=\"%s\" founder=%d"
-           " at=(%d,%d)",
+           " reason=\"%s\" at=(%d,%d)",
            game.info.turn, player_name(unit_owner(punit)),
            unit_rule_name(punit),
            unit_is_cityfounder(punit) ? 1 : 0,
+           punit->server.loss_reason >= 0
+             ? unit_loss_reason_name(punit->server.loss_reason)
+             : "transfer",
            TILE_XY(unit_tile(punit)));
 
   dai_ferry_lost(deftype, punit);
