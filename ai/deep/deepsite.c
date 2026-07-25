@@ -135,10 +135,10 @@ static adv_want deep_catchment_average(int *sums, int *foods,
   }
 
   for (i = 0; i < n; i++) {
-    /* Tiles a neighbouring own city can work are unlikely to be ours
+    /* Tiles a neighbouring own city can work are almost never ours
      * to man, whatever their rank (proximity rule). */
-    double w = (i < target && !overlapped[i])
-               ? 1.0 : tune->site_tail_weight;
+    double w = overlapped[i] ? tune->site_overlap_weight
+               : (i < target) ? 1.0 : tune->site_tail_weight;
 
     wsum += w;
     /* A tile is worth what it yields now plus a discounted share of

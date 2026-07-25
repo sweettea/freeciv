@@ -46,8 +46,9 @@ SERVER=$(readlink -f "$SERVER")
 [ -x "$SERVER" ] || { echo "server not found: $SERVER" >&2; exit 1; }
 
 # Config values (see configs/*.conf): PLAYERS, XSIZE, YSIZE, ENDTURN
-# required; SKILL, RULESET, TIMEOUT_S, HUTS optional.
-SKILL=hard RULESET= TIMEOUT_S=1800 HUTS=
+# required; SKILL, RULESET, TIMEOUT_S, HUTS, GENERATOR,
+# SPECIALS optional.
+SKILL=hard RULESET= TIMEOUT_S=1800 HUTS= GENERATOR= SPECIALS=
 . "$(readlink -f "$CONFIG")"
 for v in PLAYERS XSIZE YSIZE ENDTURN; do
   [ -n "${!v:-}" ] || { echo "config missing $v" >&2; exit 1; }
@@ -64,6 +65,8 @@ OUT=$(readlink -f "$OUT")
   echo "set xsize $XSIZE"
   echo "set ysize $YSIZE"
   [ -n "$HUTS" ] && echo "set huts $HUTS"
+  [ -n "$GENERATOR" ] && echo "set generator $GENERATOR"
+  [ -n "$SPECIALS" ] && echo "set specials $SPECIALS"
   echo "set aifill $PLAYERS"
   for i in $(seq 1 "$PLAYERS"); do
     echo "create P$i $ARM"

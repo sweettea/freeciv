@@ -39,6 +39,9 @@ struct deep_tuning {
    * settle time, and the explicit resource-special bonuses, all in
    * the tile-sum currency (W02). */
   double site_depth_weight;
+  /* Weight for catchment tiles a neighbouring own city can work --
+   * deliberately far below the ordinary tail weight. */
+  double site_overlap_weight;
   double site_potential_discount;
   double site_special_bonus;
   double site_special_cluster;
