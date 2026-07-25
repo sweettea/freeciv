@@ -35,6 +35,13 @@ struct deep_tuning {
    * size in site evaluation (W02); tiles inside it weigh 1.0. */
   double site_tail_weight;
 
+  /* Share of a tile's post-improvement yield increment counted at
+   * settle time, and the explicit resource-special bonuses, all in
+   * the tile-sum currency (W02). */
+  double site_potential_discount;
+  double site_special_bonus;
+  double site_special_cluster;
+
   /* Defensive-diplomat priority (W01): stock prices it at a
    * self-described 'totally arbitrary' 16000 that outranks even
    * military emergencies. Deep re-expresses it as an emergency-tier

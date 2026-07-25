@@ -94,7 +94,8 @@ static void deep_tile_data_cache_destroy(struct tile_data_cache *ptdc)
   per-citizen food cost. Arrays are gathered by the fill loop; sorts
   in place. Returns 0 when nothing is workable.
 **************************************************************************/
-static adv_want deep_catchment_average(int *sums, int *foods, int n,
+static adv_want deep_catchment_average(int *sums, int *foods,
+                                       int *potentials, int n,
                                        int center_food)
 {
   const struct deep_tuning *tune = deep_tuning_get();
@@ -107,14 +108,16 @@ static adv_want deep_catchment_average(int *sums, int *foods, int n,
 
   /* Sort by sum, descending (insertion sort; n <= catchment size). */
   for (i = 1; i < n; i++) {
-    int sv = sums[i], fv = foods[i];
+    int sv = sums[i], fv = foods[i], pv = potentials[i];
 
     for (j = i; j > 0 && sums[j - 1] < sv; j--) {
       sums[j] = sums[j - 1];
       foods[j] = foods[j - 1];
+      potentials[j] = potentials[j - 1];
     }
     sums[j] = sv;
     foods[j] = fv;
+    potentials[j] = pv;
   }
 
   /* Largest size the site's own food can sustain: citizens eat
@@ -132,7 +135,10 @@ static adv_want deep_catchment_average(int *sums, int *foods, int n,
     double w = (i < target) ? 1.0 : tune->site_tail_weight;
 
     wsum += w;
-    vsum += w * sums[i];
+    /* A tile is worth what it yields now plus a discounted share of
+     * what one standard improvement would add (W02 potential term). */
+    vsum += w * (sums[i]
+                 + tune->site_potential_discount * potentials[i]);
   }
 
   return vsum / wsum;
@@ -182,6 +188,9 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
   int maxtiles = city_map_tiles(result->city_radius_sq);
   int sums[maxtiles];
   int foods[maxtiles];
+  int potentials[maxtiles];
+  int nspecials = 0;
+  double wspecials = 0;
   int ncatch = 0;
 
   city_tile_iterate_index(nmap, result->city_radius_sq, result->tile, ptile,
@@ -248,9 +257,21 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
     }
 
     if (result->city_center.tdc != ptdc && ptdc->sum > 0) {
+      const struct terrain *pterrain = tile_terrain(ptile);
+      int pot_irr = pterrain->irrigation_food_incr * adv->food_priority;
+      int pot_min = pterrain->mining_shield_incr * adv->shield_priority;
+
       sums[ncatch] = ptdc->sum;
       foods[ncatch] = ptdc->food;
+      /* Ruleset improvement increments, in the same weighted-output
+       * currency as the sums (a tile realistically gets one of the
+       * two improvements). */
+      potentials[ncatch] = MAX(pot_irr, pot_min) * PERFECTION / 2;
       ncatch++;
+
+      if (tile_resource(ptile) != NULL) {
+        nspecials++;
+      }
     }
 
     tile_data_cache_hash_replace(result->tdc_hash, cindex, ptdc);
@@ -268,13 +289,20 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
    * GROWTH_POTENTIAL_DEEMPHASIS is retired. */
   {
     adv_want avg
-      = deep_catchment_average(sums, foods, ncatch,
+      = deep_catchment_average(sums, foods, potentials, ncatch,
                                result->city_center.tdc->food);
 
+    /* Explicit specials term: resources already speak through their
+     * yields, but a catchment holding several is worth more than the
+     * sum -- one set of buildings serves them all (W02). */
+    wspecials = nspecials * deep_tuning_get()->site_special_bonus
+                + MAX(0, nspecials - 1)
+                  * deep_tuning_get()->site_special_cluster;
+
     if (virtual_city) {
-      result->total = result->city_center.tdc->sum + avg;
+      result->total = result->city_center.tdc->sum + avg + wspecials;
     } else if (result->best_other.tdc != NULL) {
-      result->total = avg;
+      result->total = avg + wspecials;
     } else {
       result->total = 0;
       pplayer->government = curr_govt;
