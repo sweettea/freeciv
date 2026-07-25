@@ -310,8 +310,17 @@ adv_want adv_workers_road_bonus(const struct civ_map *nmap,
   with activity act. Calculates the value of improving the tile by
   discounting the total value by the time it would take to do the work
   and multiplying by some factor.
+
+  When join_rate is nonzero, other workers are already committed to
+  this tile at that summed activity rate, and the candidate is valued
+  by the completion time this worker's rate would additionally save
+  (arriving after 'arrival' turns). Joining that does not save at
+  least one whole turn is worth nothing -- worker-turns are conserved
+  and only delay is bought (W28).
 **************************************************************************/
 static void consider_worker_action(const struct player *pplayer,
+                                   const struct unit *punit,
+                                   int join_rate, int arrival,
                                    enum unit_activity act,
                                    struct extra_type *target,
                                    adv_want extra,
@@ -334,6 +343,75 @@ static void consider_worker_action(const struct player *pplayer,
   int old_improvement_value;
 
   fc_assert(act != ACTIVITY_LAST);
+
+  if (join_rate > 0) {
+    /* Joining an already-committed worksite: worth only the completion
+     * turns our rate shaves off. */
+    int points = tile_activity_time(act, ptile, target);
+    int progress = total_activity(ptile, act, target);
+    int remaining = MAX(points - progress, 0);
+    int my_rate = get_activity_rate(punit);
+    int turns_without, remaining_at_arrival, turns_joined;
+
+    if (remaining <= 0 || my_rate <= 0) {
+      return;
+    }
+    turns_without = (remaining - 1) / join_rate + 1;
+    remaining_at_arrival = MAX(remaining - join_rate * arrival, 0);
+    if (remaining_at_arrival <= 0) {
+      /* Done before we would arrive. */
+      return;
+    }
+    turns_joined = arrival
+      + (remaining_at_arrival - 1) / (join_rate + my_rate) + 1;
+    if (turns_joined >= turns_without) {
+      /* No whole turn saved; a partial-turn contribution only spreads
+       * the same worker-turns thinner. */
+      return;
+    }
+
+    if (extra < 0) {
+      extra = 0;
+    }
+    if (new_tile_value <= old_tile_value && extra <= 0) {
+      return;
+    }
+
+    base_value = new_tile_value - old_tile_value;
+    total_value = base_value * WORKER_FACTOR;
+    if (!in_use) {
+      total_value /= 2;
+    }
+    total_value += extra * WORKER_FACTOR;
+
+    /* The marginal present value of finishing sooner. */
+    total_value = amortize(total_value, turns_joined)
+                  - amortize(total_value, turns_without);
+    if (total_value <= 0) {
+      return;
+    }
+
+    if (*improve_worked) {
+      old_improvement_value = *best_value;
+    } else {
+      old_improvement_value
+        = amortize((*best_value - *best_old_tile_value)
+                   * WORKER_FACTOR / 2, *best_delay);
+    }
+
+    if (total_value > old_improvement_value) {
+      *best_value = total_value;
+      *improve_worked = TRUE;
+      *best_old_tile_value = old_tile_value;
+      *best_extra = extra;
+      *best_act = act;
+      *best_target = target;
+      *best_tile = ptile;
+      *best_delay = turns_joined;
+    }
+
+    return;
+  }
 
   if (extra < 0) {
     extra = 0;
@@ -482,6 +560,8 @@ adv_want worker_evaluate_improvements(const struct civ_map *nmap,
                             cindex) {
       bool consider = TRUE;
       bool in_use = (tile_worked(ptile) == pcity);
+      int join_rate = 0;
+      int arrival;
 
       if (!in_use && !city_can_work_tile(pcity, ptile)) {
         /* Don't risk bothering with this tile. */
@@ -493,18 +573,18 @@ adv_want worker_evaluate_improvements(const struct civ_map *nmap,
         continue;
       }
 
-      /* Do not go to tiles that already have workers there. */
+      /* Tiles that already have workers cannot be claimed, but joining
+       * them can still be worth the completion turns saved:
+       * total_activity() sums progress across every unit on the tile
+       * (W28). */
       unit_list_iterate(ptile->units, aunit) {
         if (unit_owner(aunit) == pplayer
             && aunit->id != punit->id
             && unit_has_type_flag(aunit, UTYF_WORKERS)) {
           consider = FALSE;
+          join_rate += get_activity_rate(aunit);
         }
       } unit_list_iterate_end;
-
-      if (!consider) {
-        continue;
-      }
 
       if (state) {
         enroute = player_unit_by_number(pplayer,
@@ -513,21 +593,40 @@ adv_want worker_evaluate_improvements(const struct civ_map *nmap,
 
       if (pf_map_position(pfm, ptile, &pos)) {
         int eta = FC_INFINITY, inbound_distance = FC_INFINITY, turns;
+        bool claimable;
 
         if (enroute) {
           eta = state[tile_index(ptile)].eta;
           inbound_distance = real_map_distance(ptile, unit_tile(enroute));
         }
 
-        /* Only consider this tile if we are closer in time and space to
-         * it than our other worker (if any) travelling to the site. */
-        if ((enroute && enroute->id == punit->id)
-            || pos.turn < eta
-            || (pos.turn == eta
-                && (real_map_distance(ptile, unit_tile(punit))
-                    < inbound_distance))) {
+        /* We may claim the tile outright if no other worker sits on it
+         * and we are closer in time and space to it than our other
+         * worker (if any) travelling to the site. */
+        claimable = consider
+          && ((enroute && enroute->id == punit->id)
+              || pos.turn < eta
+              || (pos.turn == eta
+                  && (real_map_distance(ptile, unit_tile(punit))
+                      < inbound_distance)));
 
-          if (enroute) {
+        if (claimable) {
+          join_rate = 0;
+        } else {
+          /* Joining: count everything already committed here. */
+          if (enroute && enroute->id != punit->id
+              && unit_tile(enroute) != ptile) {
+            join_rate += get_activity_rate(enroute);
+          }
+          if (state) {
+            join_rate += state[tile_index(ptile)].extra_rate;
+          }
+        }
+        arrival = pos.turn + (pos.moves_left == 0 ? 1 : 0);
+
+        if (claimable || join_rate > 0) {
+
+          if (claimable && enroute) {
             UNIT_LOG(LOG_DEBUG, punit,
                      "Considering (%d, %d) because we're closer "
                      "(%d, %d) than %d (%d, %d)",
@@ -575,7 +674,7 @@ adv_want worker_evaluate_improvements(const struct civ_map *nmap,
                 turns++;
               }
 
-              consider_worker_action(pplayer,
+              consider_worker_action(pplayer, punit, join_rate, arrival,
                                      action_id_get_activity(act),
                                      target, 0.0, base_value,
                                      oldv, in_use, turns,
@@ -709,7 +808,8 @@ adv_want worker_evaluate_improvements(const struct civ_map *nmap,
               }
 
               if (act != ACTIVITY_LAST) {
-                consider_worker_action(pplayer, act, pextra, extra, base_value,
+                consider_worker_action(pplayer, punit, join_rate, arrival,
+                                       act, pextra, extra, base_value,
                                        oldv, in_use, turns,
                                        &best_newv, &best_oldv, &best_extra,
                                        &improve_worked,
@@ -742,7 +842,8 @@ adv_want worker_evaluate_improvements(const struct civ_map *nmap,
                       = base_value + adv_city_worker_extra_get(pcity, cindex,
                                                                dep_tgt);
 
-                    consider_worker_action(pplayer, ACTIVITY_GEN_ROAD,
+                    consider_worker_action(pplayer, punit, join_rate,
+                                           arrival, ACTIVITY_GEN_ROAD,
                                            dep_tgt, extra, dep_value,
                                            oldv, in_use, dep_turns,
                                            &best_newv, &best_oldv, &best_extra,
@@ -786,7 +887,8 @@ adv_want worker_evaluate_improvements(const struct civ_map *nmap,
                                                                    cindex,
                                                                    pdep);
 
-                        consider_worker_action(pplayer, eval_dep_act, pdep,
+                        consider_worker_action(pplayer, punit, join_rate,
+                                               arrival, eval_dep_act, pdep,
                                                0.0, dep_value, oldv, in_use,
                                                dep_turns, &best_newv,
                                                &best_oldv,
