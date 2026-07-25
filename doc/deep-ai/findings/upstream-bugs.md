@@ -56,3 +56,13 @@ Agent: append newly-found bugs here rather than fixing them.
 25. **Doc:** `README.AI` lists `locally_zero_minimap` (identifier removed), calls
     `military_amortize` *"a complete mystery"* (it is now documented and
     straightforward), and points the supermarket bug at two dead symbols.
+26. **`long_path` in `dai_fill_unit_param()` is always FALSE** —
+    `daitools.c:473` computes `map_distance(unit_tile(punit),
+    unit_tile(punit))` (the unit's distance to itself, 0) instead of the
+    distance to `ptile`. The whole long-path branch is dead code: the
+    ZoC-nulling never fires and long-path cityfounders accidentally keep
+    the short-path `no_fights` protection. W05's plan assumed this
+    branch was live; upstream "fixing" the distance call would silently
+    strip settler protection, so any fix must delete the branch, not
+    repair the condition. ai/deep makes the safe behaviour explicit
+    (deepsettler.c).
