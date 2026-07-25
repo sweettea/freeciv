@@ -1,0 +1,9 @@
+generated-by: manual playout (contested settings, all-deep)
+settings: 32x32, 8 x deep, hard, seed 2, saveturns 1; position is the
+  turn-107 autosave, chosen because advancing it one turn fires two
+  city emergencies for one player (P3) in the same turn
+observed at generation: rank 0 = city 183 (urgency 8, worth 513),
+  rank 1 = city 268 (urgency 0, worth 525) -- urgency outranks plain
+  worth in the severity order (grave, urgency, capital, worth), which
+  is the intended lexicographic ranking, "the more valuable city
+  served first" being the tie-late criterion
