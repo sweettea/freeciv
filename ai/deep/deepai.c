@@ -55,6 +55,7 @@
 
 #include "deepdefence.h"
 #include "deepsettler.h"
+#include "deeptuning.h"
 
 #include "deepai.h"
 
@@ -688,6 +689,7 @@ bool fc_ai_deep_setup(struct ai_type *ai)
   struct dai_private_data *private;
 
   deep_ai_set_self(ai);
+  deep_tuning_init();
 
   strncpy(ai->name, "deep", sizeof(ai->name));
 

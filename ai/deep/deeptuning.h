@@ -49,6 +49,7 @@ struct deep_tuning {
   int cm_wonder_trade;
 };
 
+void deep_tuning_init(void);
 const struct deep_tuning *deep_tuning_get(void);
 
 #endif /* FC__DEEPTUNING_H */

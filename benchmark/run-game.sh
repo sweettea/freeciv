@@ -84,6 +84,11 @@ OUT=$(readlink -f "$OUT")
 # parallel games never share files. The uninstalled server finds its
 # rulesets relative to cwd, so point it back at the source data dir.
 export FREECIV_DATA_PATH="$here/../data${FREECIV_DATA_PATH:+:$FREECIV_DATA_PATH}"
+# Tuning overrides for ai/deep: TUNING (also hashed into run.sh's
+# result-cache key) reaches the server as an absolute path.
+if [ -n "${TUNING:-}" ]; then
+  export FREECIV_DEEP_TUNING=$(readlink -f "$TUNING")
+fi
 if ! (cd "$OUT" \
       && timeout "$TIMEOUT_S" "$SERVER" -A none -e -p "$PORT" \
            --read commands.serv --saves saves > game.log 2>&1); then
