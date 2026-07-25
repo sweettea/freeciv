@@ -49,6 +49,7 @@
 /* ai/default */
 #include "daidata.h"
 #include "daiferry.h"
+#include "daiguard.h"
 #include "dailog.h"
 #include "daiplayer.h"
 #include "daisettler.h"
@@ -141,6 +142,161 @@ static void deep_settler_apply_risk(struct pf_parameter *parameter,
    * burn fuel. */
   parameter->get_moves_left_req = NULL;
   parameter->is_pos_dangerous = deep_civilian_pos_dangerous;
+}
+
+/**********************************************************************//**
+  Decide whether this settler wants a bodyguard for the trip to
+  dest_tile, and request or release one accordingly.
+
+  The stock dai_gothere_bodyguard() counts hostiles on the destination
+  tile only, so a settler crossing a corridor of enemy units to reach an
+  empty meadow requests no escort. Here the planned route itself is
+  sampled: any tile on it where adv_danger_at() sees a credible threat
+  makes the trip guarded.
+**************************************************************************/
+static bool deep_settler_bodyguard_needed(struct ai_type *ait,
+                                          struct unit *punit,
+                                          struct tile *dest_tile)
+{
+  struct unit *guard = aiguard_guard_of(ait, punit);
+  bool needed = FALSE;
+
+  if (is_barbarian(unit_owner(punit))) {
+    /* Barbarians must have more courage (ie less brains) */
+    aiguard_clear_guard(ait, punit);
+    return FALSE;
+  }
+
+  if (guard != NULL && unit_tile(guard) == unit_tile(punit)) {
+    /* The guard is with us already. */
+    return TRUE;
+  }
+
+  if (adv_danger_at(punit, dest_tile)) {
+    needed = TRUE;
+  } else if (goto_is_sane(punit, dest_tile)) {
+    struct pf_parameter parameter;
+    struct deep_settler_risk risk;
+    struct pf_map *pfm;
+    struct pf_path *ppath;
+    const struct civ_map *nmap = &(wld.map);
+
+    pft_fill_unit_parameter(&parameter, nmap, punit);
+    parameter.omniscience = !has_handicap(unit_owner(punit), H_MAP);
+    deep_settler_apply_risk(&parameter, &risk, punit);
+
+    pfm = pf_map_new(&parameter);
+    ppath = pf_map_path(pfm, dest_tile);
+    if (ppath != NULL) {
+      int i;
+
+      for (i = 1; i < ppath->length; i++) {
+        if (adv_danger_at(punit, ppath->positions[i].tile)) {
+          needed = TRUE;
+          break;
+        }
+      }
+      pf_path_destroy(ppath);
+    }
+    pf_map_destroy(pfm);
+  }
+
+  if (needed) {
+    UNIT_LOG(LOG_DEBUG, punit, "deep settler wants a bodyguard to (%d, %d)",
+             TILE_XY(dest_tile));
+    aiguard_request_guard(ait, punit);
+  } else {
+    aiguard_clear_guard(ait, punit);
+  }
+
+  return needed;
+}
+
+/**********************************************************************//**
+  Move a settler towards ptile with the same protections the site
+  search plans with. The stock execution path (dai_unit_goto() via
+  dai_fill_unit_param()) gives settlers a fight-refusing tile behaviour
+  and the default risk cost, but no is_pos_dangerous, so it will
+  happily plan to end a turn next to a visible attacker.
+
+  Returns FALSE iff the settler died.
+**************************************************************************/
+static bool deep_settler_goto(struct ai_type *ait, struct unit *punit,
+                              struct tile *ptile)
+{
+  struct pf_parameter parameter;
+  struct deep_settler_risk risk;
+  const struct civ_map *nmap = &(wld.map);
+
+  pft_fill_unit_parameter(&parameter, nmap, punit);
+  parameter.omniscience = !has_handicap(unit_owner(punit), H_MAP);
+  deep_settler_apply_risk(&parameter, &risk, punit);
+
+  return dai_unit_goto_constrained(ait, punit, ptile, &parameter);
+}
+
+/**********************************************************************//**
+  Ferry-enabled goto for settlers; the deep counterpart of
+  dai_gothere(), using the route-sampling bodyguard request and the
+  risk-aware land leg above. Zone of control stays respected: the
+  ZoC-ignoring rationale in the stock long-path code is about attackers
+  pushing toward a target that may clear, which does not apply to a
+  settler that must not die.
+
+  Return values: TRUE if got to or next to our destination, FALSE
+  otherwise.
+**************************************************************************/
+static bool deep_settler_gothere(struct ai_type *ait,
+                                 struct player *pplayer,
+                                 struct unit *punit,
+                                 struct tile *dest_tile)
+{
+  bool bg_needed;
+
+  CHECK_UNIT(punit);
+
+  if (same_pos(dest_tile, unit_tile(punit)) || punit->moves_left <= 0) {
+    /* Nowhere to go */
+    return TRUE;
+  }
+
+  /* See if we need a bodyguard for the trip */
+  bg_needed = deep_settler_bodyguard_needed(ait, punit, dest_tile);
+
+  if (unit_transported(punit)
+      || !goto_is_sane(punit, dest_tile)) {
+    /* Must go by boat, call an aiferryboat function */
+    if (!aiferry_gobyboat(ait, pplayer, punit, dest_tile, bg_needed)) {
+      return FALSE;
+    }
+  }
+
+  /* Go where we should be going if we can, and are at our destination
+   * if we are on a ferry */
+  if (goto_is_sane(punit, dest_tile) && punit->moves_left > 0) {
+    punit->goto_tile = dest_tile;
+    UNIT_LOG(LOG_DEBUG, punit, "deep settler walking to (%d,%d)",
+             TILE_XY(dest_tile));
+    if (!deep_settler_goto(ait, punit, dest_tile)) {
+      /* Died */
+      return FALSE;
+    }
+  } else {
+    UNIT_LOG(LOG_DEBUG, punit, "deep settler not moving");
+    return FALSE;
+  }
+
+  if (def_ai_unit_data(punit, ait)->ferryboat > 0
+      && !unit_transported(punit)) {
+    /* We probably just landed, release our boat */
+    aiferry_clear_boat(ait, punit);
+  }
+
+  /* Dead unit shouldn't reach this point */
+  CHECK_UNIT(punit);
+
+  return (same_pos(unit_tile(punit), dest_tile)
+          || is_tiles_adjacent(unit_tile(punit), dest_tile));
 }
 
 /**********************************************************************//**
@@ -312,7 +468,7 @@ BUILD_CITY:
       return; /* Avoid recursion at all cost */
     } else {
       /* Go there */
-      if ((!dai_gothere(ait, pplayer, punit, ptile)
+      if ((!deep_settler_gothere(ait, pplayer, punit, ptile)
            && NULL == game_unit_by_number(sanity))
           || punit->moves_left <= 0) {
         return;
