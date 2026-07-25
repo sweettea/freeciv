@@ -203,7 +203,17 @@ void deep_adjust_building_wants(struct ai_type *ait,
   }
 
   city_list_iterate(pplayer->cities, pcity) {
-    adv_want cap_credit = deep_capacity_credit(pcity, adv);
+    adv_want cap_credit;
+
+    if (def_ai_city_data(pcity, ait)->urgency > 0
+        || def_ai_city_data(pcity, ait)->grave_danger > 0) {
+      /* Growth is a peace-time investment: no horizon credits while
+       * the city is under threat (the contested ablation showed the
+       * credits, not the site terms, carried the war-map score cost:
+       * site-only 0.997 vs full stack 0.948). */
+      continue;
+    }
+    cap_credit = deep_capacity_credit(pcity, adv);
 
     improvement_iterate(pimprove) {
       Impr_type_id id = improvement_number(pimprove);
