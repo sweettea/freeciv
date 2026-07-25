@@ -24,6 +24,12 @@ struct deep_tuning {
    * NORMAL_STACKING_FEARFULNESS. Kept above 1: losing a settler also
    * wastes every turn already spent walking (W05). */
   double settler_fearfulness_mult;
+
+  /* How steeply an en-route defender's contribution to its target
+   * city's effective danger reduction decays per turn of distance
+   * (W11): credit = power * survival^eta / (1 + eta_weight * eta). */
+  double incoming_defence_eta_weight;
+  double incoming_defence_survival;
 };
 
 const struct deep_tuning *deep_tuning_get(void);

@@ -15,12 +15,16 @@
 #include <fc_config.h>
 #endif
 
+#include <math.h>
+
 /* utility */
 #include "log.h"
 
 /* common */
 #include "city.h"
 #include "game.h"
+#include "map.h"
+#include "movement.h"
 #include "player.h"
 #include "unit.h"
 #include "unitlist.h"
@@ -40,6 +44,7 @@
 #include "daiunit.h"
 
 #include "deepai.h"
+#include "deeptuning.h"
 
 #include "deepdefence.h"
 
@@ -82,6 +87,59 @@ static void deep_log_defence(struct ai_type *ait, struct player *pplayer)
 }
 
 /**********************************************************************//**
+  Credit defenders that are on their way home against their target
+  city's freshly assessed danger, so the city stops requisitioning
+  replacements for help that is already coming. This is the missing
+  mirror of the invasion bookkeeping the AI keeps about enemy cities
+  (reinforcements_cost_and_value() filling ai_invasion).
+
+  A unit counts if its task is AIUNIT_DEFEND_HOME and its goto points
+  at an own city it has not reached yet; its contribution is its
+  defence power in that city discounted by expected arrival time and
+  the chance of surviving the trip.
+**************************************************************************/
+static void deep_credit_incoming_defence(struct ai_type *ait,
+                                         struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+
+  unit_list_iterate(pplayer->units, punit) {
+    struct unit_ai *unit_data = def_ai_unit_data(punit, ait);
+    struct city *pcity;
+    struct ai_city *city_data;
+    int eta, power;
+    unsigned int credit;
+
+    if (unit_data->task != AIUNIT_DEFEND_HOME
+        || punit->goto_tile == NULL
+        || same_pos(punit->goto_tile, unit_tile(punit))) {
+      /* Units already in place are counted by assess_defense(). */
+      continue;
+    }
+    pcity = tile_city(punit->goto_tile);
+    if (pcity == NULL || city_owner(pcity) != pplayer) {
+      continue;
+    }
+
+    power = assess_defense_unit(ait, pcity, punit, FALSE);
+    if (power <= 0) {
+      continue;
+    }
+    eta = real_map_distance(unit_tile(punit), punit->goto_tile)
+          * SINGLE_MOVE / MAX(unit_type_get(punit)->move_rate, 1);
+    credit = power
+             * pow(tune->incoming_defence_survival, eta)
+             / (1.0 + tune->incoming_defence_eta_weight * eta);
+
+    city_data = def_ai_city_data(pcity, ait);
+    city_data->danger -= MIN(city_data->danger, credit);
+    UNIT_LOG(LOG_DEBUG, punit,
+             "credits %u defence to %s (eta %d)",
+             credit, city_name_get(pcity), eta);
+  } unit_list_iterate_end;
+}
+
+/**********************************************************************//**
   Activities before unit movement; derived from
   dai_do_first_activities() with defence bookkeeping added between the
   danger assessment and the unit management that consumes it.
@@ -92,6 +150,7 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
   dai_assess_danger_player(ait, &(wld.map), pplayer);
 
   deep_log_defence(ait, pplayer);
+  deep_credit_incoming_defence(ait, pplayer);
 
   TIMING_LOG(AIT_UNITS, TIMER_START);
   dai_manage_units(ait, pplayer);

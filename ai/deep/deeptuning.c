@@ -22,6 +22,8 @@
  * source of truth. */
 static const struct deep_tuning deep_tuning_defaults = {
   .settler_fearfulness_mult = 2.0,      /* PLACEHOLDER, untuned */
+  .incoming_defence_eta_weight = 0.5,   /* PLACEHOLDER, untuned */
+  .incoming_defence_survival = 0.9,     /* PLACEHOLDER, untuned */
 };
 
 /**********************************************************************//**
