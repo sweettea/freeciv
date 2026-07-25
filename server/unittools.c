@@ -1809,6 +1809,7 @@ static void server_remove_unit_full(struct unit *punit, bool transported,
 
   /* The unit is doomed. */
   punit->server.dying = TRUE;
+  punit->server.loss_reason = reason;
 
 #if defined(FREECIV_DEBUG) && !defined(FREECIV_NDEBUG)
   unit_list_iterate(ptile->units, pcargo) {

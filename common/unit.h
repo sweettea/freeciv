@@ -252,6 +252,12 @@ struct unit {
       /* The unit is in the process of dying. */
       bool dying;
 
+      /* Why the unit is being removed; a value from the server's
+       * enum unit_loss_reason, or -1 while the unit is alive (also -1
+       * in the old owner's unit_lost AI hook when the unit is merely
+       * changing owner). Informational, for AI unit_lost hooks. */
+      int loss_reason;
+
       /* Call back to run on unit removal. */
       void (*removal_callback)(struct unit *punit);
 

@@ -1750,6 +1750,7 @@ struct unit *unit_virtual_create(struct player *pplayer, struct city *pcity,
     punit->server.debug = FALSE;
 
     punit->server.dying = FALSE;
+    punit->server.loss_reason = -1;
 
     punit->server.removal_callback = nullptr;
 
