@@ -31,6 +31,15 @@ struct deep_tuning {
   double incoming_defence_eta_weight;
   double incoming_defence_survival;
 
+  /* Defensive-diplomat priority (W01): stock prices it at a
+   * self-described 'totally arbitrary' 16000 that outranks even
+   * military emergencies. Deep re-expresses it as an emergency-tier
+   * value; the default sits just above the defender emergency range
+   * observed in the calibration corpus (Phalanx p90 native 1224 =
+   * tier value 224), honouring the stock comment 'more important
+   * than soldiers'. */
+  double diplomat_defence_value;
+
   /* Explorer production want (W06): build-want units per visible
    * unclaimed hut and per unknown tile, divided by (1 + explorers
    * owned). Zero-gated when the map was generated without huts. */

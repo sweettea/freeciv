@@ -245,7 +245,26 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     city_data->danger -= MIN(city_data->danger, credit);
   }
 
-  dai_choose_diplomat_defensive(ait, pplayer, pcity, choice, our_def);
+  {
+    /* Defensive diplomat (W01): stock writes a self-described
+     * 'totally arbitrary' 16000 into the choice, outranking even
+     * military emergencies by magnitude. Evaluate it on a fresh
+     * choice and merge it back as an emergency-tier want with a
+     * calibrated value instead. */
+    struct adv_choice *dip = adv_new_choice();
+
+    dai_choose_diplomat_defensive(ait, pplayer, pcity, dip, our_def);
+    if (dip->want > 0) {
+      deep_want_apply(dip, (struct deep_want) {
+        .tier = DWT_EMERGENCY,
+        .value = deep_tuning_get()->diplomat_defence_value });
+      if (deep_want_cmp(deep_want_from_choice(dip),
+                        deep_want_from_choice(choice)) > 0) {
+        adv_choice_copy(choice, dip);
+      }
+    }
+    adv_free_choice(dip);
+  }
 
   if (pcity->feel[CITIZEN_UNHAPPY][FEELING_NATIONALITY]
       + pcity->feel[CITIZEN_ANGRY][FEELING_NATIONALITY] > 0) {

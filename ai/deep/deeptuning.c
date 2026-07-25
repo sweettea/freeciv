@@ -32,6 +32,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .settler_fearfulness_mult = 2.0,      /* PLACEHOLDER, untuned */
   .incoming_defence_eta_weight = 0.5,   /* PLACEHOLDER, untuned */
   .incoming_defence_survival = 0.9,     /* PLACEHOLDER, untuned */
+  .diplomat_defence_value = 300.0,      /* corpus-derived, untuned */
   .explore_hut_value = 15.0,            /* PLACEHOLDER, untuned */
   .explore_discovery_value = 0.05,      /* PLACEHOLDER, untuned */
   .cm_happy_factor = 1,                 /* PLACEHOLDER, untuned */
