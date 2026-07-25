@@ -318,6 +318,7 @@ else
     aisrc = [ aisrc,
       'ai/deep/deepai.c',
       'ai/deep/deepdefence.c',
+      'ai/deep/deepexplore.c',
       'ai/deep/deepsettler.c',
       'ai/deep/deeptuning.c'
     ]

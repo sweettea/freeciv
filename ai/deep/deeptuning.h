@@ -30,6 +30,12 @@ struct deep_tuning {
    * (W11): credit = power * survival^eta / (1 + eta_weight * eta). */
   double incoming_defence_eta_weight;
   double incoming_defence_survival;
+
+  /* Explorer production want (W06): build-want units per visible
+   * unclaimed hut and per unknown tile, divided by (1 + explorers
+   * owned). Zero-gated when the map was generated without huts. */
+  double explore_hut_value;
+  double explore_discovery_value;
 };
 
 const struct deep_tuning *deep_tuning_get(void);
