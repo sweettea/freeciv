@@ -239,9 +239,44 @@ Format:
       re-baselined (user discussion 2026-07-25).
 
 ## W28 — Worker stacking
-- [ ] scoped, not implemented (branch `epic/w28-worker-stacking` exists
-      at the W11 tip; session hit the 60-turn stop condition here).
-      Scoping notes from source reading, for the next session:
+- [x] core implemented (5 commits on `epic/w28-worker-stacking`,
+      stacked on W11): struct workermap grows a transient join layer
+      (extra_rate/extra_n; primary claim + displacement semantics
+      untouched), auto_worker_setup_work records joiners instead of
+      tripping the displacement asserts, and consider_worker_action
+      gains a join mode valuing an occupied tile at the marginal
+      present value of the completion turns this worker's rate saves —
+      amortize(joined) - amortize(without), rate-weighted (Engineers
+      2x), progress-aware via total_activity() (exported, visibility
+      only), and worth nothing unless a whole turn is saved (the
+      pile-on cap; no invented constants). Shared with human
+      auto-workers per the approved rule-4 exception.
+- [x] acceptance, measured (before = W11-tip pinned binary, after =
+      W28, same-arm across binaries because advisors changes move the
+      baseline arm too):
+      - Stacks form: corpus position worker-stack (T55 smoke position
+        with zero stacks; two workers pile on by T61, second player
+        stacks T65; 6/6 corpus green). End-of-game snapshots show 2-3
+        worker stacks organically.
+      - Partial-turn joins declined: the whole-turn rule is the
+        implemented cap (structural, not a tuned constant).
+      - Score: contested deep/baseline 1.0245 (t=+1.31 n=30, best leg
+        so far), smoke 0.9931 (t=-0.35 n=10, recovered from the
+        W05-era -1.7% lean). No regression anywhere.
+      - **Long transforms: STILL ZERO** — terraform.py counts 0
+        terrain-changed tiles in all 40 before-games AND all 40
+        after-games. Root cause is a bootstrap gap the workstream's
+        design implies but its commit list defers: joining only
+        amplifies work already started, and no FIRST worker ever
+        starts a long transform because its solo evaluation is still
+        amortized to ~1.7% of value (the workstream's own table).
+        Claim-time valuation would need to anticipate prospective
+        joiners — that is the deferred "plan tiles" concept (needs
+        W02/W07 plan machinery, or a speculative idle-worker-count
+        heuristic that would be an invented behaviour).
+- Note: acceptance bullet 3 therefore unmet pending the bootstrap
+      piece; bullets 1-2 met. Flagged rather than hacked around.
+- Scoping notes from source reading (kept for the bootstrap follow-up):
       - struct workermap { int enroute; int eta; } at autoworkers.c:72;
         the hard skip is the `continue` at ~499; displacement compare
         at ~508-531; reservation written by auto_worker_setup_work.
