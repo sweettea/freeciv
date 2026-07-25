@@ -315,7 +315,11 @@ else
       priv_conf_data.set('AI_MOD_DEFAULT', '"deep"')
     endif
     aimodcount = aimodcount + 1
-    aisrc = [ aisrc, 'ai/deep/deepai.c' ]
+    aisrc = [ aisrc,
+      'ai/deep/deepai.c',
+      'ai/deep/deepsettler.c',
+      'ai/deep/deeptuning.c'
+    ]
   endif
   if get_option('aimodules').contains('baseline')
     priv_conf_data.set('AI_MOD_STATIC_BASELINE', 1)

@@ -53,6 +53,8 @@
 #include "daitools.h"
 #include "daiunit.h"
 
+#include "deepsettler.h"
+
 #include "deepai.h"
 
 /* This function is only needed as symbol in module. Nevertheless
@@ -484,7 +486,7 @@ static void dpai_auto_settler_reset(struct player *pplayer)
 }
 
 /**********************************************************************//**
-  Call default ai with deep ai type as parameter.
+  Deep settler engine: risk-aware site search and routing (W05).
 **************************************************************************/
 static void dpai_auto_settler_run(struct player *pplayer,
                                  struct unit *punit,
@@ -492,7 +494,7 @@ static void dpai_auto_settler_run(struct player *pplayer,
 {
   struct ai_type *deftype = deep_ai_get_self();
 
-  dai_auto_settler_run(deftype, &(wld.map), pplayer, punit, state);
+  deep_auto_settler_run(deftype, &(wld.map), pplayer, punit, state);
 }
 
 /**********************************************************************//**
