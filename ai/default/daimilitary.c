@@ -73,10 +73,10 @@
 #define CITY_CONQUEST_WORTH(_city_, _data_) \
   (_data_->worth * 0.9 + (city_size_get(_city_) - 0.5) * 10)
 
-static unsigned int assess_danger(struct ai_type *ait,
-                                  const struct civ_map *nmap,
-                                  struct city *pcity,
-                                  player_unit_list_getter ul_cb);
+unsigned int assess_danger(struct ai_type *ait,
+                           const struct civ_map *nmap,
+                           struct city *pcity,
+                           player_unit_list_getter ul_cb);
 
 static adv_want dai_unit_attack_desirability(struct ai_type *ait,
                                              const struct unit_type *punittype);
@@ -140,11 +140,11 @@ struct unit_type *dai_choose_defender_versus(struct city *pcity,
   desirability without regard to cost, unless costs are equal. This is
   very wrong. FIXME, use amortize on time to build.
 **************************************************************************/
-static struct unit_type *dai_choose_attacker(struct ai_type *ait,
-                                             const struct civ_map *nmap,
-                                             struct city *pcity,
-                                             enum terrain_class tc,
-                                             bool allow_gold_upkeep)
+struct unit_type *dai_choose_attacker(struct ai_type *ait,
+                                      const struct civ_map *nmap,
+                                      struct city *pcity,
+                                      enum terrain_class tc,
+                                      bool allow_gold_upkeep)
 {
   struct unit_type *bestid = NULL;
   adv_want best = -1;
@@ -183,11 +183,11 @@ static struct unit_type *dai_choose_attacker(struct ai_type *ait,
   We should only be passed with L_DEFEND_GOOD role for now, since this
   is the only role being considered worthy of bodyguarding in findjob.
 **************************************************************************/
-static struct unit_type *dai_choose_bodyguard(struct ai_type *ait,
-                                              const struct civ_map *nmap,
-                                              struct city *pcity,
-                                              enum terrain_class tc,
-                                              enum unit_role_id role,
+struct unit_type *dai_choose_bodyguard(struct ai_type *ait,
+                                       const struct civ_map *nmap,
+                                       struct city *pcity,
+                                       enum terrain_class tc,
+                                       enum unit_role_id role,
                                               bool allow_gold_upkeep)
 {
   struct unit_type *bestid = NULL;
@@ -706,10 +706,10 @@ static void dai_reevaluate_building(struct city *pcity, adv_want *value,
   afraid of a boat laden with enemies if it stands on the coast (i.e.
   is directly reachable by this boat).
 **************************************************************************/
-static unsigned int assess_danger(struct ai_type *ait,
-                                  const struct civ_map *nmap,
-                                  struct city *pcity,
-                                  player_unit_list_getter ul_cb)
+unsigned int assess_danger(struct ai_type *ait,
+                           const struct civ_map *nmap,
+                           struct city *pcity,
+                           player_unit_list_getter ul_cb)
 {
   struct player *pplayer = city_owner(pcity);
   struct tile *ptile = city_tile(pcity);
@@ -1523,11 +1523,11 @@ static void process_attacker_want(struct ai_type *ait,
   If the target is overseas, the function might suggest building a ferry
   to carry a land attack unit, instead of the land attack unit itself.
 **************************************************************************/
-static struct adv_choice *kill_something_with(struct ai_type *ait,
-                                              const struct civ_map *nmap,
-                                              struct player *pplayer,
-                                              struct city *pcity, struct unit *myunit,
-                                              struct adv_choice *choice)
+struct adv_choice *kill_something_with(struct ai_type *ait,
+                                       const struct civ_map *nmap,
+                                       struct player *pplayer,
+                                       struct city *pcity, struct unit *myunit,
+                                       struct adv_choice *choice)
 {
   /* Our attack rating (with reinforcements) */
   int attack;
@@ -1722,11 +1722,11 @@ cleanup:
   DAI_WANT_MILITARY_EMERGENCY (not inclusive)
   if want is 0 this advisor doesn't want anything
 **************************************************************************/
-static void dai_unit_consider_bodyguard(struct ai_type *ait,
-                                        const struct civ_map *nmap,
-                                        struct city *pcity,
-                                        struct unit_type *punittype,
-                                        struct adv_choice *choice)
+void dai_unit_consider_bodyguard(struct ai_type *ait,
+                                 const struct civ_map *nmap,
+                                 struct city *pcity,
+                                 struct unit_type *punittype,
+                                 struct adv_choice *choice)
 {
   if (choice->want < DAI_WANT_MILITARY_EMERGENCY) {
     struct player *pplayer = city_owner(pcity);
@@ -1758,8 +1758,8 @@ static void dai_unit_consider_bodyguard(struct ai_type *ait,
   TODO: something more sophisticated, like estimating future demand
   for military units, considering Sun Tzu instead.
 **************************************************************************/
-static void adjust_ai_unit_choice(struct city *pcity,
-                                  struct adv_choice *choice)
+void adjust_ai_unit_choice(struct city *pcity,
+                           struct adv_choice *choice)
 {
   Impr_type_id id;
 

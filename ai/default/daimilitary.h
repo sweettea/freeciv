@@ -35,6 +35,34 @@ typedef struct unit_list *(player_unit_list_getter)(struct player *pplayer);
 
 struct unit_type *dai_choose_defender_versus(struct city *pcity,
                                              struct unit *attacker);
+unsigned int assess_danger(struct ai_type *ait,
+                           const struct civ_map *nmap,
+                           struct city *pcity,
+                           player_unit_list_getter ul_cb);
+struct unit_type *dai_choose_attacker(struct ai_type *ait,
+                                      const struct civ_map *nmap,
+                                      struct city *pcity,
+                                      enum terrain_class tc,
+                                      bool allow_gold_upkeep);
+struct unit_type *dai_choose_bodyguard(struct ai_type *ait,
+                                       const struct civ_map *nmap,
+                                       struct city *pcity,
+                                       enum terrain_class tc,
+                                       enum unit_role_id role,
+                                       bool allow_gold_upkeep);
+struct adv_choice *kill_something_with(struct ai_type *ait,
+                                       const struct civ_map *nmap,
+                                       struct player *pplayer,
+                                       struct city *pcity, struct unit *myunit,
+                                       struct adv_choice *choice);
+void dai_unit_consider_bodyguard(struct ai_type *ait,
+                                 const struct civ_map *nmap,
+                                 struct city *pcity,
+                                 struct unit_type *punittype,
+                                 struct adv_choice *choice);
+void adjust_ai_unit_choice(struct city *pcity,
+                           struct adv_choice *choice);
+
 struct adv_choice *military_advisor_choose_build(struct ai_type *ait,
                                                  const struct civ_map *nmap,
                                                  struct player *pplayer,
