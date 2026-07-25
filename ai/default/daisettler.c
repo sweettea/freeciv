@@ -105,19 +105,6 @@
  * This is % of defense % to increase want by. */
 #define DEFENSE_EMPHASIS 20
 
-struct tile_data_cache {
-  short food;   /* Food output of the tile */
-  short trade;  /* Trade output of the tile */
-  short shield; /* Shield output of the tile */
-
-  int sum;      /* Weighted sum of the tile output */
-
-  int reserved; /* Reservation for this tile; used by print_citymap() */
-
-  int turn;     /* The turn the values were calculated */
-};
-
-
 struct tile_data_cache *tile_data_cache_new(void);
 struct tile_data_cache *
   tile_data_cache_copy(const struct tile_data_cache *ptdc);

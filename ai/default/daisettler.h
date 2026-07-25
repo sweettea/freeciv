@@ -23,8 +23,19 @@
 
 struct ai_data;
 struct ai_plr;
-struct tile_data_cache;
 struct pf_parameter;
+
+struct tile_data_cache {
+  short food;   /* Food output of the tile */
+  short trade;  /* Trade output of the tile */
+  short shield; /* Shield output of the tile */
+
+  int sum;      /* Weighted sum of the tile output */
+
+  int reserved; /* Reservation for this tile; used by print_citymap() */
+
+  int turn;     /* The turn the values were calculated */
+};
 
 /* Stop looking too hard for better tiles to found a new city at when
  * settler finds location with at least RESULT_IS_ENOUGH want
