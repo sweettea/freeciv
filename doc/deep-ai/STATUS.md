@@ -239,7 +239,33 @@ Format:
       re-baselined (user discussion 2026-07-25).
 
 ## W28 — Worker stacking
-- [ ] not started
+- [ ] scoped, not implemented (branch `epic/w28-worker-stacking` exists
+      at the W11 tip; session hit the 60-turn stop condition here).
+      Scoping notes from source reading, for the next session:
+      - struct workermap { int enroute; int eta; } at autoworkers.c:72;
+        the hard skip is the `continue` at ~499; displacement compare
+        at ~508-531; reservation written by auto_worker_setup_work.
+      - get_turns_for_activity_at() = ceil(tile_activity_time / my
+        rate); marginal stacking math needs tile_activity_time,
+        total_activity() progress (server/unittools.c) and
+        get_activity_rate() per unit — all reachable.
+      - consider_worker_action() owns the compare bookkeeping (8 out
+        params) and its own discounting; a stacked candidate needs
+        marginal value = amortize(v, t_with_me) - amortize(v,
+        t_without_me), so add a sibling compare helper rather than
+        wedging a scaled base_value through the existing one.
+      - "Cap by danger" is already half-true: adv_worker_safe_tile()
+        at ~485 refuses dangerous tiles for ANY assignment.
+      - "Prefer stacking on plan tiles" is unimplementable until a
+        plan concept exists (W02/W07) — defer that commit.
+      - Array capacity for multi-assignment is structural (precedent:
+        MAX_DEP_ROADS 5 in the same file); the behavioural cap must
+        come from the whole-turn-saving rule, not a tuned constant.
+      - MEASUREMENT WARNING: advisors are shared with ai/baseline, so
+        a W28 change moves the baseline arm too. Cross-arm comparison
+        no longer isolates it; use same-arm across pinned binaries
+        (the W05/W11 pattern) and keep within-binary deep-vs-baseline
+        only as a score-regression guard.
 
 ## W06 — Exploration
 - [ ] not started
