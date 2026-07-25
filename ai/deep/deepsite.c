@@ -95,8 +95,8 @@ static void deep_tile_data_cache_destroy(struct tile_data_cache *ptdc)
   in place. Returns 0 when nothing is workable.
 **************************************************************************/
 static adv_want deep_catchment_average(int *sums, int *foods,
-                                       int *potentials, int n,
-                                       int center_food)
+                                       int *potentials, bool *overlapped,
+                                       int n, int center_food)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   int i, j, target, cumfood;
@@ -109,15 +109,18 @@ static adv_want deep_catchment_average(int *sums, int *foods,
   /* Sort by sum, descending (insertion sort; n <= catchment size). */
   for (i = 1; i < n; i++) {
     int sv = sums[i], fv = foods[i], pv = potentials[i];
+    bool ov = overlapped[i];
 
     for (j = i; j > 0 && sums[j - 1] < sv; j--) {
       sums[j] = sums[j - 1];
       foods[j] = foods[j - 1];
       potentials[j] = potentials[j - 1];
+      overlapped[j] = overlapped[j - 1];
     }
     sums[j] = sv;
     foods[j] = fv;
     potentials[j] = pv;
+    overlapped[j] = ov;
   }
 
   /* Largest size the site's own food can sustain: citizens eat
@@ -132,7 +135,10 @@ static adv_want deep_catchment_average(int *sums, int *foods,
   }
 
   for (i = 0; i < n; i++) {
-    double w = (i < target) ? 1.0 : tune->site_tail_weight;
+    /* Tiles a neighbouring own city can work are unlikely to be ours
+     * to man, whatever their rank (proximity rule). */
+    double w = (i < target && !overlapped[i])
+               ? 1.0 : tune->site_tail_weight;
 
     wsum += w;
     /* A tile is worth what it yields now plus a discounted share of
@@ -189,6 +195,7 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
   int sums[maxtiles];
   int foods[maxtiles];
   int potentials[maxtiles];
+  bool overlapped[maxtiles];
   int nspecials = 0;
   double wspecials = 0;
   int ncatch = 0;
@@ -261,12 +268,23 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
       int pot_irr = pterrain->irrigation_food_incr * adv->food_priority;
       int pot_min = pterrain->mining_shield_incr * adv->shield_priority;
 
+      bool near_own = FALSE;
+
+      city_list_iterate(pplayer->cities, acity) {
+        if (sq_map_distance(city_tile(acity), ptile)
+            <= city_map_radius_sq_get(acity)) {
+          near_own = TRUE;
+          break;
+        }
+      } city_list_iterate_end;
+
       sums[ncatch] = ptdc->sum;
       foods[ncatch] = ptdc->food;
       /* Ruleset improvement increments, in the same weighted-output
        * currency as the sums (a tile realistically gets one of the
        * two improvements). */
       potentials[ncatch] = MAX(pot_irr, pot_min) * PERFECTION / 2;
+      overlapped[ncatch] = near_own;
       ncatch++;
 
       if (tile_resource(ptile) != NULL) {
@@ -289,8 +307,8 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
    * GROWTH_POTENTIAL_DEEMPHASIS is retired. */
   {
     adv_want avg
-      = deep_catchment_average(sums, foods, potentials, ncatch,
-                               result->city_center.tdc->food);
+      = deep_catchment_average(sums, foods, potentials, overlapped,
+                               ncatch, result->city_center.tdc->food);
     adv_want depth;
 
     /* Explicit specials term: resources already speak through their
