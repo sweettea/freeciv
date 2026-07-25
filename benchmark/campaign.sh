@@ -23,7 +23,9 @@ set -uo pipefail
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$here/.."
 
-JOBS=$(( $(nproc) * 7 / 10 ))
+# All cores minus two for admin; per-game throughput dips slightly on
+# SMT siblings but aggregate throughput wins.
+JOBS=$(( $(nproc) - 2 ))
 OUT=$here/results/campaign
 while [ $# -gt 0 ]; do
   case "$1" in
