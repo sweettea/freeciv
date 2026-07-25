@@ -511,9 +511,12 @@ Branch `epic/w03-horizon` carries W02+W03+W07-lite in flight:
   the anchor-fix commit). v3 restored the stock anchor + additive
   depth term; +proximity overlap weight, +claim bonus, +pressure-
   compressed potential (review directions). Score at v3 (pre-
-  proximity/claim): contested 0.948 t=-2.02 — remaining gap
-  undecomposed; the contested ablation pair (all-off / site-only) and
-  the isolated before/after were still running at handoff.
+  proximity/claim): contested 0.948 t=-2.02. DECOMPOSED by the
+  contested ablation just before handoff: site terms alone are
+  NEUTRAL (0.9972 t=-0.07); the gap was the W03 horizon credits
+  over-diverting production on a war map. Fixed by the urgency gate
+  (no credits for threatened cities); credit magnitudes go to the
+  campaign. The isolated before/after was still running at handoff.
 - W03 credits (capacity/growth/bundle) landed; measurement confounded
   with W02 so far. Supermarket/Sewer acceptance needs long.conf
   (late techs unreachable by T150) — never yet run.
@@ -538,9 +541,12 @@ Branch `epic/w03-horizon` carries W02+W03+W07-lite in flight:
   the anchor-fix commit). v3 restored the stock anchor + additive
   depth term; +proximity overlap weight, +claim bonus, +pressure-
   compressed potential (review directions). Score at v3 (pre-
-  proximity/claim): contested 0.948 t=-2.02 — remaining gap
-  undecomposed; the contested ablation pair (all-off / site-only) and
-  the isolated before/after were still running at handoff.
+  proximity/claim): contested 0.948 t=-2.02. DECOMPOSED by the
+  contested ablation just before handoff: site terms alone are
+  NEUTRAL (0.9972 t=-0.07); the gap was the W03 horizon credits
+  over-diverting production on a war map. Fixed by the urgency gate
+  (no credits for threatened cities); credit magnitudes go to the
+  campaign. The isolated before/after was still running at handoff.
 - W03 credits (capacity/growth/bundle) landed; measurement confounded
   with W02 so far. Supermarket/Sewer acceptance needs long.conf
   (late techs unreachable by T150) — never yet run.
