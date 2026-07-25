@@ -53,6 +53,7 @@
 #include "daitools.h"
 #include "daiunit.h"
 
+#include "deepdefence.h"
 #include "deepsettler.h"
 
 #include "deepai.h"
@@ -527,7 +528,7 @@ static void dpai_do_first_activities(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
 
-  dai_do_first_activities(deftype, pplayer);
+  deep_do_first_activities(deftype, pplayer);
 
   pplayer->ai_phase_done = TRUE;
 }
@@ -557,7 +558,7 @@ static void dpai_do_last_activities(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
 
-  dai_do_last_activities(deftype, pplayer);
+  deep_do_last_activities(deftype, pplayer);
 }
 
 /**********************************************************************//**
