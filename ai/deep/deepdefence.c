@@ -40,6 +40,7 @@
 #include "difficulty.h"
 
 /* server */
+#include "cityhand.h"
 #include "citytools.h"
 #include "cityturn.h"
 #include "sernet.h"
@@ -69,11 +70,13 @@
 #include "daiunit.h"
 
 #include "deepai.h"
+#include "deepexplore.h"
 #include "deeptuning.h"
 
 #include "deepdefence.h"
 
 #define LOGLEVEL_BUILD LOG_DEBUG
+#define LOG_BUY LOG_DEBUG
 
 /* Defence bookkeeping (W11). Stock cities only count defenders that are
  * physically on the city tile (assess_defense_backend), so a city whose
@@ -540,17 +543,188 @@ static int deep_emergency_cmp(const void *a_, const void *b_)
 }
 
 /**********************************************************************//**
+  Buy and upgrade stuff. Derived from dai_spend_gold(); the difference
+  is that the disband-explorers-at-home hack is gated on exploration
+  not being wanted (W06) -- stock scraps every explorer that returns
+  home, which in hut games destroys the units the new explorer want
+  just paid for.
+**************************************************************************/
+static void deep_spend_gold(struct ai_type *ait, struct player *pplayer,
+                            adv_want explore_want)
+{
+  struct adv_choice bestchoice;
+  int cached_limit = dai_gold_reserve(pplayer);
+  int expenses;
+  bool war_footing = dai_on_war_footing(ait, pplayer);
+
+  if (explore_want <= 0) {
+    /* Disband explorers that are at home but don't serve a purpose. */
+    city_list_iterate(pplayer->cities, pcity) {
+      struct tile *ptile = pcity->tile;
+
+      unit_list_iterate_safe(ptile->units, punit) {
+        if (unit_has_type_role(punit, L_EXPLORER)
+            && pcity->id == punit->homecity
+            && def_ai_city_data(pcity, ait)->urgency == 0) {
+          CITY_LOG(LOG_BUY, pcity, "disbanding %s to increase production",
+                   unit_rule_name(punit));
+          unit_do_disband_trad(pplayer, punit, ACT_REQ_PLAYER);
+        }
+      } unit_list_iterate_safe_end;
+    } city_list_iterate_end;
+  }
+
+  dai_calc_data(pplayer, NULL, &expenses, NULL);
+
+  do {
+    bool expensive; /* Don't buy when it costs x2 unless we must */
+    int buycost;
+    int limit = cached_limit; /* cached_limit is our gold reserve */
+    struct city *pcity = NULL;
+    struct ai_city *city_data;
+
+    /* Find highest wanted item on the buy list */
+    adv_init_choice(&bestchoice);
+    city_list_iterate(pplayer->cities, acity) {
+      struct ai_city *acity_data = def_ai_city_data(acity, ait);
+
+      if (acity_data->choice.want
+          > bestchoice.want && ai_fuzzy(pplayer, TRUE)) {
+        adv_choice_copy(&bestchoice, &(acity_data->choice));
+        pcity = acity;
+      }
+    } city_list_iterate_end;
+
+    /* We found nothing, so we're done */
+    if (pcity == NULL) {
+      break;
+    }
+
+    city_data = def_ai_city_data(pcity, ait);
+
+    /* Not dealing with this city a second time */
+    city_data->choice.want = -1;
+
+    ADV_CHOICE_ASSERT(bestchoice);
+
+    /* Try upgrade units at danger location (high want is usually danger) */
+    if (city_data->urgency > 1) {
+      if (bestchoice.type == CT_BUILDING
+          && is_wonder(bestchoice.value.building)) {
+        CITY_LOG(LOG_BUY, pcity, "Wonder being built in dangerous position!");
+      } else {
+        /* If we have urgent want, spend more */
+        int upgrade_limit = limit;
+
+        if (city_data->urgency > 1) {
+          upgrade_limit = expenses;
+        }
+        /* Upgrade only military units now */
+        dai_upgrade_units(pcity, upgrade_limit, TRUE);
+      }
+    }
+
+    if (pcity->anarchy != 0 && bestchoice.type != CT_BUILDING) {
+      continue; /* Nothing we can do */
+    }
+
+    /* Cost to complete production */
+    buycost = city_production_buy_gold_cost(pcity);
+
+    if (buycost <= 0) {
+      continue; /* Already completed */
+    }
+
+    if (is_unit_choice_type(bestchoice.type)
+        && utype_is_cityfounder(bestchoice.value.utype)) {
+      if (get_city_bonus(pcity, EFT_SHRINK_FOOD) <= 0
+          && bestchoice.value.utype->pop_cost > 0
+          && city_size_get(pcity) <= bestchoice.value.utype->pop_cost) {
+        /* Don't buy settlers in cities that cannot afford
+         * the population cost. */
+        continue;
+      } else if (city_list_size(pplayer->cities) > 6) {
+        /* Don't waste precious money buying settlers late game
+         * since this raises taxes, and we want science. */
+        continue;
+      } else if (war_footing) {
+        continue;
+      }
+    } else {
+      /* We are not a settler. Therefore we increase the cash need we
+       * balance our buy desire with to keep cash at hand for
+       * emergencies and for upgrades */
+      limit *= 2;
+    }
+
+    /* It costs x2 to buy something with no shields contributed */
+    expensive = (pcity->shield_stock == 0)
+                || (pplayer->economic.gold - buycost < limit);
+
+    if (bestchoice.type == CT_ATTACKER
+        && buycost
+           > utype_build_shield_cost(pcity, NULL,
+                                     bestchoice.value.utype) * 2
+        && !war_footing) {
+      /* Too expensive for an offensive unit */
+      continue;
+    }
+
+    if (pplayer->economic.gold - expenses >= buycost
+        && (!expensive
+            || (city_data->grave_danger != 0
+                && assess_defense(ait, pcity) == 0)
+            || (bestchoice.want > 200 && city_data->urgency > 1))) {
+      /* Buy stuff */
+      CITY_LOG(LOG_BUY, pcity,
+               "Crash buy of %s for %d (want " ADV_WANT_PRINTF ")",
+               adv_choice_rule_name(&bestchoice),
+               buycost,
+               bestchoice.want);
+      really_handle_city_buy(pplayer, pcity);
+    } else if (city_data->grave_danger != 0
+               && bestchoice.type == CT_DEFENDER
+               && assess_defense(ait, pcity) == 0) {
+      /* We have no gold but MUST have a defender */
+      CITY_LOG(LOG_BUY, pcity, "must have %s but can't afford it (%d < %d)!",
+               adv_choice_rule_name(&bestchoice),
+               pplayer->economic.gold,
+               buycost);
+      try_to_sell_stuff(pplayer, pcity);
+      if (pplayer->economic.gold - expenses >= buycost) {
+        CITY_LOG(LOG_BUY, pcity, "now we can afford it (sold something)");
+        really_handle_city_buy(pplayer, pcity);
+      }
+      increase_maxbuycost(pplayer, buycost);
+    }
+  } while (TRUE);
+
+  if (!war_footing) {
+    /* Civilian upgrades now */
+    city_list_iterate(pplayer->cities, pcity) {
+      dai_upgrade_units(pcity, cached_limit, FALSE);
+    } city_list_iterate_end;
+  }
+
+  log_base(LOG_BUY, "%s wants to keep %d in reserve (tax factor %d)",
+           player_name(pplayer), cached_limit,
+           pplayer->ai_common.maxbuycost);
+}
+
+/**********************************************************************//**
   City management. Derived from dai_manage_cities(); the difference is
   that city emergencies are collected first, ranked by severity, and
   resolved in that order, instead of in city list order where the first
   city in the list strips worked tiles and gold from more important
   ones behind it (README.AI: 'Emergencies in two cities at once aren't
-  handled properly').
+  handled properly'), and that explorer production competes for the
+  build choice (W06; stock has no explorer want at all).
 **************************************************************************/
 static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
 {
   int ecount = 0, i;
   struct deep_emergency emergencies[city_list_size(pplayer->cities) + 1];
+  adv_want explore_want = deep_explore_want(pplayer);
 
   pplayer->ai_common.maxbuycost = 0;
 
@@ -649,6 +823,18 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
                                                  * in such situation. */
       continue; /* Go, soldiers! */
     }
+    if (explore_want > city_data->choice.want) {
+      /* Stock has no explorer production want anywhere; exploration
+       * only ever happens as an AIUNIT_NONE fallback (W06). */
+      struct unit_type *explorer = best_role_unit(pcity, L_EXPLORER);
+
+      if (explorer != NULL) {
+        city_data->choice.value.utype = explorer;
+        city_data->choice.want = explore_want;
+        city_data->choice.type = CT_CIVILIAN;
+        adv_choice_set_use(&city_data->choice, "explorer");
+      }
+    }
     /* Will record its findings in pcity->worker_want */
     TIMING_LOG(AIT_CITY_TERRAIN, TIMER_START);
     contemplate_terrain_improvements(ait, pcity);
@@ -679,7 +865,7 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
     def_ai_city_data(pcity, ait)->choice.want = -1;
   } city_list_iterate_end;
 
-  dai_spend_gold(ait, pplayer);
+  deep_spend_gold(ait, pplayer, explore_want);
 }
 
 /**********************************************************************//**
