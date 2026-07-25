@@ -224,6 +224,11 @@ def main():
         else:
             sigma = [s * 0.7 for s in sigma]   # stagnation: narrow search
 
+        # Persist the incumbent after every generation, so a
+        # time-capped or interrupted campaign still has a verdict
+        # candidate to report on.
+        write_tuning(out / "best-tuning.ini", params, best[1])
+
         mu = max(2, args.pop // 2)
         weights = [mu - i for i in range(mu)]
         wsum = sum(weights)
