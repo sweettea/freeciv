@@ -10,7 +10,10 @@
 #
 # Stages:
 #   0 gates     build check, corpus, quick smoke        (~15 min)
-#   1 ablation  per-weight on/off, contested+primary    (~8-14 h)
+#   1 ablation  per-weight on/off, contested+primary
+#     (12/6 seeds: candidates share seeds - common random numbers -
+#      so paired ranking stays sharp at small n; holdout catches
+#      few-map overfitting)
 #   2 tune-A    scale-independent params, contested     (overlaps)
 #   3 tune-B    site/horizon params, primary+isolated   (overlaps)
 #   4 verdicts  holdout reports + long.conf + primary acceptance
@@ -62,7 +65,7 @@ for w in $WEIGHTS; do
 done
 rm -f "$OUT/ablate/all-off.ini.tmp"
 
-for cfg in contested:20:6600 primary:10:6700; do
+for cfg in contested:12:6600 primary:6:6700; do
   IFS=: read -r name count base <<< "$cfg"
   for ini in "$OUT"/ablate/*.ini; do
     tag=$(basename "$ini" .ini)
@@ -86,7 +89,7 @@ log "tune-A: scale-independent params on contested (cap $TUNE_A_CAP)"
 timeout "$TUNE_A_CAP" python3 "$here/tune.py" \
   --params settler_fearfulness_mult,cm_war_shield,cm_war_food,cm_cap_shield,cm_cap_trade,cm_happy_factor \
   --config "$here/configs/contested.conf" \
-  --count 20 --gens 8 --pop 8 --jobs "$JOBS" --portbase 6800 \
+  --count 12 --gens 10 --pop 8 --jobs "$JOBS" --portbase 6800 \
   --out "$OUT/tune-A" > "$OUT/tune-A.log" 2>&1 \
   || log "WARN: tune-A exited nonzero"
 
@@ -94,7 +97,7 @@ log "tune-B: site/horizon params on primary+isolated (cap $TUNE_B_CAP)"
 timeout "$TUNE_B_CAP" python3 "$here/tune.py" \
   --params site_depth_weight,site_tail_weight,site_overlap_weight,site_potential_discount,site_special_bonus,site_claim_bonus,site_pressure_factor,horizon_capacity_weight,horizon_bundle_weight \
   --config "$here/configs/primary.conf,$here/configs/isolated.conf" \
-  --count 8 --gens 6 --pop 8 --jobs "$JOBS" --portbase 6900 \
+  --count 5 --gens 10 --pop 8 --jobs "$JOBS" --portbase 6900 \
   --out "$OUT/tune-B" > "$OUT/tune-B.log" 2>&1 \
   || log "WARN: tune-B exited nonzero"
 
