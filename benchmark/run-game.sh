@@ -47,8 +47,9 @@ SERVER=$(readlink -f "$SERVER")
 
 # Config values (see configs/*.conf): PLAYERS, ENDTURN required;
 # XSIZE/YSIZE required unless TILESPERPLAYER sizes the map instead;
-# SKILL, RULESET, TIMEOUT_S, HUTS, GENERATOR, SPECIALS optional.
-SKILL=hard RULESET= TIMEOUT_S=1800 HUTS= GENERATOR= SPECIALS= TILESPERPLAYER=
+# SKILL, RULESET, TIMEOUT_S, HUTS, GENERATOR, SPECIALS,
+# EXTRA_SERV (verbatim server commands) optional.
+SKILL=hard RULESET= TIMEOUT_S=1800 HUTS= GENERATOR= SPECIALS= TILESPERPLAYER= EXTRA_SERV=
 . "$(readlink -f "$CONFIG")"
 for v in PLAYERS ENDTURN; do
   [ -n "${!v:-}" ] || { echo "config missing $v" >&2; exit 1; }
@@ -79,6 +80,7 @@ OUT=$(readlink -f "$OUT")
   [ -n "$HUTS" ] && echo "set huts $HUTS"
   [ -n "$GENERATOR" ] && echo "set generator $GENERATOR"
   [ -n "$SPECIALS" ] && echo "set specials $SPECIALS"
+  [ -n "$EXTRA_SERV" ] && printf '%s\n' "$EXTRA_SERV"
   echo "set aifill $PLAYERS"
   for i in $(seq 1 "$PLAYERS"); do
     echo "create P$i $ARM"
