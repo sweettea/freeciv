@@ -23,13 +23,21 @@
 
 /* common */
 #include "city.h"
+#include "effects.h"
 #include "game.h"
+#include "improvement.h"
 #include "map.h"
 #include "movement.h"
 #include "player.h"
+#include "specialist.h"
+#include "traits.h"
 #include "unit.h"
 #include "unitlist.h"
 #include "unittype.h"
+
+/* ai */
+#include "aitraits.h"
+#include "difficulty.h"
 
 /* server */
 #include "citytools.h"
@@ -40,23 +48,32 @@
 /* server/advisors */
 #include "advbuilding.h"
 #include "advchoice.h"
+#include "advdata.h"
 #include "infracache.h"
 
 /* ai/default */
+#include "daiair.h"
 #include "daicity.h"
 #include "daidata.h"
 #include "daidiplomacy.h"
+#include "daidiplomat.h"
+#include "daieffects.h"
 #include "daihand.h"
+#include "daihunter.h"
 #include "daimilitary.h"
+#include "daiparadrop.h"
 #include "daiplayer.h"
 #include "daisettler.h"
 #include "daitech.h"
+#include "daitools.h"
 #include "daiunit.h"
 
 #include "deepai.h"
 #include "deeptuning.h"
 
 #include "deepdefence.h"
+
+#define LOGLEVEL_BUILD LOG_DEBUG
 
 /* Defence bookkeeping (W11). Stock cities only count defenders that are
  * physically on the city tile (assess_defense_backend), so a city whose
@@ -108,26 +125,22 @@ static void deep_log_defence(struct ai_type *ait, struct player *pplayer)
   defence power in that city discounted by expected arrival time and
   the chance of surviving the trip.
 **************************************************************************/
-static void deep_credit_incoming_defence(struct ai_type *ait,
-                                         struct player *pplayer)
+static unsigned int deep_incoming_defence_credit(struct ai_type *ait,
+                                                 struct city *pcity)
 {
   const struct deep_tuning *tune = deep_tuning_get();
+  struct player *pplayer = city_owner(pcity);
+  unsigned int credit = 0;
 
   unit_list_iterate(pplayer->units, punit) {
     struct unit_ai *unit_data = def_ai_unit_data(punit, ait);
-    struct city *pcity;
-    struct ai_city *city_data;
     int eta, power;
-    unsigned int credit;
 
     if (unit_data->task != AIUNIT_DEFEND_HOME
         || punit->goto_tile == NULL
+        || tile_city(punit->goto_tile) != pcity
         || same_pos(punit->goto_tile, unit_tile(punit))) {
       /* Units already in place are counted by assess_defense(). */
-      continue;
-    }
-    pcity = tile_city(punit->goto_tile);
-    if (pcity == NULL || city_owner(pcity) != pplayer) {
       continue;
     }
 
@@ -137,16 +150,26 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
     }
     eta = real_map_distance(unit_tile(punit), punit->goto_tile)
           * SINGLE_MOVE / MAX(unit_type_get(punit)->move_rate, 1);
-    credit = power
-             * pow(tune->incoming_defence_survival, eta)
-             / (1.0 + tune->incoming_defence_eta_weight * eta);
-
-    city_data = def_ai_city_data(pcity, ait);
-    city_data->danger -= MIN(city_data->danger, credit);
-    UNIT_LOG(LOG_DEBUG, punit,
-             "credits %u defence to %s (eta %d)",
-             credit, city_name_get(pcity), eta);
+    credit += power
+              * pow(tune->incoming_defence_survival, eta)
+              / (1.0 + tune->incoming_defence_eta_weight * eta);
   } unit_list_iterate_end;
+
+  return credit;
+}
+
+/**********************************************************************//**
+  Apply the en-route credit to every city's freshly assessed danger.
+**************************************************************************/
+static void deep_credit_incoming_defence(struct ai_type *ait,
+                                         struct player *pplayer)
+{
+  city_list_iterate(pplayer->cities, pcity) {
+    struct ai_city *city_data = def_ai_city_data(pcity, ait);
+    unsigned int credit = deep_incoming_defence_credit(ait, pcity);
+
+    city_data->danger -= MIN(city_data->danger, credit);
+  } city_list_iterate_end;
 }
 
 /**********************************************************************//**
@@ -170,6 +193,316 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
   TIMING_LOG(AIT_ALL, TIMER_STOP);
 
   flush_packets(); /* AIs can be such spammers... */
+}
+
+/**********************************************************************//**
+  Military build choice for one city. Derived from
+  military_advisor_choose_build() in daimilitary.c (every helper is
+  called, not copied); the difference is that the en-route defender
+  credit is applied between the danger assessment and the decisions
+  that consume it -- the stock function re-runs assess_danger()
+  internally, which is why adjusting danger at phase start cannot
+  affect production.
+**************************************************************************/
+static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
+                                                     const struct civ_map *nmap,
+                                                     struct player *pplayer,
+                                                     struct city *pcity,
+                                                     player_unit_list_getter ul_cb)
+{
+  struct adv_data *ai = adv_data_get(pplayer, NULL);
+  struct unit_type *punittype;
+  unsigned int our_def, urgency;
+  struct tile *ptile = pcity->tile;
+  struct unit *virtualunit;
+  struct ai_city *city_data = def_ai_city_data(pcity, ait);
+  adv_want martial_value = 0;
+  bool martial_need = FALSE;
+  struct adv_choice *choice = adv_new_choice();
+  bool allow_gold_upkeep;
+
+  urgency = assess_danger(ait, nmap, pcity, ul_cb);
+  /* Changing to quadratic to stop AI from building piles
+   * of small units -- Syela */
+  /* It has to be AFTER assess_danger() thanks to wallvalue. */
+  our_def = assess_defense_quadratic(ait, pcity);
+
+  {
+    /* Count the help that is already on its way, so the city does not
+     * requisition replacements for it (W11). */
+    unsigned int credit = deep_incoming_defence_credit(ait, pcity);
+
+    city_data->danger -= MIN(city_data->danger, credit);
+  }
+
+  dai_choose_diplomat_defensive(ait, pplayer, pcity, choice, our_def);
+
+  if (pcity->feel[CITIZEN_UNHAPPY][FEELING_NATIONALITY]
+      + pcity->feel[CITIZEN_ANGRY][FEELING_NATIONALITY] > 0) {
+    martial_need = TRUE;
+  }
+
+  if (!martial_need) {
+    normal_specialist_type_iterate(sp) {
+      if (pcity->specialists[sp] > 0
+          && get_specialist_output(pcity, sp, O_LUXURY) > 0) {
+        martial_need = TRUE;
+        break;
+      }
+    } normal_specialist_type_iterate_end;
+  }
+
+  if (martial_need
+      && unit_list_size(pcity->tile->units)
+         < get_city_bonus(pcity, EFT_MARTIAL_LAW_MAX)) {
+    martial_value
+      = dai_content_effect_value(pplayer, pcity,
+                                 get_city_bonus(pcity,
+                                                EFT_MARTIAL_LAW_BY_UNIT),
+                                 1, FEELING_FINAL);
+  }
+
+  /* Otherwise no need to defend yet */
+  if (city_data->danger != 0 || martial_value > 0) {
+    struct impr_type *pimprove;
+    int num_defenders = unit_list_size(ptile->units);
+    int wall_id, danger;
+    bool build_walls = TRUE;
+    bool def_unit_selected = FALSE;
+    int qdanger = city_data->danger * city_data->danger;
+
+    if (qdanger <= 0) {
+      /* We only need these defenders because of Martial Law value */
+      danger = 0;
+      build_walls = FALSE; /* Walls don't provide Martial Law */
+    } else {
+      /* First determine the danger. It is measured in percents of our
+       * defensive strength, capped at 200 + urgency */
+      if (qdanger >= our_def) {
+        if (urgency == 0) {
+          /* Don't waste money */
+          danger = 100;
+        } else if (our_def == 0) {
+          danger = 200 + urgency;
+        } else {
+          danger = MIN(200, 100 * qdanger / our_def) + urgency;
+        }
+      } else {
+        danger = 100 * qdanger / our_def;
+      }
+
+      if (pcity->surplus[O_SHIELD] <= 0 && our_def != 0) {
+        /* Won't be able to support anything */
+        danger = 0;
+      }
+    }
+
+    CITY_LOG(LOG_DEBUG, pcity, "d_m_c_b urgency=%d danger=%d num_def=%d "
+             "our_def=%d", urgency, danger, num_defenders, our_def);
+
+    if (our_def == 0 && danger > 0) {
+      /* Build defensive unit first! Walls will help nothing if there's
+       * nobody behind them. */
+      if (dai_process_defender_want(ait, nmap, pplayer, pcity, danger,
+                                    choice, martial_value)) {
+        choice->want = DAI_WANT_BELOW_MIL_EMERGENCY + danger;
+        adv_choice_set_use(choice, "first defender");
+        build_walls = FALSE;
+        def_unit_selected = TRUE;
+
+        CITY_LOG(LOG_DEBUG, pcity,
+                 "d_m_c_b wants first defender with " ADV_WANT_PRINTF,
+                 choice->want);
+      }
+    }
+    if (build_walls) {
+      /* We will build walls if we can and want and (have "enough"
+       * defenders or can just buy the walls straight away) */
+
+      /* HACK: This needs changing if multiple improvements provide
+       * this effect. */
+      wall_id = dai_find_source_building(pcity, EFT_DEFEND_BONUS, NULL);
+      pimprove = improvement_by_number(wall_id);
+
+      if (wall_id != B_LAST
+          && pcity->server.adv->building_want[wall_id] != 0 && our_def != 0
+          && can_city_build_improvement_now(pcity, pimprove, RPT_CERTAIN)
+          && (danger < 101 || num_defenders > 1
+              || (city_data->grave_danger == 0
+                  && pplayer->economic.gold
+                     > impr_buy_gold_cost(pcity, pimprove,
+                                          pcity->shield_stock)))
+          && ai_fuzzy(pplayer, TRUE)) {
+        if (pcity->server.adv->building_want[wall_id] > 0) {
+          /* NB: great wall is under domestic */
+          choice->value.building = pimprove;
+          /* building_want is hacked by assess_danger() */
+          choice->want = pcity->server.adv->building_want[wall_id];
+          choice->want = choice->want
+            * (0.5 + (ai_trait_get_value(TRAIT_BUILDER, pplayer)
+                      / TRAIT_DEFAULT_VALUE / 2));
+          if (urgency == 0
+              && choice->want > DAI_WANT_BELOW_MIL_EMERGENCY) {
+            choice->want = DAI_WANT_BELOW_MIL_EMERGENCY;
+          }
+          choice->type = CT_BUILDING;
+          adv_choice_set_use(choice, "defense building");
+          CITY_LOG(LOG_DEBUG, pcity,
+                   "d_m_c_b wants defense building with " ADV_WANT_PRINTF,
+                   choice->want);
+        } else {
+          build_walls = FALSE;
+        }
+      } else {
+        build_walls = FALSE;
+      }
+    }
+
+    /* If our choice isn't defender unit already, consider one */
+    if (!def_unit_selected) {
+      if ((danger > 0 && num_defenders <= urgency) || martial_value > 0) {
+        struct adv_choice uchoice;
+
+        adv_init_choice(&uchoice);
+
+        /* Consider building defensive units */
+        if (dai_process_defender_want(ait, nmap, pplayer, pcity, danger,
+                                      &uchoice, martial_value)) {
+          /* Potential defender found */
+          if (urgency == 0
+              && uchoice.value.utype->defense_strength == 1) {
+            /* FIXME: check other reqs (unit class?) */
+            if (get_city_bonus(pcity, EFT_HP_REGEN) > 0) {
+              /* Unlikely */
+              uchoice.want = MIN(49, danger);
+            } else {
+              uchoice.want = MIN(25, danger);
+            }
+          } else {
+            uchoice.want = danger;
+          }
+
+          uchoice.want += martial_value;
+          if (danger > 0) {
+            adv_choice_set_use(&uchoice, "defender");
+          } else {
+            adv_choice_set_use(&uchoice, "police");
+          }
+
+          if (!build_walls || uchoice.want > choice->want) {
+            adv_choice_copy(choice, &uchoice);
+          }
+          adv_deinit_choice(&uchoice);
+
+          CITY_LOG(LOG_DEBUG, pcity,
+                   "d_m_c_b wants %s with desire " ADV_WANT_PRINTF,
+                   utype_rule_name(choice->value.utype),
+                   choice->want);
+        } else {
+          CITY_LOG(LOG_DEBUG, pcity, "d_m_c_b cannot select defender");
+        }
+      } else {
+        CITY_LOG(LOG_DEBUG, pcity, "d_m_c_b does not want defenders");
+      }
+    }
+  } /* Ok, don't need to defend */
+
+  if (pcity->surplus[O_SHIELD] <= 0
+      || pcity->feel[CITIZEN_UNHAPPY][FEELING_FINAL]
+         > pcity->feel[CITIZEN_UNHAPPY][FEELING_EFFECT]
+      || pcity->id == ai->wonder_city) {
+    /* Things we consider below are not life-saving so we don't want to
+     * build them if our populace doesn't feel like it */
+    return choice;
+  }
+
+  if (pplayer->economic.tax <= 50
+      || city_total_unit_gold_upkeep(pcity) <= 0) {
+    /* Always allow one unit with real gold upkeep (after
+     * EFT_UNIT_UPKEEP_FREE_PER_CITY). Allow more if economics is so
+     * strong that we have not increased taxes. */
+    allow_gold_upkeep = TRUE;
+  } else {
+    allow_gold_upkeep = FALSE;
+  }
+
+  /* Consider making a land bodyguard */
+  punittype = dai_choose_bodyguard(ait, nmap, pcity, TC_LAND,
+                                   L_DEFEND_GOOD, allow_gold_upkeep);
+  if (punittype) {
+    dai_unit_consider_bodyguard(ait, nmap, pcity, punittype, choice);
+  }
+
+  /* If we are in severe danger, don't consider attackers. This is
+     probably too general. In many cases we will want to buy attackers
+     to counterattack. -- Per */
+  if (choice->want - martial_value >= DAI_WANT_MILITARY_EMERGENCY
+      && city_data->grave_danger > 0) {
+    CITY_LOG(LOGLEVEL_BUILD, pcity,
+             "severe danger (want " ADV_WANT_PRINTF "), force defender",
+             choice->want);
+    return choice;
+  }
+
+  /* Consider making an offensive diplomat */
+  dai_choose_diplomat_offensive(ait, nmap, pplayer, pcity, choice);
+
+  /* Consider making a sea bodyguard */
+  punittype = dai_choose_bodyguard(ait, nmap, pcity, TC_OCEAN,
+                                   L_DEFEND_GOOD, allow_gold_upkeep);
+  if (punittype) {
+    dai_unit_consider_bodyguard(ait, nmap, pcity, punittype, choice);
+  }
+
+  /* Consider making an airplane */
+  (void) dai_choose_attacker_air(ait, nmap, pplayer, pcity, choice,
+                                 allow_gold_upkeep);
+
+  /* Consider making a paratrooper */
+  dai_choose_paratrooper(ait, nmap, pplayer, pcity, choice,
+                         allow_gold_upkeep);
+
+  /* Check if we want a sailing attacker. Have to put sailing first
+     before we mung the seamap */
+  punittype = dai_choose_attacker(ait, nmap, pcity, TC_OCEAN,
+                                  allow_gold_upkeep);
+  if (punittype) {
+    virtualunit = unit_virtual_create(
+      pplayer, pcity, punittype,
+      city_production_unit_veteran_level(pcity, punittype));
+    choice = kill_something_with(ait, nmap, pplayer, pcity, virtualunit,
+                                 choice);
+    unit_virtual_destroy(virtualunit);
+  }
+
+  /* Consider a land attacker or a ferried land attacker
+   * (in which case, we might want a ferry before an attacker)
+   */
+  punittype = dai_choose_attacker(ait, nmap, pcity, TC_LAND,
+                                  allow_gold_upkeep);
+  if (punittype) {
+    virtualunit = unit_virtual_create(pplayer, pcity, punittype, 1);
+    choice = kill_something_with(ait, nmap, pplayer, pcity, virtualunit,
+                                 choice);
+    unit_virtual_destroy(virtualunit);
+  }
+
+  /* Consider a hunter */
+  dai_hunter_choice(ait, pplayer, pcity, choice, allow_gold_upkeep);
+
+  /* Consider veteran level enhancing buildings before non-urgent units */
+  adjust_ai_unit_choice(pcity, choice);
+
+  if (choice->want <= 0) {
+    CITY_LOG(LOGLEVEL_BUILD, pcity, "deep military advisor has no advice");
+  } else {
+    CITY_LOG(LOGLEVEL_BUILD, pcity,
+             "deep military advisor choice: %s (want " ADV_WANT_PRINTF ")",
+             adv_choice_rule_name(choice),
+             choice->want);
+  }
+
+  return choice;
 }
 
 struct deep_emergency {
@@ -300,8 +633,8 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
     if (city_data->choice.want <= 0) {
       /* Note that this function mungs the seamap, but we don't care */
       TIMING_LOG(AIT_CITY_MILITARY, TIMER_START);
-      choice = military_advisor_choose_build(ait, &(wld.map), pplayer, pcity,
-                                             NULL);
+      choice = deep_military_choose_build(ait, &(wld.map), pplayer, pcity,
+                                          NULL);
       adv_choice_copy(&(city_data->choice), choice);
       adv_free_choice(choice);
       TIMING_LOG(AIT_CITY_MILITARY, TIMER_STOP);
