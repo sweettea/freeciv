@@ -24,9 +24,12 @@ end-of-run analysis only.
 ## Setup
 
     sudo dnf install -y meson ninja-build gcc python3 zstd git \
-      readline-devel zlib-devel libcurl-devel gettext   # or apt equiv
+      readline-devel zlib-devel libcurl-devel gettext libicu-devel
+    # Ubuntu: meson ninja-build gcc g++ python3 zstd git pkg-config
+    #   libreadline-dev zlib1g-dev libcurl4-gnutls-dev gettext
+    #   libicu-dev libsqlite3-dev  (verified on 26.04, 2026-07-25)
     meson setup build -Dclients=stub -Dfcmp=cli -Dtools= -Dnls=false \
-      -Daimodules=classic,tex,baseline,deep
+      -Daudio=none -Daimodules=classic,tex,baseline,deep
     ninja -C build
 
 ## Launch (unattended)
