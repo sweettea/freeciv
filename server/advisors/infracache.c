@@ -178,8 +178,16 @@ static adv_want adv_calc_transform(const struct city *pcity,
    * Worker-turn points convert to turns at the green single-mover
    * rate (SINGLE_MOVE points per turn). Feasibility of later steps is
    * assumed optimistically; the evaluator reruns every turn as the
-   * terrain actually changes, which self-corrects. When the immediate
-   * result is the best reachable, this is exactly the stock value. */
+   * terrain actually changes, which self-corrects.
+   *
+   * Destinations are valued WITH their best basic improvement, not
+   * bare: transforming destroys the current tile's extras, so a bare
+   * comparison loses to any already-improved tile - by the time
+   * Engineers exist, that is every candidate (a garden-regime game
+   * showed 8/12 mountains mined and zero transforms ever chosen).
+   * The current tile's realised extras already speak through
+   * 'goodness', so crediting the destination's potential is the
+   * symmetric comparison. */
   {
     struct terrain *chain[ADV_TRANSFORM_CHAIN_MAX];
     int total_time[ADV_TRANSFORM_CHAIN_MAX];
@@ -196,6 +204,34 @@ static adv_want adv_calc_transform(const struct city *pcity,
       vtile = tile_virtual_new(ptile);
       tile_change_terrain(vtile, chain[i]);
       reach = city_tile_value(pcity, vtile, 0, 0);
+
+      if (chain[i]->irrigation_food_incr > 0
+          || chain[i]->mining_shield_incr > 0) {
+        extra_type_by_cause_iterate(EC_IRRIGATION, pextra) {
+          if (chain[i]->irrigation_food_incr > 0) {
+            struct tile *v2 = tile_virtual_new(vtile);
+            adv_want v;
+
+            tile_add_extra(v2, pextra);
+            v = city_tile_value(pcity, v2, 0, 0);
+            tile_virtual_destroy(v2);
+            reach = MAX(reach, v);
+          }
+          break;
+        } extra_type_by_cause_iterate_end;
+        extra_type_by_cause_iterate(EC_MINE, pextra) {
+          if (chain[i]->mining_shield_incr > 0) {
+            struct tile *v2 = tile_virtual_new(vtile);
+            adv_want v;
+
+            tile_add_extra(v2, pextra);
+            v = city_tile_value(pcity, v2, 0, 0);
+            tile_virtual_destroy(v2);
+            reach = MAX(reach, v);
+          }
+          break;
+        } extra_type_by_cause_iterate_end;
+      }
       tile_virtual_destroy(vtile);
 
       reach = amortize(reach,
