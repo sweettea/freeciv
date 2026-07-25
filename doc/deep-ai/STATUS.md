@@ -500,3 +500,30 @@ See `PRD-v3.md`. Extract workstream files as you reach them.
    acceptance percentages.
 5. Then Tier B purity items, then Phase 2 (W13 campaigns also create
    the dynamic W11's credit is pre-positioned to count).
+
+---
+
+## Cloud handoff state (2026-07-25, pre-AWS)
+
+Branch `epic/w03-horizon` carries W02+W03+W07-lite in flight:
+- W02 v1 regressed (contested 0.879 t=-4.75: catchment MEAN replaced
+  the best-other anchor and deflated every founder want; diagnosis in
+  the anchor-fix commit). v3 restored the stock anchor + additive
+  depth term; +proximity overlap weight, +claim bonus, +pressure-
+  compressed potential (review directions). Score at v3 (pre-
+  proximity/claim): contested 0.948 t=-2.02 — remaining gap
+  undecomposed; the contested ablation pair (all-off / site-only) and
+  the isolated before/after were still running at handoff.
+- W03 credits (capacity/growth/bundle) landed; measurement confounded
+  with W02 so far. Supermarket/Sewer acceptance needs long.conf
+  (late techs unreachable by T150) — never yet run.
+- PRIMARY REGIME (human decision): 400 land tiles/player, FRACTAL,
+  T300 (primary.conf, TILESPERPLAYER runner support). All headline
+  judgments happen there; contested/isolated/smoke are probes.
+- Tuning deliberately deferred to the cloud campaign: ~24 deep_tuning
+  placeholders; campaign.sh stages gates -> per-weight ablations
+  (contested+primary) -> tune-A (scale-independent, contested) ->
+  tune-B (site/horizon, primary+isolated blend) -> holdout -> long +
+  primary acceptance -> report.md. See benchmark/AWS.md.
+- Analysis niceties for the box: losses.py defence.py hutstats.py
+  firstbuild.py terraform.py; DEEP_QUIET=1 for campaign runs.
