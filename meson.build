@@ -317,6 +317,7 @@ else
     aimodcount = aimodcount + 1
     aisrc = [ aisrc,
       'ai/deep/deepai.c',
+      'ai/deep/deepcm.c',
       'ai/deep/deepdefence.c',
       'ai/deep/deepexplore.c',
       'ai/deep/deepsettler.c',

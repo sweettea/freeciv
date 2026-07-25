@@ -36,6 +36,17 @@ struct deep_tuning {
    * owned). Zero-gated when the map was generated without huts. */
   double explore_hut_value;
   double explore_discovery_value;
+  /* City manager factors by city state (W09-lite); the stock
+   * hardcoded default is food 10-20, shield 5, trade 0, happy 0. */
+  int cm_happy_factor;
+  int cm_war_food;
+  int cm_war_shield;
+  int cm_war_trade;
+  int cm_cap_food;
+  int cm_cap_shield;
+  int cm_cap_trade;
+  int cm_wonder_shield;
+  int cm_wonder_trade;
 };
 
 const struct deep_tuning *deep_tuning_get(void);

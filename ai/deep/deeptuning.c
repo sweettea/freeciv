@@ -26,6 +26,15 @@ static const struct deep_tuning deep_tuning_defaults = {
   .incoming_defence_survival = 0.9,     /* PLACEHOLDER, untuned */
   .explore_hut_value = 15.0,            /* PLACEHOLDER, untuned */
   .explore_discovery_value = 0.05,      /* PLACEHOLDER, untuned */
+  .cm_happy_factor = 1,                 /* PLACEHOLDER, untuned */
+  .cm_war_food = 10,                    /* PLACEHOLDER, untuned */
+  .cm_war_shield = 12,                  /* PLACEHOLDER, untuned */
+  .cm_war_trade = 1,                    /* PLACEHOLDER, untuned */
+  .cm_cap_food = 2,                     /* PLACEHOLDER, untuned */
+  .cm_cap_shield = 8,                   /* PLACEHOLDER, untuned */
+  .cm_cap_trade = 8,                    /* PLACEHOLDER, untuned */
+  .cm_wonder_shield = 10,               /* PLACEHOLDER, untuned */
+  .cm_wonder_trade = 4,                 /* PLACEHOLDER, untuned */
 };
 
 /**********************************************************************//**
