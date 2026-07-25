@@ -28,6 +28,9 @@
 /* common/aicore */
 #include "cm.h"
 
+/* server */
+#include "cityturn.h"
+
 /* ai/default */
 #include "daicity.h"
 #include "daidata.h"
@@ -122,12 +125,20 @@ void deep_set_city_manager_params(struct ai_type *ait,
     if (matched) {
       if (pcity->cm_parameter == NULL) {
         pcity->cm_parameter = fc_malloc(sizeof(*pcity->cm_parameter));
+        cm_init_parameter(pcity->cm_parameter);
       }
-      cm_copy_parameter(pcity->cm_parameter, &cmp);
+      if (!cm_are_parameter_equal(pcity->cm_parameter, &cmp)) {
+        /* The rule for this city changed; rearrange now rather than
+         * waiting for the next organic rearrangement, or the new
+         * priorities sit unused for many turns. */
+        cm_copy_parameter(pcity->cm_parameter, &cmp);
+        auto_arrange_workers(pcity);
+      }
     } else if (pcity->cm_parameter != NULL) {
       /* Back to the stock default for this city. */
       free(pcity->cm_parameter);
       pcity->cm_parameter = NULL;
+      auto_arrange_workers(pcity);
     }
   } city_list_iterate_end;
 }
