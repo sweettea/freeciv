@@ -112,7 +112,7 @@ static void deep_log_defence(struct ai_type *ait, struct player *pplayer)
       }
     } unit_list_iterate_end;
 
-    log_base(LOG_NORMAL,
+    log_base(deep_metric_log_level(),
              "deep-def turn=%d player=\"%s\" city=%d danger=%u"
              " urgency=%u defense=%d ndef=%d prod=\"%s\""
              " shield=%d food=%d",
@@ -895,7 +895,7 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
   qsort(emergencies, ecount, sizeof(emergencies[0]), deep_emergency_cmp);
 
   for (i = 0; i < ecount; i++) {
-    log_base(LOG_NORMAL,
+    log_base(deep_metric_log_level(),
              "deep-emergency turn=%d player=\"%s\" rank=%d city=%d"
              " grave=%u urgency=%u capital=%d worth=%d",
              game.info.turn, player_name(pplayer), i,

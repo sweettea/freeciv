@@ -131,6 +131,24 @@ void deep_tuning_init(void)
 }
 
 /**********************************************************************//**
+  Log level for the deep metric lines (deep-def/want/explore/loss/
+  emergency). $FREECIV_DEEP_QUIET demotes them to verbose: pure tuning
+  runs only need scorelogs, and on large maps the metric lines are the
+  disk cost.
+**************************************************************************/
+enum log_level deep_metric_log_level(void)
+{
+  static int quiet = -1;
+
+  if (quiet < 0) {
+    const char *q = getenv("FREECIV_DEEP_QUIET");
+
+    quiet = (q != NULL && q[0] != '\0') ? 1 : 0;
+  }
+  return quiet ? LOG_VERBOSE : LOG_NORMAL;
+}
+
+/**********************************************************************//**
   The active tuning values.
 **************************************************************************/
 const struct deep_tuning *deep_tuning_get(void)

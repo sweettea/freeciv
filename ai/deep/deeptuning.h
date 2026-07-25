@@ -90,6 +90,7 @@ struct deep_tuning {
 };
 
 void deep_tuning_init(void);
+enum log_level deep_metric_log_level(void);
 const struct deep_tuning *deep_tuning_get(void);
 
 #endif /* FC__DEEPTUNING_H */

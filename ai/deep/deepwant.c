@@ -28,6 +28,8 @@
 /* ai/default */
 #include "daitools.h"
 
+#include "deeptuning.h"
+
 #include "deepwant.h"
 
 /* Conversion at the boundary (W01 first landing). The maps are
@@ -101,7 +103,7 @@ void deep_want_log(const struct city *pcity,
   const char *producer = "-";
 #endif
 
-  log_base(LOG_NORMAL,
+  log_base(deep_metric_log_level(),
            "deep-want turn=%d city=%d producer=\"%s\" pick=\"%s\""
            " native=%.1f tier=%d value=%.1f",
            game.info.turn, pcity->id, producer,

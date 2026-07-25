@@ -76,7 +76,7 @@ adv_want deep_explore_want(struct player *pplayer)
           + unknown * tune->explore_discovery_value)
          / (1 + explorers);
 
-  log_base(LOG_NORMAL,
+  log_base(deep_metric_log_level(),
            "deep-explore turn=%d player=\"%s\" want=%d huts_vis=%d"
            " unknown=%d explorers=%d",
            game.info.turn, player_name(pplayer), (int) want,

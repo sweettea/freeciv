@@ -409,7 +409,7 @@ static void dpai_ferry_lost(struct unit *punit)
   /* Loss-rate bookkeeping (benchmark/losses.py). The hook also fires
    * when a unit merely changes owner (capture, bribe); the server then
    * leaves loss_reason at -1. */
-  log_base(LOG_NORMAL,
+  log_base(deep_metric_log_level(),
            "deep-loss turn=%d player=\"%s\" unit=\"%s\" founder=%d"
            " reason=\"%s\" at=(%d,%d)",
            game.info.turn, player_name(unit_owner(punit)),

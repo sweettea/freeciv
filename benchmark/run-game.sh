@@ -101,6 +101,9 @@ OUT=$(readlink -f "$OUT")
 export FREECIV_DATA_PATH="$here/../data${FREECIV_DATA_PATH:+:$FREECIV_DATA_PATH}"
 # Tuning overrides for ai/deep: TUNING (also hashed into run.sh's
 # result-cache key) reaches the server as an absolute path.
+if [ -n "${DEEP_QUIET:-}" ]; then
+  export FREECIV_DEEP_QUIET=1
+fi
 if [ -n "${TUNING:-}" ]; then
   export FREECIV_DEEP_TUNING=$(readlink -f "$TUNING")
 fi
