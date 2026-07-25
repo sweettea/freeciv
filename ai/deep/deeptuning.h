@@ -54,6 +54,14 @@ struct deep_tuning {
   double horizon_growth_weight;
   double horizon_bundle_weight;
 
+  /* Border contest terms (W07-lite, landed with W02): per catchment
+   * tile owned by a non-allied player (founding here steals or denies
+   * that space), and the horizon compression under pressure -- how
+   * much of the potential/tail value survives when a non-allied city
+   * sits within contest range of the site. */
+  double site_claim_bonus;
+  double site_pressure_factor;
+
   /* Defensive-diplomat priority (W01): stock prices it at a
    * self-described 'totally arbitrary' 16000 that outranks even
    * military emergencies. Deep re-expresses it as an emergency-tier

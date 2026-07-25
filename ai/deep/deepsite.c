@@ -197,8 +197,30 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
   int potentials[maxtiles];
   bool overlapped[maxtiles];
   int nspecials = 0;
+  int nclaim = 0;
+  bool pressured = FALSE;
   double wspecials = 0;
   int ncatch = 0;
+
+  /* Contest context: a non-allied city close enough that this site
+   * fights for space with it (W07-lite). Under that pressure the
+   * long-term terms are compressed -- potential pays out on a shorter
+   * timescale when the neighbourhood is contested. */
+  players_iterate_alive(aplayer) {
+    if (aplayer == pplayer || pplayers_allied(pplayer, aplayer)) {
+      continue;
+    }
+    city_list_iterate(aplayer->cities, acity) {
+      if (sq_map_distance(city_tile(acity), result->tile)
+          <= 4 * result->city_radius_sq) {
+        pressured = TRUE;
+        break;
+      }
+    } city_list_iterate_end;
+    if (pressured) {
+      break;
+    }
+  } players_iterate_alive_end;
 
   city_tile_iterate_index(nmap, result->city_radius_sq, result->tile, ptile,
                           cindex) {
@@ -284,11 +306,20 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
        * currency as the sums (a tile realistically gets one of the
        * two improvements). */
       potentials[ncatch] = MAX(pot_irr, pot_min) * PERFECTION / 2;
+      if (pressured) {
+        potentials[ncatch] *= deep_tuning_get()->site_pressure_factor;
+      }
       overlapped[ncatch] = near_own;
       ncatch++;
 
       if (tile_resource(ptile) != NULL) {
         nspecials++;
+      }
+      if (tile_owner(ptile) != NULL && tile_owner(ptile) != pplayer
+          && !pplayers_allied(tile_owner(ptile), pplayer)) {
+        /* Founding here pulls this tile inside our border: space
+         * stolen from (or denied to) a non-allied neighbour. */
+        nclaim++;
       }
     }
 
@@ -316,7 +347,8 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
      * sum -- one set of buildings serves them all (W02). */
     wspecials = nspecials * deep_tuning_get()->site_special_bonus
                 + MAX(0, nspecials - 1)
-                  * deep_tuning_get()->site_special_cluster;
+                  * deep_tuning_get()->site_special_cluster
+                + nclaim * deep_tuning_get()->site_claim_bonus;
 
     /* Catchment depth: the probability-weighted average tile value,
      * as an ADDITIVE term replacing stock's remaining/8 -- the first
