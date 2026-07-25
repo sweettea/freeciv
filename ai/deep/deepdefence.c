@@ -73,6 +73,7 @@
 
 #include "deepai.h"
 #include "deepexplore.h"
+#include "deepsite.h"
 #include "deepcm.h"
 #include "deeptuning.h"
 #include "deepwant.h"
@@ -984,14 +985,14 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
     TIMING_LOG(AIT_CITY_SETTLERS, TIMER_START);
     if (city_data->founder_turn <= game.info.turn) {
       /* Will record its findings in pcity->founder_want */
-      contemplate_new_city(ait, pcity);
+      deep_contemplate_new_city(ait, pcity);
       /* Avoid recalculating all the time.. */
       city_data->founder_turn
         = game.info.turn + fc_rand(AI_CITY_RECALC_SPEED)
           + AI_CITY_RECALC_SPEED;
     } else if (pcity->server.debug) {
       /* Recalculate every turn */
-      contemplate_new_city(ait, pcity);
+      deep_contemplate_new_city(ait, pcity);
     }
     TIMING_LOG(AIT_CITY_SETTLERS, TIMER_STOP);
     ADV_CHOICE_ASSERT(city_data->choice);

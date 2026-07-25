@@ -56,6 +56,7 @@
 #include "daitools.h"
 #include "daiunit.h"
 
+#include "deepsite.h"
 #include "deeptuning.h"
 
 #include "deepsettler.h"
@@ -316,7 +317,7 @@ static bool deep_settler_gothere(struct ai_type *ait,
 
   Returns the better cityresult or NULL if no result was found.
 **************************************************************************/
-static struct cityresult *deep_find_best_city_placement(struct ai_type *ait,
+struct cityresult *deep_find_best_city_placement(struct ai_type *ait,
                                                         struct unit *punit,
                                                         bool look_for_boat,
                                                         bool use_virt_boat)
@@ -337,7 +338,7 @@ static struct cityresult *deep_find_best_city_placement(struct ai_type *ait,
   pft_fill_unit_parameter(&parameter, nmap, punit);
   parameter.omniscience = !has_handicap(pplayer, H_MAP);
   deep_settler_apply_risk(&parameter, &risk, punit);
-  cr1 = settler_map_iterate(ait, &parameter, punit, 0);
+  cr1 = deep_settler_map_iterate(ait, &parameter, punit, 0);
 
   if (cr1 && cr1->result > RESULT_IS_ENOUGH) {
     /* Skip further searches */
@@ -390,8 +391,8 @@ static struct cityresult *deep_find_best_city_placement(struct ai_type *ait,
     parameter.omniscience = !has_handicap(pplayer, H_MAP);
     parameter.get_TB = no_fights_or_unknown;
 
-    cr2 = settler_map_iterate(ait, &parameter, punit,
-                              unit_build_shield_cost_base(ferry));
+    cr2 = deep_settler_map_iterate(ait, &parameter, punit,
+                                   unit_build_shield_cost_base(ferry));
     if (cr2) {
       cr2->overseas = TRUE;
       cr2->virt_boat = (ferry->id == 0);

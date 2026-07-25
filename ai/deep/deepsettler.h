@@ -18,6 +18,11 @@
 
 struct workermap;
 
+struct cityresult *deep_find_best_city_placement(struct ai_type *ait,
+                                                 struct unit *punit,
+                                                 bool look_for_boat,
+                                                 bool use_virt_boat);
+
 void deep_auto_settler_run(struct ai_type *ait, const struct civ_map *nmap,
                            struct player *pplayer,
                            struct unit *punit, struct workermap *state);

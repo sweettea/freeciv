@@ -31,6 +31,10 @@ struct deep_tuning {
   double incoming_defence_eta_weight;
   double incoming_defence_survival;
 
+  /* Weight of catchment tiles beyond the food-supportable target
+   * size in site evaluation (W02); tiles inside it weigh 1.0. */
+  double site_tail_weight;
+
   /* Defensive-diplomat priority (W01): stock prices it at a
    * self-described 'totally arbitrary' 16000 that outranks even
    * military emergencies. Deep re-expresses it as an emergency-tier
