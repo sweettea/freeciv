@@ -432,12 +432,28 @@ Format:
       alone is a 10-20x scale gap; diplomats/ferries are a different
       currency entirely. W06's explorer want (39-94) never stood a
       chance against 311-median settlers.
-- [ ] next landings (calibration-driven, each measured separately):
-      real shield-equivalent conversions per producer, starting where
-      the distortion is largest (diplomat, ferry, settler); the
-      explorer re-pricing (W06's auction) likely becomes winnable as a
-      side effect of deflating those, not by inflating itself. Feeds
-      directly into W02.
+- [x] first real conversion: the defensive diplomat. Stock writes a
+      self-described 'totally arbitrary' 16000 (daidiplomat.c:112,134)
+      that tier-jumps even military emergencies; deep evaluates it on
+      a fresh choice and merges it as emergency tier with a calibrated
+      value (diplomat_defence_value 300, corpus-derived). Measured
+      (20 contested + 10 smoke paired seeds, pinned binaries): the
+      16000 population is gone (diplomat native max 16000 -> 5223 =
+      the offensive diplomat's honest expected-value wants, untouched
+      by design), pick rates stable (~296 -> 314 per seed), score dead
+      neutral (contested 1.0004 t=+0.02, smoke 0.9842 t=-0.49).
+- **Conversion-gating map** (why W01 stops here; each remaining
+      conversion lands WITH the workstream that fixes its counterpart
+      scale):
+      - founder (median 311 vs anchor ~17): gated on W03 — the
+        settler-vs-building rigging partly compensates the missing
+        building horizon; deflating onto today's undervalued anchor
+        would collapse expansion.
+      - attacker spikes (Trireme max 63505 = kill_something_with
+        wants): gated on W10 combat model.
+      - explorer re-pricing (W06 auction): follows founder deflation,
+        not self-inflation.
+      - workers/buildings/caravans: near-anchor already; identity.
 
 ---
 
