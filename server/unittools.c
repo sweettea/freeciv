@@ -717,8 +717,8 @@ void finalize_unit_phase_beginning(struct player *pplayer)
   Calculate the total amount of activity performed by all units on a tile
   for a given task and target.
 **************************************************************************/
-static int total_activity(struct tile *ptile, enum unit_activity act,
-                          struct extra_type *tgt)
+int total_activity(struct tile *ptile, enum unit_activity act,
+                   struct extra_type *tgt)
 {
   int total = 0;
   bool tgt_matters = activity_requires_target(act);

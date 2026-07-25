@@ -144,6 +144,8 @@ struct unit *unit_virtual_prepare(struct player *pplayer, struct tile *ptile,
                                   int moves_left, int hp_left);
 bool place_unit(struct unit *punit, struct player *pplayer,
                 struct city *pcity, struct unit *ptrans, bool force);
+int total_activity(struct tile *ptile, enum unit_activity act,
+                   struct extra_type *tgt);
 void wipe_unit(struct unit *punit, enum unit_loss_reason reason,
                struct player *killer);
 void kill_unit(struct unit *pkiller, struct unit *punit, bool vet);
