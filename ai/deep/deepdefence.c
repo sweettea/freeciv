@@ -38,6 +38,7 @@
 /* ai */
 #include "aitraits.h"
 #include "difficulty.h"
+#include "handicaps.h"
 
 /* server */
 #include "cityhand.h"
@@ -58,6 +59,7 @@
 #include "daidata.h"
 #include "daidiplomacy.h"
 #include "daidiplomat.h"
+#include "daidomestic.h"
 #include "daieffects.h"
 #include "daihand.h"
 #include "daihunter.h"
@@ -73,6 +75,7 @@
 #include "deepexplore.h"
 #include "deepcm.h"
 #include "deeptuning.h"
+#include "deepwant.h"
 
 #include "deepdefence.h"
 
@@ -312,7 +315,8 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
        * nobody behind them. */
       if (dai_process_defender_want(ait, nmap, pplayer, pcity, danger,
                                     choice, martial_value)) {
-        choice->want = DAI_WANT_BELOW_MIL_EMERGENCY + danger;
+        deep_want_apply(choice, (struct deep_want) {
+          .tier = DWT_EMERGENCY, .value = danger });
         adv_choice_set_use(choice, "first defender");
         build_walls = FALSE;
         def_unit_selected = TRUE;
@@ -349,8 +353,12 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
             * (0.5 + (ai_trait_get_value(TRAIT_BUILDER, pplayer)
                       / TRAIT_DEFAULT_VALUE / 2));
           if (urgency == 0
-              && choice->want > DAI_WANT_BELOW_MIL_EMERGENCY) {
-            choice->want = DAI_WANT_BELOW_MIL_EMERGENCY;
+              && deep_want_from_choice(choice).tier == DWT_EMERGENCY) {
+            /* No urgency: cap the wall want just below the tier
+             * boundary (stock capped at exactly the boundary value;
+             * the from/apply round trip preserves that number). */
+            deep_want_apply(choice, (struct deep_want) {
+              .tier = DWT_EMERGENCY, .value = 0 });
           }
           choice->type = CT_BUILDING;
           adv_choice_set_use(choice, "defense building");
@@ -443,12 +451,19 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
   /* If we are in severe danger, don't consider attackers. This is
      probably too general. In many cases we will want to buy attackers
      to counterattack. -- Per */
-  if (choice->want - martial_value >= DAI_WANT_MILITARY_EMERGENCY
-      && city_data->grave_danger > 0) {
+  {
+    /* Severe danger: an emergency-tier want that stays emergency even
+     * after discounting the martial-law share (stock compared
+     * want - martial >= tier base + 0.1). */
+    struct deep_want w = deep_want_from_choice(choice);
+
+    if (w.tier == DWT_EMERGENCY && w.value - martial_value >= 0.1
+        && city_data->grave_danger > 0) {
     CITY_LOG(LOGLEVEL_BUILD, pcity,
              "severe danger (want " ADV_WANT_PRINTF "), force defender",
              choice->want);
-    return choice;
+      return choice;
+    }
   }
 
   /* Consider making an offensive diplomat */
@@ -716,6 +731,109 @@ static void deep_spend_gold(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Final build-choice selection for one city. Derived from
+  dai_city_choose_build(); the differences (W01) are that the
+  military-emergency gate is a want TIER check instead of a magnitude
+  comparison, the military-vs-domestic merge goes through the deep
+  want conversion, and the final decision is logged as a deep-want
+  line for conversion calibration.
+**************************************************************************/
+static void deep_city_choose_build(struct ai_type *ait,
+                                   struct player *pplayer,
+                                   struct city *pcity)
+{
+  struct adv_choice *newchoice;
+  struct adv_data *adv = adv_data_get(pplayer, NULL);
+  struct ai_city *city_data = def_ai_city_data(pcity, ait);
+  const struct civ_map *nmap = &(wld.map);
+
+  if (has_handicap(pplayer, H_AWAY)
+      && !city_built_last_turn(pcity)
+      && city_data->urgency == 0) {
+    /* Don't change existing productions unless we have to. */
+    return;
+  }
+
+  if (is_barbarian(pplayer)) {
+    dai_barbarian_choose_build(pplayer, pcity, &(city_data->choice));
+  } else {
+    if ((deep_want_from_choice(&city_data->choice).tier != DWT_EMERGENCY
+         || city_data->urgency == 0)
+        && !(dai_on_war_footing(ait, pplayer) && city_data->choice.want > 0
+             && pcity->id != adv->wonder_city)) {
+      newchoice = domestic_advisor_choose_build(ait, pplayer, pcity);
+      if (deep_want_cmp(deep_want_from_choice(newchoice),
+                        deep_want_from_choice(&city_data->choice)) > 0) {
+        adv_choice_copy(&(city_data->choice), newchoice);
+      }
+      adv_free_choice(newchoice);
+    }
+  }
+
+  /* Fallbacks */
+  if (city_data->choice.want == 0) {
+    /* Fallbacks do happen with techlevel 0, which is now default. -- Per */
+    CITY_LOG(LOG_DEBUG, pcity, "Falling back - didn't want to build"
+             " soldiers, workers, caravans, settlers, or buildings!");
+    city_data->choice.want = 1;
+    if (best_role_unit(pcity, action_id_get_role(ACTION_TRADE_ROUTE))) {
+      city_data->choice.value.utype
+        = best_role_unit(pcity, action_id_get_role(ACTION_TRADE_ROUTE));
+      city_data->choice.type = CT_CIVILIAN;
+      adv_choice_set_use(&(city_data->choice), "fallback trade route");
+    } else {
+      unsigned int our_def = assess_defense_quadratic(ait, pcity);
+
+      if (our_def == 0
+          && dai_process_defender_want(ait, nmap, pplayer, pcity, 1,
+                                       &(city_data->choice), 0)) {
+        adv_choice_set_use(&(city_data->choice), "fallback defender");
+        CITY_LOG(LOG_DEBUG, pcity, "Building fallback defender");
+      } else if (best_role_unit(pcity, UTYF_WORKERS)) {
+        city_data->choice.value.utype
+          = dai_role_utype_for_terrain_class(pcity, UTYF_WORKERS, TC_LAND);
+        city_data->choice.type = CT_CIVILIAN;
+        adv_choice_set_use(&(city_data->choice), "fallback worker");
+      } else {
+        CITY_LOG(LOG_ERROR, pcity, "Cannot even build a fallback "
+                 "(caravan/coinage/settlers). Fix the ruleset!");
+        city_data->choice.want = 0;
+      }
+    }
+  }
+
+  if (city_data->choice.want != 0) {
+    struct universal build_new;
+
+    ADV_CHOICE_ASSERT(city_data->choice);
+
+    deep_want_log(pcity, &city_data->choice);
+
+    switch (city_data->choice.type) {
+    case CT_CIVILIAN:
+    case CT_ATTACKER:
+    case CT_DEFENDER:
+      build_new.kind = VUT_UTYPE;
+      build_new.value.utype = city_data->choice.value.utype;
+      break;
+    case CT_BUILDING:
+      build_new.kind = VUT_IMPROVEMENT;
+      build_new.value.building = city_data->choice.value.building;
+      break;
+    case CT_NONE:
+      build_new.kind = VUT_NONE;
+      break;
+    case CT_LAST:
+      build_new.kind = universals_n_invalid();
+      break;
+    };
+
+    change_build_target(pplayer, pcity, &build_new,
+                        E_CITY_PRODUCTION_CHANGED);
+  }
+}
+
+/**********************************************************************//**
   City management. Derived from dai_manage_cities(); the difference is
   that city emergencies are collected first, ranked by severity, and
   resolved in that order, instead of in city list order where the first
@@ -863,7 +981,7 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
   dai_auto_settler_reset(ait, pplayer);
 
   city_list_iterate(pplayer->cities, pcity) {
-    dai_city_choose_build(ait, pplayer, pcity);
+    deep_city_choose_build(ait, pplayer, pcity);
 
     /* Initialize for next turn */
     def_ai_city_data(pcity, ait)->choice.want = -1;
