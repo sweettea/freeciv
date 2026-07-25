@@ -71,3 +71,14 @@ Agent: append newly-found bugs here rather than fixing them.
     the `pplayer->government = curr_govt` restore and the virtual-city
     teardown, leaving the player's government set to the goal
     government for the rest of the evaluation pass.
+28. **The AI never cultivates or plants — cache key mismatch.**
+    `initialize_infrastructure_cache()` stores the cultivate/plant
+    valuations under the legacy ACTIVITY_IRRIGATE / ACTIVITY_MINE
+    keys, while the consumer (`autoworkers.c` via
+    `action_id_get_activity(ACTION_CULTIVATE/PLANT)`) reads
+    ACTIVITY_CULTIVATE / ACTIVITY_PLANT — which are preset to -1 and
+    never written, so the `>= 0` gate fails on every tile in every
+    ruleset, for AI players and human auto-workers alike. Terrain
+    changes measured across hundreds of benchmark games: exactly zero.
+    (Transform is additionally gated behind Fusion Power in civ2civ3's
+    actions.ruleset — endgame by design, not a bug.)

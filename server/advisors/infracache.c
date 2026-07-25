@@ -335,9 +335,15 @@ void initialize_infrastructure_cache(struct player *pplayer)
     } city_map_iterate_end;
 
     city_tile_iterate_index(nmap, radius_sq, pcenter, ptile, cindex) {
-      adv_city_worker_act_set(pcity, cindex, ACTIVITY_MINE,
+      /* The consumer (autoworkers.c) looks these up under the
+       * activities of ACTION_PLANT / ACTION_CULTIVATE; the values
+       * were historically stored under the legacy ACTIVITY_MINE /
+       * ACTIVITY_IRRIGATE keys, which nothing reads any more - so the
+       * AI (and human auto-workers) never cultivated or planted at
+       * all: the preset -1 below always failed the >= 0 gate. */
+      adv_city_worker_act_set(pcity, cindex, ACTIVITY_PLANT,
                               adv_calc_plant(pcity, ptile));
-      adv_city_worker_act_set(pcity, cindex, ACTIVITY_IRRIGATE,
+      adv_city_worker_act_set(pcity, cindex, ACTIVITY_CULTIVATE,
                               adv_calc_cultivate(pcity, ptile));
       adv_city_worker_act_set(pcity, cindex, ACTIVITY_TRANSFORM,
                               adv_calc_transform(pcity, ptile));
