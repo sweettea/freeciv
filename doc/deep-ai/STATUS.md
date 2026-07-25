@@ -396,6 +396,38 @@ Format:
 
 ---
 
+## Phase 2
+
+## W01 — Want unification
+- [x] workstream file extracted from PRD-v3 §4.3 + findings, evidence
+      re-verified at 0896b34 (two stale-plan notes: the -199 boat
+      sentinel evolved into sign-overloaded founder_want, and
+      adv_choice already carries the explicit need_boat field the PRD
+      asked for).
+- [x] first landing (4 commits on `epic/w01-want-unification`, based
+      on the w25 integration tip): want_t + explicit priority tiers
+      (deepwant.[ch]), exact boundary conversions (the 1000-scale
+      emergency magnitude becomes a tier field), deep_city_choose_build
+      derived from stock with tier-gated merging through
+      deep_want_cmp() (provably the same ordering as
+      adv_better_choice), emergency magnitudes in
+      deep_military_choose_build migrated to the API with exact
+      round-trips, and a deep-want calibration line per final build
+      decision (4,345 lines in one contested game).
+- [x] gates: **byte-identity 20/20** (10 smoke + 10 contested paired
+      seeds, pre-W01 vs W01 deep, pinned binaries) — the layer is
+      empirically exact, far stronger than the PRD's own ±2% gate.
+      Grep invariant: DAI_WANT_* magnitudes appear only in the
+      conversion table (deepwant.c).
+- [ ] next landings (calibration-driven): replace identity maps with
+      real shield-equivalent valuations per producer, starting from
+      the deep-want corpus; re-express the explorer want (W06's
+      auction problem) in shield-equivalents — the directional
+      acceptance check for that lives here, and it feeds directly
+      into W02.
+
+---
+
 ## Later phases
 
 See `PRD-v3.md`. Extract workstream files as you reach them.
