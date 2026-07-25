@@ -135,8 +135,39 @@ Format:
       cache key rotated automatically.
 
 ## W25 — Tuning harness
-- [ ] E25.1 struct tuning + file loading
-- [ ] E25.2 CMA-ES driver, train/holdout split
+- [x] E25.1 struct tuning + file loading (branch `epic/w25-tuning`,
+      which starts by merging w06 + w09-lite so all 14 placeholders
+      exist in one tree; main untouched pending review).
+      deep_tuning_init() reads $FREECIV_DEEP_TUNING (registry format,
+      [tuning] section, keys = struct field names); absent keys keep
+      compiled defaults; loaded values logged as a deep-tuning line.
+      run-game.sh forwards the harness TUNING file, whose content
+      run.sh already hashes into the result-cache key. Verified end to
+      end: a file zeroing explorer values drove deep-explore want to 0
+      on a hut map and cm_war_shield=15 appeared in the log.
+- [x] E25.2 optimiser with train/holdout split — benchmark/tune.py:
+      dependency-free diagonal (mu,lambda) ES (no numpy/cma on this
+      box; upgrade is mechanical, the evaluation plumbing is the hard
+      part and is optimiser-agnostic), rank-weighted mean, sigma decay
+      on stagnation, gen-0 includes exact defaults as control. Params
+      + bounds in benchmark/tuning-params.ini. Every game runs through
+      run-game.sh with a per-candidate tuning file: cached, resumable,
+      spot-interruption-safe. REFUSES to optimise on holdout seeds
+      (guard demonstrated); --report-holdout evaluates a fixed file.
+      Demo (2 gens x 4 cands x 6 train seeds, smoke): machinery works;
+      train best +6.5 collapsed to -5.2 on 4 holdout seeds — the
+      overfitting-catch working as designed at toy n.
+- [x] W00 gate follow-up "re-run holdout isolation when W25 lands":
+      PASS — the only holdout references in the harness are run.sh's
+      usage warning and tune.py's refusal guard/report path.
+- **Campaigns deliberately deferred** (human decision 2026-07-25):
+      want-denominated constants (explorer values, anything competing
+      in build auctions) would be tuned against the current broken
+      want scale that W01 exists to replace — throwaway work. Scale-
+      independent constants (settler fearfulness, CM factors) hold
+      value across W01 and are candidates for cheap micro-sweeps any
+      time. First full campaign scheduled after W01 stabilises the
+      want scale.
 
 ## Tier B — visibility and purity
 - [ ] E-B.1 delete the unused is_req_active mutex (common/requirements.c:6756)
