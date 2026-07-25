@@ -49,7 +49,7 @@ def main():
         if not first or not final:
             continue
         t0, t1 = terrain(first[0]), terrain(final[0])
-        game_orig = Counter(a for y in t0 if y in t1
+        game_orig = Counter(f"{a}>{b}" for y in t0 if y in t1
                             for a, b in zip(t0[y], t1[y]) if a != b)
         changed = sum(game_orig.values())
         print(f"{d.parent.name},{d.name.removeprefix('seed-')},{changed},"
@@ -58,10 +58,15 @@ def main():
         total += changed
         games += 1
 
+    # A pair is chain-evidence when the destination is not the origin's
+    # immediate transform_result (one-step pairs are stock-plausible).
+    ONE_STEP = {"m>h", "h>p", "f>h", "j>f", "s>g", "d>p", "t>p",
+                "g>+", "p>+", "a>+", " >g", "+>g"}
+    chained = sum(v for k, v in origins.items() if k not in ONE_STEP)
     print(f"TOTAL,,{total} over {games} games "
-          f"({total / games if games else 0:.1f}/game) by_origin="
+          f"({total / games if games else 0:.1f}/game) pairs="
           + "+".join(f"{k}:{v}" for k, v in sorted(origins.items()))
-          + "  [multi-step origins: m/h/f/j]")
+          + f"  chain_evidence={chained} (pairs beyond one step)")
 
 
 if __name__ == "__main__":
