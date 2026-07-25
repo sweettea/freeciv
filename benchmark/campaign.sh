@@ -65,20 +65,29 @@ for w in $WEIGHTS; do
 done
 rm -f "$OUT/ablate/all-off.ini.tmp"
 
-for cfg in contested:12:6600 primary:6:6700; do
+ABL_PAR=3   # ablation configs run concurrently; small per-batch game
+            # counts otherwise leave most cores idle on long games
+for cfg in contested:12:6600 primary:6:7300; do
   IFS=: read -r name count base <<< "$cfg"
-  for ini in "$OUT"/ablate/*.ini; do
-    tag=$(basename "$ini" .ini)
+  slot=0
+  for ini in "$OUT"/ablate/*.ini REFERENCE; do
+    if [ "$ini" = REFERENCE ]; then
+      tag=defaults; tun=
+    else
+      tag=$(basename "$ini" .ini); tun=$ini
+    fi
     log "ablation $name/$tag"
-    TUNING=$ini "$here/run.sh" --count "$count" --arms baseline,deep \
-      --config "$here/configs/$name.conf" --jobs "$JOBS" \
-      --portbase "$base" >> "$OUT/ablate/$name-$tag.log" 2>&1 \
-      || log "WARN: ablation $name/$tag had failures"
+    TUNING=$tun "$here/run.sh" --count "$count" --arms baseline,deep \
+      --config "$here/configs/$name.conf" --jobs $((JOBS / ABL_PAR)) \
+      --portbase $((base + (slot % ABL_PAR) * 60)) \
+      >> "$OUT/ablate/$name-$tag.log" 2>&1 \
+      || log "WARN: ablation $name/$tag had failures" &
+    slot=$((slot + 1))
+    if [ $((slot % ABL_PAR)) -eq 0 ]; then
+      wait
+    fi
   done
-  log "ablation $name reference (defaults)"
-  "$here/run.sh" --count "$count" --arms baseline,deep \
-    --config "$here/configs/$name.conf" --jobs "$JOBS" \
-    --portbase "$base" >> "$OUT/ablate/$name-defaults.log" 2>&1 || true
+  wait
 done
 log "ablations done"
 

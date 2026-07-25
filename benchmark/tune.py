@@ -105,23 +105,38 @@ def run_game(config, args, arm, seed, outdir, port, tuning=None):
     return final_score(outdir / "scorelog.txt")
 
 
-def eval_candidate(args, seeds, cand_dir, tuning_file, baseline, portbase):
-    """Blended objective: mean over configs of mean paired score diff."""
-    per_cfg = []
+def eval_population(args, seeds, cand_dirs, tuning_files, baseline,
+                    portbase):
+    """Evaluate every candidate's every game in ONE pool, so the whole
+    population fills the machine instead of one candidate at a time.
+    Returns a list of blended objectives, one per candidate."""
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as ex:
         futs = {}
-        for c, config in enumerate(args.configs):
-            for i, seed in enumerate(seeds):
-                d = cand_dir / f"cfg{c}" / f"seed-{seed}"
-                futs[ex.submit(run_game, config, args, "deep", seed, d,
-                               portbase + c * 50 + i, tuning_file)]                     = (c, seed)
+        port = portbase
+        for k, (cdir, tf) in enumerate(zip(cand_dirs, tuning_files)):
+            for c, config in enumerate(args.configs):
+                for seed in seeds:
+                    d = cdir / f"cfg{c}" / f"seed-{seed}"
+                    futs[ex.submit(run_game, config, args, "deep", seed,
+                                   d, port, tf)] = (k, c, seed)
+                    port += 1
         diffs = {}
         for f in concurrent.futures.as_completed(futs):
-            c, seed = futs[f]
-            diffs.setdefault(c, []).append(f.result() - baseline[(c, seed)])
-    for c in range(len(args.configs)):
-        per_cfg.append(sum(diffs[c]) / len(diffs[c]))
-    return sum(per_cfg) / len(per_cfg)
+            k, c, seed = futs[f]
+            diffs.setdefault((k, c), []).append(
+                f.result() - baseline[(c, seed)])
+    objs = []
+    for k in range(len(cand_dirs)):
+        per_cfg = [sum(diffs[(k, c)]) / len(diffs[(k, c)])
+                   for c in range(len(args.configs))]
+        objs.append(sum(per_cfg) / len(per_cfg))
+    return objs
+
+
+def eval_candidate(args, seeds, cand_dir, tuning_file, baseline, portbase):
+    """Single-candidate wrapper (holdout reports)."""
+    return eval_population(args, seeds, [cand_dir], [tuning_file],
+                           baseline, portbase)[0]
 
 
 def main():
@@ -205,15 +220,18 @@ def main():
                         for p, m, s in zip(params, mean, sigma)]
             cands.append(vals)
 
-        scored = []
+        cand_dirs, tuning_files = [], []
         for c, vals in enumerate(cands):
             cdir = out / f"gen{gen}" / f"cand{c}"
             cdir.mkdir(parents=True, exist_ok=True)
             tf = cdir / "tuning.ini"
             write_tuning(tf, params, vals)
-            obj = eval_candidate(args, seeds, cdir, tf.resolve(),
-                                 baseline, args.portbase)
-            scored.append((obj, vals))
+            cand_dirs.append(cdir)
+            tuning_files.append(tf.resolve())
+        objs = eval_population(args, seeds, cand_dirs, tuning_files,
+                               baseline, args.portbase)
+        scored = list(zip(objs, cands))
+        for c, (obj, vals) in enumerate(scored):
             print(f"gen {gen} cand {c}: obj {obj:+.1f}  "
                   + " ".join(f"{p['name']}={v:.3g}"
                              for p, v in zip(params, vals)), flush=True)
