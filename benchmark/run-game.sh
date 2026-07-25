@@ -45,14 +45,19 @@ here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 SERVER=$(readlink -f "$SERVER")
 [ -x "$SERVER" ] || { echo "server not found: $SERVER" >&2; exit 1; }
 
-# Config values (see configs/*.conf): PLAYERS, XSIZE, YSIZE, ENDTURN
-# required; SKILL, RULESET, TIMEOUT_S, HUTS, GENERATOR,
-# SPECIALS optional.
-SKILL=hard RULESET= TIMEOUT_S=1800 HUTS= GENERATOR= SPECIALS=
+# Config values (see configs/*.conf): PLAYERS, ENDTURN required;
+# XSIZE/YSIZE required unless TILESPERPLAYER sizes the map instead;
+# SKILL, RULESET, TIMEOUT_S, HUTS, GENERATOR, SPECIALS optional.
+SKILL=hard RULESET= TIMEOUT_S=1800 HUTS= GENERATOR= SPECIALS= TILESPERPLAYER=
 . "$(readlink -f "$CONFIG")"
-for v in PLAYERS XSIZE YSIZE ENDTURN; do
+for v in PLAYERS ENDTURN; do
   [ -n "${!v:-}" ] || { echo "config missing $v" >&2; exit 1; }
 done
+if [ -z "$TILESPERPLAYER" ]; then
+  for v in XSIZE YSIZE; do
+    [ -n "${!v:-}" ] || { echo "config missing $v" >&2; exit 1; }
+  done
+fi
 
 mkdir -p "$OUT/saves"
 OUT=$(readlink -f "$OUT")
@@ -61,9 +66,16 @@ OUT=$(readlink -f "$OUT")
   [ -n "$RULESET" ] && echo "rulesetdir $RULESET"
   echo "set minplayers 0"
   echo "set timeout -1"
-  echo "set mapsize XYSIZE"
-  echo "set xsize $XSIZE"
-  echo "set ysize $YSIZE"
+  if [ -n "$TILESPERPLAYER" ]; then
+    # Scale the map with the player count, like the ruleset default,
+    # but at the configured land-per-player density.
+    echo "set mapsize PLAYER"
+    echo "set tilesperplayer $TILESPERPLAYER"
+  else
+    echo "set mapsize XYSIZE"
+    echo "set xsize $XSIZE"
+    echo "set ysize $YSIZE"
+  fi
   [ -n "$HUTS" ] && echo "set huts $HUTS"
   [ -n "$GENERATOR" ] && echo "set generator $GENERATOR"
   [ -n "$SPECIALS" ] && echo "set specials $SPECIALS"
