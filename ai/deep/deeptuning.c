@@ -33,6 +33,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .incoming_defence_eta_weight = 0.5,   /* PLACEHOLDER, untuned */
   .incoming_defence_survival = 0.9,     /* PLACEHOLDER, untuned */
   .site_tail_weight = 0.15,             /* PLACEHOLDER, untuned */
+  .site_depth_weight = 0.5,             /* PLACEHOLDER, untuned */
   .site_potential_discount = 0.5,       /* PLACEHOLDER, untuned */
   .site_special_bonus = 10.0,           /* PLACEHOLDER, untuned */
   .site_special_cluster = 10.0,         /* PLACEHOLDER, untuned */

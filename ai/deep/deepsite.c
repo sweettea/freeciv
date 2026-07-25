@@ -291,6 +291,7 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
     adv_want avg
       = deep_catchment_average(sums, foods, potentials, ncatch,
                                result->city_center.tdc->food);
+    adv_want depth;
 
     /* Explicit specials term: resources already speak through their
      * yields, but a catchment holding several is worth more than the
@@ -299,10 +300,21 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
                 + MAX(0, nspecials - 1)
                   * deep_tuning_get()->site_special_cluster;
 
+    /* Catchment depth: the probability-weighted average tile value,
+     * as an ADDITIVE term replacing stock's remaining/8 -- the first
+     * W02 landing replaced the best-other anchor with this average
+     * and deflated every founder want (score 0.879, t=-4.75); the
+     * stock two-tile anchor stays untouched and the depth term adds
+     * catchment discrimination on top. */
+    depth = avg * deep_tuning_get()->site_depth_weight;
+
     if (virtual_city) {
-      result->total = result->city_center.tdc->sum + avg + wspecials;
+      result->total = result->city_center.tdc->sum
+                      + (result->best_other.tdc != NULL
+                         ? result->best_other.tdc->sum : 0)
+                      + depth + wspecials;
     } else if (result->best_other.tdc != NULL) {
-      result->total = avg + wspecials;
+      result->total = result->best_other.tdc->sum + depth + wspecials;
     } else {
       result->total = 0;
       pplayer->government = curr_govt;

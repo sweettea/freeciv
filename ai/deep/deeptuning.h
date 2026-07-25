@@ -38,6 +38,7 @@ struct deep_tuning {
   /* Share of a tile's post-improvement yield increment counted at
    * settle time, and the explicit resource-special bonuses, all in
    * the tile-sum currency (W02). */
+  double site_depth_weight;
   double site_potential_discount;
   double site_special_bonus;
   double site_special_cluster;
