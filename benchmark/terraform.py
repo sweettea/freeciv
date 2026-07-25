@@ -40,21 +40,28 @@ def main():
         sys.exit(f"no completed games under {args.root}/{pattern}")
 
     total = games = 0
-    print("arm,seed,tiles_changed")
+    from collections import Counter
+    origins = Counter()
+    print("arm,seed,tiles_changed,by_origin")
     for d in gamedirs:
         first = sorted(d.glob("saves/freeciv-T0001-*-auto.sav*"))
         final = sorted(d.glob("saves/*-final.sav*"))
         if not first or not final:
             continue
         t0, t1 = terrain(first[0]), terrain(final[0])
-        changed = sum(1 for y in t0 if y in t1
-                      for a, b in zip(t0[y], t1[y]) if a != b)
-        print(f"{d.parent.name},{d.name.removeprefix('seed-')},{changed}")
+        game_orig = Counter(a for y in t0 if y in t1
+                            for a, b in zip(t0[y], t1[y]) if a != b)
+        changed = sum(game_orig.values())
+        print(f"{d.parent.name},{d.name.removeprefix('seed-')},{changed},"
+              + "+".join(f"{k}:{v}" for k, v in sorted(game_orig.items())))
+        origins.update(game_orig)
         total += changed
         games += 1
 
     print(f"TOTAL,,{total} over {games} games "
-          f"({total / games if games else 0:.1f}/game)")
+          f"({total / games if games else 0:.1f}/game) by_origin="
+          + "+".join(f"{k}:{v}" for k, v in sorted(origins.items()))
+          + "  [multi-step origins: m/h/f/j]")
 
 
 if __name__ == "__main__":
