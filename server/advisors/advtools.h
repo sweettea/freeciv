@@ -22,7 +22,19 @@
 #define FC_EPSILON (0.001)
 #define ADV_WANTS_EQ(_w1, _w2) (fabs((_w1) - (_w2)) < FC_EPSILON * (fabs((float) (_w1)) + fabs((float) (_w2))))
 
+struct terrain;
+
 adv_want amortize(adv_want benefit, int delay);
+
+/* Terrain transform chains (W29). The transform graph is functional
+ * (one successor per terrain); the walk is visited-set bounded and
+ * never returns to the start terrain. */
+#define ADV_TRANSFORM_CHAIN_MAX 8
+int adv_transform_chain(const struct terrain *from,
+                        struct terrain *chain[ADV_TRANSFORM_CHAIN_MAX],
+                        int total_time[ADV_TRANSFORM_CHAIN_MAX]);
+int adv_transform_cost(const struct terrain *from,
+                       const struct terrain *to);
 
 /*
  * To prevent integer overflows the product "power * hp * firepower"
