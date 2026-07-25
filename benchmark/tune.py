@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Tune ai/deep's constants against training seeds (W25).
 
-    tune.py [--config FILE] [--seeds FILE] [--count N] [--gens G]
-            [--pop P] [--params a,b,...] [--server BIN] [--jobs J]
-            [--out DIR] [--portbase N]
+    tune.py [--config FILE[,FILE...]] [--seeds FILE] [--count N]
+            [--gens G] [--pop P] [--params a,b,...] [--server BIN]
+            [--jobs J] [--out DIR] [--portbase N]
+
+Multiple --config files give a blended objective: the mean over
+configs of the mean paired score diff, so a candidate must not
+overfit a single regime.
     tune.py --report-holdout TUNINGFILE [--config FILE] [--count N] ...
 
 Optimiser: a dependency-free diagonal (mu, lambda) evolution strategy
@@ -82,13 +86,13 @@ def final_score(scorelog):
     return total
 
 
-def run_game(args, arm, seed, outdir, port, tuning=None):
+def run_game(config, args, arm, seed, outdir, port, tuning=None):
     outdir.mkdir(parents=True, exist_ok=True)
     if (outdir / "DONE").exists():
         return final_score(outdir / "scorelog.txt")
     env = dict(TUNING=str(tuning)) if tuning else {}
     import os
-    cmd = [str(HERE / "run-game.sh"), "--config", args.config,
+    cmd = [str(HERE / "run-game.sh"), "--config", config,
            "--seed", str(seed), "--arm", arm, "--out", str(outdir),
            "--port", str(port)]
     if args.server:
@@ -102,18 +106,22 @@ def run_game(args, arm, seed, outdir, port, tuning=None):
 
 
 def eval_candidate(args, seeds, cand_dir, tuning_file, baseline, portbase):
-    """Mean paired score diff for one tuning candidate."""
-    diffs = []
+    """Blended objective: mean over configs of mean paired score diff."""
+    per_cfg = []
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as ex:
         futs = {}
-        for i, seed in enumerate(seeds):
-            d = cand_dir / f"seed-{seed}"
-            futs[ex.submit(run_game, args, "deep", seed, d,
-                           portbase + i, tuning_file)] = seed
+        for c, config in enumerate(args.configs):
+            for i, seed in enumerate(seeds):
+                d = cand_dir / f"cfg{c}" / f"seed-{seed}"
+                futs[ex.submit(run_game, config, args, "deep", seed, d,
+                               portbase + c * 50 + i, tuning_file)]                     = (c, seed)
+        diffs = {}
         for f in concurrent.futures.as_completed(futs):
-            seed = futs[f]
-            diffs.append(f.result() - baseline[seed])
-    return sum(diffs) / len(diffs)
+            c, seed = futs[f]
+            diffs.setdefault(c, []).append(f.result() - baseline[(c, seed)])
+    for c in range(len(args.configs)):
+        per_cfg.append(sum(diffs[c]) / len(diffs[c]))
+    return sum(per_cfg) / len(per_cfg)
 
 
 def main():
@@ -153,20 +161,22 @@ def main():
     else:
         params = allp
 
-    # Baseline arm once per seed (tuning-independent).
-    print(f"config={args.config} seeds={seeds} params="
+    args.configs = args.config.split(",")
+
+    # Baseline arm once per (config, seed) - tuning-independent.
+    print(f"configs={args.configs} seeds={seeds} params="
           f"{[p['name'] for p in params]}", flush=True)
     baseline = {}
-    import os
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as ex:
-        futs = {ex.submit(run_game, args, "baseline", s,
-                          out / "baseline" / f"seed-{s}",
-                          args.portbase + 100 + i): s
-                for i, s in enumerate(seeds)}
+        futs = {}
+        for c, config in enumerate(args.configs):
+            for i, s in enumerate(seeds):
+                futs[ex.submit(run_game, config, args, "baseline", s,
+                               out / "baseline" / f"cfg{c}" / f"seed-{s}",
+                               args.portbase + 100 + c * 50 + i)] = (c, s)
         for f in concurrent.futures.as_completed(futs):
             baseline[futs[f]] = f.result()
-    print(f"baseline totals: { {s: baseline[s] for s in seeds} }",
-          flush=True)
+    print(f"baseline totals: {baseline}", flush=True)
 
     if args.report_holdout:
         cand = out / "holdout-report"
