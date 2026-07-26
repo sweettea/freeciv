@@ -533,30 +533,45 @@ Branch `epic/w03-horizon` carries W02+W03+W07-lite in flight:
 
 ---
 
-## Cloud handoff state (2026-07-25, pre-AWS)
-
-Branch `epic/w03-horizon` carries W02+W03+W07-lite in flight:
-- W02 v1 regressed (contested 0.879 t=-4.75: catchment MEAN replaced
-  the best-other anchor and deflated every founder want; diagnosis in
-  the anchor-fix commit). v3 restored the stock anchor + additive
-  depth term; +proximity overlap weight, +claim bonus, +pressure-
-  compressed potential (review directions). Score at v3 (pre-
-  proximity/claim): contested 0.948 t=-2.02. DECOMPOSED by the
-  contested ablation just before handoff: site terms alone are
-  NEUTRAL (0.9972 t=-0.07); the gap was the W03 horizon credits
-  over-diverting production on a war map. Fixed by the urgency gate
-  (no credits for threatened cities); credit magnitudes go to the
-  campaign. The isolated before/after was still running at handoff.
-- W03 credits (capacity/growth/bundle) landed; measurement confounded
-  with W02 so far. Supermarket/Sewer acceptance needs long.conf
-  (late techs unreachable by T150) — never yet run.
-- PRIMARY REGIME (human decision): 400 land tiles/player, FRACTAL,
-  T300 (primary.conf, TILESPERPLAYER runner support). All headline
-  judgments happen there; contested/isolated/smoke are probes.
-- Tuning deliberately deferred to the cloud campaign: ~24 deep_tuning
-  placeholders; campaign.sh stages gates -> per-weight ablations
-  (contested+primary) -> tune-A (scale-independent, contested) ->
-  tune-B (site/horizon, primary+isolated blend) -> holdout -> long +
-  primary acceptance -> report.md. See benchmark/AWS.md.
-- Analysis niceties for the box: losses.py defence.py hutstats.py
-  firstbuild.py terraform.py; DEEP_QUIET=1 for campaign runs.
+## W29 — Transform chains
+- [x] implemented (7 commits on `epic/w29-transform-chains`, atop
+      w03-horizon): chain walk API (advtools, cycle-safe),
+      adv_calc_transform valuing the best reachable terrain WITH its
+      prospective improvement (the mine trap: bare-destination vs
+      improved-current comparison lost by construction — measured as
+      a byte-identical no-op before the fix), by-origin and
+      from->to-pair terraform metrics, garden/garden-classic/cramped
+      measurement regimes (solo scarce island = pure development
+      comparison; EXTRA_SERV runner support).
+- [x] **headline finding: upstream bug 28** — the AI (and human
+      auto-workers) NEVER cultivated or planted in ANY ruleset:
+      valuations cached under legacy ACTIVITY_MINE/IRRIGATE keys,
+      consumed under ACTIVITY_CULTIVATE/PLANT (preset -1, gate always
+      false). Found by gate decomposition: 418k transform candidates,
+      prob=0 for all incl. 75k Engineer checks -> which exposed that
+      civ2civ3 locks Transform behind FUSION POWER (endgame, by
+      design; the workstream premise 'transforms with Engineers' is
+      classic-rules thinking — stale-plan note), and cultivate was
+      dead separately. Fix: store under the consumed keys.
+- [x] measured (garden solo T300 regime + guards, pinned binaries):
+      - civ2civ3 + key fix: terrain changes **0 -> 13.2/game**
+        (f>g x116 of 132 — forest-clearing, the move humans make
+        constantly), score 0.9927 t=-0.10 (neutral). Smoke guard
+        0.9763 t=-0.47 (5.5 changes/game); contested guard 0.9498
+        t=-1.68 with 25.9 changes/game — watch-item lean, within this
+        config's recent band; per 00-context §8 recorded, not
+        counter-tuned.
+      - Chain valuation itself: dormant in civ2civ3 (Fusion-gated;
+        correct but unreachable until endgame-scale games — same
+        pre-positioned status as W11's credit awaiting W13) and
+        redundant in classic (stock already transforms 72/game there;
+        greedy chains fine when each step looks good alone).
+      - Classic side-finding: the whole deep stack scores ~0.80 vs
+        stock ON CLASSIC RULES (before W29 too) — our placeholders
+        and design choices are civ2civ3-shaped; out of benchmark
+        scope, recorded.
+- Note: terraform.py's ONE_STEP pair table is classic-derived and
+      mislabels some civ2civ3 one-steps as chain evidence; harmless
+      for before/after deltas, fix when it matters.
+- Note: the W28 stacking + newly-live cultivation compose: multi-
+      worker forest clearing observed in garden games.
