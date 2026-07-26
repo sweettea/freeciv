@@ -104,10 +104,10 @@ timeout "$TUNE_A_CAP" python3 "$here/tune.py" \
   --out "$OUT/tune-A" > "$OUT/tune-A.log" 2>&1 \
   || log "WARN: tune-A exited nonzero"
 
-log "tune-B: site/horizon params on primary+isolated (cap $TUNE_B_CAP)"
+log "tune-B: site/horizon params on primary+isolated+garden (cap $TUNE_B_CAP)"
 timeout "$TUNE_B_CAP" python3 "$here/tune.py" \
   --params site_depth_weight,site_tail_weight,site_overlap_weight,site_potential_discount,site_special_bonus,site_claim_bonus,site_pressure_factor,horizon_capacity_weight,horizon_bundle_weight \
-  --config "$here/configs/primary.conf,$here/configs/isolated.conf" \
+  --config "$here/configs/primary.conf,$here/configs/isolated.conf,$here/configs/garden.conf" \
   --count 5 --gens 10 --pop 8 --jobs "$JOBS" --portbase 6900 \
   --out "$OUT/tune-B" > "$OUT/tune-B.log" 2>&1 \
   || log "WARN: tune-B exited nonzero"
@@ -133,6 +133,11 @@ log "primary acceptance (30 seeds)"
 "$here/run.sh" --count 30 --arms baseline,deep \
   --config "$here/configs/primary.conf" --jobs "$JOBS" --portbase 7200 \
   > "$OUT/primary.log" 2>&1 || true
+
+log "garden acceptance (pure development, 20 seeds)"
+"$here/run.sh" --count 20 --arms baseline,deep \
+  --config "$here/configs/garden.conf" --jobs "$JOBS" --portbase 7260 \
+  > "$OUT/garden.log" 2>&1 || true
 
 # ---- stage 5: report -------------------------------------------------
 log "writing report.md"
