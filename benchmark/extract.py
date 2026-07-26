@@ -130,6 +130,25 @@ def main():
             sys.exit(f"inconsistent scorelog tags in {d}")
         all_rows.append((d, rows))
 
+    # Unpaired arms make any deep/baseline ratio computed from this CSV
+    # a comparison of different seed subsets, which once produced a
+    # convincing-looking but bogus ablation result. Warn loudly.
+    arm_seeds = {}
+    for d, rows in all_rows:
+        if rows:
+            arm_seeds.setdefault(rows[0]["arm"], set()).add(rows[0]["seed"])
+    if len(arm_seeds) > 1:
+        common = set.intersection(*arm_seeds.values())
+        for arm, s in sorted(arm_seeds.items()):
+            extra = s - common
+            if extra:
+                print(
+                    f"WARNING: arm '{arm}' has {len(extra)} seed(s) absent"
+                    f" from other arms; per-seed pairing is broken for"
+                    f" ratio arithmetic: {sorted(extra)[:10]}",
+                    file=sys.stderr,
+                )
+
     out = open(args.csv, "w", newline="") if args.csv else sys.stdout
     w = csv.DictWriter(out, fieldnames=header)
     w.writeheader()
