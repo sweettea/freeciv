@@ -511,12 +511,16 @@ Branch `epic/w03-horizon` carries W02+W03+W07-lite in flight:
   the anchor-fix commit). v3 restored the stock anchor + additive
   depth term; +proximity overlap weight, +claim bonus, +pressure-
   compressed potential (review directions). Score at v3 (pre-
-  proximity/claim): contested 0.948 t=-2.02. DECOMPOSED by the
+  proximity/claim): contested 0.948 t=-2.02. ~~DECOMPOSED by the
   contested ablation just before handoff: site terms alone are
-  NEUTRAL (0.9972 t=-0.07); the gap was the W03 horizon credits
-  over-diverting production on a war map. Fixed by the urgency gate
-  (no credits for threatened cities); credit magnitudes go to the
-  campaign. The isolated before/after was still running at handoff.
+  NEUTRAL (0.9972 t=-0.07); the gap was the W03 horizon credits~~
+  **RETRACTED 2026-07-26** — see "Tuning loader gap" below: the
+  ablation inis were silently ignored (deep arms byte-identical);
+  the 0.997-vs-0.948 spread was missing baseline rows in a partial
+  metrics.csv. The urgency gate (no credits for threatened cities)
+  remains in the code as a plausible war-map rule but its evidential
+  basis is void; the campaign's post-fix no-horizon_* ablations are
+  now the real test. Credit magnitudes go to the campaign.
 - W03 credits (capacity/growth/bundle) landed; measurement confounded
   with W02 so far. Supermarket/Sewer acceptance needs long.conf
   (late techs unreachable by T150) — never yet run.
@@ -575,3 +579,30 @@ Branch `epic/w03-horizon` carries W02+W03+W07-lite in flight:
       for before/after deltas, fix when it matters.
 - Note: the W28 stacking + newly-live cultivation compose: multi-
       worker forest clearing observed in garden games.
+
+## Tuning loader gap (2026-07-26) — found, fixed, results voided
+
+- **Bug**: `deep_tuning_init()` only had TUNE_ lines for the 14 fields
+  that existed at E25.1. The 12 added since (site_*, horizon_*,
+  diplomat_defence_value) were in the struct and used by the code, but
+  any FREECIV_DEEP_TUNING value for them was silently ignored
+  (secfile default-lookup). They were also missing from
+  tuning-params.ini, so tune-B would have crashed at startup.
+- **Detection**: every AWS ablation within one binary identical to 4
+  decimals (contested all = 0.9275). Placebo confirmed locally: the
+  W03-era siteonly/none ablation dirs' deep arms are byte-identical
+  to the defaults dir (games are deterministic per seed).
+- **Voided results**: all site/horizon ablations before fadb2a1f70
+  (box and local); the W02/W03 "decomposition" (see retraction in
+  Cloud handoff section — that spread was unpaired partial CSVs, an
+  ad-hoc-analysis footgun now guarded by extract.py's seed-set
+  warning, 13d393dab9).
+- **Fix** (fadb2a1f70): 12 TUNE_DOUBLE lines; deep-tuning log line now
+  prints all 26 fields so a gap is visible in any game log; fields
+  registered in tuning-params.ini with defaults == compiled defaults.
+  Verified live: zeroed file logs depth=0.000000 hcap=0.000000.
+- **Campaign**: box redeployed at fadb2a1f70, rebuilt, placebo ablate
+  logs archived (ablate.placebo-loader), service restarted 04:47 UTC.
+  Cache keys on the binary, so all ablations re-run for real. ~7.5h
+  of window burned; tune caps trimmed via systemd drop-in to
+  TUNE_A_CAP=8h TUNE_B_CAP=15h to still fit the window.
