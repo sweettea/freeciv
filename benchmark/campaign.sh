@@ -94,13 +94,17 @@ done
 log "ablations done"
 
 # ---- stages 2+3: tuning campaigns -----------------------------------
-TUNE_A_CAP=${TUNE_A_CAP:-12h}
-TUNE_B_CAP=${TUNE_B_CAP:-16h}
+# Sized to spend the full window (~36h of stages incl. ~6h ablations):
+# more seeds per evaluation buys sharper candidate ranking under
+# common random numbers; more generations buys search depth. Caps
+# still guarantee the verdict stages run.
+TUNE_A_CAP=${TUNE_A_CAP:-9h}
+TUNE_B_CAP=${TUNE_B_CAP:-20h}
 log "tune-A: scale-independent params on contested (cap $TUNE_A_CAP)"
 timeout "$TUNE_A_CAP" python3 "$here/tune.py" \
   --params settler_fearfulness_mult,cm_war_shield,cm_war_food,cm_cap_shield,cm_cap_trade,cm_happy_factor \
   --config "$here/configs/contested.conf" \
-  --count 12 --gens 10 --pop 8 --jobs "$JOBS" --portbase 6800 \
+  --count 16 --gens 16 --pop 8 --jobs "$JOBS" --portbase 6800 \
   --out "$OUT/tune-A" > "$OUT/tune-A.log" 2>&1 \
   || log "WARN: tune-A exited nonzero"
 
@@ -108,7 +112,7 @@ log "tune-B: site/horizon params on primary+isolated+garden (cap $TUNE_B_CAP)"
 timeout "$TUNE_B_CAP" python3 "$here/tune.py" \
   --params site_depth_weight,site_tail_weight,site_overlap_weight,site_potential_discount,site_special_bonus,site_claim_bonus,site_pressure_factor,horizon_capacity_weight,horizon_bundle_weight \
   --config "$here/configs/primary.conf,$here/configs/isolated.conf,$here/configs/garden.conf" \
-  --count 5 --gens 10 --pop 8 --jobs "$JOBS" --portbase 6900 \
+  --count 6 --gens 14 --pop 8 --jobs "$JOBS" --portbase 6900 \
   --out "$OUT/tune-B" > "$OUT/tune-B.log" 2>&1 \
   || log "WARN: tune-B exited nonzero"
 
@@ -118,8 +122,8 @@ for t in A B; do
   if [ -r "$best" ]; then
     log "holdout report tune-$t"
     python3 "$here/tune.py" --report-holdout "$best" \
-      --config "$here/configs/contested.conf,$here/configs/primary.conf" \
-      --count 10 --jobs "$JOBS" --portbase 7000 \
+      --config "$here/configs/contested.conf,$here/configs/primary.conf,$here/configs/garden.conf" \
+      --count 12 --jobs "$JOBS" --portbase 7000 \
       --out "$OUT/holdout-$t" > "$OUT/holdout-$t.log" 2>&1 || true
   fi
 done
@@ -129,8 +133,8 @@ log "long.conf late-tech acceptance"
   --config "$here/configs/long.conf" --jobs "$JOBS" --portbase 7100 \
   > "$OUT/long.log" 2>&1 || true
 
-log "primary acceptance (30 seeds)"
-"$here/run.sh" --count 30 --arms baseline,deep \
+log "primary acceptance (40 seeds)"
+"$here/run.sh" --count 40 --arms baseline,deep \
   --config "$here/configs/primary.conf" --jobs "$JOBS" --portbase 7200 \
   > "$OUT/primary.log" 2>&1 || true
 
