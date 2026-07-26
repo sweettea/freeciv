@@ -107,12 +107,25 @@ void deep_tuning_init(void)
   TUNE_INT(cm_cap_trade);
   TUNE_INT(cm_wonder_shield);
   TUNE_INT(cm_wonder_trade);
+  TUNE_DOUBLE(diplomat_defence_value);
+  TUNE_DOUBLE(site_tail_weight);
+  TUNE_DOUBLE(site_depth_weight);
+  TUNE_DOUBLE(site_overlap_weight);
+  TUNE_DOUBLE(site_potential_discount);
+  TUNE_DOUBLE(site_special_bonus);
+  TUNE_DOUBLE(site_special_cluster);
+  TUNE_DOUBLE(site_claim_bonus);
+  TUNE_DOUBLE(site_pressure_factor);
+  TUNE_DOUBLE(horizon_capacity_weight);
+  TUNE_DOUBLE(horizon_growth_weight);
+  TUNE_DOUBLE(horizon_bundle_weight);
 
   secfile_destroy(sf);
 
   log_normal("deep-tuning file=\"%s\" fear=%f eta=%f surv=%f hut=%f"
              " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
-             " wos=%d wot=%d",
+             " wos=%d wot=%d dip=%f tail=%f depth=%f ovl=%f pot=%f"
+             " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f",
              path,
              deep_tuning_active.settler_fearfulness_mult,
              deep_tuning_active.incoming_defence_eta_weight,
@@ -127,7 +140,19 @@ void deep_tuning_init(void)
              deep_tuning_active.cm_cap_shield,
              deep_tuning_active.cm_cap_trade,
              deep_tuning_active.cm_wonder_shield,
-             deep_tuning_active.cm_wonder_trade);
+             deep_tuning_active.cm_wonder_trade,
+             deep_tuning_active.diplomat_defence_value,
+             deep_tuning_active.site_tail_weight,
+             deep_tuning_active.site_depth_weight,
+             deep_tuning_active.site_overlap_weight,
+             deep_tuning_active.site_potential_discount,
+             deep_tuning_active.site_special_bonus,
+             deep_tuning_active.site_special_cluster,
+             deep_tuning_active.site_claim_bonus,
+             deep_tuning_active.site_pressure_factor,
+             deep_tuning_active.horizon_capacity_weight,
+             deep_tuning_active.horizon_growth_weight,
+             deep_tuning_active.horizon_bundle_weight);
 }
 
 /**********************************************************************//**
