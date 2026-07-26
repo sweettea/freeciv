@@ -18,7 +18,14 @@
  * Every value here is a PLACEHOLDER until it has been through a
  * benchmark/tune.py pass on training seeds (W25); new entries must be
  * flagged in doc/deep-ai/STATUS.md. Do not hand-adjust values to chase
- * benchmark numbers. */
+ * benchmark numbers.
+ *
+ * Adding a field takes FOUR edits or the field silently cannot be
+ * tuned (this happened; see STATUS.md "Tuning loader gap"):
+ *   1. this struct;  2. deep_tuning_defaults in deeptuning.c;
+ *   3. a TUNE_ line in deep_tuning_init();  4. the deep-tuning
+ *   log line there;  plus benchmark/tuning-params.ini to make it
+ *   visible to tune.py. */
 struct deep_tuning {
   /* Settler pathfinding fearfulness as a multiple of the advisors'
    * NORMAL_STACKING_FEARFULNESS. Kept above 1: losing a settler also
