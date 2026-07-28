@@ -237,13 +237,15 @@ static unsigned int deep_overseas_danger(const struct civ_map *nmap,
   does both (and grants only 1-3 upkeep-free units per city), so every
   requisitioned garrison is a recurring treasury and larder bill;
   classic charges shields and the discount tends to 1. Uses the
-  cheapest buildable defending type's raw ruleset upkeep -- government
-  modifiers are left to the tuning weight.
+  cheapest buildable defending type's government-adjusted upkeep
+  (utype_upkeep_cost), so a Democracy fears the doubled bill it
+  actually pays.
 **************************************************************************/
 static double deep_defender_upkeep_discount(const struct civ_map *nmap,
                                             struct city *pcity)
 {
   const struct deep_tuning *tune = deep_tuning_get();
+  struct player *pplayer = city_owner(pcity);
   int cheapest = -1;
 
   if (tune->upkeep_unit_weight <= 0.0) {
@@ -257,7 +259,8 @@ static double deep_defender_upkeep_discount(const struct civ_map *nmap,
         || !can_city_build_unit_now(nmap, pcity, ut, RPT_CERTAIN)) {
       continue;
     }
-    cost = ut->upkeep[O_GOLD] + ut->upkeep[O_FOOD];
+    cost = utype_upkeep_cost(ut, NULL, pplayer, O_GOLD)
+           + utype_upkeep_cost(ut, NULL, pplayer, O_FOOD);
     if (cheapest < 0 || cost < cheapest) {
       cheapest = cost;
     }
