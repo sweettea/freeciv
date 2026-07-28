@@ -642,8 +642,25 @@ Ratios are paired per-seed deep/baseline total score.
   Holdout -401.7/seed. ~56 evaluations for 9 dims is not a search.
   v2 plan: seed initial population from ablation evidence + defaults,
   population 16, cap in generations not hours, ideally on 24xlarge
-  after quota bump; consider truncated games (T150-T200) as the
-  objective — validate first against existing per-turn scorelogs.
+  after quota bump; truncated-game objective now VALIDATED (below).
+- **Truncation validation (2026-07-28, benchmark/turncorr.py)**: how
+  well does the paired diff at turn T predict the final-turn diff,
+  per seed, across every paired scorelog on disk (300 contested,
+  40 garden, 24 primary-holdout, 30 isolated, 20 cramped pairs)?
+  Primary: T200 r=0.77 / rho=0.76 / sign 83%; T150 r=0.46 (unusable).
+  Garden: T200 r=0.95 local, 0.80 holdout. Isolated: T200 r=0.72,
+  earlier useless. Cramped: decided late, T200 r=0.41 — never
+  truncate cramped. Verdict for v2: SEARCH on a T200 objective
+  (late turns are the expensive ones, so this buys roughly 2x more
+  generations per hour), but confirm generation-bests and all
+  holdout/acceptance numbers at full T300 — per-seed r=0.77 is good
+  enough to rank candidates during search, not to report results.
+  Caveat: this is seed-level fidelity; candidate-level bias (a
+  tuning that looks good at T200 but fades, e.g. over-expansion)
+  cannot be measured from existing data — the T300 gen-best
+  confirmation runs are the guard against exactly that. (The only
+  candidate-sweep data on disk, results/tuning/demo, is placebo-era:
+  6 of its 8 candidates are byte-identical.)
 - **campaign.sh flaws found**: (a) global DEEP_QUIET=1 suppresses the
   deep-want lines firstbuild.py parses, so the long.conf first-build
   acceptance table is all zeros — logging artifact, not behaviour;
