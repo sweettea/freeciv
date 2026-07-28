@@ -721,11 +721,13 @@ benchmark/results/mixed-grid-2026-07-28.tgz. tune.py --mixed
   barbarian_fear, upkeep_gold_weight, upkeep_unit_weight. After it:
   holdout + garden2/isolated retest (pre-fix defaults benchmarks to
   beat: garden2 0.861, isolated 0.797, city losses 90v42).
-- **Queued**: rotate obsolete surplus defenders (disband old to build
-  new when over garrison need — human request); tech-upkeep charge in
-  W02 site value; war-unhappiness/martial-law (civ2civ3 caps martial
-  law at 3, primary unhappypop ratio 1.9); settler-factory economics
-  (civ2civ3 flat foodbox, pop-2 settlers) vs W05/W02 assumptions;
-  wonder prereq chains. Symmetric-but-exploitable later: tired
-  attack, FP-2 nerfs, bases-don't-protect, dead national trade
-  routes.
+- **Queued**: see findings/civ2civ3-adjustments.md for the full
+  ranked list + the defender-rotation design (human-requested).
+  Highlights: government-aware upkeep (cheap first step:
+  government-adjusted utype_upkeep_cost in the defender discount);
+  carrying-cost-aware W02 (distance waste + tech upkeep);
+  health-credit in W03; rotation after defence-D lands. Still
+  queued from before: war-unhappiness/martial-law (primary
+  unhappypop 1.9), settler-factory economics, wonder prereqs.
+  Edge-builders (symmetric): tired-attack discipline, embassy
+  science, caravan policy, walls valuation.
