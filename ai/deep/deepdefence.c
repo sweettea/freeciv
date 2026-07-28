@@ -289,23 +289,68 @@ static unsigned int deep_barbarian_fear(void)
 }
 
 /**********************************************************************//**
+  How militarised the players we have actually met are, relative to
+  us: the ratio of their summed military ratings to ours, capped at
+  1.0 after the tunable slope. Unmet players contribute nothing (a
+  pre-contact empire keeps no insurance garrison at all), and the
+  signal rises BEFORE any war does -- an arms-racing neighbour is the
+  travellers' report that says keep the gates manned. Barbarian risk
+  is deliberately not in here; deep_barbarian_fear() owns it.
+**************************************************************************/
+static double deep_garrison_menace(struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  double theirs = 0.0, ours = 0.0;
+
+  if (tune->garrison_menace_slope <= 0.0) {
+    return 1.0;   /* Disabled: unconditional floor. */
+  }
+
+  unit_list_iterate(pplayer->units, punit) {
+    ours += adv_unit_att_rating(punit);
+  } unit_list_iterate_end;
+
+  players_iterate_alive(aplayer) {
+    if (aplayer == pplayer
+        || pplayers_allied(pplayer, aplayer)
+        || player_diplstate_get(pplayer, aplayer)->type
+           == DS_NO_CONTACT) {
+      continue;
+    }
+    unit_list_iterate(aplayer->units, aunit) {
+      theirs += adv_unit_att_rating(aunit);
+    } unit_list_iterate_end;
+  } players_iterate_alive_end;
+
+  if (theirs <= 0.0) {
+    return 0.0;
+  }
+  return MIN(1.0, tune->garrison_menace_slope * theirs / MAX(ours, 1.0));
+}
+
+/**********************************************************************//**
   Keep a token garrison even where assessed danger is zero. Stock
   cities do this by habit and it silently insures them against every
   threat the assessment cannot see (landings, barbarian spawns); deep
   trusted the assessment literally, left new cities at ndef=0 building
   Settlers, and lost them. The floor makes the insurance explicit and
-  tunable instead of removing it.
+  tunable instead of removing it, and it is scaled by how militarised
+  the neighbours we know about actually are -- zero before contact,
+  when the world cannot reach us and every garrison displaces a
+  Settler at compounding time.
 **************************************************************************/
 static void deep_apply_garrison_floor(struct city *pcity,
                                       struct ai_city *city_data,
-                                      double upkeep_discount)
+                                      double upkeep_discount,
+                                      double menace)
 {
   const struct deep_tuning *tune = deep_tuning_get();
 
   if (city_data->danger == 0
       && unit_list_size(city_tile(pcity)->units) < tune->garrison_floor) {
     city_data->danger
-      = (unsigned int) (tune->garrison_floor_danger * upkeep_discount);
+      = (unsigned int) (tune->garrison_floor_danger * upkeep_discount
+                        * menace);
   }
 }
 
@@ -316,6 +361,8 @@ static void deep_apply_garrison_floor(struct city *pcity,
 static void deep_credit_incoming_defence(struct ai_type *ait,
                                          struct player *pplayer)
 {
+  double menace = deep_garrison_menace(pplayer);
+
   city_list_iterate(pplayer->cities, pcity) {
     struct ai_city *city_data = def_ai_city_data(pcity, ait);
     double updisc = deep_defender_upkeep_discount(&(wld.map), pcity);
@@ -326,7 +373,7 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
     city_data->danger += (unsigned int) (deep_barbarian_fear() * updisc);
     credit = deep_incoming_defence_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
-    deep_apply_garrison_floor(pcity, city_data, updisc);
+    deep_apply_garrison_floor(pcity, city_data, updisc, menace);
   } city_list_iterate_end;
 }
 
@@ -400,7 +447,8 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     city_data->danger += (unsigned int) (deep_barbarian_fear() * updisc);
     credit = deep_incoming_defence_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
-    deep_apply_garrison_floor(pcity, city_data, updisc);
+    deep_apply_garrison_floor(pcity, city_data, updisc,
+                              deep_garrison_menace(pplayer));
   }
 
   {

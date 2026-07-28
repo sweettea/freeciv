@@ -48,6 +48,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .overseas_decay = 0.2,                /* PLACEHOLDER, untuned */
   .garrison_floor = 1,                  /* PLACEHOLDER, untuned */
   .garrison_floor_danger = 40,          /* PLACEHOLDER, untuned */
+  .garrison_menace_slope = 1.0,         /* PLACEHOLDER, untuned */
   .barbarian_fear = 30,                 /* PLACEHOLDER, untuned */
   .upkeep_gold_weight = 3.0,            /* PLACEHOLDER, untuned */
   .upkeep_unit_weight = 0.5,            /* PLACEHOLDER, untuned */
@@ -130,6 +131,7 @@ void deep_tuning_init(void)
   TUNE_DOUBLE(overseas_decay);
   TUNE_INT(garrison_floor);
   TUNE_INT(garrison_floor_danger);
+  TUNE_DOUBLE(garrison_menace_slope);
   TUNE_INT(barbarian_fear);
   TUNE_DOUBLE(upkeep_gold_weight);
   TUNE_DOUBLE(upkeep_unit_weight);
@@ -140,7 +142,7 @@ void deep_tuning_init(void)
              " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
              " wos=%d wot=%d dip=%f tail=%f depth=%f ovl=%f pot=%f"
              " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f"
-             " osf=%f osd=%f gfl=%d gfd=%d bfear=%d ugw=%f uuw=%f",
+             " osf=%f osd=%f gfl=%d gfd=%d gms=%f bfear=%d ugw=%f uuw=%f",
              path,
              deep_tuning_active.settler_fearfulness_mult,
              deep_tuning_active.incoming_defence_eta_weight,
@@ -172,6 +174,7 @@ void deep_tuning_init(void)
              deep_tuning_active.overseas_decay,
              deep_tuning_active.garrison_floor,
              deep_tuning_active.garrison_floor_danger,
+             deep_tuning_active.garrison_menace_slope,
              deep_tuning_active.barbarian_fear,
              deep_tuning_active.upkeep_gold_weight,
              deep_tuning_active.upkeep_unit_weight);

@@ -91,6 +91,10 @@ struct deep_tuning {
    * (same fix family as overseas_fear). */
   int garrison_floor;
   int garrison_floor_danger;
+  /* Slope on the met-neighbour militarisation ratio (their summed
+   * military rating / ours) that scales the garrison floor: 0 before
+   * contact, capped at 1. Zero disables the scaling entirely. */
+  double garrison_menace_slope;
   /* Flat danger added to every city from the turn the server can
    * first spawn barbarians (barbarianrate/onsetbarbarian gate);
    * zero before that turn. */
