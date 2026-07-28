@@ -3,11 +3,18 @@
 
     tune.py [--config FILE[,FILE...]] [--seeds FILE] [--count N]
             [--gens G] [--pop P] [--params a,b,...] [--server BIN]
-            [--jobs J] [--out DIR] [--portbase N]
+            [--jobs J] [--out DIR] [--portbase N] [--mixed]
 
 Multiple --config files give a blended objective: the mean over
 configs of the mean paired score diff, so a candidate must not
 overfit a single regime.
+
+--mixed switches to head-to-head games: both arms sit in the SAME
+game (mixed_db/mixed_bd seat mirroring, see run-game.sh), there is no
+separate baseline arm, and the objective is the within-game deep-side
+total minus baseline-side total, summed over the two mirrors of each
+seed. This is the only objective that can see defects which never
+fire in deep-vs-deep worlds (e.g. the naval defence hole, 2026-07-28).
     tune.py --report-holdout TUNINGFILE [--config FILE] [--count N] ...
 
 Optimiser: a dependency-free diagonal (mu, lambda) evolution strategy
@@ -86,22 +93,55 @@ def final_score(scorelog):
     return total
 
 
-def run_game(config, args, arm, seed, outdir, port, tuning=None):
+def mixed_sides(scorelog, arm):
+    """(deep_total, base_total) of one mixed game: seats P1, P3, ...
+    run deep in mixed_db and baseline in mixed_bd (run-game.sh).
+    Civil-war splinters (non-P names) belong to neither side."""
+    tags, names, data = {}, {}, {}
+    for line in open(scorelog, errors="replace"):
+        parts = line.split(" ")
+        if parts[0] == "tag":
+            tags[parts[2].strip()] = int(parts[1])
+        elif parts[0] == "addplayer":
+            names[int(parts[2])] = " ".join(parts[3:]).strip()
+        elif parts[0] == "data":
+            t, tag, plr = int(parts[1]), int(parts[2]), int(parts[3])
+            data.setdefault(plr, {}).setdefault(tag, {})[t] = parts[4]
+    sid = tags["score"]
+    deep = base = 0
+    for plr, tagdata in data.items():
+        name = names.get(plr, "")
+        if not re.fullmatch(r"P\d+", name):
+            continue
+        turns = tagdata.get(sid, {})
+        if not turns:
+            continue
+        score = int(turns[max(turns)])
+        if (int(name[1:]) % 2 == 1) == (arm == "mixed_db"):
+            deep += score
+        else:
+            base += score
+    return deep, base
+
+
+def run_game(config, args, arm, seed, outdir, port, tuning=None,
+             mixed=False):
     outdir.mkdir(parents=True, exist_ok=True)
-    if (outdir / "DONE").exists():
-        return final_score(outdir / "scorelog.txt")
-    env = dict(TUNING=str(tuning)) if tuning else {}
-    import os
-    cmd = [str(HERE / "run-game.sh"), "--config", config,
-           "--seed", str(seed), "--arm", arm, "--out", str(outdir),
-           "--port", str(port)]
-    if args.server:
-        cmd += ["--server", args.server]
-    r = subprocess.run(cmd, env={**os.environ, **env},
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError(f"game failed: {arm} seed {seed}: "
-                           f"{r.stderr.strip().splitlines()[-1:]}" )
+    if not (outdir / "DONE").exists():
+        env = dict(TUNING=str(tuning)) if tuning else {}
+        import os
+        cmd = [str(HERE / "run-game.sh"), "--config", config,
+               "--seed", str(seed), "--arm", arm, "--out", str(outdir),
+               "--port", str(port)]
+        if args.server:
+            cmd += ["--server", args.server]
+        r = subprocess.run(cmd, env={**os.environ, **env},
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"game failed: {arm} seed {seed}: "
+                               f"{r.stderr.strip().splitlines()[-1:]}" )
+    if mixed:
+        return mixed_sides(outdir / "scorelog.txt", arm)
     return final_score(outdir / "scorelog.txt")
 
 
@@ -110,24 +150,33 @@ def eval_population(args, seeds, cand_dirs, tuning_files, baseline,
     """Evaluate every candidate's every game in ONE pool, so the whole
     population fills the machine instead of one candidate at a time.
     Returns a list of blended objectives, one per candidate."""
+    mixed = getattr(args, "mixed", False)
+    arms = ("mixed_db", "mixed_bd") if mixed else ("deep",)
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as ex:
         futs = {}
         port = portbase
         for k, (cdir, tf) in enumerate(zip(cand_dirs, tuning_files)):
             for c, config in enumerate(args.configs):
                 for seed in seeds:
-                    d = cdir / f"cfg{c}" / f"seed-{seed}"
-                    futs[ex.submit(run_game, config, args, "deep", seed,
-                                   d, port, tf)] = (k, c, seed)
-                    port += 1
+                    for arm in arms:
+                        d = cdir / f"cfg{c}" / (f"{arm}/" if mixed
+                                                else "") / f"seed-{seed}"
+                        futs[ex.submit(run_game, config, args, arm, seed,
+                                       d, port, tf, mixed)] = (k, c, seed)
+                        port += 1
         diffs = {}
         for f in concurrent.futures.as_completed(futs):
             k, c, seed = futs[f]
-            diffs.setdefault((k, c), []).append(
-                f.result() - baseline[(c, seed)])
+            if mixed:
+                deep, base = f.result()
+                per_seed = diffs.setdefault((k, c), {})
+                per_seed[seed] = per_seed.get(seed, 0) + deep - base
+            else:
+                diffs.setdefault((k, c), {})[seed] \
+                    = f.result() - baseline[(c, seed)]
     objs = []
     for k in range(len(cand_dirs)):
-        per_cfg = [sum(diffs[(k, c)]) / len(diffs[(k, c)])
+        per_cfg = [sum(diffs[(k, c)].values()) / len(diffs[(k, c)])
                    for c in range(len(args.configs))]
         objs.append(sum(per_cfg) / len(per_cfg))
     return objs
@@ -153,6 +202,9 @@ def main():
     ap.add_argument("--portbase", type=int, default=6200)
     ap.add_argument("--seed-rng", type=int, default=42)
     ap.add_argument("--report-holdout", metavar="TUNINGFILE")
+    ap.add_argument("--mixed", action="store_true",
+                    help="head-to-head seat-mirrored games; objective is"
+                         " within-game deep-side minus baseline-side")
     args = ap.parse_args()
 
     if args.report_holdout:
@@ -178,20 +230,25 @@ def main():
 
     args.configs = args.config.split(",")
 
-    # Baseline arm once per (config, seed) - tuning-independent.
-    print(f"configs={args.configs} seeds={seeds} params="
-          f"{[p['name'] for p in params]}", flush=True)
+    # Baseline arm once per (config, seed) - tuning-independent. In
+    # mixed mode the opponent lives inside every game, so there is no
+    # separate baseline arm to run.
+    print(f"configs={args.configs} seeds={seeds} mixed={args.mixed}"
+          f" params={[p['name'] for p in params]}", flush=True)
     baseline = {}
-    with concurrent.futures.ThreadPoolExecutor(args.jobs) as ex:
-        futs = {}
-        for c, config in enumerate(args.configs):
-            for i, s in enumerate(seeds):
-                futs[ex.submit(run_game, config, args, "baseline", s,
-                               out / "baseline" / f"cfg{c}" / f"seed-{s}",
-                               args.portbase + 100 + c * 50 + i)] = (c, s)
-        for f in concurrent.futures.as_completed(futs):
-            baseline[futs[f]] = f.result()
-    print(f"baseline totals: {baseline}", flush=True)
+    if not args.mixed:
+        with concurrent.futures.ThreadPoolExecutor(args.jobs) as ex:
+            futs = {}
+            for c, config in enumerate(args.configs):
+                for i, s in enumerate(seeds):
+                    futs[ex.submit(run_game, config, args, "baseline", s,
+                                   out / "baseline" / f"cfg{c}"
+                                   / f"seed-{s}",
+                                   args.portbase + 100 + c * 50 + i)] \
+                        = (c, s)
+            for f in concurrent.futures.as_completed(futs):
+                baseline[futs[f]] = f.result()
+        print(f"baseline totals: {baseline}", flush=True)
 
     if args.report_holdout:
         cand = out / "holdout-report"
