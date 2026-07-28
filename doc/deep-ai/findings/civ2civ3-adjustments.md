@@ -95,3 +95,22 @@ delta at T300, score + city losses, same-world --quick guard.
 Commit split: melt; replace-then-disband; treasury-gated upgrade.
 Implement after defence-D lands (tuned fear/floor values define
 "need").
+
+## garden2 post-mortem + defence-G interpretation rule (2026-07-29)
+
+garden2.conf halved land per player by construction (garden's 24x24
+kept, players doubled: ~57 tiles each) — a knife-fight regime that
+represents nothing. RETIRED in favour of garden2b.conf (34x34,
+garden-parity ~115/player). It earned its keep by exposing the
+naval-invasion hole; its data stays for comparability.
+
+PRE-REGISTERED before defence-G finished (gen 5, best +31.5): G
+trains on garden2+cramped, so its ECONOMY knob values (cm_*, site_*,
+upkeep_*) get full weight — their signal comes from cramped, the
+legitimate config (0.778 -> 1.129 under the gen-4 incumbent). G's
+FEAR/FLOOR knobs (overseas_*, garrison_*, barbarian_fear) are
+suspected inflated by garden2's catastrophic-loss dynamics and are
+accepted only where defence-H (trained on properly-sized isolated) and
+the garden2b/isolated validation sweep agree. Note the island-lottery
+NOISE cancels in the mirrored objective; the concern is regime shape
+only.
