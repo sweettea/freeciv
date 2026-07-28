@@ -236,6 +236,18 @@ void deep_adjust_building_wants(struct ai_type *ait,
       add += deep_bundle_credit(pcity, pimprove, adv);
 
       if (add > 0) {
+        /* The credit imagines the building's future yields, but the
+         * ruleset may charge gold every turn to keep it (civ2civ3:
+         * every building; head-to-head games showed deep bankrupting
+         * itself on exactly that bill, gold ratio 0.13-0.55 vs
+         * stock). Charge the ruleset's own upkeep figure against the
+         * credit -- never below zero, so stock's base want keeps its
+         * pricing. */
+        add -= city_improvement_upkeep(pcity, pimprove)
+               * deep_tuning_get()->upkeep_gold_weight;
+        add = MAX(add, 0);
+      }
+      if (add > 0) {
         pcity->server.adv->building_want[id] += add;
         log_base(LOG_DEBUG,
                  "deep-horizon city=%d impr=\"%s\" credit=%.1f",
