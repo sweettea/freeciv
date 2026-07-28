@@ -232,6 +232,44 @@ static unsigned int deep_overseas_danger(const struct civ_map *nmap,
 }
 
 /**********************************************************************//**
+  Discount on deep's injected fear terms when the marginal defender
+  itself costs upkeep the ruleset charges in gold or food. civ2civ3
+  does both (and grants only 1-3 upkeep-free units per city), so every
+  requisitioned garrison is a recurring treasury and larder bill;
+  classic charges shields and the discount tends to 1. Uses the
+  cheapest buildable defending type's raw ruleset upkeep -- government
+  modifiers are left to the tuning weight.
+**************************************************************************/
+static double deep_defender_upkeep_discount(const struct civ_map *nmap,
+                                            struct city *pcity)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int cheapest = -1;
+
+  if (tune->upkeep_unit_weight <= 0.0) {
+    return 1.0;
+  }
+
+  unit_type_iterate(ut) {
+    int cost;
+
+    if (ut->defense_strength <= 0
+        || !can_city_build_unit_now(nmap, pcity, ut, RPT_CERTAIN)) {
+      continue;
+    }
+    cost = ut->upkeep[O_GOLD] + ut->upkeep[O_FOOD];
+    if (cheapest < 0 || cost < cheapest) {
+      cheapest = cost;
+    }
+  } unit_type_iterate_end;
+
+  if (cheapest <= 0) {
+    return 1.0;
+  }
+  return 1.0 / (1.0 + tune->upkeep_unit_weight * cheapest);
+}
+
+/**********************************************************************//**
   Flat fear of barbarian uprisings, active from the first turn the
   server can actually spawn them -- the same gate barbarian.c uses --
   and zero before it, so pre-onset production is not taxed. The
@@ -259,13 +297,15 @@ static unsigned int deep_barbarian_fear(void)
   tunable instead of removing it.
 **************************************************************************/
 static void deep_apply_garrison_floor(struct city *pcity,
-                                      struct ai_city *city_data)
+                                      struct ai_city *city_data,
+                                      double upkeep_discount)
 {
   const struct deep_tuning *tune = deep_tuning_get();
 
   if (city_data->danger == 0
       && unit_list_size(city_tile(pcity)->units) < tune->garrison_floor) {
-    city_data->danger = tune->garrison_floor_danger;
+    city_data->danger
+      = (unsigned int) (tune->garrison_floor_danger * upkeep_discount);
   }
 }
 
@@ -278,13 +318,15 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
 {
   city_list_iterate(pplayer->cities, pcity) {
     struct ai_city *city_data = def_ai_city_data(pcity, ait);
+    double updisc = deep_defender_upkeep_discount(&(wld.map), pcity);
     unsigned int credit;
 
-    city_data->danger += deep_overseas_danger(&(wld.map), pcity);
-    city_data->danger += deep_barbarian_fear();
+    city_data->danger += (unsigned int)
+      (deep_overseas_danger(&(wld.map), pcity) * updisc);
+    city_data->danger += (unsigned int) (deep_barbarian_fear() * updisc);
     credit = deep_incoming_defence_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
-    deep_apply_garrison_floor(pcity, city_data);
+    deep_apply_garrison_floor(pcity, city_data, updisc);
   } city_list_iterate_end;
 }
 
@@ -348,14 +390,17 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     /* Fear invasions the assessment cannot see, then count the help
      * that is already on its way, so the city does not requisition
      * replacements for it (W11), and never fall below the token
-     * garrison. */
+     * garrison. All injected fear is discounted by what the ruleset
+     * charges to keep the marginal defender. */
+    double updisc = deep_defender_upkeep_discount(nmap, pcity);
     unsigned int credit;
 
-    city_data->danger += deep_overseas_danger(nmap, pcity);
-    city_data->danger += deep_barbarian_fear();
+    city_data->danger += (unsigned int)
+      (deep_overseas_danger(nmap, pcity) * updisc);
+    city_data->danger += (unsigned int) (deep_barbarian_fear() * updisc);
     credit = deep_incoming_defence_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
-    deep_apply_garrison_floor(pcity, city_data);
+    deep_apply_garrison_floor(pcity, city_data, updisc);
   }
 
   {
