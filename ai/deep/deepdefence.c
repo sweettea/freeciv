@@ -1173,6 +1173,68 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
   dai_do_last_activities() with deep's ranked emergency handling in
   place of the stock city management.
 **************************************************************************/
+/**********************************************************************//**
+  Never let the server force-sell a building. When the projected
+  treasury cannot cover the coming turn, sell the least valuable
+  sellable building ourselves -- our choice of which, one per city per
+  turn like the server's own limit -- and log the emergency. The
+  server's bankruptcy handler picks its victim without consulting the
+  AI (cityturn.c "cant_maintain"); an autosale is a strictly worse
+  version of a choice we could have made a turn earlier.
+**************************************************************************/
+static void deep_balance_treasury(struct player *pplayer)
+{
+  int projected = pplayer->economic.gold
+                  + player_get_expected_income(pplayer);
+
+  while (projected < 0) {
+    struct city *sell_city = NULL;
+    struct impr_type *sell_impr = NULL;
+    double sell_score = 0.0;
+
+    city_list_iterate(pplayer->cities, pcity) {
+      if (pcity->did_sell) {
+        continue;
+      }
+      city_built_iterate(pcity, pimprove) {
+        double score;
+
+        if (!can_city_sell_building(pcity, pimprove)) {
+          continue;
+        }
+        /* Shed the biggest recurring bill for the smallest loss of
+         * invested shields. */
+        score = (1.0 + city_improvement_upkeep(pcity, pimprove))
+                / (1.0 + impr_build_shield_cost(pcity, pimprove));
+        if (sell_impr == NULL || score > sell_score) {
+          sell_city = pcity;
+          sell_impr = pimprove;
+          sell_score = score;
+        }
+      } city_built_iterate_end;
+    } city_list_iterate_end;
+
+    if (sell_impr == NULL) {
+      log_base(deep_metric_log_level(),
+               "deep-fin turn=%d player=\"%s\" gold=%d projected=%d"
+               " nothing-sellable",
+               game.info.turn, player_name(pplayer),
+               pplayer->economic.gold, projected);
+      return;
+    }
+    log_base(deep_metric_log_level(),
+             "deep-fin turn=%d player=\"%s\" gold=%d projected=%d"
+             " sell=\"%s\" city=%d",
+             game.info.turn, player_name(pplayer),
+             pplayer->economic.gold, projected,
+             improvement_rule_name(sell_impr), sell_city->id);
+    projected += impr_sell_gold(sell_impr)
+                 + city_improvement_upkeep(sell_city, sell_impr);
+    do_sell_building(pplayer, sell_city, sell_impr, "sold");
+    sell_city->did_sell = TRUE;
+  }
+}
+
 void deep_do_last_activities(struct ai_type *ait, struct player *pplayer)
 {
   TIMING_LOG(AIT_ALL, TIMER_START);
@@ -1186,6 +1248,10 @@ void deep_do_last_activities(struct ai_type *ait, struct player *pplayer)
   TIMING_LOG(AIT_CITIES, TIMER_START);
   deep_manage_cities(ait, pplayer);
   TIMING_LOG(AIT_CITIES, TIMER_STOP);
+  /* After taxes and production are settled: if the treasury still
+   * cannot cover the coming turn, choose our own sacrifice before
+   * the server chooses one for us. */
+  deep_balance_treasury(pplayer);
   TIMING_LOG(AIT_TECH, TIMER_START);
   dai_manage_tech(ait, pplayer);
   TIMING_LOG(AIT_TECH, TIMER_STOP);

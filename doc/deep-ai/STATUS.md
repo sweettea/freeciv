@@ -671,3 +671,61 @@ Ratios are paired per-seed deep/baseline total score.
   (tune-A's holdout showed no transfer — lean: none); tune-B v2
   design; whether the primary gap needs military-side workstreams
   before more economic tuning can show up in the headline number.
+
+## Head-to-head grid + the two civ2civ3 defects (2026-07-28)
+
+First HEAD-TO-HEAD measurements: mixed_db/mixed_bd arms seat deep and
+stock in the SAME game (4e9fd90b73), mirrored so every seat sees both
+modules per seed; seat-paired scoring (same seed+seat across mirrors)
+is the honest metric — game-level ratio means are Jensen-inflated by
+start-position luck and once showed a fake deep "advantage". Grid: 14
+configs x {civ2civ3, classic}, ~900 games on the box, archived in
+benchmark/results/mixed-grid-2026-07-28.tgz. tune.py --mixed
+(f4f66ec6b6) optimises the within-game deep-minus-stock diff.
+
+- **Seat-paired agg ratios (deep/stock, merged campaign tuning)**:
+  contested 0.942/0.966 (civ2civ3/classic), cramped 0.778/0.992,
+  garden2 0.793/0.903 (defaults 0.861), isolated 0.797/0.845, long
+  0.844/0.982, primary-shared 0.663/0.952, primary-single
+  0.736/0.871, primary-island 0.800/0.999.
+- **The classic flip**: head-to-head deep is at or near parity on
+  classic nearly everywhere, and loses 20-35% on civ2civ3. (Inverts
+  the old same-world "deep ~0.80 on classic" note — that measured a
+  different thing.) War-exposure gradient on civ2civ3 primary is
+  monotonic: shared 0.663 < single 0.736 < island 0.800.
+- **Defect 1, naval blindness (FIXED, constants untuned)**:
+  assess_danger() (stock's, reused by deep) is blind to boat
+  invasions; stock survives anyway by keeping token garrisons, deep
+  trusted the assessment (danger=0, ndef=0, building Settlers the
+  turn triremes landed) and lost 2.3x stock's cities on islands.
+  Civil-war splinters of captured deep capitals ("extras" in
+  metrics) keep running the deep module. Fixes: overseas fear from
+  EMBARKED invaders within ~one transport move (1e6a118919 broad sum
+  saturated danger and pinned deep at max military production —
+  retest inverted city losses 63v94 but score 0.861->0.717;
+  restricted in 81abefdd8c), garrison floor (6de9d40865), barbarian
+  fear from the server's own onset gate (4993254d5c).
+- **Defect 2, upkeep blindness (FIXED, constants untuned)**: deep
+  bankrupts itself on civ2civ3 head-to-head — gold ratio 0.13-0.55
+  vs stock, treasury peaks ~T100 then flatlines while stock's climbs
+  (yet SAME-WORLD deep hoards 1.5x gold: the collapse needs war
+  pressure). civ2civ3 charges gold for buildings, gold+food for
+  units, 1-3 free units/city, tech upkeep/city (see ruleset survey
+  in the 2026-07-28 session); every deep want ignored those bills.
+  Fixes: horizon credits charge the building's ruleset gold upkeep
+  (77081cf696); injected defence fear discounts by the cheapest
+  defender's ruleset upkeep (01dae360d5).
+- **Tuning**: defence-B campaign (local, 8h, tune.py --mixed on
+  garden2+cramped train seeds) is sizing all seven new PLACEHOLDER
+  knobs: overseas_fear/decay, garrison_floor(_danger),
+  barbarian_fear, upkeep_gold_weight, upkeep_unit_weight. After it:
+  holdout + garden2/isolated retest (pre-fix defaults benchmarks to
+  beat: garden2 0.861, isolated 0.797, city losses 90v42).
+- **Queued**: rotate obsolete surplus defenders (disband old to build
+  new when over garrison need — human request); tech-upkeep charge in
+  W02 site value; war-unhappiness/martial-law (civ2civ3 caps martial
+  law at 3, primary unhappypop ratio 1.9); settler-factory economics
+  (civ2civ3 flat foodbox, pop-2 settlers) vs W05/W02 assumptions;
+  wonder prereq chains. Symmetric-but-exploitable later: tired
+  attack, FP-2 nerfs, bases-don't-protect, dead national trade
+  routes.
