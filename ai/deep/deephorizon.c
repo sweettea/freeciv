@@ -235,6 +235,20 @@ void deep_adjust_building_wants(struct ai_type *ait,
       }
       add += deep_bundle_credit(pcity, pimprove, adv);
 
+      if (game.info.illness_on
+          && city_size_get(pcity) + 1 >= game.info.illness_min_size) {
+        int health = get_potential_improvement_bonus(pimprove, pcity,
+                                                     EFT_HEALTH_PCT,
+                                                     RPT_CERTAIN, FALSE);
+
+        if (health > 0) {
+          /* Plague insurance is worth having BEFORE the size gate the
+           * building's other effects wait for (civ2civ3: Aqueduct
+           * cuts illness 30% from size 5; Size_Adj matters at 8). */
+          add += health * deep_tuning_get()->horizon_health_weight;
+        }
+      }
+
       if (add > 0) {
         /* The credit imagines the building's future yields, but the
          * ruleset may charge gold every turn to keep it (civ2civ3:

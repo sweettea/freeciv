@@ -60,6 +60,11 @@ struct deep_tuning {
   double horizon_capacity_weight;
   double horizon_growth_weight;
   double horizon_bundle_weight;
+  /* Credit per point of Health_Pct once the city is within one pop
+   * of the ruleset's illness threshold: plague insurance is worth
+   * having before the size gate the building's other effects wait
+   * for. */
+  double horizon_health_weight;
 
   /* Border contest terms (W07-lite, landed with W02): per catchment
    * tile owned by a non-allied player (founding here steals or denies
