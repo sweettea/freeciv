@@ -82,8 +82,17 @@ OUT=$(readlink -f "$OUT")
   [ -n "$SPECIALS" ] && echo "set specials $SPECIALS"
   [ -n "$EXTRA_SERV" ] && printf '%s\n' "$EXTRA_SERV"
   echo "set aifill $PLAYERS"
+  # Ordinary arms put every player on that AI module. The mixed arms
+  # seat both modules in the SAME game (head-to-head): mixed_db puts
+  # deep on odd seats, mixed_bd is the mirror image -- run both per
+  # seed and every seat sees each module once, cancelling seat bias.
   for i in $(seq 1 "$PLAYERS"); do
-    echo "create P$i $ARM"
+    case "$ARM" in
+      mixed_db) [ $((i % 2)) -eq 1 ] && mod=deep || mod=baseline;;
+      mixed_bd) [ $((i % 2)) -eq 1 ] && mod=baseline || mod=deep;;
+      *)        mod=$ARM;;
+    esac
+    echo "create P$i $mod"
   done
   echo "$SKILL"
   echo "set endturn $ENDTURN"
