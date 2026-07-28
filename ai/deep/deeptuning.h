@@ -91,6 +91,10 @@ struct deep_tuning {
    * (same fix family as overseas_fear). */
   int garrison_floor;
   int garrison_floor_danger;
+  /* Flat danger added to every city from the turn the server can
+   * first spawn barbarians (barbarianrate/onsetbarbarian gate);
+   * zero before that turn. */
+  int barbarian_fear;
 
   /* Explorer production want (W06): build-want units per visible
    * unclaimed hut and per unknown tile, divided by (1 + explorers

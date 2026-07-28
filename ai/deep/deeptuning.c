@@ -48,6 +48,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .overseas_decay = 0.2,                /* PLACEHOLDER, untuned */
   .garrison_floor = 1,                  /* PLACEHOLDER, untuned */
   .garrison_floor_danger = 40,          /* PLACEHOLDER, untuned */
+  .barbarian_fear = 30,                 /* PLACEHOLDER, untuned */
   .explore_hut_value = 15.0,            /* PLACEHOLDER, untuned */
   .explore_discovery_value = 0.05,      /* PLACEHOLDER, untuned */
   .cm_happy_factor = 1,                 /* PLACEHOLDER, untuned */
@@ -127,6 +128,7 @@ void deep_tuning_init(void)
   TUNE_DOUBLE(overseas_decay);
   TUNE_INT(garrison_floor);
   TUNE_INT(garrison_floor_danger);
+  TUNE_INT(barbarian_fear);
 
   secfile_destroy(sf);
 
@@ -134,7 +136,7 @@ void deep_tuning_init(void)
              " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
              " wos=%d wot=%d dip=%f tail=%f depth=%f ovl=%f pot=%f"
              " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f"
-             " osf=%f osd=%f gfl=%d gfd=%d",
+             " osf=%f osd=%f gfl=%d gfd=%d bfear=%d",
              path,
              deep_tuning_active.settler_fearfulness_mult,
              deep_tuning_active.incoming_defence_eta_weight,
@@ -165,7 +167,8 @@ void deep_tuning_init(void)
              deep_tuning_active.overseas_fear,
              deep_tuning_active.overseas_decay,
              deep_tuning_active.garrison_floor,
-             deep_tuning_active.garrison_floor_danger);
+             deep_tuning_active.garrison_floor_danger,
+             deep_tuning_active.barbarian_fear);
 }
 
 /**********************************************************************//**

@@ -218,6 +218,25 @@ static unsigned int deep_overseas_danger(const struct civ_map *nmap,
 }
 
 /**********************************************************************//**
+  Flat fear of barbarian uprisings, active from the first turn the
+  server can actually spawn them -- the same gate barbarian.c uses --
+  and zero before it, so pre-onset production is not taxed. The
+  garrison floor insures otherwise-empty cities; this term keeps
+  established cities from standing down the moment assessed danger
+  returns to zero inside the barbarian era.
+**************************************************************************/
+static unsigned int deep_barbarian_fear(void)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+
+  if (BARBS_DISABLED == game.server.barbarianrate
+      || game.info.turn < game.server.onsetbarbarian) {
+    return 0;
+  }
+  return tune->barbarian_fear;
+}
+
+/**********************************************************************//**
   Keep a token garrison even where assessed danger is zero. Stock
   cities do this by habit and it silently insures them against every
   threat the assessment cannot see (landings, barbarian spawns); deep
@@ -248,6 +267,7 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
     unsigned int credit;
 
     city_data->danger += deep_overseas_danger(&(wld.map), pcity);
+    city_data->danger += deep_barbarian_fear();
     credit = deep_incoming_defence_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
     deep_apply_garrison_floor(pcity, city_data);
@@ -318,6 +338,7 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     unsigned int credit;
 
     city_data->danger += deep_overseas_danger(nmap, pcity);
+    city_data->danger += deep_barbarian_fear();
     credit = deep_incoming_defence_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
     deep_apply_garrison_floor(pcity, city_data);
