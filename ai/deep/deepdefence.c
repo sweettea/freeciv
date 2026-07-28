@@ -218,8 +218,27 @@ static unsigned int deep_overseas_danger(const struct civ_map *nmap,
 }
 
 /**********************************************************************//**
-  Apply the overseas fear and the en-route credit to every city's
-  freshly assessed danger.
+  Keep a token garrison even where assessed danger is zero. Stock
+  cities do this by habit and it silently insures them against every
+  threat the assessment cannot see (landings, barbarian spawns); deep
+  trusted the assessment literally, left new cities at ndef=0 building
+  Settlers, and lost them. The floor makes the insurance explicit and
+  tunable instead of removing it.
+**************************************************************************/
+static void deep_apply_garrison_floor(struct city *pcity,
+                                      struct ai_city *city_data)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+
+  if (city_data->danger == 0
+      && unit_list_size(city_tile(pcity)->units) < tune->garrison_floor) {
+    city_data->danger = tune->garrison_floor_danger;
+  }
+}
+
+/**********************************************************************//**
+  Apply the overseas fear, the en-route credit and the garrison floor
+  to every city's freshly assessed danger.
 **************************************************************************/
 static void deep_credit_incoming_defence(struct ai_type *ait,
                                          struct player *pplayer)
@@ -231,6 +250,7 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
     city_data->danger += deep_overseas_danger(&(wld.map), pcity);
     credit = deep_incoming_defence_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
+    deep_apply_garrison_floor(pcity, city_data);
   } city_list_iterate_end;
 }
 
@@ -293,12 +313,14 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
   {
     /* Fear invasions the assessment cannot see, then count the help
      * that is already on its way, so the city does not requisition
-     * replacements for it (W11). */
+     * replacements for it (W11), and never fall below the token
+     * garrison. */
     unsigned int credit;
 
     city_data->danger += deep_overseas_danger(nmap, pcity);
     credit = deep_incoming_defence_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
+    deep_apply_garrison_floor(pcity, city_data);
   }
 
   {

@@ -85,6 +85,12 @@ struct deep_tuning {
    * (2026-07-28): assess_danger() is blind to boat invasions. */
   double overseas_fear;
   double overseas_decay;
+  /* Token garrison kept even at zero assessed danger: requisition a
+   * defender while the city tile holds fewer than garrison_floor
+   * units, by injecting garrison_floor_danger into the danger field
+   * (same fix family as overseas_fear). */
+  int garrison_floor;
+  int garrison_floor_danger;
 
   /* Explorer production want (W06): build-want units per visible
    * unclaimed hut and per unknown tile, divided by (1 + explorers
