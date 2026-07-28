@@ -290,25 +290,25 @@ static unsigned int deep_barbarian_fear(void)
 
 /**********************************************************************//**
   How militarised the players we have actually met are, relative to
-  us: the ratio of their summed military ratings to ours, capped at
-  1.0 after the tunable slope. Unmet players contribute nothing (a
-  pre-contact empire keeps no insurance garrison at all), and the
-  signal rises BEFORE any war does -- an arms-racing neighbour is the
-  travellers' report that says keep the gates manned. Barbarian risk
-  is deliberately not in here; deep_barbarian_fear() owns it.
+  us, from PUBLIC information only: the units score that the
+  historian's periodic "mightiest civilizations" report broadcasts to
+  everyone (server/report.c, score.units) -- the travellers' report
+  that says keep the gates manned. Ratio of their summed units score
+  to ours, through the tunable slope, capped at 1.0. Unmet players
+  contribute nothing, so a pre-contact empire keeps no insurance
+  garrison at all, and the signal rises BEFORE any war does.
+  Deliberately count-based and coarse: a chronic background signal,
+  not an acute one. Barbarian risk is deliberately not in here;
+  deep_barbarian_fear() owns it.
 **************************************************************************/
 static double deep_garrison_menace(struct player *pplayer)
 {
   const struct deep_tuning *tune = deep_tuning_get();
-  double theirs = 0.0, ours = 0.0;
+  double theirs = 0.0;
 
   if (tune->garrison_menace_slope <= 0.0) {
     return 1.0;   /* Disabled: unconditional floor. */
   }
-
-  unit_list_iterate(pplayer->units, punit) {
-    ours += adv_unit_att_rating(punit);
-  } unit_list_iterate_end;
 
   players_iterate_alive(aplayer) {
     if (aplayer == pplayer
@@ -317,15 +317,14 @@ static double deep_garrison_menace(struct player *pplayer)
            == DS_NO_CONTACT) {
       continue;
     }
-    unit_list_iterate(aplayer->units, aunit) {
-      theirs += adv_unit_att_rating(aunit);
-    } unit_list_iterate_end;
+    theirs += aplayer->score.units;
   } players_iterate_alive_end;
 
   if (theirs <= 0.0) {
     return 0.0;
   }
-  return MIN(1.0, tune->garrison_menace_slope * theirs / MAX(ours, 1.0));
+  return MIN(1.0, tune->garrison_menace_slope * theirs
+                  / MAX(pplayer->score.units, 1));
 }
 
 /**********************************************************************//**
