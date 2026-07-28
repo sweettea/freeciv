@@ -171,13 +171,20 @@ static unsigned int deep_incoming_defence_credit(struct ai_type *ait,
 }
 
 /**********************************************************************//**
-  Danger a coastal city faces from enemies the stock assessment cannot
-  see: military units on other continents or at sea whose owner is at
-  war with us. assess_danger() weighs threats by land movement, so a
-  hostile army one strait away contributes nothing -- which left deep
-  cities empty in front of boat invasions (garden2/isolated mixed
-  games: 2.3x stock's city losses). Fear decays with straight-line
-  distance; both knobs are tuning placeholders.
+  Danger a coastal city faces from an invasion the stock assessment
+  cannot see: at-war units EMBARKED ON BOATS that could reach the
+  city's neighbourhood within about one transport move. assess_danger()
+  weighs threats by land movement, so a loaded trireme one strait away
+  contributes nothing -- which left deep cities empty in front of boat
+  invasions (garden2/isolated mixed games: 2.3x stock's city losses).
+
+  Only cargo counts (a warship shells, it does not take cities), and
+  only when it is close enough to land soon: summing every hostile
+  unit overseas saturated the danger field and pinned whole
+  civilizations at maximum military production (garden2 retest
+  2026-07-28: city losses inverted but score 0.861 -> 0.717). Fear
+  decays with distance inside the window; both knobs are tuning
+  placeholders.
 **************************************************************************/
 static unsigned int deep_overseas_danger(const struct civ_map *nmap,
                                          struct city *pcity)
@@ -198,19 +205,26 @@ static unsigned int deep_overseas_danger(const struct civ_map *nmap,
       continue;
     }
     unit_list_iterate(aplayer->units, aunit) {
-      int rating;
+      const struct unit *ferry = unit_transport_get(aunit);
+      int rating, dist, reach;
 
-      if (tile_continent(unit_tile(aunit)) == home) {
-        /* Same continent: assess_danger() already counts it. */
+      if (ferry == NULL
+          || tile_continent(unit_tile(aunit)) == home) {
+        /* Not aboard a boat, or already ashore here: assess_danger()
+         * covers those. */
         continue;
       }
       rating = adv_unit_att_rating(aunit);
       if (rating <= 0) {
         continue;
       }
+      reach = unit_type_get(ferry)->move_rate / SINGLE_MOVE + 1;
+      dist = real_map_distance(unit_tile(aunit), ptile);
+      if (dist > reach) {
+        continue;
+      }
       danger += rating * tune->overseas_fear
-                / (1.0 + tune->overseas_decay
-                         * real_map_distance(unit_tile(aunit), ptile));
+                / (1.0 + tune->overseas_decay * dist);
     } unit_list_iterate_end;
   } players_iterate_alive_end;
 
