@@ -602,7 +602,55 @@ Branch `epic/w03-horizon` carries W02+W03+W07-lite in flight:
   registered in tuning-params.ini with defaults == compiled defaults.
   Verified live: zeroed file logs depth=0.000000 hcap=0.000000.
 - **Campaign**: box redeployed at fadb2a1f70, rebuilt, placebo ablate
-  logs archived (ablate.placebo-loader), service restarted 04:47 UTC.
-  Cache keys on the binary, so all ablations re-run for real. ~7.5h
-  of window burned; tune caps trimmed via systemd drop-in to
-  TUNE_A_CAP=8h TUNE_B_CAP=15h to still fit the window.
+  logs archived (ablate.placebo-loader), stale result dirs deleted
+  (1.9G -> 173M), service restarted 05:03 UTC 2026-07-26. Cache keys
+  on the binary, so all ablations re-ran for real. Cap trim reverted
+  per human instruction ("don't adjust the timing"): original
+  TUNE_A_CAP=9h / TUNE_B_CAP=20h, window overrun accepted.
+
+## Campaign complete (2026-07-27 22:06 UTC) — first trustworthy full-power numbers
+
+Box self-stopped after writing report.md. Artifacts (report, logs,
+best-tuning inis, holdout scorelogs, all metrics.csv) archived locally
+in benchmark/results/campaign-2026-07-26/campaign-artifacts.tgz.
+Ratios are paired per-seed deep/baseline total score.
+
+- **Headline: primary acceptance 0.8400 +-0.044 (n=40, defaults
+  tuning).** Deep trails baseline by 16% in THE target regime, and
+  the CI is tight — this is the first well-powered measurement and it
+  is definitive. Holdout primary with tuned params was no better
+  (0.797 tune-A / 0.740 tune-B, n=12).
+- **Parity in pure-development regimes**: garden acceptance 0.984
+  +-0.100 (n=20); long.conf 1.023 +-0.095 (n=10); garden holdout
+  ABOVE 1.0 under both tunings (1.019 / 1.017, n=12). Where war
+  noise is absent, deep is at or slightly above stock. The gap is
+  concentrated where military pressure decides games.
+- **Ablations (12 contested / 6 primary seeds, post-fix, genuinely
+  distinct)**: W03 horizon weights individually neutral on contested
+  (<0.001 movement) — the urgency gate still has no evidential
+  support. site_potential_discount and site_overlap_weight at
+  placeholder values are HARMFUL in both regimes (removing them:
+  +4pp/+8pp and +3pp/+10pp). site_special_cluster helps contested
+  (+3.6pp), hurts primary. Package net: helps contested
+  (all-off 0.926 vs defaults 0.955), hurts primary (0.776 vs 0.735).
+- **tune-A overfit**: training contested obj -3.2 (near parity) but
+  holdout contested -37.9/seed (0.959) — indistinguishable from
+  untuned defaults. 6 training seeds was too few.
+- **tune-B undersampled**: best (-148.2) was a GEN-0 RANDOM DRAW;
+  6 later generations never beat it and drifted worse. Its values
+  even contradict the ablation evidence (raised overlap/discount).
+  Holdout -401.7/seed. ~56 evaluations for 9 dims is not a search.
+  v2 plan: seed initial population from ablation evidence + defaults,
+  population 16, cap in generations not hours, ideally on 24xlarge
+  after quota bump; consider truncated games (T150-T200) as the
+  objective — validate first against existing per-turn scorelogs.
+- **campaign.sh flaws found**: (a) global DEEP_QUIET=1 suppresses the
+  deep-want lines firstbuild.py parses, so the long.conf first-build
+  acceptance table is all zeros — logging artifact, not behaviour;
+  unset it for that stage. (b) report.md lists ablation logs but
+  computes no ratios; fold the paired-ratio computation into
+  report generation.
+- **Next decisions**: fold which (if any) tuned values into defaults
+  (tune-A's holdout showed no transfer — lean: none); tune-B v2
+  design; whether the primary gap needs military-side workstreams
+  before more economic tuning can show up in the headline number.
