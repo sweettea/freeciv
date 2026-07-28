@@ -64,3 +64,16 @@ and results for analysis, or pull them:
 The interesting artefacts: `benchmark/results/campaign/report.md`,
 `tune-*/best-tuning.ini`, the holdout logs, and metrics.csv per keyed
 result dir.
+
+## New-box bring-up checklist addition (2026-07-29)
+
+A server built without `-Daimodules=classic,tex,baseline,deep` accepts
+`create P1 deep` with only a chat-line error ("There is no AI type
+deep") and silently substitutes the default AI -- benchmark games
+complete normally and mixed-arm objectives cancel to EXACTLY 0.0
+(the mirror makes both "sides" identical). This burned ~2.5h on the
+first us-east-1 box. Before trusting any new box: run one throwaway
+game and grep its log for "no AI type" (must be 0) and "deep-def"
+(must be >0). Server-only meson config that works on stock Ubuntu:
+  meson setup build -Dclients=stub -Dfcmp=cli -Daudio=none \
+    -Dtools=[] -Daimodules=classic,tex,baseline,deep
