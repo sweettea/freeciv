@@ -114,3 +114,20 @@ accepted only where defence-H (trained on properly-sized isolated) and
 the garden2b/isolated validation sweep agree. Note the island-lottery
 NOISE cancels in the mirrored objective; the concern is regime shape
 only.
+
+## Reachability-gated menace (2026-07-29, from the garden2b dig)
+
+At defaults, deep fields 2x stock's military by T100 on garden2b,
+loses ~60 cities of early expansion for it, and STILL loses 168
+cities to T200+ invasions -- the early garrison is insurance that
+taxes the growth years and cannot pay out at claim time (a T100
+Phalanx is irrelevant to the Musketeer landing it nominally insures
+against). Root cause: deep_garrison_menace() measures neighbour army
+SIZE but not REACHABILITY, so island neighbours with no navy trigger
+the full floor from first contact. Fix (third instance of the
+"no fear before the threat class can exist" pattern, after the barb
+onset gate and the embarked-only overseas term): weight each met
+neighbour's units score by reachability -- same continent full,
+overseas gated/scaled by their transport capability. Implement AFTER
+defence-G/H land; H's island-trained floor values are the
+confirmation signal.
