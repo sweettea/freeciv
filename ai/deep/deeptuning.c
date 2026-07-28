@@ -44,6 +44,8 @@ static const struct deep_tuning deep_tuning_defaults = {
   .site_claim_bonus = 8.0,              /* PLACEHOLDER, untuned */
   .site_pressure_factor = 0.3,          /* PLACEHOLDER, untuned */
   .diplomat_defence_value = 300.0,      /* corpus-derived, untuned */
+  .overseas_fear = 0.5,                 /* PLACEHOLDER, untuned */
+  .overseas_decay = 0.2,                /* PLACEHOLDER, untuned */
   .explore_hut_value = 15.0,            /* PLACEHOLDER, untuned */
   .explore_discovery_value = 0.05,      /* PLACEHOLDER, untuned */
   .cm_happy_factor = 1,                 /* PLACEHOLDER, untuned */
@@ -119,13 +121,16 @@ void deep_tuning_init(void)
   TUNE_DOUBLE(horizon_capacity_weight);
   TUNE_DOUBLE(horizon_growth_weight);
   TUNE_DOUBLE(horizon_bundle_weight);
+  TUNE_DOUBLE(overseas_fear);
+  TUNE_DOUBLE(overseas_decay);
 
   secfile_destroy(sf);
 
   log_normal("deep-tuning file=\"%s\" fear=%f eta=%f surv=%f hut=%f"
              " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
              " wos=%d wot=%d dip=%f tail=%f depth=%f ovl=%f pot=%f"
-             " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f",
+             " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f"
+             " osf=%f osd=%f",
              path,
              deep_tuning_active.settler_fearfulness_mult,
              deep_tuning_active.incoming_defence_eta_weight,
@@ -152,7 +157,9 @@ void deep_tuning_init(void)
              deep_tuning_active.site_pressure_factor,
              deep_tuning_active.horizon_capacity_weight,
              deep_tuning_active.horizon_growth_weight,
-             deep_tuning_active.horizon_bundle_weight);
+             deep_tuning_active.horizon_bundle_weight,
+             deep_tuning_active.overseas_fear,
+             deep_tuning_active.overseas_decay);
 }
 
 /**********************************************************************//**

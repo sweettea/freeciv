@@ -51,6 +51,7 @@
 #include "advbuilding.h"
 #include "advchoice.h"
 #include "advdata.h"
+#include "advgoto.h"
 #include "infracache.h"
 
 /* ai/default */
@@ -170,15 +171,65 @@ static unsigned int deep_incoming_defence_credit(struct ai_type *ait,
 }
 
 /**********************************************************************//**
-  Apply the en-route credit to every city's freshly assessed danger.
+  Danger a coastal city faces from enemies the stock assessment cannot
+  see: military units on other continents or at sea whose owner is at
+  war with us. assess_danger() weighs threats by land movement, so a
+  hostile army one strait away contributes nothing -- which left deep
+  cities empty in front of boat invasions (garden2/isolated mixed
+  games: 2.3x stock's city losses). Fear decays with straight-line
+  distance; both knobs are tuning placeholders.
+**************************************************************************/
+static unsigned int deep_overseas_danger(const struct civ_map *nmap,
+                                         struct city *pcity)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct player *pplayer = city_owner(pcity);
+  struct tile *ptile = city_tile(pcity);
+  Continent_id home = tile_continent(ptile);
+  double danger = 0.0;
+
+  if (tune->overseas_fear <= 0.0
+      || !is_terrain_class_near_tile(nmap, ptile, TC_OCEAN)) {
+    return 0;
+  }
+
+  players_iterate_alive(aplayer) {
+    if (!pplayers_at_war(pplayer, aplayer)) {
+      continue;
+    }
+    unit_list_iterate(aplayer->units, aunit) {
+      int rating;
+
+      if (tile_continent(unit_tile(aunit)) == home) {
+        /* Same continent: assess_danger() already counts it. */
+        continue;
+      }
+      rating = adv_unit_att_rating(aunit);
+      if (rating <= 0) {
+        continue;
+      }
+      danger += rating * tune->overseas_fear
+                / (1.0 + tune->overseas_decay
+                         * real_map_distance(unit_tile(aunit), ptile));
+    } unit_list_iterate_end;
+  } players_iterate_alive_end;
+
+  return (unsigned int) danger;
+}
+
+/**********************************************************************//**
+  Apply the overseas fear and the en-route credit to every city's
+  freshly assessed danger.
 **************************************************************************/
 static void deep_credit_incoming_defence(struct ai_type *ait,
                                          struct player *pplayer)
 {
   city_list_iterate(pplayer->cities, pcity) {
     struct ai_city *city_data = def_ai_city_data(pcity, ait);
-    unsigned int credit = deep_incoming_defence_credit(ait, pcity);
+    unsigned int credit;
 
+    city_data->danger += deep_overseas_danger(&(wld.map), pcity);
+    credit = deep_incoming_defence_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
   } city_list_iterate_end;
 }
@@ -240,10 +291,13 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
   our_def = assess_defense_quadratic(ait, pcity);
 
   {
-    /* Count the help that is already on its way, so the city does not
-     * requisition replacements for it (W11). */
-    unsigned int credit = deep_incoming_defence_credit(ait, pcity);
+    /* Fear invasions the assessment cannot see, then count the help
+     * that is already on its way, so the city does not requisition
+     * replacements for it (W11). */
+    unsigned int credit;
 
+    city_data->danger += deep_overseas_danger(nmap, pcity);
+    credit = deep_incoming_defence_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
   }
 

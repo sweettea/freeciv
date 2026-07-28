@@ -78,6 +78,14 @@ struct deep_tuning {
    * than soldiers'. */
   double diplomat_defence_value;
 
+  /* Fear of enemies the stock danger assessment cannot see: at-war
+   * military power on other continents (or at sea) adds to a coastal
+   * city's danger, scaled by fear and decayed per tile of
+   * straight-line distance. Found via head-to-head island games
+   * (2026-07-28): assess_danger() is blind to boat invasions. */
+  double overseas_fear;
+  double overseas_decay;
+
   /* Explorer production want (W06): build-want units per visible
    * unclaimed hut and per unknown tile, divided by (1 + explorers
    * owned). Zero-gated when the map was generated without huts. */
