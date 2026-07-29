@@ -131,3 +131,17 @@ neighbour's units score by reachability -- same continent full,
 overseas gated/scaled by their transport capability. Implement AFTER
 defence-G/H land; H's island-trained floor values are the
 confirmation signal.
+
+## Horizon credits stop at the tech wall (2026-07-29, human insight)
+
+deep_adjust_building_wants() gates on can_city_build_improvement_now
+(RPT_CERTAIN), so a growth-capped city that LACKS the cap-lifter's
+tech contributes zero want -- and therefore zero tech pressure --
+toward exactly the research that would solve its problem; the cm_cap_*
+interim posture is all it has. Fix: evaluate cap-lifting (and health)
+credits for tech-gated improvements too (RPT_POSSIBLE) and route
+those credits into the TECH want channel ("this city would pay X for
+an Aqueduct it cannot build yet" = X pressure on Construction).
+Related: cm_cap_trade is the interim-posture knob, and its right
+value covaries with map trade-richness (the isolated -405 lesson) --
+tile-quality-scaled CM factors remain the deeper fix there.
