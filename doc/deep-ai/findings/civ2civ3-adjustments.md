@@ -145,3 +145,15 @@ an Aqueduct it cannot build yet" = X pressure on Construction).
 Related: cm_cap_trade is the interim-posture knob, and its right
 value covaries with map trade-richness (the isolated -405 lesson) --
 tile-quality-scaled CM factors remain the deeper fix there.
+
+## No grow-hard CM state (2026-07-29, human observation)
+
+Deep's mean city size trajectory is IDENTICAL to stock's (3.5->5.4
+over T300 on garden2b) while running fewer cities -- per-city
+compensation flows only through science (techs 0.90 on 0.59x
+cities), not size. deepcm.c has states war/capped/wonder/default but
+no growth state: a size-3 city with headroom works stock-ish weights.
+Add cm_grow_food/shield/trade factors for uncapped cities below a
+size threshold so quality can compensate quantity. Note civ2civ3 has
+NO rapture growth, so CM food weighting and W03 unblocking are the
+only growth levers that exist.
