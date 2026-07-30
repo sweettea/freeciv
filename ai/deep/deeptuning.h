@@ -121,6 +121,12 @@ struct deep_tuning {
    * adds value/(1+dist) standing danger. 0 disables. */
   int density_fear_value;
   int density_fear_radius;
+  /* Pre-contact prior from lobby settings: shared-continent startpos
+   * on thin land predicts early contact before anyone is met. Value
+   * scales by min(1, prior_tiles / land-per-player); off at first
+   * contact. 0 disables. */
+  int density_prior_value;
+  int density_prior_tiles;
   /* Injected fears also fund WALLS (the upkeep-free defence):
    * building_want[walls] += weight * danger. 0 disables. */
   double wall_fear_weight;

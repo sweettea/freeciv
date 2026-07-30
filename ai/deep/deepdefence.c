@@ -317,6 +317,60 @@ static unsigned int deep_boat_shadow_fear(const struct civ_map *nmap,
 }
 
 /**********************************************************************//**
+  Pre-contact density prior (human refinement 2026-07-30): the lobby
+  settings are observable evidence at turn zero. A shared-continent
+  startpos (ALL / 2or3 / VARIABLE, including FRACTAL's DEFAULT->ALL
+  resolution -- the primary-regime discovery) on thin land means
+  early land contact is coming before we can see it. Fear scales
+  with crowding, min(1, density_prior_tiles / land-per-player), and
+  switches off the moment we meet any non-allied player -- from then
+  on the observed density term owns the signal.
+**************************************************************************/
+static unsigned int deep_density_prior(struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  enum map_startpos mode = wld.map.server.startpos;
+  int land_per_player;
+  double crowd;
+
+  if (tune->density_prior_value <= 0) {
+    return 0;
+  }
+  players_iterate_alive(aplayer) {
+    if (aplayer != pplayer
+        && !pplayers_allied(pplayer, aplayer)
+        && player_diplstate_get(pplayer, aplayer)->type
+           != DS_NO_CONTACT) {
+      return 0;   /* Contact made: observation replaces the prior. */
+    }
+  } players_iterate_alive_end;
+
+  if (MAPSTARTPOS_DEFAULT == mode) {
+    /* Replicate the generator's resolution (mapgen.c). */
+    switch (wld.map.server.generator) {
+    case MAPGEN_FRACTAL:
+      mode = MAPSTARTPOS_ALL;
+      break;
+    case MAPGEN_ISLAND:
+      mode = MAPSTARTPOS_SINGLE;
+      break;
+    default:
+      mode = MAPSTARTPOS_VARIABLE;
+      break;
+    }
+  }
+  if (mode == MAPSTARTPOS_SINGLE) {
+    return 0;   /* Own continent: land contact is not imminent. */
+  }
+
+  land_per_player = MAP_INDEX_SIZE * wld.map.server.landpercent
+                    / 100 / MAX(player_count(), 1);
+  crowd = MIN(1.0, (double) tune->density_prior_tiles
+                   / MAX(land_per_player, 1));
+  return (unsigned int) (tune->density_prior_value * crowd);
+}
+
+/**********************************************************************//**
   Chronic border-pressure fear: non-allied cities packed near ours
   are where land wars ignite (cramped is cramped BECAUSE of density),
   so each met non-allied city within density_fear_radius contributes
@@ -927,6 +981,8 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
       (deep_boat_shadow_fear(nmap, pcity) * updisc);
     city_data->danger += (unsigned int)
       (deep_density_fear(pcity) * updisc);
+    city_data->danger += (unsigned int)
+      (deep_density_prior(pplayer) * updisc);
     city_data->danger += (unsigned int) (deep_barbarian_fear() * updisc);
     credit = deep_incoming_defence_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);

@@ -56,6 +56,8 @@ static const struct deep_tuning deep_tuning_defaults = {
   .boat_shadow_fear = 25,               /* PLACEHOLDER, untuned */
   .density_fear_value = 6,              /* PLACEHOLDER, untuned */
   .density_fear_radius = 8,             /* PLACEHOLDER, untuned */
+  .density_prior_value = 20,            /* PLACEHOLDER, untuned */
+  .density_prior_tiles = 200,           /* PLACEHOLDER, untuned */
   .wall_fear_weight = 0.3,              /* PLACEHOLDER, untuned */
   .convoy_min_load = 2,                 /* PLACEHOLDER, untuned */
   .convoy_wait_radius = 6,              /* PLACEHOLDER, untuned */
@@ -170,6 +172,8 @@ void deep_tuning_init(void)
   TUNE_INT(boat_shadow_fear);
   TUNE_INT(density_fear_value);
   TUNE_INT(density_fear_radius);
+  TUNE_INT(density_prior_value);
+  TUNE_INT(density_prior_tiles);
   TUNE_DOUBLE(wall_fear_weight);
   TUNE_INT(convoy_min_load);
   TUNE_INT(convoy_wait_radius);
@@ -188,7 +192,7 @@ void deep_tuning_init(void)
              " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
              " wos=%d wot=%d gb=%d gsm=%f sdw=%f gf=%d gs=%d gt=%d tqs=%f dip=%f tail=%f depth=%f ovl=%f pot=%f"
              " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f hhealth=%f htech=%f"
-             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d dfv=%d dfr=%d wfw=%f cml=%d cwr=%d wfr=%d wgr=%d wdd=%f ugw=%f uuw=%f rpr=%f rwant=%d rfin=%f",
+             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d dfv=%d dfr=%d dpv=%d dpt=%d wfw=%f cml=%d cwr=%d wfr=%d wgr=%d wdd=%f ugw=%f uuw=%f rpr=%f rwant=%d rfin=%f",
              path,
              deep_tuning_active.settler_fearfulness_mult,
              deep_tuning_active.incoming_defence_eta_weight,
@@ -236,6 +240,8 @@ void deep_tuning_init(void)
              deep_tuning_active.boat_shadow_fear,
              deep_tuning_active.density_fear_value,
              deep_tuning_active.density_fear_radius,
+             deep_tuning_active.density_prior_value,
+             deep_tuning_active.density_prior_tiles,
              deep_tuning_active.wall_fear_weight,
              deep_tuning_active.convoy_min_load,
              deep_tuning_active.convoy_wait_radius,
