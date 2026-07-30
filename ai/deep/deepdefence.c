@@ -427,6 +427,81 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
 }
 
 /**********************************************************************//**
+  Melt obsolete surplus garrison (rotation move 3, design in
+  findings/civ2civ3-adjustments.md). In a city with zero post-
+  adjustment danger and no urgency, holding more own military units
+  than the garrison floor, disband the WEAKEST defender -- but only
+  when it costs ruleset upkeep and a defender at least
+  rotation_power_ratio times stronger is buildable here, so quiet
+  turns cannot melt a modern garrison (the obsolescence gate is the
+  hysteresis). One action per city per turn; the traditional disband
+  recovers shields into production where the ruleset allows (civ2civ3
+  does). A Phalanx stack paying gold+food into the Musketeer era was
+  the motivating waste.
+**************************************************************************/
+static void deep_melt_surplus_defenders(struct ai_type *ait,
+                                        struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+
+  if (tune->rotation_power_ratio <= 0.0) {
+    return;   /* Disabled. */
+  }
+
+  city_list_iterate(pplayer->cities, pcity) {
+    struct ai_city *city_data = def_ai_city_data(pcity, ait);
+    struct unit *worst = NULL;
+    const struct unit_type *wt;
+    int worst_def = 0, count = 0, best_buildable = 0;
+
+    if (city_data->urgency > 0 || city_data->danger > 0) {
+      continue;
+    }
+    unit_list_iterate(city_tile(pcity)->units, punit) {
+      const struct unit_type *ut = unit_type_get(punit);
+
+      if (unit_owner(punit) != pplayer
+          || unit_has_type_flag(punit, UTYF_CIVILIAN)
+          || get_transporter_occupancy(punit) > 0
+          || ut->defense_strength <= 0) {
+        continue;
+      }
+      count++;
+      if (worst == NULL || ut->defense_strength < worst_def) {
+        worst = punit;
+        worst_def = ut->defense_strength;
+      }
+    } unit_list_iterate_end;
+
+    if (worst == NULL || count <= tune->garrison_floor) {
+      continue;
+    }
+    wt = unit_type_get(worst);
+    if (utype_upkeep_cost(wt, NULL, pplayer, O_GOLD)
+        + utype_upkeep_cost(wt, NULL, pplayer, O_FOOD)
+        + utype_upkeep_cost(wt, NULL, pplayer, O_SHIELD) <= 0) {
+      continue;   /* Free to keep; melting gains nothing. */
+    }
+    unit_type_iterate(ut) {
+      if (ut->defense_strength > best_buildable
+          && can_city_build_unit_now(nmap, pcity, ut, RPT_CERTAIN)) {
+        best_buildable = ut->defense_strength;
+      }
+    } unit_type_iterate_end;
+    if (best_buildable < worst_def * tune->rotation_power_ratio) {
+      continue;
+    }
+    log_base(deep_metric_log_level(),
+             "deep-rotate turn=%d player=\"%s\" city=%d disband=\"%s\""
+             " def=%d best=%d count=%d",
+             game.info.turn, player_name(pplayer), pcity->id,
+             unit_rule_name(worst), worst_def, best_buildable, count);
+    unit_do_disband_trad(pplayer, worst, ACT_REQ_PLAYER);
+  } city_list_iterate_end;
+}
+
+/**********************************************************************//**
   Activities before unit movement; derived from
   dai_do_first_activities() with defence bookkeeping added between the
   danger assessment and the unit management that consumes it.
@@ -438,6 +513,7 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
 
   deep_log_defence(ait, pplayer);
   deep_credit_incoming_defence(ait, pplayer);
+  deep_melt_surplus_defenders(ait, pplayer);
   deep_set_city_manager_params(ait, pplayer);
 
   TIMING_LOG(AIT_UNITS, TIMER_START);

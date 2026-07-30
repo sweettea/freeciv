@@ -122,6 +122,14 @@ struct deep_tuning {
   double upkeep_gold_weight;
   double upkeep_unit_weight;
 
+  /* Rotation of obsolete surplus defenders (findings doc): melt the
+   * weakest upkeep-costing defender above the garrison floor when a
+   * defender rotation_power_ratio times stronger is buildable and
+   * the city is quiet (<=0 disables); rotation_want is the danger
+   * injected to queue the modern replacement first. */
+  double rotation_power_ratio;
+  int rotation_want;
+
   /* Explorer production want (W06): build-want units per visible
    * unclaimed hut and per unknown tile, divided by (1 + explorers
    * owned). Zero-gated when the map was generated without huts. */
