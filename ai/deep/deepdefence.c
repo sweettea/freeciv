@@ -46,6 +46,7 @@
 #include "cityturn.h"
 #include "sernet.h"
 #include "srv_log.h"
+#include "unithand.h"
 
 /* server/advisors */
 #include "advbuilding.h"
@@ -637,6 +638,76 @@ static void deep_manage_convoys(struct ai_type *ait,
 }
 
 /**********************************************************************//**
+  Interrupt working civilians in danger and run them to the nearest
+  own city (human request 2026-07-30: a mid-transform Engineer keeps
+  digging as the Knights ride up -- stock auto-workers fear PATHS but
+  never abandon an activity). A civilian outside a city with an
+  at-war military unit within worker_flee_radius drops its activity,
+  legs it to the closest own city on its continent, and is marked
+  done for the turn so nothing re-tasks it into the field.
+**************************************************************************/
+static void deep_flee_workers(struct ai_type *ait, struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+
+  if (tune->worker_flee_radius <= 0) {
+    return;   /* Disabled. */
+  }
+
+  unit_list_iterate_safe(pplayer->units, w) {
+    bool danger = FALSE;
+    struct city *refuge = NULL;
+    int best = FC_INFINITY;
+
+    if (!unit_has_type_flag(w, UTYF_CIVILIAN)
+        || unit_transported(w)
+        || tile_city(unit_tile(w)) != NULL) {
+      continue;
+    }
+    players_iterate_alive(aplayer) {
+      if (!pplayers_at_war(pplayer, aplayer)) {
+        continue;
+      }
+      unit_list_iterate(aplayer->units, e) {
+        if (adv_unit_att_rating(e) > 0
+            && real_map_distance(unit_tile(e), unit_tile(w))
+               <= tune->worker_flee_radius) {
+          danger = TRUE;
+          break;
+        }
+      } unit_list_iterate_end;
+      if (danger) {
+        break;
+      }
+    } players_iterate_alive_end;
+    if (!danger) {
+      continue;
+    }
+    city_list_iterate(pplayer->cities, pcity) {
+      int d = real_map_distance(city_tile(pcity), unit_tile(w));
+
+      if (d < best
+          && tile_continent(city_tile(pcity))
+             == tile_continent(unit_tile(w))) {
+        best = d;
+        refuge = pcity;
+      }
+    } city_list_iterate_end;
+    if (refuge == NULL) {
+      continue;
+    }
+    log_base(deep_metric_log_level(),
+             "deep-flee turn=%d player=\"%s\" unit=\"%s\" to=%d dist=%d",
+             game.info.turn, player_name(pplayer), unit_rule_name(w),
+             refuge->id, best);
+    unit_activity_handling(w, ACTIVITY_IDLE, ACTION_NONE);
+    if (dai_unit_goto(ait, w, city_tile(refuge))) {
+      def_ai_unit_data(w, ait)->done = TRUE;
+    }
+  } unit_list_iterate_safe_end;
+}
+
+/**********************************************************************//**
   Activities before unit movement; derived from
   dai_do_first_activities() with defence bookkeeping added between the
   danger assessment and the unit management that consumes it.
@@ -650,6 +721,7 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
   deep_credit_incoming_defence(ait, pplayer);
   deep_melt_surplus_defenders(ait, pplayer);
   deep_manage_convoys(ait, pplayer);
+  deep_flee_workers(ait, pplayer);
   deep_set_city_manager_params(ait, pplayer);
 
   TIMING_LOG(AIT_UNITS, TIMER_START);

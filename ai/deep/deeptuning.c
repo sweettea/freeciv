@@ -56,6 +56,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .boat_shadow_fear = 25,               /* PLACEHOLDER, untuned */
   .convoy_min_load = 2,                 /* PLACEHOLDER, untuned */
   .convoy_wait_radius = 6,              /* PLACEHOLDER, untuned */
+  .worker_flee_radius = 3,              /* PLACEHOLDER, untuned */
   .upkeep_gold_weight = 3.0,            /* PLACEHOLDER, untuned */
   .upkeep_unit_weight = 0.5,            /* PLACEHOLDER, untuned */
   .rotation_power_ratio = 2.0,          /* PLACEHOLDER, untuned */
@@ -161,6 +162,7 @@ void deep_tuning_init(void)
   TUNE_INT(boat_shadow_fear);
   TUNE_INT(convoy_min_load);
   TUNE_INT(convoy_wait_radius);
+  TUNE_INT(worker_flee_radius);
   TUNE_DOUBLE(upkeep_gold_weight);
   TUNE_DOUBLE(upkeep_unit_weight);
   TUNE_DOUBLE(rotation_power_ratio);
@@ -172,7 +174,7 @@ void deep_tuning_init(void)
              " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
              " wos=%d wot=%d gb=%d gsm=%f sdw=%f gf=%d gs=%d gt=%d tqs=%f dip=%f tail=%f depth=%f ovl=%f pot=%f"
              " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f hhealth=%f htech=%f"
-             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d cml=%d cwr=%d ugw=%f uuw=%f rpr=%f rwant=%d",
+             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d cml=%d cwr=%d wfr=%d ugw=%f uuw=%f rpr=%f rwant=%d",
              path,
              deep_tuning_active.settler_fearfulness_mult,
              deep_tuning_active.incoming_defence_eta_weight,
@@ -219,6 +221,7 @@ void deep_tuning_init(void)
              deep_tuning_active.boat_shadow_fear,
              deep_tuning_active.convoy_min_load,
              deep_tuning_active.convoy_wait_radius,
+             deep_tuning_active.worker_flee_radius,
              deep_tuning_active.upkeep_gold_weight,
              deep_tuning_active.upkeep_unit_weight,
              deep_tuning_active.rotation_power_ratio,

@@ -123,6 +123,9 @@ struct deep_tuning {
    * transport recruits an idle warship bodyguard from its tile. */
   int convoy_min_load;
   int convoy_wait_radius;
+  /* A civilian outside a city flees to the nearest own city when an
+   * at-war military unit is within this many tiles. 0 disables. */
+  int worker_flee_radius;
 
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).
