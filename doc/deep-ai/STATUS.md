@@ -784,3 +784,22 @@ mechanism fixes (landed), the methods bar, and an evidence-backed
 covariate queue (findings/civ2civ3-adjustments.md): reachability
 menace, tile-quality CM/site weights, grow-state CM, tech-wall
 credits, rotation. Next epic should come from that queue.
+
+## Overnight pile (2026-07-30, human-directed)
+
+Six mechanism commits from the findings queue, each build+test clean,
+tripwires verified in live games:
+- 9902402d59 reachability-gated menace (menace=0.00 across a
+  pre-contact island opening; nonzero after contact on cramped)
+- f39ab7fe96 grow-hard CM state (cm_grow_* PLACEHOLDERs)
+- 5b766824d0 tech-wall: capacity credits route into tech wants
+- d372458f70 / 9ee9089975 / 76b987f089 rotation moves 3/2/1 (melt,
+  replace-first want, treasury-gated buys); deep-rotate observed
+  live at T96 (Warriors melted, Phalanx buildable, count 2)
+Deferred with notes: embassy science (boost point is diplomat want,
+needs daidiplomat read), tile-quality CM scaling (formula needs
+data). New PLACEHOLDER knobs: menace_overseas_weight, cm_grow_*,
+horizon_tech_weight, rotation_power_ratio, rotation_want.
+Acceptance per the methods bar: new-binary defaults vs the cached
+old-binary wide baselines, 60 paired seeds x cramped/garden2b/
+isolated + same-world guard, running overnight on us-east-1.
