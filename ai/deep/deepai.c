@@ -57,6 +57,8 @@
 #include "deepsettler.h"
 #include "deeptuning.h"
 
+#include "autoworkers.h"
+
 #include "deepai.h"
 
 /* This function is only needed as symbol in module. Nevertheless
@@ -686,6 +688,8 @@ static void dpai_sanity_check(struct player *pplayer)
 **************************************************************************/
 bool fc_ai_deep_setup(struct ai_type *ai)
 {
+  aw_set_task_value_hook(deep_worker_task_value);
+
   struct dai_private_data *private;
 
   deep_ai_set_self(ai);

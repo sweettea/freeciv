@@ -130,6 +130,10 @@ struct deep_tuning {
    * within this many tiles, requests a bodyguard (escorts arrive
    * before the flee radius is breached). 0 disables. */
   int worker_guard_radius;
+  /* Discount on auto-worker candidate values for exposed tiles
+   * (unowned ground or at-war unit within worker_guard_radius):
+   * value /= (1 + discount). 0 disables. */
+  double worker_danger_discount;
 
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).

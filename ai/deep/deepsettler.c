@@ -59,6 +59,7 @@
 #include "deepsite.h"
 #include "deeptuning.h"
 
+#include "deepai.h"
 #include "deepsettler.h"
 
 /* The stock settler site search prices travel as if the map were empty
@@ -604,4 +605,52 @@ CLEANUP:
   if (NULL != path) {
     pf_path_destroy(path);
   }
+}
+
+/**********************************************************************//**
+  Danger-aware worker task selection (human request 2026-07-30),
+  registered on the advisors' inert task-value hook: candidates on
+  exposed tiles -- unowned ground, or with an at-war military unit
+  within worker_guard_radius -- are discounted by
+  1 / (1 + worker_danger_discount), so interior improvements win ties
+  and border work happens only when clearly more valuable (and then
+  under the bodyguard-request cover). Returns the value unchanged for
+  players not managed by deep, which keeps every other module,
+  including the frozen baseline, bit-identical.
+**************************************************************************/
+adv_want deep_worker_task_value(const struct player *pplayer,
+                                const struct unit *punit,
+                                struct tile *ptile, adv_want value)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  bool exposed;
+
+  if (pplayer->ai != deep_ai_get_self()
+      || tune->worker_danger_discount <= 0.0 || value <= 0) {
+    return value;
+  }
+
+  exposed = (tile_owner(ptile) != pplayer);
+  if (!exposed) {
+    players_iterate_alive(aplayer) {
+      if (!pplayers_at_war((struct player *) pplayer, aplayer)) {
+        continue;
+      }
+      unit_list_iterate(aplayer->units, e) {
+        if (adv_unit_att_rating(e) > 0
+            && real_map_distance(unit_tile(e), ptile)
+               <= tune->worker_guard_radius) {
+          exposed = TRUE;
+          break;
+        }
+      } unit_list_iterate_end;
+      if (exposed) {
+        break;
+      }
+    } players_iterate_alive_end;
+  }
+  if (!exposed) {
+    return value;
+  }
+  return value / (1.0 + tune->worker_danger_discount);
 }

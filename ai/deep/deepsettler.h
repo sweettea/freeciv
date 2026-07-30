@@ -27,4 +27,8 @@ void deep_auto_settler_run(struct ai_type *ait, const struct civ_map *nmap,
                            struct player *pplayer,
                            struct unit *punit, struct workermap *state);
 
+adv_want deep_worker_task_value(const struct player *pplayer,
+                                const struct unit *punit,
+                                struct tile *ptile, adv_want value);
+
 #endif /* FC__DEEPSETTLER_H */
