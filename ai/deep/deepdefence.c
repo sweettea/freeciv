@@ -681,6 +681,42 @@ static void deep_flee_workers(struct ai_type *ait, struct player *pplayer)
       }
     } players_iterate_alive_end;
     if (!danger) {
+      /* No immediate threat: but a civilian WORKING an exposed tile
+       * (unowned ground, or an at-war unit within the wider guard
+       * radius) requests a bodyguard through the stock framework, so
+       * escorts arrive BEFORE the flee radius is breached (human
+       * request 2026-07-30: prioritise protection at the border). */
+      if (tune->worker_guard_radius > 0
+          && !aiguard_has_guard(ait, w)
+          && w->activity != ACTIVITY_IDLE) {
+        bool exposed = tile_owner(unit_tile(w)) != pplayer;
+
+        if (!exposed) {
+          players_iterate_alive(aplayer) {
+            if (!pplayers_at_war(pplayer, aplayer)) {
+              continue;
+            }
+            unit_list_iterate(aplayer->units, e) {
+              if (adv_unit_att_rating(e) > 0
+                  && real_map_distance(unit_tile(e), unit_tile(w))
+                     <= tune->worker_guard_radius) {
+                exposed = TRUE;
+                break;
+              }
+            } unit_list_iterate_end;
+            if (exposed) {
+              break;
+            }
+          } players_iterate_alive_end;
+        }
+        if (exposed) {
+          aiguard_request_guard(ait, w);
+          log_base(deep_metric_log_level(),
+                   "deep-guard turn=%d player=\"%s\" unit=\"%s\"",
+                   game.info.turn, player_name(pplayer),
+                   unit_rule_name(w));
+        }
+      }
       continue;
     }
     city_list_iterate(pplayer->cities, pcity) {

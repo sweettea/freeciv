@@ -126,6 +126,10 @@ struct deep_tuning {
   /* A civilian outside a city flees to the nearest own city when an
    * at-war military unit is within this many tiles. 0 disables. */
   int worker_flee_radius;
+  /* A working civilian on unowned ground, or with an at-war unit
+   * within this many tiles, requests a bodyguard (escorts arrive
+   * before the flee radius is breached). 0 disables. */
+  int worker_guard_radius;
 
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).
