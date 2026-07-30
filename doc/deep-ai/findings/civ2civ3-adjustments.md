@@ -202,3 +202,26 @@ knob papers over this at one boundary; a proper survival-probability
 model (defence vs ordered attacker stream) would upgrade every
 consumer of danger/defence comparisons -- future combat workstream,
 pairs with tired-attack discipline.
+
+## Investigations closed: walls and caravans (2026-07-30 reads)
+
+WALLS (edge-builder #8): verdict CRUDE BUT NOT BROKEN, no action.
+EFT_DEFEND_BONUS want (daieffects.c:501) is already threat-aware
+(ocean/continent threat flags gate the bonus terms), and build cost
+enters the want subtractively (daicity.c:1676, its own FIXME admits
+the crudeness) -- so civ2civ3's cheap 30-shield walls DO score
+better than classic's dearer ones. Residual imprecision: the effect
+amount ignores civ2civ3's inherent city bonuses, so walls' MARGINAL
+value (150%->250% vs 100%->200%) is somewhat overvalued -- but the
+error direction favours building walls, which the garden2b data says
+deep needs anyway. Revisit only if tuning fights it.
+
+CARAVANS (edge-builder #7): verdict MOSTLY RULESET-AWARE, low
+priority. dai_choose_trade_route counts ONLY the one-time entry
+bonus (its comment says so), scales it by the ruleset's
+Trade_Revenue_Bonus effect (civ2civ3's reductions flow through), and
+prefers destinations per trade settings. The waste risk is bounded
+to the hard-coded income fantasy ("75% of our trade, 10 squares
+away") overestimating the bonus; no evidence of the feared
+domestic-route spam. Deep-side suppression NOT needed; magnitude is
+tuning-era at most.
