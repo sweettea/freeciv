@@ -151,6 +151,9 @@ struct deep_tuning {
    * injected to queue the modern replacement first. */
   double rotation_power_ratio;
   int rotation_want;
+  /* Multiplier (<1 relaxes) on the obsolescence bar when the melt's
+   * recovered shields would finish the city's current build. */
+  double rotation_finish_relax;
 
   /* Explorer production want (W06): build-want units per visible
    * unclaimed hut and per unknown tile, divided by (1 + explorers

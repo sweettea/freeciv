@@ -534,8 +534,62 @@ static void deep_melt_surplus_defenders(struct ai_type *ait,
         best_buildable = ut->defense_strength;
       }
     } unit_type_iterate_end;
-    if (best_buildable < worst_def * tune->rotation_power_ratio) {
-      continue;
+    {
+      /* Recovered shields that would FINISH the current build make a
+       * melt more attractive: relax the obsolescence bar (human
+       * refinement 2026-07-30). Recover approximated at half the
+       * unit's shield cost, the common ruleset rate. */
+      double need = tune->rotation_power_ratio;
+
+      if (pcity->shield_stock + unit_build_shield_cost_base(worst) / 2
+          >= city_production_build_shield_cost(pcity)) {
+        need *= tune->rotation_finish_relax;
+      }
+      if (best_buildable < worst_def * need) {
+        continue;
+      }
+    }
+    {
+      /* Upgrade before disbanding: if the treasury can afford to
+       * modernise this unit outright (same reserve-plus-shortfall
+       * guard as the spend gate), that beats destroying it. */
+      const struct unit_type *up = can_upgrade_unittype(pplayer, wt);
+
+      if (up != NULL) {
+        int cost = unit_upgrade_price(pplayer, wt, up);
+        int reserve = dai_gold_reserve(pplayer);
+        int income = player_get_expected_income(pplayer);
+        bool upgraded = FALSE;
+
+        if (income < 0) {
+          reserve -= income;
+        }
+        if (pplayer->economic.gold - cost > reserve) {
+          action_id upgrade_actions[MAX_NUM_ACTIONS];
+          int i = 0;
+
+          action_array_add_all_by_result(upgrade_actions, &i,
+                                         ACTRES_UPGRADE_UNIT);
+          action_array_end(upgrade_actions, i);
+          action_array_iterate(upgrade_actions, act_id) {
+            if (action_ever_possible(act_id)) {
+              log_base(deep_metric_log_level(),
+                       "deep-rotate turn=%d player=\"%s\" city=%d"
+                       " upgrade=\"%s\" to=\"%s\" cost=%d",
+                       game.info.turn, player_name(pplayer),
+                       pcity->id, unit_rule_name(worst),
+                       utype_rule_name(up), cost);
+              unit_do_action(pplayer, worst->id, pcity->id, 0, "",
+                             act_id);
+              upgraded = TRUE;
+              break;
+            }
+          } action_array_iterate_end;
+        }
+        if (upgraded) {
+          continue;   /* Modernised in place; nothing to melt. */
+        }
+      }
     }
     log_base(deep_metric_log_level(),
              "deep-rotate turn=%d player=\"%s\" city=%d disband=\"%s\""
