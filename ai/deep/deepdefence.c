@@ -317,6 +317,43 @@ static unsigned int deep_boat_shadow_fear(const struct civ_map *nmap,
 }
 
 /**********************************************************************//**
+  Chronic border-pressure fear: non-allied cities packed near ours
+  are where land wars ignite (cramped is cramped BECAUSE of density),
+  so each met non-allied city within density_fear_radius contributes
+  density_fear_value / (1 + distance) of standing danger. The land
+  sibling of the boat shadow; zero with no neighbours in range, so
+  sprawling maps pay nothing.
+**************************************************************************/
+static unsigned int deep_density_fear(struct city *pcity)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct player *pplayer = city_owner(pcity);
+  double fear = 0.0;
+
+  if (tune->density_fear_value <= 0) {
+    return 0;
+  }
+
+  players_iterate_alive(aplayer) {
+    if (aplayer == pplayer
+        || pplayers_allied(pplayer, aplayer)
+        || player_diplstate_get(pplayer, aplayer)->type
+           == DS_NO_CONTACT) {
+      continue;
+    }
+    city_list_iterate(aplayer->cities, acity) {
+      int d = real_map_distance(city_tile(acity), city_tile(pcity));
+
+      if (d <= tune->density_fear_radius) {
+        fear += tune->density_fear_value / (1.0 + d);
+      }
+    } city_list_iterate_end;
+  } players_iterate_alive_end;
+
+  return (unsigned int) fear;
+}
+
+/**********************************************************************//**
   Flat fear of barbarian uprisings, active from the first turn the
   server can actually spawn them -- the same gate barbarian.c uses --
   and zero before it, so pre-onset production is not taxed. The
@@ -460,6 +497,8 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
       (deep_overseas_danger(&(wld.map), pcity) * updisc);
     city_data->danger += (unsigned int)
       (deep_boat_shadow_fear(&(wld.map), pcity) * updisc);
+    city_data->danger += (unsigned int)
+      (deep_density_fear(pcity) * updisc);
     city_data->danger += (unsigned int) (deep_barbarian_fear() * updisc);
     credit = deep_incoming_defence_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
@@ -886,6 +925,8 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
       (deep_overseas_danger(nmap, pcity) * updisc);
     city_data->danger += (unsigned int)
       (deep_boat_shadow_fear(nmap, pcity) * updisc);
+    city_data->danger += (unsigned int)
+      (deep_density_fear(pcity) * updisc);
     city_data->danger += (unsigned int) (deep_barbarian_fear() * updisc);
     credit = deep_incoming_defence_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
@@ -1034,6 +1075,16 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
        * this effect. */
       wall_id = dai_find_source_building(pcity, EFT_DEFEND_BONUS, NULL);
       pimprove = improvement_by_number(wall_id);
+
+      if (wall_id != B_LAST && deep_tuning_get()->wall_fear_weight > 0.0
+          && city_data->danger > 0) {
+        /* Deep's injected fears (boat shadow, density, menace) fund
+         * WALLS as well as bodies: walls are the upkeep-free defence,
+         * the capital-for-labour answer in gold-upkeep rulesets
+         * (human idea 2026-07-30). */
+        pcity->server.adv->building_want[wall_id]
+          += deep_tuning_get()->wall_fear_weight * city_data->danger;
+      }
 
       if (wall_id != B_LAST
           && pcity->server.adv->building_want[wall_id] != 0 && our_def != 0

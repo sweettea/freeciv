@@ -117,6 +117,13 @@ struct deep_tuning {
    * boat shadow funds the garrison before the boats load. Also
    * vetoes grow-hard on exposed coasts via the CM danger gate. */
   int boat_shadow_fear;
+  /* Border-pressure fear: each met non-allied city within the radius
+   * adds value/(1+dist) standing danger. 0 disables. */
+  int density_fear_value;
+  int density_fear_radius;
+  /* Injected fears also fund WALLS (the upkeep-free defence):
+   * building_want[walls] += weight * danger. 0 disables. */
+  double wall_fear_weight;
   /* Convoy discipline: a transport with cargo holds in port until it
    * carries convoy_min_load units (<=1 disables) while boarders are
    * inbound within convoy_wait_radius tiles, and any cargo-carrying
