@@ -803,3 +803,20 @@ horizon_tech_weight, rotation_power_ratio, rotation_want.
 Acceptance per the methods bar: new-binary defaults vs the cached
 old-binary wide baselines, 60 paired seeds x cramped/garden2b/
 isolated + same-world guard, running overnight on us-east-1.
+
+## Interaction round + ablation (2026-07-30, continued)
+
+garden2b knob-ablation of the pile regression (-0.238): grow state
+primary (~0.13 recovered), rotation small (~0.05), gate/tradescale
+nil; stage-5 techwall pending. Fixes committed: danger-vetoed
+grow-hard released by a PAID garrison (linear defence + sortie value
+vs margined danger; margin neutral 1.0, range spans both priors),
+boat-shadow standing coastal fear while enemies own transports,
+sortie assets exempt from melting, worker flee (radius 3) + border
+bodyguard requests (radius 6), convoy hold+escort (verified inert --
+deep's navy is passive until the invasion-want epic).
+NOTE commit hygiene: 65b54a57c9 also carries the convoy-discipline
+code; its message covers only the sortie change. Single-branch
+local history; splitting judged riskier than documenting.
+Acceptance round 2 (all fixes, 3 configs x n=60 paired + guard)
+launches when ablation stage 5 lands.
