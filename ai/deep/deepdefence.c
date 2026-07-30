@@ -574,6 +574,39 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     city_data->danger -= MIN(city_data->danger, credit);
     deep_apply_garrison_floor(pcity, city_data, updisc,
                               deep_garrison_menace(pplayer));
+
+    if (city_data->danger == 0 && deep_tuning_get()->rotation_want > 0
+        && deep_tuning_get()->rotation_power_ratio > 0.0) {
+      /* Rotation move 2 (replace-then-disband): if the BEST defender
+       * present is obsolete by the rotation ratio, inject a small
+       * want so the city queues a modern one; the melt (move 3)
+       * removes the old unit only once the new one raises the count
+       * above the floor -- new arrives before old leaves, zero
+       * garrison gap. */
+      int best_present = 0, best_buildable = 0;
+
+      unit_list_iterate(ptile->units, punit) {
+        const struct unit_type *put = unit_type_get(punit);
+
+        if (unit_owner(punit) == pplayer
+            && !unit_has_type_flag(punit, UTYF_CIVILIAN)
+            && put->defense_strength > best_present) {
+          best_present = put->defense_strength;
+        }
+      } unit_list_iterate_end;
+      unit_type_iterate(ut) {
+        if (ut->defense_strength > best_buildable
+            && can_city_build_unit_now(nmap, pcity, ut, RPT_CERTAIN)) {
+          best_buildable = ut->defense_strength;
+        }
+      } unit_type_iterate_end;
+      if (best_present > 0
+          && best_buildable
+             >= best_present * deep_tuning_get()->rotation_power_ratio) {
+        city_data->danger = (unsigned int)
+          (deep_tuning_get()->rotation_want * updisc);
+      }
+    }
   }
 
   {
