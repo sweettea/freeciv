@@ -22,6 +22,9 @@
 
 /* common */
 #include "city.h"
+#include "unit.h"
+#include "unitlist.h"
+#include "unittype.h"
 #include "fc_types.h"
 #include "game.h"
 #include "improvement.h"
@@ -32,6 +35,9 @@
 
 /* server */
 #include "cityturn.h"
+
+/* server/advisors */
+#include "advgoto.h"
 
 /* ai/default */
 #include "daicity.h"
@@ -112,6 +118,28 @@ static double deep_cm_trade_richness(struct city *pcity)
 }
 
 /**********************************************************************//**
+  Attack ratings of the city's garrison, weighted by the sortie knob:
+  with killstack, an attack-heavy unit in the keep defends by erasing
+  the besieging stack, value the fortified-defence sums never see.
+**************************************************************************/
+static double deep_cm_sortie_value(struct city *pcity)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  double sortie = 0.0;
+
+  if (tune->sortie_defence_weight <= 0.0) {
+    return 0.0;
+  }
+  unit_list_iterate(city_tile(pcity)->units, punit) {
+    if (unit_owner(punit) == city_owner(pcity)
+        && !unit_has_type_flag(punit, UTYF_CIVILIAN)) {
+      sortie += adv_unit_att_rating(punit);
+    }
+  } unit_list_iterate_end;
+  return sortie * tune->sortie_defence_weight;
+}
+
+/**********************************************************************//**
   Derive and set (or clear) cm_parameter for every owned city.
 **************************************************************************/
 void deep_set_city_manager_params(struct ai_type *ait,
@@ -150,13 +178,10 @@ void deep_set_city_manager_params(struct ai_type *ait,
       cmp.happy_factor = tune->cm_happy_factor;
     } else if (city_size_get(pcity) < tune->cm_grow_below
                && (city_data->danger == 0
-                   || assess_defense_quadratic(ait, pcity)
-                      >= (unsigned int)
-                         (tune->cm_grow_safety_margin
-                          * city_data->danger)
-                         * (unsigned int)
-                           (tune->cm_grow_safety_margin
-                            * city_data->danger))) {
+                   || assess_defense(ait, pcity)
+                      + deep_cm_sortie_value(pcity)
+                      >= tune->cm_grow_safety_margin
+                         * city_data->danger)) {
       /* Young city with headroom whose fear, if any, is already PAID
        * FOR: grow-hard yields to the garrison only while defence
        * lags the assessed danger. assess_defense_quadratic()
@@ -164,7 +189,8 @@ void deep_set_city_manager_params(struct ai_type *ait,
        * linear defense >= linear danger, written in the squared
        * currency the build side's danger-percent formula uses --
        * the two sides agree bit-for-bit on when a garrison is
-       * "enough". The margin multiplies danger before comparison
+       * "enough" -- linear defence plus sortie value vs margined
+       * danger. The margin multiplies danger before comparison
        * and deliberately spans BOTH directions of the argument:
        * below 1, because defence multipliers (walls, fortify,
        * terrain) make small garrisons genuinely repel big attack

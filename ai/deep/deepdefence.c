@@ -61,6 +61,7 @@
 #include "daidiplomacy.h"
 #include "daidiplomat.h"
 #include "daidomestic.h"
+#include "daiguard.h"
 #include "daieffects.h"
 #include "daihand.h"
 #include "daihunter.h"
@@ -503,7 +504,11 @@ static void deep_melt_surplus_defenders(struct ai_type *ait,
       if (unit_owner(punit) != pplayer
           || unit_has_type_flag(punit, UTYF_CIVILIAN)
           || get_transporter_occupancy(punit) > 0
-          || ut->defense_strength <= 0) {
+          || ut->defense_strength <= 0
+          || ut->attack_strength > ut->defense_strength) {
+        /* Attack-heavy units are sortie assets, not garrison fodder:
+         * with killstack a garrisoned Cannon erases the besieging
+         * stack (human point 2026-07-30). Never melt them here. */
         continue;
       }
       count++;
@@ -541,6 +546,97 @@ static void deep_melt_surplus_defenders(struct ai_type *ait,
 }
 
 /**********************************************************************//**
+  Convoy discipline (naval design in findings/civ2civ3-adjustments.md;
+  slices 1+2 shipped together -- a full transport without escort is a
+  fatter target than the dribble it replaces).
+
+  HOLD: a sea transport sitting in one of our cities with cargo
+  aboard but fewer than convoy_min_load units holds position -- but
+  only while at least one own unit within convoy_wait_radius is
+  assigned to board it (unit_ai->ferryboat), so the gate cannot
+  deadlock: the moment nobody is coming, it sails with what it has.
+
+  ESCORT: any cargo-carrying transport without a bodyguard recruits
+  an idle own military sea unit from its tile via the stock bodyguard
+  framework, which then moves the pair together.
+**************************************************************************/
+static void deep_manage_convoys(struct ai_type *ait,
+                                struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+
+  if (tune->convoy_min_load <= 1) {
+    return;   /* Disabled: stock single-passenger ferrying. */
+  }
+
+  unit_list_iterate(pplayer->units, boat) {
+    const struct unit_type *bt = unit_type_get(boat);
+    struct city *pcity;
+    int cargo, want;
+
+    if (bt->transport_capacity <= 0
+        || utype_move_type(bt) != UMT_SEA) {
+      continue;
+    }
+    pcity = tile_city(unit_tile(boat));
+    if (pcity == NULL || city_owner(pcity) != pplayer) {
+      continue;
+    }
+    cargo = get_transporter_occupancy(boat);
+    if (cargo <= 0) {
+      continue;
+    }
+
+    if (aiguard_guard_of(ait, boat) == NULL) {
+      unit_list_iterate(unit_tile(boat)->units, w) {
+        const struct unit_type *wt = unit_type_get(w);
+        struct unit_ai *wd = def_ai_unit_data(w, ait);
+
+        if (unit_owner(w) == pplayer && w != boat
+            && utype_move_type(wt) == UMT_SEA
+            && wt->transport_capacity == 0
+            && wt->attack_strength > 0
+            && wd->task == AIUNIT_NONE && wd->charge <= 0) {
+          aiguard_assign_guard_unit(ait, boat, w);
+          log_base(deep_metric_log_level(),
+                   "deep-convoy turn=%d player=\"%s\" escort=\"%s\""
+                   " boat=%d cargo=%d",
+                   game.info.turn, player_name(pplayer),
+                   unit_rule_name(w), boat->id, cargo);
+          break;
+        }
+      } unit_list_iterate_end;
+    }
+
+    want = MIN(get_transporter_capacity(boat), tune->convoy_min_load);
+    if (cargo >= want) {
+      continue;
+    }
+    {
+      bool incoming = FALSE;
+
+      unit_list_iterate(pplayer->units, p) {
+        if (def_ai_unit_data(p, ait)->ferryboat == boat->id
+            && !same_pos(unit_tile(p), unit_tile(boat))
+            && real_map_distance(unit_tile(p), unit_tile(boat))
+               <= tune->convoy_wait_radius) {
+          incoming = TRUE;
+          break;
+        }
+      } unit_list_iterate_end;
+      if (incoming) {
+        def_ai_unit_data(boat, ait)->done = TRUE;
+        log_base(deep_metric_log_level(),
+                 "deep-convoy turn=%d player=\"%s\" hold boat=%d"
+                 " cargo=%d want=%d",
+                 game.info.turn, player_name(pplayer), boat->id,
+                 cargo, want);
+      }
+    }
+  } unit_list_iterate_end;
+}
+
+/**********************************************************************//**
   Activities before unit movement; derived from
   dai_do_first_activities() with defence bookkeeping added between the
   danger assessment and the unit management that consumes it.
@@ -553,6 +649,7 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
   deep_log_defence(ait, pplayer);
   deep_credit_incoming_defence(ait, pplayer);
   deep_melt_surplus_defenders(ait, pplayer);
+  deep_manage_convoys(ait, pplayer);
   deep_set_city_manager_params(ait, pplayer);
 
   TIMING_LOG(AIT_UNITS, TIMER_START);

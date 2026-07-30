@@ -117,6 +117,12 @@ struct deep_tuning {
    * boat shadow funds the garrison before the boats load. Also
    * vetoes grow-hard on exposed coasts via the CM danger gate. */
   int boat_shadow_fear;
+  /* Convoy discipline: a transport with cargo holds in port until it
+   * carries convoy_min_load units (<=1 disables) while boarders are
+   * inbound within convoy_wait_radius tiles, and any cargo-carrying
+   * transport recruits an idle warship bodyguard from its tile. */
+  int convoy_min_load;
+  int convoy_wait_radius;
 
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).
@@ -160,6 +166,10 @@ struct deep_tuning {
    * defence multipliers and the overcounting danger sum; above 1
    * prices sequential attrition. Neutral 1.0 until tuned. */
   double cm_grow_safety_margin;
+  /* Weight on garrison attack ratings counted as defence in the
+   * grow-release coverage test: with killstack, attack-heavy units
+   * defend by sortie. 0 disables. */
+  double sortie_defence_weight;
   int cm_grow_food;
   int cm_grow_shield;
   int cm_grow_trade;
