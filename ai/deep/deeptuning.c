@@ -42,6 +42,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .horizon_growth_weight = 0.5,         /* PLACEHOLDER, untuned */
   .horizon_bundle_weight = 1.0,         /* PLACEHOLDER, untuned */
   .horizon_health_weight = 1.0,         /* PLACEHOLDER, untuned */
+  .horizon_tech_weight = 1.0,           /* PLACEHOLDER, untuned */
   .site_claim_bonus = 8.0,              /* PLACEHOLDER, untuned */
   .site_pressure_factor = 0.3,          /* PLACEHOLDER, untuned */
   .diplomat_defence_value = 300.0,      /* corpus-derived, untuned */
@@ -138,6 +139,7 @@ void deep_tuning_init(void)
   TUNE_DOUBLE(horizon_growth_weight);
   TUNE_DOUBLE(horizon_bundle_weight);
   TUNE_DOUBLE(horizon_health_weight);
+  TUNE_DOUBLE(horizon_tech_weight);
   TUNE_DOUBLE(overseas_fear);
   TUNE_DOUBLE(overseas_decay);
   TUNE_INT(garrison_floor);
@@ -153,7 +155,7 @@ void deep_tuning_init(void)
   log_normal("deep-tuning file=\"%s\" fear=%f eta=%f surv=%f hut=%f"
              " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
              " wos=%d wot=%d gb=%d gf=%d gs=%d gt=%d dip=%f tail=%f depth=%f ovl=%f pot=%f"
-             " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f hhealth=%f"
+             " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f hhealth=%f htech=%f"
              " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d ugw=%f uuw=%f",
              path,
              deep_tuning_active.settler_fearfulness_mult,
@@ -187,6 +189,7 @@ void deep_tuning_init(void)
              deep_tuning_active.horizon_growth_weight,
              deep_tuning_active.horizon_bundle_weight,
              deep_tuning_active.horizon_health_weight,
+             deep_tuning_active.horizon_tech_weight,
              deep_tuning_active.overseas_fear,
              deep_tuning_active.overseas_decay,
              deep_tuning_active.garrison_floor,

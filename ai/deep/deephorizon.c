@@ -26,6 +26,8 @@
 #include "map.h"
 #include "player.h"
 #include "requirements.h"
+#include "research.h"
+#include "tech.h"
 #include "tile.h"
 
 /* server/advisors */
@@ -220,6 +222,36 @@ void deep_adjust_building_wants(struct ai_type *ait,
       adv_want add = 0;
 
       if (!can_city_build_improvement_now(pcity, pimprove, RPT_CERTAIN)) {
+        /* The credit cannot buy a tech-gated building, but it CAN buy
+         * the research: a capped city lacking the cap-lifter's tech
+         * previously contributed zero pressure toward exactly the
+         * advance that would solve its problem (the horizon stopped
+         * at the tech wall; findings 2026-07-29). Route the capacity
+         * credit into the gating advance's tech want instead. */
+        if (cap_credit > 0
+            && (building_has_effect(pimprove, EFT_SIZE_ADJ)
+                || building_has_effect(pimprove, EFT_SIZE_UNLIMIT))
+            && can_city_build_improvement_later(pcity, pimprove)) {
+          const struct research *presearch = research_get(pplayer);
+
+          requirement_vector_iterate(&pimprove->reqs, preq) {
+            if (VUT_ADVANCE == preq->source.kind && preq->present
+                && research_invention_state(presearch,
+                     advance_number(preq->source.value.advance))
+                   != TECH_KNOWN) {
+              def_ai_player_data(pplayer, ait)->tech_want[
+                  advance_index(preq->source.value.advance)]
+                += cap_credit
+                   * deep_tuning_get()->horizon_tech_weight;
+              log_base(LOG_DEBUG,
+                       "deep-techwall city=%d impr=\"%s\" tech=\"%s\""
+                       " credit=%.1f", pcity->id,
+                       improvement_rule_name(pimprove),
+                       advance_rule_name(preq->source.value.advance),
+                       (double) cap_credit);
+            }
+          } requirement_vector_iterate_end;
+        }
         continue;
       }
 

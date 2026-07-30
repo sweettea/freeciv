@@ -65,6 +65,10 @@ struct deep_tuning {
    * having before the size gate the building's other effects wait
    * for. */
   double horizon_health_weight;
+  /* Share of a tech-gated cap-lifter's capacity credit routed into
+   * the gating advance's tech want (the credit cannot buy the
+   * building, but it can buy the research). */
+  double horizon_tech_weight;
 
   /* Border contest terms (W07-lite, landed with W02): per catchment
    * tile owned by a non-allied player (founding here steals or denies
