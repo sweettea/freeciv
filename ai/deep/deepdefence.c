@@ -959,6 +959,14 @@ static void deep_spend_gold(struct ai_type *ait, struct player *pplayer,
   int expenses;
   bool war_footing = dai_on_war_footing(ait, pplayer);
 
+  if (player_get_expected_income(pplayer) < 0) {
+    /* Rotation move 1 (treasury-gated spending): running at a loss,
+     * raise the gold floor by the shortfall so upgrades and buys
+     * cannot push the projected treasury negative -- otherwise the
+     * treasury guard just sells a building to pay for the shine. */
+    cached_limit -= player_get_expected_income(pplayer);
+  }
+
   if (explore_want <= 0) {
     /* Disband explorers that are at home but don't serve a purpose. */
     city_list_iterate(pplayer->cities, pcity) {
