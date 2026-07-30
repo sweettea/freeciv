@@ -718,6 +718,18 @@ static void deep_flee_workers(struct ai_type *ait, struct player *pplayer)
         || tile_city(unit_tile(w)) != NULL) {
       continue;
     }
+    {
+      /* A bodyguard standing with us is the answer to danger, not a
+       * reason to abandon work: guarded civilians hold their ground
+       * (the flee would waste the escort the border-guard system
+       * just delivered). */
+      struct unit *g = aiguard_guard_of(ait, w);
+
+      if (g != NULL
+          && real_map_distance(unit_tile(g), unit_tile(w)) <= 1) {
+        continue;
+      }
+    }
     players_iterate_alive(aplayer) {
       if (!pplayers_at_war(pplayer, aplayer)) {
         continue;
@@ -784,6 +796,11 @@ static void deep_flee_workers(struct ai_type *ait, struct player *pplayer)
       }
     } city_list_iterate_end;
     if (refuge == NULL) {
+      continue;
+    }
+    if (w->goto_tile == city_tile(refuge)) {
+      /* Already running there: keep running, no re-path spam. */
+      def_ai_unit_data(w, ait)->done = TRUE;
       continue;
     }
     log_base(deep_metric_log_level(),
