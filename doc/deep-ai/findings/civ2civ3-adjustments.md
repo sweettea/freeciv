@@ -179,8 +179,15 @@ cities-taken-per-unit-lost) that clear the n>=50 noise bar:
    warship build-want gains an escort-demand term; pair moves
    together. Biggest lift (cross-class guard assignment).
 3. MASSED LANDINGS: hold the convoy until the assembled force clears
-   a tunable threshold vs the target's assessed defence --
-   ai_invasion becomes a go/no-go gate instead of statistics.
+   a tunable threshold vs the target's DEFENCE AT ARRIVAL, not its
+   defence today (human refinement 2026-07-30): current garrison plus
+   eta x a reinforcement-rate estimate (tunable slope on the
+   defender's public production/military signals). Travel time is
+   the defender's budget -- a 12-turn sail must clear a much higher
+   bar than a 2-turn hop, which is exactly why long-range desultory
+   attacks fail while looking winnable on paper. Mirror of the W11
+   en-route credit, aimed outward. ai_invasion becomes a go/no-go
+   gate instead of statistics.
 
 Deadlock analysis required for slice 1: every wait condition needs a
 turn-capped escape; watch for interaction with dai_spend_gold
