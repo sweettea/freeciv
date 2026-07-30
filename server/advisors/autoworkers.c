@@ -318,6 +318,17 @@ adv_want adv_workers_road_bonus(const struct civ_map *nmap,
   least one whole turn is worth nothing -- worker-turns are conserved
   and only delay is bought (W28).
 **************************************************************************/
+/* Extension point storage (see autoworkers.h); inert until set. */
+static aw_task_value_fn aw_task_value_hook = NULL;
+
+/**********************************************************************//**
+  Register (or clear, with NULL) the task-value adjustment hook.
+**************************************************************************/
+void aw_set_task_value_hook(aw_task_value_fn fn)
+{
+  aw_task_value_hook = fn;
+}
+
 static void consider_worker_action(const struct player *pplayer,
                                    const struct unit *punit,
                                    int join_rate, int arrival,
@@ -338,6 +349,11 @@ static void consider_worker_action(const struct player *pplayer,
                                    struct tile *ptile)
 {
   bool improves;
+
+  if (aw_task_value_hook != NULL) {
+    new_tile_value = aw_task_value_hook(pplayer, punit, ptile,
+                                        new_tile_value);
+  }
   adv_want total_value = 0;
   adv_want base_value = 0;
   int old_improvement_value;
