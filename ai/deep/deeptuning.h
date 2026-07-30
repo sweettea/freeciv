@@ -134,6 +134,13 @@ struct deep_tuning {
   int cm_cap_trade;
   int cm_wonder_shield;
   int cm_wonder_trade;
+  /* Grow-hard state: cities below cm_grow_below (and not at war,
+   * capped, or wonder-building) weight food heavily -- growth
+   * compounds and civ2civ3 has no rapture. 0 disables the state. */
+  int cm_grow_below;
+  int cm_grow_food;
+  int cm_grow_shield;
+  int cm_grow_trade;
 };
 
 void deep_tuning_init(void);

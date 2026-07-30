@@ -118,6 +118,16 @@ void deep_set_city_manager_params(struct ai_type *ait,
       cmp.factor[O_SHIELD] = tune->cm_wonder_shield;
       cmp.factor[O_TRADE] = tune->cm_wonder_trade;
       cmp.happy_factor = tune->cm_happy_factor;
+    } else if (city_size_get(pcity) < tune->cm_grow_below) {
+      /* Young city with headroom: growth compounds, so feed it.
+       * Deep runs fewer cities than stock at stock's growth pace
+       * (mean size 3.5->5.4 IDENTICAL both sides, garden2b); quality
+       * must compensate quantity, and civ2civ3 has no rapture, so
+       * the CM food weight is the only growth lever there is. */
+      cmp.factor[O_FOOD] = tune->cm_grow_food;
+      cmp.factor[O_SHIELD] = tune->cm_grow_shield;
+      cmp.factor[O_TRADE] = tune->cm_grow_trade;
+      cmp.happy_factor = tune->cm_happy_factor;
     } else {
       matched = FALSE;
     }
