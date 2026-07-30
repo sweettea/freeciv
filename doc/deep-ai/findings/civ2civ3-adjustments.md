@@ -192,3 +192,13 @@ cities-taken-per-unit-lost) that clear the n>=50 noise bar:
 Deadlock analysis required for slice 1: every wait condition needs a
 turn-capped escape; watch for interaction with dai_spend_gold
 disbanding "idle" boats.
+
+## Sequential-attrition odds (2026-07-30, from the grow-release debate)
+
+All stock threat arithmetic sums linear ratings, but attackers strike
+sequentially: a defender rated equal to N attackers must win N
+straight fights (p^N survival, not parity). The cm_grow_safety_margin
+knob papers over this at one boundary; a proper survival-probability
+model (defence vs ordered attacker stream) would upgrade every
+consumer of danger/defence comparisons -- future combat workstream,
+pairs with tired-attack discipline.
