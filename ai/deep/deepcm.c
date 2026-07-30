@@ -154,9 +154,12 @@ void deep_set_city_manager_params(struct ai_type *ait,
                       >= city_data->danger * city_data->danger)) {
       /* Young city with headroom whose fear, if any, is already PAID
        * FOR: grow-hard yields to the garrison only while defence
-       * lags the assessed danger (stock's own covered-danger
-       * threshold, defense_quadratic >= danger^2 -- the same test
-       * the build side uses). Growth never comes at the expense of
+       * lags the assessed danger. assess_defense_quadratic()
+       * returns (sum of linear defense)^2, so this is plain
+       * linear defense >= linear danger, written in the squared
+       * currency the build side's danger-percent formula uses --
+       * the two sides agree bit-for-bit on when a garrison is
+       * "enough". Growth never comes at the expense of
        * needed defenders, but a satisfied garrison never taxes
        * growth (human refinement 2026-07-30; the garden2b pile
        * regression was grow-mad shieldless coasts).
