@@ -870,3 +870,29 @@ Intake assessment:
 Queue position unchanged: accept3/Z2 verdicts -> naval invasion
 slice 3 -> tuning v3 -> combat workstream. The bundle slots in after
 that as Phase 3, gated on W04/W10/W12 extraction.
+
+## Acceptance round 3 verdict: density epic regresses at placeholders (2026-07-30)
+
+Complete-manifest binary (density fear + density prior + wall fear
++ settler rush + choke bonus, all knobs at committed PLACEHOLDER
+defaults) vs the pile+fixes binary, seat-paired on the same 60 wide
+seeds (metrics archived: benchmark/results/accept3-2026-07-30/):
+
+  config    n-seats  agg-ratio (was)   paired: new-worse  median-diff
+  cramped     180    0.669  (0.935)         63%             -0.223
+  garden2b    120    0.454  (0.537)         57%             -0.056
+  isolated    240    0.658  (0.777)         63%             -0.130
+  contested guard (n=10, game-level): 0.797 (was 0.902), 0 wins
+
+VERDICT: do NOT fold the density-epic mechanisms into defaults at
+placeholder values. The regression is density-proportional (cramped
+hit hardest), consistent with density fear + wall funding + settler
+rush all taxing the same economy at once when every map neighbour
+triggers them. This is rule 7 working as intended: the placeholders
+were never candidates for defaults, and the acceptance run priced
+them. defence-Z2 (east-2, running) is tuning all 32 knobs including
+the density set, warm-started from G-final; its gen-0 control
+(-521.0 mixed objective) is the same package this round measured,
+and gen 1 already found -360.1. Re-accept with Z2's best-tuning on
+holdout seeds per the three-tier protocol before any fold decision.
+east-1 stopped after harvest; results retained on its disk.
