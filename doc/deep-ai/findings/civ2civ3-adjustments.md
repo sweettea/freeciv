@@ -225,3 +225,30 @@ to the hard-coded income fantasy ("75% of our trade, 10 squares
 away") overestimating the bonus; no evidence of the feared
 domestic-route spam. Deep-side suppression NOT needed; magnitude is
 tuning-era at most.
+
+## Density-driven expansion race (2026-07-30, human idea; NEXT-CYCLE EPIC)
+
+The fear lattice has a designed-in tension: density fear raises
+danger, danger wins build choices for DEFENDERS -- but crowding is
+exactly when settling FASTER matters most (land runs out; cramped
+and garden2b were lost in the first fifty turns). The coupling that
+resolves it, two halves:
+
+1. SETTLER RUSH: scale founder/settler want by the density signal
+   (prior + observed), tunable settler_rush_weight -- on crowded
+   maps the race and the garrison are BOTH urgent, and the build
+   choice must price the race, not just the wall. Interception
+   point: founder_want flow (daisettler/daicity) -- needs a read to
+   find the deep-side hook; possibly a second advisors extension
+   point if the flow is advisor-internal.
+2. CHOKEPOINT CLAIMING: with 3+ settlers alive, route one toward the
+   nearest land chokepoint (narrow passage / articulation point of
+   the home continent's land graph) -- a city in a gate is worth a
+   garrison army. Needs a cheap approximate articulation analysis
+   (sampled BFS cut detection) over the known-land graph; W02's site
+   scoring could take a chokepoint bonus term instead of hard
+   routing, which is simpler and composes (site_choke_bonus knob).
+
+Guard for half 1: the rush multiplier must apply to settler WANTS,
+not bypass the grow-gate -- a city under real (paid-for) threat
+still defends first; the race rides on cities whose fear is covered.
