@@ -77,3 +77,15 @@ game and grep its log for "no AI type" (must be 0) and "deep-def"
 (must be >0). Server-only meson config that works on stock Ubuntu:
   meson setup build -Dclients=stub -Dfcmp=cli -Daudio=none \
     -Dtools=[] -Daimodules=classic,tex,baseline,deep
+
+## Box inventory (2026-07-30)
+
+- us-east-2: i-05162168cf393cb20 (c7a.8xlarge, the original campaign
+  box; full toolchain + all aimodules). STOPPED when idle.
+- us-east-1: i-0e9a257ef3b781349 (c7a.8xlarge, added 2026-07-29 for
+  the parallel regime tune; server-only meson config per the
+  bring-up checklist above; key "sweettea", sg deep-tune-ssh).
+  STOPPED when idle. Public DNS changes on every start.
+Pattern for unattended work: oneshot systemd unit whose ExecStart
+ends with `sudo shutdown -h +5 ...; sleep 420; sudo poweroff` (the
+double-tap; a plain scheduled shutdown silently failed once).
