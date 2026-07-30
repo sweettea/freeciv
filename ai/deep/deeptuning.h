@@ -153,6 +153,10 @@ struct deep_tuning {
   int cm_grow_food;
   int cm_grow_shield;
   int cm_grow_trade;
+  /* Exponent on catchment trade-richness (workable trade / workable
+   * shields) scaling every CM state's trade factor: the map sets the
+   * trade appetite. 0 restores plain constants; 1 is proportional. */
+  double cm_trade_quality_slope;
 };
 
 void deep_tuning_init(void);

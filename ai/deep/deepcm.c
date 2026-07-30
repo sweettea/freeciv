@@ -15,6 +15,8 @@
 #include <fc_config.h>
 #endif
 
+#include <math.h>
+
 /* utility */
 #include "mem.h"
 
@@ -82,6 +84,33 @@ static void deep_cm_base(struct cm_parameter *cmp, struct city *pcity)
 }
 
 /**********************************************************************//**
+  How trade-rich this city's catchment is relative to its shields:
+  (1 + total workable trade) / (1 + total workable shields). The right
+  trade weight is a function of what the map offers -- a constant
+  tuned on poor land starves specials-rich cities (the isolated -405
+  lesson, STATUS 2026-07-30: G cut cm_cap_trade for cramped and
+  bankrupted isolated; H kept it high). Raised to the tunable slope
+  this scales every state's trade factor: slope 0 restores the plain
+  constant, slope 1 is fully proportional.
+**************************************************************************/
+static double deep_cm_trade_richness(struct city *pcity)
+{
+  const struct civ_map *nmap = &(wld.map);
+  int trade = 0, shield = 0;
+
+  city_tile_iterate(nmap, city_map_radius_sq_get(pcity),
+                    city_tile(pcity), ptile) {
+    if (ptile == city_tile(pcity)) {
+      continue;
+    }
+    trade += city_tile_output(pcity, ptile, FALSE, O_TRADE);
+    shield += city_tile_output(pcity, ptile, FALSE, O_SHIELD);
+  } city_tile_iterate_end;
+
+  return (1.0 + trade) / (1.0 + shield);
+}
+
+/**********************************************************************//**
   Derive and set (or clear) cm_parameter for every owned city.
 **************************************************************************/
 void deep_set_city_manager_params(struct ai_type *ait,
@@ -130,6 +159,16 @@ void deep_set_city_manager_params(struct ai_type *ait,
       cmp.happy_factor = tune->cm_happy_factor;
     } else {
       matched = FALSE;
+    }
+
+    if (matched && tune->cm_trade_quality_slope > 0.0) {
+      /* Let the map set the trade appetite: scale the state's trade
+       * factor by catchment trade-richness. */
+      double scaled = cmp.factor[O_TRADE]
+                      * pow(deep_cm_trade_richness(pcity),
+                            tune->cm_trade_quality_slope);
+
+      cmp.factor[O_TRADE] = MAX(0, (int) (scaled + 0.5));
     }
 
     if (matched) {
