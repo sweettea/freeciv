@@ -157,3 +157,31 @@ Add cm_grow_food/shield/trade factors for uncapped cities below a
 size threshold so quality can compensate quantity. Note civ2civ3 has
 NO rapture growth, so CM food weighting and W03 unblocking are the
 only growth levers that exist.
+
+## Naval convoy design (2026-07-30, human-requested; NEXT EPIC)
+
+Stock invades desultorily by construction: daiferry.c is a one-boat-
+one-passenger state machine (a boat sails the moment it has A
+passenger), ai_invasion mass is bookkeeping no decision consumes, and
+sea escorts are an unfinished stub (the "Consider making a sea
+bodyguard" comment). Landings arrive as unescorted singles that
+coastal defenders eat one by one -- observed from the defender's side
+all week. Three deep-side slices, each head-to-head benchmarkable on
+garden2b/isolated via mechanism metrics (landing-success rate,
+cities-taken-per-unit-lost) that clear the n>=50 noise bar:
+
+1. FULL-LOAD GATE: a deep transport in home port sails only when
+   loaded to capacity or after convoy_max_wait turns (the wait-cap is
+   the anti-deadlock device; ferry state machines deadlock silently:
+   boat-waits-for-passenger-waits-for-boat). convoy_min_load=1
+   default = current behaviour, ships off.
+2. ESCORT PAIRING: loaded transport requests a warship bodyguard;
+   warship build-want gains an escort-demand term; pair moves
+   together. Biggest lift (cross-class guard assignment).
+3. MASSED LANDINGS: hold the convoy until the assembled force clears
+   a tunable threshold vs the target's assessed defence --
+   ai_invasion becomes a go/no-go gate instead of statistics.
+
+Deadlock analysis required for slice 1: every wait condition needs a
+turn-capped escape; watch for interaction with dai_spend_gold
+disbanding "idle" boats.
