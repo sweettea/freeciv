@@ -36,9 +36,29 @@ Deeper background for each is in `../findings/`. The mapping:
 | W27 scaling | `scaling.md`, `pathfinding-caches.md` |
 | W29 transform chains | `terraform-plans.md` |
 | W30 extension points | `where-changes-belong.md` §3 |
+| W31 naval doctrine | `naval-doctrine.md` |
+| W32 air doctrine | `air-doctrine.md`, `air-doctrine-addendum.md` |
+| W33 operations layer | `operations-layer.md` |
+| W35 espionage & intelligence | `espionage.md` |
+| Capstone: decapitation strike | `decapitation-strike.md` |
+
+W31–W35 and the capstone arrived as the military & intelligence bundle
+(imported 2026-07-30; workstream files already extracted, unlike the
+rest of this table). W34 (victory plan) is named by the bundle as the
+highest-value remaining strategic gap but is **not yet designed**.
 
 ## Do not skip ahead
 
 The hard orderings in `../00-context.md` §7 exist because violating them costs
 rework. In particular: W01 before W02/W03; W05 before W07; W10 and W11 before
 W13; W26 before W20.
+
+For the military bundle: W33 (operations substrate) before the
+*coordinated* parts of W31/W32/W35; W04 before W35 and before honest
+threat assessment throughout; W12 before the sea-lane graph and
+airbase chains; W28/W29 before airbase-chain construction. The
+opportunistic fallbacks (convoy discipline, escort pairing, invasion
+go/no-go — partially landed 2026-07-30) do NOT wait for W33; they
+migrate into phase gates when W33 lands. See the intake assessment in
+`../STATUS.md` (2026-07-30) for what is already covered and the
+measurability caveats before scheduling W32/W35.

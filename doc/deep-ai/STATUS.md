@@ -820,3 +820,53 @@ code; its message covers only the sortie change. Single-branch
 local history; splitting judged riskier than documenting.
 Acceptance round 2 (all fixes, 3 configs x n=60 paired + guard)
 launches when ablation stage 5 lands.
+
+## Military & intelligence bundle imported (2026-07-30, human-supplied)
+
+Five designs (W31 naval, W32 air, W33 operations layer, W35
+espionage, decapitation capstone) landed in workstreams/ + findings/.
+Every code claim spot-verified against source at 0896b34: invasion
+census zeroed at daiunit.c:1302, anti-bombard "dummy support" FIXME
+at daimilitary.c:606, spy-action constant ladder in daiactions.c
+(10000/9000/.../2500 with its own FIXMEs), spaceship_lost() on
+capital capture at citytools.c:2028, zero airbase references in
+autoworkers/daidomestic. The central claim -- no object represents a
+multi-turn operation; ai_invasion is a per-turn census of emergent
+drift -- matches what the convoy epic found independently
+(civ2civ3-adjustments.md "Naval convoy design": "ai_invasion mass is
+bookkeeping no decision consumes").
+
+Intake assessment:
+- ACCEPTED as Phase 3 sequencing: W33 substrate first, doctrines as
+  phase lists over it. The struct operation design (commitment /
+  phase gates / deliberate abort banking survivors) is the right
+  generalization of what the convoy scaffolding gropes toward.
+- OVERLAP: W31 E31.1 (escort precondition) is partially landed as
+  the opportunistic version -- convoy hold + aiguard escort pairing
+  (2026-07-30, inert until invasion wants). Queued naval slice 3
+  (defence-at-arrival go/no-go) is the un-substrated form of W31
+  E31.3/E31.4. Keep harvesting these opportunistic slices FIRST;
+  they are benchmarkable now, and W33 absorbs them as phase gates
+  later. Amendment to the bundle's "build W33 first": true for the
+  coordinated parts, but 12 commits of substrate before any
+  measurable benefit violates our evidence rhythm -- the fallback
+  slices de-risk the phase lists before the substrate exists.
+- STALE REF: W31 says escort "reuses W13 campaign machinery" -- W13
+  does not exist; our aiguard-based pairing is the actual landed
+  mechanism and the likelier substrate until W33.
+- MEASURABILITY CAVEAT (rule 6): W32/W35/capstone value concentrates
+  in the flight+ era. Before scheduling either, verify our benchmark
+  windows actually reach that era (check savegame tech at horizon on
+  long configs); otherwise acceptance rests solely on L1 corpus
+  tests, and headline claims still need paired n>=50. W35 E35.1
+  (currency valuation of spy actions) is the exception: it bites as
+  soon as diplomats exist and does not strictly need W04, though the
+  bundle gates all of W35 on it.
+- W34 (victory plan) flagged by the bundle as the highest-value
+  undesigned gap; agreed -- it also subsumes tech direction
+  (daitech.c has no push toward any goal). Needs a design pass
+  before the capstone is schedulable.
+
+Queue position unchanged: accept3/Z2 verdicts -> naval invasion
+slice 3 -> tuning v3 -> combat workstream. The bundle slots in after
+that as Phase 3, gated on W04/W10/W12 extraction.
