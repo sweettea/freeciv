@@ -70,6 +70,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .cm_wonder_shield = 10,               /* PLACEHOLDER, untuned */
   .cm_wonder_trade = 4,                 /* PLACEHOLDER, untuned */
   .cm_grow_below = 6,                   /* PLACEHOLDER, untuned */
+  .cm_grow_safety_margin = 1.5,         /* PLACEHOLDER, untuned */
   .cm_grow_food = 16,                   /* PLACEHOLDER, untuned */
   .cm_grow_shield = 4,                  /* PLACEHOLDER, untuned */
   .cm_grow_trade = 4,                   /* PLACEHOLDER, untuned */
@@ -127,6 +128,7 @@ void deep_tuning_init(void)
   TUNE_INT(cm_wonder_shield);
   TUNE_INT(cm_wonder_trade);
   TUNE_INT(cm_grow_below);
+  TUNE_DOUBLE(cm_grow_safety_margin);
   TUNE_INT(cm_grow_food);
   TUNE_INT(cm_grow_shield);
   TUNE_INT(cm_grow_trade);
@@ -162,7 +164,7 @@ void deep_tuning_init(void)
 
   log_normal("deep-tuning file=\"%s\" fear=%f eta=%f surv=%f hut=%f"
              " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
-             " wos=%d wot=%d gb=%d gf=%d gs=%d gt=%d tqs=%f dip=%f tail=%f depth=%f ovl=%f pot=%f"
+             " wos=%d wot=%d gb=%d gsm=%f gf=%d gs=%d gt=%d tqs=%f dip=%f tail=%f depth=%f ovl=%f pot=%f"
              " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f hhealth=%f htech=%f"
              " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d ugw=%f uuw=%f rpr=%f rwant=%d",
              path,
@@ -181,6 +183,7 @@ void deep_tuning_init(void)
              deep_tuning_active.cm_wonder_shield,
              deep_tuning_active.cm_wonder_trade,
              deep_tuning_active.cm_grow_below,
+             deep_tuning_active.cm_grow_safety_margin,
              deep_tuning_active.cm_grow_food,
              deep_tuning_active.cm_grow_shield,
              deep_tuning_active.cm_grow_trade,

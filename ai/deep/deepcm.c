@@ -151,7 +151,12 @@ void deep_set_city_manager_params(struct ai_type *ait,
     } else if (city_size_get(pcity) < tune->cm_grow_below
                && (city_data->danger == 0
                    || assess_defense_quadratic(ait, pcity)
-                      >= city_data->danger * city_data->danger)) {
+                      >= (unsigned int)
+                         (tune->cm_grow_safety_margin
+                          * city_data->danger)
+                         * (unsigned int)
+                           (tune->cm_grow_safety_margin
+                            * city_data->danger))) {
       /* Young city with headroom whose fear, if any, is already PAID
        * FOR: grow-hard yields to the garrison only while defence
        * lags the assessed danger. assess_defense_quadratic()
@@ -159,7 +164,12 @@ void deep_set_city_manager_params(struct ai_type *ait,
        * linear defense >= linear danger, written in the squared
        * currency the build side's danger-percent formula uses --
        * the two sides agree bit-for-bit on when a garrison is
-       * "enough". Growth never comes at the expense of
+       * "enough". The margin multiplies danger before comparison:
+       * linear parity overstates safety because defence ratings
+       * carry fortify/walls multipliers and attackers strike
+       * SEQUENTIALLY -- one walled defender rated equal to six
+       * attackers must win six straight fights (human objection
+       * 2026-07-30). The tuner prices the attrition margin. Growth never comes at the expense of
        * needed defenders, but a satisfied garrison never taxes
        * growth (human refinement 2026-07-30; the garden2b pile
        * regression was grow-mad shieldless coasts).
