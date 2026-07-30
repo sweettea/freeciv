@@ -278,6 +278,43 @@ static double deep_defender_upkeep_discount(const struct civ_map *nmap,
 }
 
 /**********************************************************************//**
+  Standing fear a coastal city carries while any at-war player OWNS
+  transport-capable ships (the "boat shadow"): a sudden trireme gives
+  the embarked-cargo term only ~one turn of warning, so exposed
+  coasts need a modest garrison and shields BEFORE the boats load --
+  and via the CM's danger gate this also tempers grow-hard exactly
+  where the garden2b pile regression showed grow-mad shieldless
+  coasts dying (ablation 2026-07-30). Zero before any enemy can
+  float: fourth application of the no-fear-before-the-threat-class
+  law.
+**************************************************************************/
+static unsigned int deep_boat_shadow_fear(const struct civ_map *nmap,
+                                          struct city *pcity)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct player *pplayer = city_owner(pcity);
+
+  if (tune->boat_shadow_fear <= 0
+      || !is_terrain_class_near_tile(nmap, city_tile(pcity), TC_OCEAN)) {
+    return 0;
+  }
+
+  players_iterate_alive(aplayer) {
+    if (aplayer == pplayer || !pplayers_at_war(pplayer, aplayer)) {
+      continue;
+    }
+    unit_list_iterate(aplayer->units, aunit) {
+      if (unit_type_get(aunit)->transport_capacity > 0
+          && utype_move_type(unit_type_get(aunit)) == UMT_SEA) {
+        return tune->boat_shadow_fear;
+      }
+    } unit_list_iterate_end;
+  } players_iterate_alive_end;
+
+  return 0;
+}
+
+/**********************************************************************//**
   Flat fear of barbarian uprisings, active from the first turn the
   server can actually spawn them -- the same gate barbarian.c uses --
   and zero before it, so pre-onset production is not taxed. The
@@ -419,6 +456,8 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
 
     city_data->danger += (unsigned int)
       (deep_overseas_danger(&(wld.map), pcity) * updisc);
+    city_data->danger += (unsigned int)
+      (deep_boat_shadow_fear(&(wld.map), pcity) * updisc);
     city_data->danger += (unsigned int) (deep_barbarian_fear() * updisc);
     credit = deep_incoming_defence_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
@@ -569,6 +608,8 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
 
     city_data->danger += (unsigned int)
       (deep_overseas_danger(nmap, pcity) * updisc);
+    city_data->danger += (unsigned int)
+      (deep_boat_shadow_fear(nmap, pcity) * updisc);
     city_data->danger += (unsigned int) (deep_barbarian_fear() * updisc);
     credit = deep_incoming_defence_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);

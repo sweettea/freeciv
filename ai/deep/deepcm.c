@@ -147,8 +147,12 @@ void deep_set_city_manager_params(struct ai_type *ait,
       cmp.factor[O_SHIELD] = tune->cm_wonder_shield;
       cmp.factor[O_TRADE] = tune->cm_wonder_trade;
       cmp.happy_factor = tune->cm_happy_factor;
-    } else if (city_size_get(pcity) < tune->cm_grow_below) {
-      /* Young city with headroom: growth compounds, so feed it.
+    } else if (city_size_get(pcity) < tune->cm_grow_below
+               && city_data->danger == 0) {
+      /* Young city with headroom AND nothing to fear (danger is
+       * post-adjustment, so every deep fear term -- overseas, boat
+       * shadow, menace floor -- vetoes grow-hard automatically; the
+       * garden2b pile regression was grow-mad shieldless coasts).
        * Deep runs fewer cities than stock at stock's growth pace
        * (mean size 3.5->5.4 IDENTICAL both sides, garden2b); quality
        * must compensate quantity, and civ2civ3 has no rapture, so

@@ -112,6 +112,11 @@ struct deep_tuning {
    * first spawn barbarians (barbarianrate/onsetbarbarian gate);
    * zero before that turn. */
   int barbarian_fear;
+  /* Standing coastal fear while any at-war player owns transport-
+   * capable ships: the embarked-cargo term warns ~1 turn ahead, the
+   * boat shadow funds the garrison before the boats load. Also
+   * vetoes grow-hard on exposed coasts via the CM danger gate. */
+  int boat_shadow_fear;
 
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).
