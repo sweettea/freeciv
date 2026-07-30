@@ -100,8 +100,12 @@
   (benchmark/defence.py). Runs before any deep adjustment so before and
   after arms measure need on the same scale.
 **************************************************************************/
+static double deep_garrison_menace(struct player *pplayer);
+
 static void deep_log_defence(struct ai_type *ait, struct player *pplayer)
 {
+  double menace = deep_garrison_menace(pplayer);
+
   city_list_iterate(pplayer->cities, pcity) {
     struct ai_city *city_data = def_ai_city_data(pcity, ait);
     int ndef = 0;
@@ -116,12 +120,13 @@ static void deep_log_defence(struct ai_type *ait, struct player *pplayer)
     log_base(deep_metric_log_level(),
              "deep-def turn=%d player=\"%s\" city=%d danger=%u"
              " urgency=%u defense=%d ndef=%d prod=\"%s\""
-             " shield=%d food=%d",
+             " shield=%d food=%d menace=%.2f",
              game.info.turn, player_name(pplayer), pcity->id,
              city_data->danger, city_data->urgency,
              assess_defense(ait, pcity), ndef,
              universal_rule_name(&pcity->production),
-             pcity->surplus[O_SHIELD], pcity->surplus[O_FOOD]);
+             pcity->surplus[O_SHIELD], pcity->surplus[O_FOOD],
+             menace);
   } city_list_iterate_end;
 }
 
@@ -300,6 +305,16 @@ static unsigned int deep_barbarian_fear(void)
   to ours, through the tunable slope, capped at 1.0. Unmet players
   contribute nothing, so a pre-contact empire keeps no insurance
   garrison at all, and the signal rises BEFORE any war does.
+
+  Each neighbour is weighted by REACHABILITY (the third instance of
+  the "no fear before the threat class can exist" law, after the
+  barbarian onset gate and the embarked-only overseas term): an army
+  that shares a continent with any of our cities counts in full; an
+  army wholly overseas counts at menace_overseas_weight, because it
+  must first build and sail boats. Both island-native tunes (H, H2)
+  independently disabled the ungated floor -- on island maps it was
+  pure tax (STATUS 2026-07-30).
+
   Deliberately count-based and coarse: a chronic background signal,
   not an acute one. Barbarian risk is deliberately not in here;
   deep_barbarian_fear() owns it.
@@ -308,19 +323,51 @@ static double deep_garrison_menace(struct player *pplayer)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   double theirs = 0.0;
+  Continent_id ours[64];
+  int n_ours = 0;
 
   if (tune->garrison_menace_slope <= 0.0) {
     return 1.0;   /* Disabled: unconditional floor. */
   }
 
+  city_list_iterate(pplayer->cities, pcity) {
+    Continent_id c = tile_continent(city_tile(pcity));
+    int i;
+
+    for (i = 0; i < n_ours; i++) {
+      if (ours[i] == c) {
+        break;
+      }
+    }
+    if (i == n_ours && n_ours < 64) {
+      ours[n_ours++] = c;
+    }
+  } city_list_iterate_end;
+
   players_iterate_alive(aplayer) {
+    bool reachable = FALSE;
+
     if (aplayer == pplayer
         || pplayers_allied(pplayer, aplayer)
         || player_diplstate_get(pplayer, aplayer)->type
            == DS_NO_CONTACT) {
       continue;
     }
-    theirs += aplayer->score.units;
+    city_list_iterate(aplayer->cities, acity) {
+      Continent_id c = tile_continent(city_tile(acity));
+
+      for (int i = 0; i < n_ours; i++) {
+        if (ours[i] == c) {
+          reachable = TRUE;
+          break;
+        }
+      }
+      if (reachable) {
+        break;
+      }
+    } city_list_iterate_end;
+    theirs += aplayer->score.units
+              * (reachable ? 1.0 : tune->menace_overseas_weight);
   } players_iterate_alive_end;
 
   if (theirs <= 0.0) {
