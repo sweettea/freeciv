@@ -59,6 +59,7 @@
 #include "deepsettler.h"
 #include "deeptuning.h"
 
+#include "deepdefence.h"
 #include "deepsite.h"
 
 /* Local instantiation of the tile-data-cache hash accessors; the
@@ -86,6 +87,38 @@ static void deep_tile_data_cache_destroy(struct tile_data_cache *ptdc)
  * tile), so RESULT_IS_ENOUGH, the amortize discount and the founder
  * want scale stay calibrated -- the founder-scale conversion itself
  * stays gated on W03 per the W01 conversion-gating map. */
+
+/**********************************************************************//**
+  Local isthmus test: among the candidate's eight neighbours, land
+  tiles form two or more separate arcs (>=4 land/sea transitions
+  around the ring) with the land share narrow -- the tile is a gate.
+  A city in a gate closes a continent (human design 2026-07-30).
+**************************************************************************/
+static bool deep_site_is_choke(const struct civ_map *nmap,
+                               struct tile *ptile)
+{
+  static const enum direction8 ring[8] = {
+    DIR8_NORTH, DIR8_NORTHEAST, DIR8_EAST, DIR8_SOUTHEAST,
+    DIR8_SOUTH, DIR8_SOUTHWEST, DIR8_WEST, DIR8_NORTHWEST
+  };
+  bool land[8];
+  int i, nland = 0, transitions = 0;
+
+  for (i = 0; i < 8; i++) {
+    struct tile *t = mapstep(nmap, ptile, ring[i]);
+
+    land[i] = (t != NULL && !is_ocean_tile(t));
+    if (land[i]) {
+      nland++;
+    }
+  }
+  for (i = 0; i < 8; i++) {
+    if (land[i] != land[(i + 1) % 8]) {
+      transitions++;
+    }
+  }
+  return nland >= 2 && nland <= 5 && transitions >= 4;
+}
 
 /**********************************************************************//**
   Probability-weighted average of the workable catchment (excluding
@@ -349,6 +382,12 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
                 + MAX(0, nspecials - 1)
                   * deep_tuning_get()->site_special_cluster
                 + nclaim * deep_tuning_get()->site_claim_bonus;
+    if (deep_tuning_get()->site_choke_bonus > 0.0
+        && deep_site_is_choke(&(wld.map), result->tile)) {
+      /* A gate city closes a continent; worth most when crowded. */
+      wspecials += deep_tuning_get()->site_choke_bonus
+                   * deep_map_crowding();
+    }
 
     /* Catchment depth: the probability-weighted average tile value,
      * as an ADDITIVE term replacing stock's remaining/8 -- the first

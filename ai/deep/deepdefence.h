@@ -19,4 +19,9 @@
 void deep_do_first_activities(struct ai_type *ait, struct player *pplayer);
 void deep_do_last_activities(struct ai_type *ait, struct player *pplayer);
 
+/* Map crowding from lobby settings: min(1, density_prior_tiles /
+ * land-per-player). Shared by the density prior, the settler rush
+ * and the chokepoint site bonus. */
+double deep_map_crowding(void);
+
 #endif /* FC__DEEPDEFENCE_H */

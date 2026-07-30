@@ -326,12 +326,20 @@ static unsigned int deep_boat_shadow_fear(const struct civ_map *nmap,
   switches off the moment we meet any non-allied player -- from then
   on the observed density term owns the signal.
 **************************************************************************/
+double deep_map_crowding(void)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int land_per_player = MAP_INDEX_SIZE * wld.map.server.landpercent
+                        / 100 / MAX(player_count(), 1);
+
+  return MIN(1.0, (double) tune->density_prior_tiles
+                  / MAX(land_per_player, 1));
+}
+
 static unsigned int deep_density_prior(struct player *pplayer)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   enum map_startpos mode = wld.map.server.startpos;
-  int land_per_player;
-  double crowd;
 
   if (tune->density_prior_value <= 0) {
     return 0;
@@ -363,11 +371,8 @@ static unsigned int deep_density_prior(struct player *pplayer)
     return 0;   /* Own continent: land contact is not imminent. */
   }
 
-  land_per_player = MAP_INDEX_SIZE * wld.map.server.landpercent
-                    / 100 / MAX(player_count(), 1);
-  crowd = MIN(1.0, (double) tune->density_prior_tiles
-                   / MAX(land_per_player, 1));
-  return (unsigned int) (tune->density_prior_value * crowd);
+  return (unsigned int) (tune->density_prior_value
+                         * deep_map_crowding());
 }
 
 /**********************************************************************//**
@@ -1809,16 +1814,33 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
     TIMING_LOG(AIT_CITY_TERRAIN, TIMER_STOP);
 
     TIMING_LOG(AIT_CITY_SETTLERS, TIMER_START);
-    if (city_data->founder_turn <= game.info.turn) {
-      /* Will record its findings in pcity->founder_want */
-      deep_contemplate_new_city(ait, pcity);
-      /* Avoid recalculating all the time.. */
-      city_data->founder_turn
-        = game.info.turn + fc_rand(AI_CITY_RECALC_SPEED)
-          + AI_CITY_RECALC_SPEED;
-    } else if (pcity->server.debug) {
-      /* Recalculate every turn */
-      deep_contemplate_new_city(ait, pcity);
+    {
+      bool fresh = FALSE;
+
+      if (city_data->founder_turn <= game.info.turn) {
+        /* Will record its findings in pcity->founder_want */
+        deep_contemplate_new_city(ait, pcity);
+        /* Avoid recalculating all the time.. */
+        city_data->founder_turn
+          = game.info.turn + fc_rand(AI_CITY_RECALC_SPEED)
+            + AI_CITY_RECALC_SPEED;
+        fresh = TRUE;
+      } else if (pcity->server.debug) {
+        /* Recalculate every turn */
+        deep_contemplate_new_city(ait, pcity);
+        fresh = TRUE;
+      }
+      if (fresh && city_data->founder_want > 0
+          && deep_tuning_get()->settler_rush_weight > 0.0) {
+        /* Crowded maps are a land race: whoever settles faster owns
+         * the map, and the fear lattice alone would spend the race
+         * turns on garrisons (human design 2026-07-30). Applied only
+         * to FRESH wants so the cached value never compounds. */
+        city_data->founder_want = (int)
+          (city_data->founder_want
+           * (1.0 + deep_tuning_get()->settler_rush_weight
+                    * deep_map_crowding()));
+      }
     }
     TIMING_LOG(AIT_CITY_SETTLERS, TIMER_STOP);
     ADV_CHOICE_ASSERT(city_data->choice);

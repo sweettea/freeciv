@@ -130,6 +130,14 @@ struct deep_tuning {
   /* Injected fears also fund WALLS (the upkeep-free defence):
    * building_want[walls] += weight * danger. 0 disables. */
   double wall_fear_weight;
+  /* Land-race coupling: fresh founder wants scale by
+   * (1 + weight * map crowding); crowded maps race, empty ones
+   * don't. 0 disables. */
+  double settler_rush_weight;
+  /* Site bonus (tile-sum currency, scaled by crowding) for local
+   * isthmus tiles -- a city in a gate is worth a garrison army.
+   * 0 disables. */
+  double site_choke_bonus;
   /* Convoy discipline: a transport with cargo holds in port until it
    * carries convoy_min_load units (<=1 disables) while boarders are
    * inbound within convoy_wait_radius tiles, and any cargo-carrying
