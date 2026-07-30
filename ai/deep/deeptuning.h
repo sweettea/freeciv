@@ -155,9 +155,10 @@ struct deep_tuning {
    * capped, or wonder-building) weight food heavily -- growth
    * compounds and civ2civ3 has no rapture. 0 disables the state. */
   int cm_grow_below;
-  /* Grow-hard resumes only when linear defence exceeds
-   * cm_grow_safety_margin x linear danger: parity understates risk
-   * under sequential multi-attacker attrition. */
+  /* Grow-hard resumes when linear defence exceeds
+   * cm_grow_safety_margin x linear danger. Below 1 trusts the
+   * defence multipliers and the overcounting danger sum; above 1
+   * prices sequential attrition. Neutral 1.0 until tuned. */
   double cm_grow_safety_margin;
   int cm_grow_food;
   int cm_grow_shield;

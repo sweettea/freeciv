@@ -164,12 +164,14 @@ void deep_set_city_manager_params(struct ai_type *ait,
        * linear defense >= linear danger, written in the squared
        * currency the build side's danger-percent formula uses --
        * the two sides agree bit-for-bit on when a garrison is
-       * "enough". The margin multiplies danger before comparison:
-       * linear parity overstates safety because defence ratings
-       * carry fortify/walls multipliers and attackers strike
-       * SEQUENTIALLY -- one walled defender rated equal to six
-       * attackers must win six straight fights (human objection
-       * 2026-07-30). The tuner prices the attrition margin. Growth never comes at the expense of
+       * "enough". The margin multiplies danger before comparison
+       * and deliberately spans BOTH directions of the argument:
+       * below 1, because defence multipliers (walls, fortify,
+       * terrain) make small garrisons genuinely repel big attack
+       * sums and assess_danger() overcounts (it sums every unit in
+       * radius; they rarely all come); above 1, because attackers
+       * strike sequentially and parity means winning N straight
+       * fights. Ships neutral at 1.0; the tuner referees. Growth never comes at the expense of
        * needed defenders, but a satisfied garrison never taxes
        * growth (human refinement 2026-07-30; the garden2b pile
        * regression was grow-mad shieldless coasts).
