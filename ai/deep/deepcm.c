@@ -35,6 +35,7 @@
 
 /* ai/default */
 #include "daicity.h"
+#include "daimilitary.h"
 #include "daidata.h"
 #include "daiplayer.h"
 
@@ -148,11 +149,17 @@ void deep_set_city_manager_params(struct ai_type *ait,
       cmp.factor[O_TRADE] = tune->cm_wonder_trade;
       cmp.happy_factor = tune->cm_happy_factor;
     } else if (city_size_get(pcity) < tune->cm_grow_below
-               && city_data->danger == 0) {
-      /* Young city with headroom AND nothing to fear (danger is
-       * post-adjustment, so every deep fear term -- overseas, boat
-       * shadow, menace floor -- vetoes grow-hard automatically; the
-       * garden2b pile regression was grow-mad shieldless coasts).
+               && (city_data->danger == 0
+                   || assess_defense_quadratic(ait, pcity)
+                      >= city_data->danger * city_data->danger)) {
+      /* Young city with headroom whose fear, if any, is already PAID
+       * FOR: grow-hard yields to the garrison only while defence
+       * lags the assessed danger (stock's own covered-danger
+       * threshold, defense_quadratic >= danger^2 -- the same test
+       * the build side uses). Growth never comes at the expense of
+       * needed defenders, but a satisfied garrison never taxes
+       * growth (human refinement 2026-07-30; the garden2b pile
+       * regression was grow-mad shieldless coasts).
        * Deep runs fewer cities than stock at stock's growth pace
        * (mean size 3.5->5.4 IDENTICAL both sides, garden2b); quality
        * must compensate quantity, and civ2civ3 has no rapture, so
