@@ -155,6 +155,12 @@ struct deep_tuning {
    * recovered shields would finish the city's current build. */
   double rotation_finish_relax;
 
+  /* Embassy science (W06-adjacent): extra diplomat build-want per
+   * met non-allied player we lack an embassy with, active only under
+   * Embassies tech leakage (each missing embassy is forgone research
+   * discount). 0 disables. */
+  double embassy_science_value;
+
   /* Explorer production want (W06): build-want units per visible
    * unclaimed hut and per unknown tile, divided by (1 + explorers
    * owned). Zero-gated when the map was generated without huts. */

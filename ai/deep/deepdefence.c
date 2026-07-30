@@ -1166,8 +1166,38 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     }
   }
 
-  /* Consider making an offensive diplomat */
-  dai_choose_diplomat_offensive(ait, nmap, pplayer, pcity, choice);
+  /* Consider making an offensive diplomat. Under Embassies tech
+   * leakage (civ2civ3), every missing embassy is forgone research
+   * discount, so the diplomat's want gains embassy_science_value per
+   * met non-allied player we lack an embassy with -- but only when
+   * the offensive evaluation actually picked a diplomat-class unit
+   * (W06-adjacent; stock wants embassy diplomats already, this
+   * prices the leakage the stock want has never heard of). */
+  {
+    struct adv_choice *dip = adv_new_choice();
+
+    dai_choose_diplomat_offensive(ait, nmap, pplayer, pcity, dip);
+    if (dip->want > 0
+        && game.info.tech_leakage == TECH_LEAKAGE_EMBASSIES
+        && deep_tuning_get()->embassy_science_value > 0.0) {
+      int missing = 0;
+
+      players_iterate_alive(aplayer) {
+        if (aplayer != pplayer
+            && !pplayers_allied(pplayer, aplayer)
+            && player_diplstate_get(pplayer, aplayer)->type
+               != DS_NO_CONTACT
+            && !player_has_embassy(pplayer, aplayer)) {
+          missing++;
+        }
+      } players_iterate_alive_end;
+      dip->want += missing * deep_tuning_get()->embassy_science_value;
+    }
+    if (dip->want > choice->want) {
+      adv_choice_copy(choice, dip);
+    }
+    adv_free_choice(dip);
+  }
 
   /* Consider making a sea bodyguard */
   punittype = dai_choose_bodyguard(ait, nmap, pcity, TC_OCEAN,

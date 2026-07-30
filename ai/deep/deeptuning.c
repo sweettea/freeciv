@@ -64,6 +64,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .rotation_power_ratio = 2.0,          /* PLACEHOLDER, untuned */
   .rotation_want = 35,                  /* PLACEHOLDER, untuned */
   .rotation_finish_relax = 0.5,         /* PLACEHOLDER, untuned */
+  .embassy_science_value = 8.0,         /* PLACEHOLDER, untuned */
   .explore_hut_value = 15.0,            /* PLACEHOLDER, untuned */
   .explore_discovery_value = 0.05,      /* PLACEHOLDER, untuned */
   .cm_happy_factor = 1,                 /* PLACEHOLDER, untuned */
@@ -123,6 +124,7 @@ void deep_tuning_init(void)
   TUNE_DOUBLE(settler_fearfulness_mult);
   TUNE_DOUBLE(incoming_defence_eta_weight);
   TUNE_DOUBLE(incoming_defence_survival);
+  TUNE_DOUBLE(embassy_science_value);
   TUNE_DOUBLE(explore_hut_value);
   TUNE_DOUBLE(explore_discovery_value);
   TUNE_INT(cm_happy_factor);
@@ -176,7 +178,7 @@ void deep_tuning_init(void)
 
   secfile_destroy(sf);
 
-  log_normal("deep-tuning file=\"%s\" fear=%f eta=%f surv=%f hut=%f"
+  log_normal("deep-tuning file=\"%s\" fear=%f eta=%f surv=%f emb=%f hut=%f"
              " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
              " wos=%d wot=%d gb=%d gsm=%f sdw=%f gf=%d gs=%d gt=%d tqs=%f dip=%f tail=%f depth=%f ovl=%f pot=%f"
              " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f hhealth=%f htech=%f"
@@ -185,6 +187,7 @@ void deep_tuning_init(void)
              deep_tuning_active.settler_fearfulness_mult,
              deep_tuning_active.incoming_defence_eta_weight,
              deep_tuning_active.incoming_defence_survival,
+             deep_tuning_active.embassy_science_value,
              deep_tuning_active.explore_hut_value,
              deep_tuning_active.explore_discovery_value,
              deep_tuning_active.cm_happy_factor,
