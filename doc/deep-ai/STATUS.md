@@ -731,3 +731,56 @@ benchmark/results/mixed-grid-2026-07-28.tgz. tune.py --mixed
   unhappypop 1.9), settler-factory economics, wonder prereqs.
   Edge-builders (symmetric): tired-attack discipline, embassy
   science, caravan policy, walls valuation.
+
+## Head-to-head tuning campaign: final verdict (2026-07-30)
+
+Three searches ran (G: garden2+cramped; H: cold on isolated+long; H2:
+warm-started from G's optimum on isolated+long), a five-champion
+bake-off, three 12-seed evaluation tiers, and finally the WIDE run:
+60 fresh paired seeds x {defaults, G-final, H-final} x
+{cramped, garden2b, isolated} (1080 games, us-east-1, artifacts in
+benchmark/results/tuning-campaign-2026-07-30/).
+
+**Wide verdict (per-seed paired, n=60, 95% CI):**
+- defaults ratios: cramped 1.005, garden2b 0.880, isolated 0.765
+- G-final vs defaults: cramped -0.13±0.15 (null), garden2b -0.18±0.20
+  (null), isolated +0.085±0.056 (SIGNIFICANT, 39/60 seed wins)
+- H-final vs defaults: all null.
+
+**Ship decision: keep the compiled placeholder defaults.** The
+mechanism commits (embarked-invader fear, menace-scaled garrison
+floor, barbarian onset gate, ruleset upkeep charging, treasury guard,
+health credit) carried the project to stock-parity on cramped and
+0.88 on fair islands; no tuning fold is justified except noting
+G-final as an isolated-specialist data point.
+
+**METHODS FINDING (first-class): 12-seed batch means are unusable**
+for score-ratio comparisons on head-to-head configs. Identical
+binaries scored 0.57-0.85 on garden2 across three 12-seed batches;
+every tier of the champion ladder read different weather; both the
+holdout (+10.6pp) and confirmation (-8.7pp) verdicts on G-final
+dissolved into nulls under per-seed pairing at n=60. Bar for all
+future acceptance claims: paired per-seed differences, n>=50, or
+mechanism-level metrics (city losses, treasury events) with large
+effect sizes. The three-tier protocol (train / holdout-select /
+virgin-confirm) caught both the overfit AND its own noise floor.
+
+**Knob-diff covariate table** (G vs H vs H2 finals; agreements are
+robust directions, divergences are missing covariates):
+- AGREED across all three: raise upkeep_gold_weight (4.7/6.0/5.2 vs
+  3.0), raise upkeep_unit_weight, raise settler_fearfulness_mult
+  (2.7/4.4/5.8 vs 2.0), cut cm_war_food.
+- ISLAND-vs-LAND divergences: site_special_cluster (G kills it at
+  1.4; H and H2 both DOUBLE it to ~21 - tile-quality covariate
+  confirmed from the optimiser side); BOTH island-native tunes
+  disable the garrison floor (H: floor_danger 0; H2: floor 0) and
+  ZERO overseas_fear - on island regimes the new fear terms read as
+  pure tax, supporting reachability-gating and suggesting the
+  mechanism wins came from the economics, not extra units.
+- No consensus: barbarian_fear (44/79/13), menace_slope.
+
+**Campaign cost**: ~$120 across three boxes. Real products: the
+mechanism fixes (landed), the methods bar, and an evidence-backed
+covariate queue (findings/civ2civ3-adjustments.md): reachability
+menace, tile-quality CM/site weights, grow-state CM, tech-wall
+credits, rotation. Next epic should come from that queue.
