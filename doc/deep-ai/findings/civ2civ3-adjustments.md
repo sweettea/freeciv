@@ -252,3 +252,35 @@ resolves it, two halves:
 Guard for half 1: the rush multiplier must apply to settler WANTS,
 not bypass the grow-gate -- a city under real (paid-for) threat
 still defends first; the race rides on cities whose fear is covered.
+
+## Seed-205 save forensics (2026-07-31, sonnet dive, Z2-gen2 tuning)
+
+Full save-series diff of deep's worst confirm seed (garden2b, ratio
+~0.2), both mirror arms, vs stock on identical starts. Two-stage
+loss: compounding expansion gap from T20, discrete conquest rout
+T180-300. Per-city growth REFUTED as a cause (deep's mean city size
+BEATS stock's at most checkpoints -- grow-hard works). The deficit
+is city COUNT: deep flatlines at 24-27 cities ~T100 while stock
+reaches 44-66; live settlers T90-140: deep 2-10 vs stock 15-27,
+with land still available. Meanwhile deep carries 2-4x stock's
+units AND hoards 2000-2479 unspent gold (stock: 92-349), and
+game.log shows dozens of deep-rotate disband events per city
+T32-193 -- build-then-melt churn burning shields.
+
+Code suspects, in leverage order:
+1. SETTLER SUPPRESSION: danger-injected defender wants (density
+   fear value 17.6 radius 11.2 in this tuning) may permanently
+   outbid settlers in choose_build at ~24 cities; find what caps
+   founder output midgame when stock's identical machinery reaches
+   44+ cities.
+2. ROTATION CHURN: melt-then-rebuild loop (deep-rotate dozens/city)
+   suggests the power-ratio guard (1.2 here) thrashes as tech
+   advances; needs hysteresis or a cooldown.
+3. IDLE TREASURY: 2000+ gold unspent during the stall -- check
+   whether deep_balance_treasury / rotation reserve guard is
+   starving dai_spend_gold buys.
+Also: a civil-war splinter player spawned with ai_type="deep" in
+one arm (Sumerian, T236) -- mid-game player creation inherits the
+server default aitype, polluting arm purity; run-game.sh should pin
+splinter aitype or it randomizes which brain barbarian/civil-war
+players get per arm.
