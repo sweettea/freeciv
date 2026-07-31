@@ -1724,8 +1724,9 @@ static void deep_city_choose_build(struct ai_type *ait,
 static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
 {
   int ecount = 0, i;
+  int explore_claimed = 0;
   struct deep_emergency emergencies[city_list_size(pplayer->cities) + 1];
-  adv_want explore_want = deep_explore_want(pplayer);
+  adv_want explore_want = deep_explore_want(pplayer, 0);
 
   pplayer->ai_common.maxbuycost = 0;
 
@@ -1835,6 +1836,11 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
         city_data->choice.want = explore_want;
         city_data->choice.type = CT_CIVILIAN;
         adv_choice_set_use(&city_data->choice, "explorer");
+        /* This city claimed the demand; later cities in the pass see
+         * it shrunk, so one global want orders one explorer at a
+         * time, not a fleet. */
+        explore_claimed++;
+        explore_want = deep_explore_want(pplayer, explore_claimed);
       }
     }
     /* Will record its findings in pcity->worker_want */

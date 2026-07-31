@@ -16,6 +16,6 @@
 /* common */
 #include "fc_types.h"
 
-adv_want deep_explore_want(struct player *pplayer);
+adv_want deep_explore_want(struct player *pplayer, int queued);
 
 #endif /* FC__DEEPEXPLORE_H */

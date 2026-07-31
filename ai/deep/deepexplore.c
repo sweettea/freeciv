@@ -48,17 +48,66 @@
   discovery term is deliberately inside the gate for now; widening it
   is a W08-era decision).
 **************************************************************************/
-adv_want deep_explore_want(struct player *pplayer)
+adv_want deep_explore_want(struct player *pplayer, int queued)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   int huts_visible = 0, unknown = 0, explorers = 0;
+  Continent_id ours[64];
+  int nours = 0, i;
   adv_want want;
 
   if (wld.map.server.huts <= 0) {
     return 0;
   }
 
+  /* Continents where this player has feet on the ground: an explorer
+   * can only walk its own landmass, so unknown or hutted tiles
+   * elsewhere are not prizes it can claim -- the seed-205 games
+   * pumped 96 explorers off an unknown-tile count that was mostly
+   * ocean and the enemy's island, unreachable and (pre-W04, with
+   * decisions running on ground truth anyway) worthless even if
+   * reached. */
+  city_list_iterate(pplayer->cities, pcity) {
+    Continent_id c = tile_continent(city_tile(pcity));
+
+    for (i = 0; i < nours; i++) {
+      if (ours[i] == c) {
+        break;
+      }
+    }
+    if (i == nours && c > 0 && nours < 64) {
+      ours[nours++] = c;
+    }
+  } city_list_iterate_end;
+  unit_list_iterate(pplayer->units, punit) {
+    Continent_id c = tile_continent(unit_tile(punit));
+
+    for (i = 0; i < nours; i++) {
+      if (ours[i] == c) {
+        break;
+      }
+    }
+    if (i == nours && c > 0 && nours < 64) {
+      ours[nours++] = c;
+    }
+  } unit_list_iterate_end;
+
   whole_map_iterate(&(wld.map), ptile) {
+    Continent_id c = tile_continent(ptile);
+    bool reachable = FALSE;
+
+    if (c <= 0) {
+      continue;   /* Ocean or unassigned: no explorer walks there. */
+    }
+    for (i = 0; i < nours; i++) {
+      if (ours[i] == c) {
+        reachable = TRUE;
+        break;
+      }
+    }
+    if (!reachable) {
+      continue;
+    }
     if (!map_is_known(ptile, pplayer)) {
       unknown++;
     } else if (hut_on_tile(ptile)) {
@@ -72,15 +121,18 @@ adv_want deep_explore_want(struct player *pplayer)
     }
   } unit_list_iterate_end;
 
+  /* queued = explorer builds already claimed by other cities in this
+   * same management pass, so one global want cannot order a fleet
+   * (25 cities x one number was the other half of the pump). */
   want = (huts_visible * tune->explore_hut_value
           + unknown * tune->explore_discovery_value)
-         / (1 + explorers);
+         / (1 + explorers + queued);
 
   log_base(deep_metric_log_level(),
            "deep-explore turn=%d player=\"%s\" want=%d huts_vis=%d"
-           " unknown=%d explorers=%d",
+           " unknown=%d explorers=%d queued=%d",
            game.info.turn, player_name(pplayer), (int) want,
-           huts_visible, unknown, explorers);
+           huts_visible, unknown, explorers, queued);
 
   return want;
 }
