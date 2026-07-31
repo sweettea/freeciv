@@ -1008,3 +1008,29 @@ unramped. Live gradient verified at ramp 120: settlers-first T30,
 3-4 Phalanx T60, full hedgehog T120. Flagged for the NEXT tuning
 campaign (v3b, mid-flight, does not search it); fold candidate
 alongside v3b's values under the three-tier protocol.
+
+## Strategy pivot: mechanism epoch, tuning finale later (2026-07-31, human call)
+
+v3c killed 30 min in (nothing banked beyond v3b gen 0); east-1
+stopped; no boxes running. Rationale, from the week's ledger: code
+fixes moved the local pairing +0.38 median, tuning on fixed code
++0.04 -- campaigns have functioned as expensive bug detectors (Z2
+zeroed knobs -> worker-guard/choke questions; v3b gen 0 -> the
+hut->barbarian blindness and the isolated-classic -1143 cell), and
+every mechanism fix perishes the values just bought. New rhythm:
+mechanisms until the bound-slam diagnostics come back quiet, then
+ONE tuning finale (v4, big box) on the mature machine, folded under
+the three-tier protocol. Warm-start lineage preserved: v3b cand-5
+(+179.8 on six cells) is the current best-known point.
+
+Mechanism epoch queue, roughly by size:
+1. Naval invasion slice 3 (BIG): invasion wants + defence-at-arrival
+   go/no-go; activates the inert convoy scaffolding; the contested
+   cells are flat partly because deep never wants to invade.
+2. Combat workstream (BIG): sequential-attrition odds,
+   tired-attack discipline -- upgrades every danger/defence consumer.
+3. Density-fear reachability gate (small, spec'd 0112a65112).
+4. Hut-risk awareness (small): explore want must price classic's
+   hut->barbarian lottery; v3b priced around it, code should know.
+5. Watch items: drop-pick cosmetics, explorer census creep, W08
+   doctrine coupling (the architecture bet, after the above).
