@@ -1901,7 +1901,8 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
   AI (cityturn.c "cant_maintain"); an autosale is a strictly worse
   version of a choice we could have made a turn earlier.
 **************************************************************************/
-static void deep_balance_treasury(struct player *pplayer)
+static void deep_balance_treasury(struct ai_type *ait,
+                                  struct player *pplayer)
 {
   int projected = pplayer->economic.gold
                   + player_get_expected_income(pplayer);
@@ -1934,6 +1935,45 @@ static void deep_balance_treasury(struct player *pplayer)
     } city_list_iterate_end;
 
     if (sell_impr == NULL) {
+      /* No building left to shed: disband the cheapest gold-paying
+       * MILITARY unit before the server's random reaper can eat a
+       * worker or settler (human rule 2026-07-31: civilians die
+       * last, and never by our own hand). Prefer units in cities
+       * that are not currently in danger. */
+      struct unit *victim = NULL;
+      int victim_cost = 0;
+      bool victim_safe = FALSE;
+
+      unit_list_iterate(pplayer->units, punit) {
+        struct city *ucity = tile_city(unit_tile(punit));
+        bool safe = ucity == NULL
+                    || def_ai_city_data(ucity, ait)->danger == 0;
+        int cost = unit_build_shield_cost_base(punit);
+
+        if (unit_has_type_flag(punit, UTYF_CIVILIAN)
+            || punit->server.upkeep_paid[O_GOLD] <= 0
+            || get_transporter_occupancy(punit) > 0) {
+          continue;
+        }
+        if (victim == NULL || (safe && !victim_safe)
+            || (safe == victim_safe && cost < victim_cost)) {
+          victim = punit;
+          victim_cost = cost;
+          victim_safe = safe;
+        }
+      } unit_list_iterate_end;
+
+      if (victim != NULL) {
+        log_base(deep_metric_log_level(),
+                 "deep-fin turn=%d player=\"%s\" gold=%d projected=%d"
+                 " disband=\"%s\"",
+                 game.info.turn, player_name(pplayer),
+                 pplayer->economic.gold, projected,
+                 unit_rule_name(victim));
+        projected += victim->server.upkeep_paid[O_GOLD];
+        unit_do_disband_trad(pplayer, victim, ACT_REQ_PLAYER);
+        continue;
+      }
       log_base(deep_metric_log_level(),
                "deep-fin turn=%d player=\"%s\" gold=%d projected=%d"
                " nothing-sellable",
@@ -1970,7 +2010,7 @@ void deep_do_last_activities(struct ai_type *ait, struct player *pplayer)
   /* After taxes and production are settled: if the treasury still
    * cannot cover the coming turn, choose our own sacrifice before
    * the server chooses one for us. */
-  deep_balance_treasury(pplayer);
+  deep_balance_treasury(ait, pplayer);
   TIMING_LOG(AIT_TECH, TIMER_START);
   dai_manage_tech(ait, pplayer);
   TIMING_LOG(AIT_TECH, TIMER_STOP);
