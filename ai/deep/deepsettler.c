@@ -476,6 +476,9 @@ void deep_auto_settler_run(struct ai_type *ait, const struct civ_map *nmap,
                            struct unit *punit, struct workermap *state)
 {
   adv_want best_impr = 0; /* Value of best terrain improvement we can do */
+  bool land_only = FALSE; /* Set when a boat-dependent mission was just
+                           * dropped: this turn's re-search must not
+                           * pick another undeliverable overseas site. */
   enum unit_activity best_act;
   struct extra_type *best_target;
   struct tile *best_tile = NULL;
@@ -494,6 +497,14 @@ BUILD_CITY:
   if (def_ai_unit_data(punit, ait)->task == AIUNIT_BUILD_CITY) {
     struct tile *ptile = punit->goto_tile;
     int sanity = punit->id;
+
+    log_base(deep_metric_log_level(),
+             "deep-settler turn=%d player=\"%s\" unit=%d at=(%d,%d)"
+             " mission target=(%d,%d) sane=%d boat=%d",
+             game.info.turn, player_name(pplayer), punit->id,
+             TILE_XY(unit_tile(punit)), TILE_XY(ptile),
+             goto_is_sane(punit, ptile) ? 1 : 0,
+             def_ai_unit_data(punit, ait)->ferryboat);
 
     /* Check that the mission is still possible. If the tile has become
      * unavailable, call it off. */
@@ -531,13 +542,33 @@ BUILD_CITY:
         }
       } else {
         UNIT_LOG(LOG_DEBUG, punit, "could not go to target");
-        /* dai_unit_new_task(ait, punit, AIUNIT_NONE, NULL); */
+        if (!goto_is_sane(punit, ptile) && !unit_transported(punit)
+            && def_ai_unit_data(punit, ait)->ferryboat <= 0
+            && !land_only) {
+          /* Boat-dependent mission and no boat was assigned this
+           * turn: release the mission and re-search LAND-ONLY this
+           * same turn, so the settler founds something instead of
+           * idling into an identical overseas pick tomorrow (the
+           * first drop-only fix produced a 1200-event pick-drop
+           * loop). Land-blocked missions (temporary ZoC jams) keep
+           * stock's retry behaviour. */
+          log_base(deep_metric_log_level(),
+                   "deep-settler turn=%d player=\"%s\" unit=%d"
+                   " drop-boatless target=(%d,%d)",
+                   game.info.turn, player_name(pplayer), punit->id,
+                   TILE_XY(ptile));
+          dai_unit_new_task(ait, punit, AIUNIT_NONE, NULL);
+          land_only = TRUE;
+          goto FIND_WORK;
+        }
         return;
       }
     }
   }
 
   /*** Try find some work ***/
+
+FIND_WORK:
 
   if (unit_has_type_flag(punit, UTYF_WORKERS)) {
     struct worker_task *best_task;
@@ -576,9 +607,16 @@ BUILD_CITY:
 
     /* May use a boat: */
     TIMING_LOG(AIT_SETTLERS, TIMER_START);
-    result = deep_find_best_city_placement(ait, punit, TRUE, FALSE);
+    result = deep_find_best_city_placement(ait, punit, !land_only, FALSE);
     TIMING_LOG(AIT_SETTLERS, TIMER_STOP);
     if (result && result->result > best_impr) {
+      log_base(deep_metric_log_level(),
+               "deep-settler turn=%d player=\"%s\" unit=%d at=(%d,%d)"
+               " pick target=(%d,%d) result=%d overseas=%d virt=%d",
+               game.info.turn, player_name(pplayer), punit->id,
+               TILE_XY(unit_tile(punit)), TILE_XY(result->tile),
+               (int) result->result, result->overseas ? 1 : 0,
+               result->virt_boat ? 1 : 0);
       UNIT_LOG(LOG_DEBUG, punit, "city want " ADV_WANT_PRINTF,
                result->result);
       if (tile_city(result->tile)) {
