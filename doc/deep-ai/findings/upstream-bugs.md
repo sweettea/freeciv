@@ -82,3 +82,29 @@ Agent: append newly-found bugs here rather than fixing them.
     changes measured across hundreds of benchmark games: exactly zero.
     (Transform is additionally gated behind Fusion Power in civ2civ3's
     actions.ruleset — endgame by design, not a bug.)
+
+## dai_spend_gold's buy loop is dead code (since 2017, c84ce356f5)
+
+dai_manage_cities (daicity.c:962-968) resets every city's
+choice.want to -1 ("Initialize for next turn" -- actually a
+military-advisor-already-ran sentinel added by c84ce356f5,
+2017-09-13) BEFORE calling dai_spend_gold. dai_spend_gold's buy
+list is a scan for the city with the highest choice.want
+(daicity.c:~560); with every city at -1 the scan never beats the
+zero-initialised bestchoice, pcity stays NULL, and the do-loop
+breaks on its first iteration. The entire crash-buy machinery --
+including the grave-danger emergency buy and the
+sell-something-to-afford-a-defender path -- has been unreachable
+for nine years. Only dai_upgrade_units (danger + civilian passes)
+still spends AI gold. The buy loop has been actively maintained
+(settler special cases etc.) throughout, so this is clearly
+unintended. Symptom in games: AI treasuries idle at 4-25x reserve
+while cities under siege never emergency-buy defenders.
+
+Found 2026-07-31 via deep's inherited copy (deep_spend_gold) during
+the seed-205 idle-treasury investigation: deep_manage_cities copied
+the same reset-before-spend order, so deep never buys either.
+Deep-side fix: run the spend pass on live choices (spend_gold's own
+internal want=-1 marking already prevents double-processing);
+restore the sentinel only after the spend pass. Do NOT fix in
+ai/default (rule 2).
