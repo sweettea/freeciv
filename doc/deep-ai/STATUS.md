@@ -896,3 +896,33 @@ the density set, warm-started from G-final; its gen-0 control
 and gen 1 already found -360.1. Re-accept with Z2's best-tuning on
 holdout seeds per the three-tier protocol before any fold decision.
 east-1 stopped after harvest; results retained on its disk.
+
+## Pivot: tuning halted for a mechanism-bug round (2026-07-31, human call)
+
+Z2 stopped at gen 4 (bests: -521 / -360 / -242 / -136 / -104 --
+still improving, but the seed-205 forensics showed the gradient is
+partly pricing pathology, not design). Harvest banked: gen-4
+best-tuning.ini + full candidate log (every candidate is
+reconstructible from log lines). Both boxes stopped.
+
+Bug round queue, from the forensics (findings/civ2civ3-adjustments
+"Seed-205 save forensics"):
+1. Explorer pump: deep_explore_want is a GLOBAL want applied
+   per-city with no coordination -- 25 cities answer the same
+   demand in one pass (Explorer x96 by T200 on seed 205), and the
+   unknown-tiles term never decays on island maps (can't see across
+   water). Fix: count explorers under construction in the divisor
+   and/or gate unknown on same-continent reachability.
+2. Embassy-diplomat want needs the same reachability gate.
+3. Rotation churn: dozens of build-then-melt cycles per city;
+   power-ratio guard needs hysteresis/cooldown.
+4. Idle treasury: 2000+ gold unspent through the midgame stall;
+   find what starves dai_spend_gold.
+5. run-game.sh arm purity: civil-war splinter players inherit the
+   server-default aitype (a splinter ran ai_type="deep" in one
+   mixed arm). Pin splinter aitype per arm.
+Settler stall (the top-line defect) is likely downstream of 1+3+4:
+explorers and defender churn outbid settlers in choose_build
+through exactly the T100-140 window where stock runs 15-27
+concurrent settlers. Retune AFTER the fixes, warm-started from the
+gen-4 harvest.
