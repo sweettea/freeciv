@@ -328,6 +328,7 @@ struct cityresult *deep_find_best_city_placement(struct ai_type *ait,
   struct player *pplayer = unit_owner(punit);
   struct unit *ferry = NULL;
   struct cityresult *cr1 = NULL, *cr2 = NULL;
+  int ferry_wait = 0;
   const struct civ_map *nmap = &(wld.map);
 
   fc_assert_ret_val(is_ai(pplayer), NULL);
@@ -349,9 +350,36 @@ struct cityresult *deep_find_best_city_placement(struct ai_type *ait,
   /* Phase 2: Consider travelling to another continent */
 
   if (look_for_boat) {
-    int ferry_id = aiferry_find_boat(ait, punit, 1, NULL);
+    const struct ai_plr *plr_data = def_ai_player_data(pplayer, ait);
 
-    ferry = game_unit_by_number(ferry_id);
+    if (plr_data->stats.passengers >= plr_data->stats.boats) {
+      /* The ferry pipeline is already oversubscribed: every boat has
+       * a waiting passenger. An overseas site the settler cannot be
+       * DELIVERED to is worth nothing, and chasing one parks the
+       * unit at a dock indefinitely (seed 205: five settlers on
+       * cross-water missions at T135, two boats, half the home
+       * island unfounded). Take the best on-continent site instead;
+       * the cap is the ferry count itself, not a tunable. */
+      return cr1;
+    }
+    {
+      struct pf_path *ferry_path = NULL;
+      int ferry_id = aiferry_find_boat(ait, punit, 1, &ferry_path);
+
+      ferry = game_unit_by_number(ferry_id);
+      if (ferry != NULL && ferry_path != NULL) {
+        /* Turns to reach the meeting point with the nearest available
+         * boat -- a real pathfinding figure, not an estimate. The
+         * overseas candidate is discounted by this wait below, so a
+         * site the settler cannot be delivered to promptly loses to
+         * on-continent work it could be doing in the meantime
+         * (human design 2026-07-31). */
+        ferry_wait = pf_path_last_position(ferry_path)->turn;
+      }
+      if (ferry_path != NULL) {
+        pf_path_destroy(ferry_path);
+      }
+    }
   }
 
   if (ferry
@@ -397,6 +425,13 @@ struct cityresult *deep_find_best_city_placement(struct ai_type *ait,
     if (cr2) {
       cr2->overseas = TRUE;
       cr2->virt_boat = (ferry->id == 0);
+      if (ferry_wait > 0) {
+        /* Price the boat-delivery delay: the search's own travel
+         * costs start when the settler is aboard, but the queue is
+         * real time too. amortize() is the project-standard
+         * discounter; no tunable involved. */
+        cr2->result = amortize(cr2->result, ferry_wait);
+      }
     }
 
     if (ferry->id == 0) {
