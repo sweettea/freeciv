@@ -332,3 +332,18 @@ those two units receive no goto/found order per turn.
 - STILL OPEN: settler assignment stall (the top-line defect --
   settlers parked unmoved on own city tiles 50+ turns; reproducer:
   the (17,66) pair, seed 205 mixed_db T150-T200). Next epic.
+
+## Density fear needs the reachability gate too (2026-07-31, live Europe game)
+
+Observed live (Europe scenario, classic, T28): Hannibal's moated
+North-African start builds 4+ Phalanx garrisons with ZERO sea
+transports in existence anywhere -- boat_shadow correctly silent,
+but deep_density_fear counts hostile cities within radius across
+WATER (Iberia over Gibraltar) as if they were land neighbours.
+Proximity is priced, reachability is not: the same
+unreachable-threat-is-no-threat principle applied to explore/
+embassy/menace this round. Fix: cross-continent contributions to
+density fear (and the prior) should scale by hostile sea-transport
+existence (boat_shadow's gate) or menace_overseas_weight, not count
+at full value. Until then the garden2b-tuned dfv=16/dfr=14 taxes
+moated starts for invasions that cannot come.
