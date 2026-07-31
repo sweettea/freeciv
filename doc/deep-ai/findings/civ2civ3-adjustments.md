@@ -284,3 +284,29 @@ one arm (Sumerian, T236) -- mid-game player creation inherits the
 server default aitype, polluting arm purity; run-game.sh should pin
 splinter aitype or it randomizes which brain barbarian/civil-war
 players get per arm.
+
+## Seed-205 expansion verdict: BUG, not anti-smallpox design (2026-07-31)
+
+Same-island control (each island played by each brain across the
+mirror arms): deep packs at EXACTLY stock's density -- median
+nearest-neighbour spacing 3 tiles (the citymindist floor) for both
+brains on both islands. Deep is not choosing wider spacing; it
+places identically and STOPS at 24-27 cities while stock reaches
+44-66 on the same terrain. At T140, 42-50% of the tiles stock had
+already citied were >2 tiles from any deep city. At deep's own
+observed spacing it left 19-20 cities unfounded by T140 (~90-95
+pop foregone vs a quality premium worth ~23-27 pop -- the quality
+bet loses 4:1 as played).
+
+Settler diagnosis: ASSIGNMENT-LAYER stall, not production and not
+site-eval. Live settlers hold at 2-10 continuously T60-T300 (never
+zero), but tracked positions show settlers parked UNMOVED on own
+city tiles for 50+ turns (e.g. two at (17,66) from T150-T200),
+never founding, never dying. Suspects to check, in order: (1)
+settlers assigned overseas targets waiting forever for a ferry
+(interaction with the passive navy + convoy hold gating), (2)
+AIUNIT task assignment dropping founder tasks after
+dai_auto_settler_reset in deep_manage_cities, (3) the settler map
+ranking no site above the keep-idle threshold despite compliant
+land. The (17,66) parked pair is the reproducer: instrument WHY
+those two units receive no goto/found order per turn.
