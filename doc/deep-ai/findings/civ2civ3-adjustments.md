@@ -310,3 +310,25 @@ dai_auto_settler_reset in deep_manage_cities, (3) the settler map
 ranking no site above the keep-idle threshold despite compliant
 land. The (17,66) parked pair is the reproducer: instrument WHY
 those two units receive no goto/found order per turn.
+
+## Bug-round resolutions (2026-07-31, overnight)
+
+- Rotation churn: FIXED (ac3aaf890a). Melts now require ruleset
+  obsolescence (can_upgrade_unittype != NULL), a strictly-better
+  buildable regardless of ratio arithmetic, and non-defender current
+  production. Seed-205 rerun verification pending.
+- Civilian protection: FIXED (482ffd17df). Treasury sacrifice order
+  buildings -> cheapest gold-paying military (danger-free cities
+  preferred) -> civilians never by our hand.
+- Explorer pump: FIXED (fbc555e79e). Explore want counts only
+  reachable-continent unknown/hut tiles; per-pass claims join the
+  diminishing divisor.
+- Dead buy loop: FIXED (41c122309b). Sentinel restored after the
+  spend pass; deep can now buy production for the first time ever.
+  Upstream defect recorded in upstream-bugs.md.
+- Splinter aitype: NOT A BUG. split_player creates civil-war rebels
+  with the PARENT's ai type (plrhand.c:2779) -- symmetric across
+  arms by construction. Earlier suspicion withdrawn.
+- STILL OPEN: settler assignment stall (the top-line defect --
+  settlers parked unmoved on own city tiles 50+ turns; reproducer:
+  the (17,66) pair, seed 205 mixed_db T150-T200). Next epic.
