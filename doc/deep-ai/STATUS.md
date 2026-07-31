@@ -988,3 +988,14 @@ TUNING V3 launched (east-1): cramped+isolated+contested training mix
 is in the warm start). 36 params, warm from Z3's +170.4 candidate,
 12h, self-stops. Local garden2b re-accept (tuned + defaults paired,
 12 virgin seeds) still finishing after a laptop-suspend pause.
+
+## Local re-accept verdict (2026-07-31 evening): the fixes carry it
+
+12 virgin confirm seeds, garden2b, seat-paired: fixed binary medians
+0.826 tuned / 0.784 defaults vs pre-fix 0.456 / 0.405. Code fixes
+alone: better on 22/24 seats (92%, median +0.382, sign test ~3e-4)
+-- past the methods bar. Z2-gen2 tuning on the fixed binary adds
+only +0.044 median (54%): its values priced the broken machine and
+are superseded by Z3/v3b. Consistent with accept4's wide-seed +0.25.
+The bug round, not the tuning, was the week's yield; v3b prices the
+remainder (cramped + contested regressions) overnight.
