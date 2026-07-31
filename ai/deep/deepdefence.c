@@ -1885,12 +1885,20 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
 
   city_list_iterate(pplayer->cities, pcity) {
     deep_city_choose_build(ait, pplayer, pcity);
-
-    /* Initialize for next turn */
-    def_ai_city_data(pcity, ait)->choice.want = -1;
   } city_list_iterate_end;
 
   deep_spend_gold(ait, pplayer, explore_want);
+
+  /* Initialize for next turn -- the sentinel that stops the military
+   * advisor re-running is only read at the top of the NEXT pass, so
+   * it must be restored AFTER the spend pass has consumed the wants.
+   * Stock resets it before dai_spend_gold, which has left the buy
+   * list permanently empty since 2017 (c84ce356f5): the entire
+   * crash-buy machinery, emergency defender buys included, is dead
+   * code upstream. See findings/upstream-bugs.md. */
+  city_list_iterate(pplayer->cities, pcity) {
+    def_ai_city_data(pcity, ait)->choice.want = -1;
+  } city_list_iterate_end;
 }
 
 /**********************************************************************//**
