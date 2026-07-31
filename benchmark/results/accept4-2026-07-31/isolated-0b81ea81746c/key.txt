@@ -1,0 +1,4 @@
+config=configs/isolated.conf sha256=03a402dfd34721fea40d57e539e525c7d2f9e4dfa72fc8dedfd7cd3ccaced73a
+server=/home/ubuntu/freeciv/build/freeciv-server sha256=cc2f0caad2d8a6c86231b906b7088380ee082a26f9ace33d3bbee8c1b94dad5b
+runner=/home/ubuntu/freeciv/benchmark/run-game.sh sha256=9ef9221c586be0548ce5213abad6de151a8075a8315429c39136bc9fb278b13c
+tuning=none sha256=none

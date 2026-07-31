@@ -958,3 +958,33 @@ census crept to 47 as newly reached islands reopen explore want,
 catchment overlap at the citymindist floor is priced by
 site_overlap_weight (placeholder) and showed no specialist
 starvation (22 specialists across 66 cities).
+
+## Accept4 + Z3 + tuning v3 (2026-07-31, the fixed-binary verdicts)
+
+ACCEPT4 (fixed binary, committed defaults, 60 wide seeds seat-paired,
+metrics archived benchmark/results/accept4-2026-07-31/):
+  garden2b 0.705 (was 0.454 accept3 / 0.537 pre-density) -- ALL-TIME
+    defaults record, +0.25 over the broken binary
+  isolated 0.861 (was 0.658 / 0.777) -- all-time record, beats even
+    the old binary's tuned numbers
+  cramped 0.657 (flat vs 0.669) and contested guard 0.794 (flat vs
+    0.797): the war regimes still carry the density-epic regression
+    AT PLACEHOLDER PRICES -- a tuning problem, not code (local
+    paired: Z2 values beat placeholders +0.226 median on cramped).
+
+Z3 (12h retune, garden2b+cramped, warm from Z2-gen4): objective SIGN
+FLIP -- gen bests +149/+170/+140 vs -103.6 all-time best on the
+broken binary; population median crossed zero in gen 1. Winner
+shape vindicates the session's design calls: explore_discovery=0
+(omniscient AI needs no reconnaissance), site_overlap_weight 0.18
+(4x placeholder -- overlap priced once expansion works),
+settler_fearfulness 1.59. Only 3 gens completed: fixed-binary games
+run ~2x longer (conquests happen now). Box overran its shutdown
+(timeout TERM insufficient; fixed in v3 with timeout -k).
+
+TUNING V3 launched (east-1): cramped+isolated+contested training mix
+-- the two laggards plus an economic regime; garden2b HELD OUT
+(human call: too long and too idiosyncratic to train on; its lesson
+is in the warm start). 36 params, warm from Z3's +170.4 candidate,
+12h, self-stops. Local garden2b re-accept (tuned + defaults paired,
+12 virgin seeds) still finishing after a laptop-suspend pause.
