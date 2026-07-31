@@ -121,6 +121,7 @@ struct deep_tuning {
    * adds value/(1+dist) standing danger. 0 disables. */
   int density_fear_value;
   int density_fear_radius;
+  int density_fear_ramp_turns;
   /* Pre-contact prior from lobby settings: shared-continent startpos
    * on thin land predicts early contact before anyone is met. Value
    * scales by min(1, prior_tiles / land-per-player); off at first

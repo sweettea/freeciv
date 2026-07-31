@@ -336,6 +336,27 @@ double deep_map_crowding(void)
                   / MAX(land_per_player, 1));
 }
 
+/**********************************************************************//**
+  Ramp factor for ANTICIPATORY fear (density, prior): scales from 0
+  toward 1 over the first density_fear_ramp_turns turns of the game.
+  A neighbour's mere existence is not a capability -- deep paid T5
+  insurance for a T60 storm in the Europe playtest while classic
+  raced naked and armed on contact with actual violence (findings
+  2026-07-31, posture timing). Evidence-based terms (menace, boat
+  shadow, barbarian onset) are NOT ramped: they already gate on real
+  capability signals. Ramp 0 disables (current behaviour).
+**************************************************************************/
+static double deep_anticipation_ramp(void)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+
+  if (tune->density_fear_ramp_turns <= 0) {
+    return 1.0;
+  }
+  return MIN(1.0, (double) game.info.turn
+                  / tune->density_fear_ramp_turns);
+}
+
 static unsigned int deep_density_prior(struct player *pplayer)
 {
   const struct deep_tuning *tune = deep_tuning_get();
@@ -372,7 +393,8 @@ static unsigned int deep_density_prior(struct player *pplayer)
   }
 
   return (unsigned int) (tune->density_prior_value
-                         * deep_map_crowding());
+                         * deep_map_crowding()
+                         * deep_anticipation_ramp());
 }
 
 /**********************************************************************//**
@@ -409,7 +431,7 @@ static unsigned int deep_density_fear(struct city *pcity)
     } city_list_iterate_end;
   } players_iterate_alive_end;
 
-  return (unsigned int) fear;
+  return (unsigned int) (fear * deep_anticipation_ramp());
 }
 
 /**********************************************************************//**
