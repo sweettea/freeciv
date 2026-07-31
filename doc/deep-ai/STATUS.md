@@ -999,3 +999,12 @@ only +0.044 median (54%): its values priced the broken machine and
 are superseded by Z3/v3b. Consistent with accept4's wide-seed +0.25.
 The bug round, not the tuning, was the week's yield; v3b prices the
 remainder (cramped + contested regressions) overnight.
+
+## Anticipation ramp (2026-07-31 late, human-directed)
+
+density_fear_ramp_turns landed (PLACEHOLDER 0=off): anticipatory
+fear (density + prior) scales min(1, turn/ramp); evidence terms
+unramped. Live gradient verified at ramp 120: settlers-first T30,
+3-4 Phalanx T60, full hedgehog T120. Flagged for the NEXT tuning
+campaign (v3b, mid-flight, does not search it); fold candidate
+alongside v3b's values under the three-tier protocol.
