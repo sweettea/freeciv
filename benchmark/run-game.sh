@@ -146,7 +146,22 @@ fi
 echo "$hash" > "$OUT/maphash.txt"
 
 # Keep the turn-1 save (map identity) and the final save; prune the rest.
-find "$OUT/saves" -name 'freeciv-T*-auto.sav*' ! -name 'freeciv-T0001-*' \
-  -delete
+# KEEP_SAVES=N additionally keeps every Nth turn (N=1 keeps all) for
+# post-game analysis of bug-verification games; ~10 gives a 30-save
+# series over a 300-turn game. The env var is not part of the result
+# key, so an already-DONE pruned game is cache-hit, not rerun -- use a
+# fresh --out dir when the save series is wanted.
+if [ -z "${KEEP_SAVES:-}" ]; then
+  find "$OUT/saves" -name 'freeciv-T*-auto.sav*' ! -name 'freeciv-T0001-*' \
+    -delete
+else
+  for f in "$OUT"/saves/freeciv-T*-auto.sav*; do
+    t=${f##*/freeciv-T}
+    t=$((10#${t%%-*}))
+    if [ "$t" -ne 1 ] && [ $((t % KEEP_SAVES)) -ne 0 ]; then
+      rm -f "$f"
+    fi
+  done
+fi
 
 touch "$OUT/DONE"
