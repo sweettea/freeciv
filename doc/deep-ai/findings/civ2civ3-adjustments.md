@@ -347,3 +347,26 @@ density fear (and the prior) should scale by hostile sea-transport
 existence (boat_shadow's gate) or menace_overseas_weight, not count
 at full value. Until then the garden2b-tuned dfv=16/dfr=14 taxes
 moated starts for invasions that cannot come.
+
+## Posture timing and coherence (2026-07-31, human critique of the Europe game)
+
+Two defects in the hedgehog behaviour, observed live at T42-T111:
+1. TIMING: anticipatory fear (density, prior) fires on neighbour
+   EXISTENCE from first contact, decades before any neighbour can
+   project force -- deep paid T5 insurance for a T60 storm while
+   classic raced naked and panic-armed at T60 nearly fast enough.
+   Anticipatory terms should ramp with a capability clock (era,
+   tech, or the menace signal itself) and DECAY as evidence-based
+   menace takes over -- the travelers-report machinery already
+   measures actual militarization; density fear keeps paying long
+   after better signals exist.
+2. COHERENCE: the strategy halves contradict. Hedgehogging pairs
+   naturally with TALL+SPREAD (full catchments so growth continues
+   under garrison, walls amortized over deep cities); racing pairs
+   with DENSE+LIGHT. Deep plays racer spacing (citymindist-floor
+   packing, shared tiles) with hedgehog military budgets -- the
+   growth ceiling of a turtle with the insurance bill of a fort.
+   site_overlap_weight and the fear terms need COUPLING by posture,
+   not independent global values: this is the W08 doctrine
+   architecture's case in one sentence. Until W08, a tunable
+   time-ramp on density fear is the cheap palliative.
