@@ -1324,11 +1324,38 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
       int missing = 0;
 
       players_iterate_alive(aplayer) {
-        if (aplayer != pplayer
-            && !pplayers_allied(pplayer, aplayer)
-            && player_diplstate_get(pplayer, aplayer)->type
-               != DS_NO_CONTACT
-            && !player_has_embassy(pplayer, aplayer)) {
+        bool reachable = FALSE;
+
+        if (aplayer == pplayer
+            || pplayers_allied(pplayer, aplayer)
+            || player_diplstate_get(pplayer, aplayer)->type
+               == DS_NO_CONTACT
+            || player_has_embassy(pplayer, aplayer)) {
+          continue;
+        }
+        /* Only count embassies a diplomat could actually be
+         * DELIVERED to: a shared continent, or any sea transport to
+         * carry it. An unreachable embassy is an unsatisfiable want,
+         * and unsatisfiable wants pump units forever (seed 205 built
+         * 11 diplomats on an island with no boats; same disease as
+         * the explorer pump, same cure). */
+        if (def_ai_player_data(pplayer, ait)->stats.boats > 0) {
+          reachable = TRUE;
+        } else {
+          city_list_iterate(aplayer->cities, tcity) {
+            city_list_iterate(pplayer->cities, ocity) {
+              if (tile_continent(city_tile(tcity))
+                  == tile_continent(city_tile(ocity))) {
+                reachable = TRUE;
+                break;
+              }
+            } city_list_iterate_end;
+            if (reachable) {
+              break;
+            }
+          } city_list_iterate_end;
+        }
+        if (reachable) {
           missing++;
         }
       } players_iterate_alive_end;
