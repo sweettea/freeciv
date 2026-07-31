@@ -926,3 +926,35 @@ explorers and defender churn outbid settlers in choose_build
 through exactly the T100-140 window where stock runs 15-27
 concurrent settlers. Retune AFTER the fixes, warm-started from the
 gen-4 harvest.
+
+## The settler stall is dead (2026-07-31, seed-205 verification)
+
+Root cause chain, found by instrumentation (deep-settler tripwires):
+from T38 the placement search preferred nearby-islet overseas sites
+(250+ vs infill ~190) that a 2-boat ferry pipeline could never
+deliver; missions were never invalidated, so settlers parked at
+docks while the island sat half-founded. Fixes, each verified by
+distribution not sighting:
+- 8d77e147bd ferry-wait pricing: overseas candidates amortized by
+  the real pathfound wait to the nearest available boat; hard skip
+  when every boat already has a passenger. (An intermediate
+  drop-only version looped 1220 picks/1202 drops -- the drop
+  cleared the ferry request that armed the cap; recorded here
+  because it is the canonical two-fixes-defeating-each-other case.)
+- 608b8b8a56 same-turn land-only fallback when a boat-dependent
+  mission gets no boat.
+- 8aefb1f8db embassy wants gated on deliverability (11 diplomats on
+  an island = the explorer pump in a second organ).
+
+Seed-205 full verification (all bug-round fixes + Z2-gen2 tuning):
+city curve 25/30/37/44/51/62/66 -- the 24-27 plateau is GONE; deep
+out-expanded stock (37 vs 26 at T160, winning 10 formerly-stock
+islet sites), ran a real amphibious war (80 Marines, 20 Transports,
+33 Cruisers), and finished 66 cities vs 3, score ratio 5.00 -- on
+the seed that scored 0.20 pre-fix. One seed, one game: the paired
+12-virgin-seed re-accept decides the real number. Watch items:
+drop-pick cycling persists cosmetically (633 events), explorer
+census crept to 47 as newly reached islands reopen explore want,
+catchment overlap at the citymindist floor is priced by
+site_overlap_weight (placeholder) and showed no specialist
+starvation (22 specialists across 66 cities).
