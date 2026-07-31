@@ -620,11 +620,35 @@ static void deep_melt_surplus_defenders(struct ai_type *ait,
     if (worst == NULL || count <= tune->garrison_floor) {
       continue;
     }
+    if (VUT_UTYPE == pcity->production.kind) {
+      const struct unit_type *pt = pcity->production.value.utype;
+
+      if (pt->defense_strength > 0
+          && pt->attack_strength <= pt->defense_strength
+          && !utype_has_flag(pt, UTYF_CIVILIAN)) {
+        /* NEVER melt a defender to finance another defender (human
+         * rule 2026-07-31): the recovered shields flow into current
+         * production, and a disband-rebuild cycle burns half the
+         * unit's shields for a defense gap -- the seed-205 games
+         * melted the same Phalanx into a fresh Phalanx dozens of
+         * times. Modernisation is the upgrade-in-place path below;
+         * melts may only fund economy, expansion, or offense. */
+        continue;
+      }
+    }
     wt = unit_type_get(worst);
     if (utype_upkeep_cost(wt, NULL, pplayer, O_GOLD)
         + utype_upkeep_cost(wt, NULL, pplayer, O_FOOD)
         + utype_upkeep_cost(wt, NULL, pplayer, O_SHIELD) <= 0) {
       continue;   /* Free to keep; melting gains nothing. */
+    }
+    if (can_upgrade_unittype(pplayer, wt) == NULL) {
+      /* Only units of a PRIOR, OBSOLETED technology may ever be
+       * melted (human design intent 2026-07-31): the ruleset's own
+       * obsolescence chain is the eligibility test, not any strength
+       * comparison. A current-generation defender is never rotation
+       * fodder no matter what the ratio arithmetic says. */
+      continue;
     }
     unit_type_iterate(ut) {
       if (ut->defense_strength > best_buildable
@@ -643,7 +667,12 @@ static void deep_melt_surplus_defenders(struct ai_type *ait,
           >= city_production_build_shield_cost(pcity)) {
         need *= tune->rotation_finish_relax;
       }
-      if (best_buildable < worst_def * need) {
+      if (best_buildable <= worst_def
+          || best_buildable < worst_def * need) {
+        /* The strictly-better floor is absolute: no relax or tuned
+         * ratio may melt a unit that is not actually obsolete (the
+         * seed-205 churn was def=2 best=2 melts sailing under a
+         * relaxed bar of 0.76). */
         continue;
       }
     }
