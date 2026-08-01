@@ -1129,6 +1129,37 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
     return;
   }
 
+  /* After a reload, marching members have lost their tasks (no
+   * savegame carries them): re-point each at its op's target once,
+   * exactly what launch did. One-shot -- after this, stock's leash
+   * and the re-gate own the march again. */
+  if (dp->ops_reissue) {
+    dp->ops_reissue = FALSE;
+    for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+      struct deep_operation *op = &dp->ops[oi];
+      struct city *target = game_city_by_number(op->target_city);
+
+      if (op->state != DEEP_OP_MARCH || op->kind != DEEP_OPK_ASSAULT
+          || target == NULL) {
+        continue;
+      }
+      for (i = 0; i < op->n_members; i++) {
+        struct unit *m = game_unit_by_number(op->members[i]);
+
+        if (m != NULL && unit_owner(m) == pplayer
+            && def_ai_unit_data(m, ait)->task == AIUNIT_NONE) {
+          dai_unit_new_task(ait, m, AIUNIT_ATTACK, city_tile(target));
+          (void) dai_gothere(ait, pplayer, m, city_tile(target));
+        }
+      }
+      log_base(deep_metric_log_level(),
+               "deep-op turn=%d player=\"%s\" op=%d remarch target=%d"
+               " members=%d",
+               game.info.turn, player_name(pplayer), oi, op->target_city,
+               op->n_members);
+    }
+  }
+
   /* Validate each live operation: prune dead members, drop the op
    * if the world moved on. */
   for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
