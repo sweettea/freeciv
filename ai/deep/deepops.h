@@ -34,16 +34,19 @@ struct ai_type;
  * clear op_take_target against it, so the count is self-limiting. */
 #define DEEP_OPS_MAX 4
 
-/* Phase list (W33 commit 2). A land assault runs MUSTER -> MARCH;
- * launching into MARCH releases the members to the stock attack path
- * while the operation shadows them -- re-gating the take odds at the
- * remaining eta each turn and recording the strike at contact rather
- * than at departure. Amphibious assaults still dissolve at launch:
- * the convoy hold/escort/invade gates own the crossing unchanged. */
+/* Phase list (W33 commits 2-3). A land assault runs MUSTER -> MARCH
+ * -> STRIKE; launching into MARCH releases the members to the stock
+ * attack path while the operation shadows them -- re-gating the take
+ * odds at the remaining eta each turn. At contact the op takes them
+ * BACK: STRIKE fights the battle under op control, best duel first,
+ * every blade on the op target. Amphibious assaults still dissolve
+ * at launch: the convoy hold/escort/invade gates own the crossing
+ * unchanged. */
 enum deep_op_state {
   DEEP_OP_NONE = 0,
   DEEP_OP_MUSTER,
   DEEP_OP_MARCH,
+  DEEP_OP_STRIKE,
 };
 
 /* Op templates (W33). ASSAULT is the muster-and-smash above. RAID
@@ -67,6 +70,7 @@ struct deep_operation {
   int formed_turn;
   int march_turn;               /* turn the wave launched into MARCH */
   int march_eta;                /* eta to target measured at launch */
+  int phase_turn;               /* turn the current phase was entered */
   int n_members;
   int members[DEEP_OP_MEMBERS]; /* unit ids */
 };

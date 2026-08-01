@@ -636,13 +636,154 @@ static int deep_op_eta(const struct deep_operation *op,
 }
 
 /**********************************************************************//**
+  Fight the battle under op control (W33 phase 3, strike control).
+  The wave stands at the walls; instead of two dozen independent
+  find_something_to_kill passes, the op orders the attacks itself:
+  best duel first -- each round, the adjacent member with the highest
+  win chance against the target's current best defender strikes --
+  and every blade goes at the op target (focus fire), so kills
+  compound into a fallen city instead of spreading across the front.
+  Members not yet adjacent close on the walls. Everyone the op
+  touches is marked done: the manage loop never re-tasks a committed
+  member (done-flag discipline; the stall tripwire watches the cost).
+  A strike that stalls past the patience knob, or whose odds against
+  the standing garrison fall through the abort floor, banks its
+  survivors -- the deliberate-abort rule, now at the walls too.
+**************************************************************************/
+static void deep_op_drive_strike(struct ai_type *ait,
+                                 struct player *pplayer,
+                                 struct deep_operation *op, int oi)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  struct city *target = game_city_by_number(op->target_city);
+  struct tile *ctile = city_tile(target);
+  struct unit *stream[DEEP_OP_MEMBERS];
+  int i, ns = 0;
+
+  for (i = 0; i < op->n_members; i++) {
+    struct unit *m = game_unit_by_number(op->members[i]);
+
+    if (m != NULL) {
+      stream[ns++] = m;
+    }
+  }
+
+  /* Deliberate abort before the first blow: the wave at the walls
+   * against the garrison as it stands right now (eta 0 -- no
+   * virtual reinforcements; whoever is coming is already here). */
+  if (tune->op_abort_floor > 0.0 && ns > 0) {
+    double odds = deep_take_odds(nmap, target, stream, ns);
+
+    if (odds < tune->op_abort_floor) {
+      for (i = 0; i < ns; i++) {
+        struct unit_ai *ud = def_ai_unit_data(stream[i], ait);
+
+        if (ud->task == AIUNIT_ATTACK) {
+          dai_unit_new_task(ait, stream[i], AIUNIT_NONE, NULL);
+        }
+      }
+      log_base(deep_metric_log_level(),
+               "deep-op turn=%d player=\"%s\" op=%d regate target=%d"
+               " odds=%.2f eta=0 members=%d",
+               game.info.turn, player_name(pplayer), oi,
+               op->target_city, odds, ns);
+      deep_op_dissolve(op, oi, "abort-strike", pplayer);
+      return;
+    }
+  }
+
+  /* The battle: repeat picking the best matchup until nobody
+   * adjacent can act. Each round re-reads the defender -- the stack
+   * shrinks as it dies, and an emptied city is a walk-in (win chance
+   * 1.0 with the conquer chain doing the entering). Progress is
+   * guaranteed: every attacker is marked done win or lose. */
+  for (;;) {
+    struct unit *att = NULL;
+    double best = -1.0;
+
+    if (city_owner(target) == pplayer) {
+      break;                    /* Fell to us mid-battle. */
+    }
+    for (i = 0; i < op->n_members; i++) {
+      struct unit *m = game_unit_by_number(op->members[i]);
+      struct unit *pdef;
+      double chance;
+
+      if (m == NULL || m->hp <= 0 || m->moves_left <= 0
+          || def_ai_unit_data(m, ait)->done
+          || adv_unit_att_rating(m) <= 0
+          || !is_tiles_adjacent(unit_tile(m), ctile)) {
+        continue;
+      }
+      pdef = get_defender(nmap, m, ctile, NULL);
+      chance = pdef != NULL ? unit_win_chance(nmap, m, pdef, NULL) : 1.0;
+      if (chance > best) {
+        best = chance;
+        att = m;
+      }
+    }
+    if (att == NULL) {
+      break;
+    }
+    {
+      int att_id = att->id;
+
+      (void) dai_unit_attack(ait, att, ctile);
+      att = game_unit_by_number(att_id);
+      if (att != NULL) {
+        def_ai_unit_data(att, ait)->done = TRUE;
+      }
+    }
+  }
+
+  /* Convergence and commitment: stragglers close on the walls, and
+   * every surviving member -- moved or not -- is done for the turn.
+   * The op owns them; stock gets them back when it banks or wins. */
+  for (i = 0; i < op->n_members; i++) {
+    struct unit *m = game_unit_by_number(op->members[i]);
+    int m_id;
+
+    if (m == NULL || m->hp <= 0) {
+      continue;
+    }
+    m_id = m->id;
+    if (!def_ai_unit_data(m, ait)->done
+        && m->moves_left > 0
+        && !is_tiles_adjacent(unit_tile(m), ctile)
+        && !same_pos(unit_tile(m), ctile)
+        && city_owner(target) != pplayer) {
+      (void) dai_gothere(ait, pplayer, m, ctile);
+      m = game_unit_by_number(m_id);
+    }
+    if (m != NULL) {
+      def_ai_unit_data(m, ait)->done = TRUE;
+    }
+  }
+
+  if (city_owner(target) != pplayer
+      && game.info.turn - op->phase_turn >= tune->op_muster_wait) {
+    /* The walls held past our patience: bank the survivors. */
+    for (i = 0; i < op->n_members; i++) {
+      struct unit *m = game_unit_by_number(op->members[i]);
+
+      if (m != NULL
+          && def_ai_unit_data(m, ait)->task == AIUNIT_ATTACK) {
+        dai_unit_new_task(ait, m, AIUNIT_NONE, NULL);
+      }
+    }
+    deep_op_dissolve(op, oi, "abort-strike", pplayer);
+  }
+}
+
+/**********************************************************************//**
   Drive one live operation for a turn. MUSTER: walk members in, hold
   arrivals, launch at quorum (or half-quorum at the wait cap). A land
   launch enters MARCH: members go to the stock attack path while the
   operation shadows them -- keeping them claimed, re-gating the take
   odds at the remaining eta each turn, banking everyone if the odds
-  collapse, and recording the strike at contact (so the E7 window
-  opens when the wave reaches the walls, not when it leaves home).
+  collapse. At contact the op enters STRIKE, takes the members back,
+  and fights the battle itself (the E7 window opens at the walls).
   An amphibious launch still dissolves on the spot: the convoy
   hold/escort/invade gates own the crossing unchanged. Caller has
   already validated target and staging.
@@ -739,9 +880,9 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
     eta = deep_op_eta(op, target);
 
     if (eta <= 1) {
-      /* Contact: the wave stands at the walls. The op's work is
-       * done; stock fights the battle (strike control is the next
-       * slice), and the E7 second-wave window opens now. */
+      /* Contact: the wave stands at the walls. The op takes its
+       * members back from the stock attack path and fights the
+       * battle itself; the E7 second-wave window opens now. */
       log_base(deep_metric_log_level(),
                "deep-op turn=%d player=\"%s\" op=%d strike target=%d"
                " present=%d required=%d waited=%d",
@@ -749,44 +890,52 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
                ns, op->required, game.info.turn - op->march_turn);
       dp->last_strike_city = op->target_city;
       dp->last_strike_turn = game.info.turn;
-      deep_op_dissolve(op, oi, "launched", pplayer);
+      op->state = DEEP_OP_STRIKE;
+      op->phase_turn = game.info.turn;
+      /* Fall through to the STRIKE block: the battle starts this
+       * turn -- the members have their moves, the manage loop has
+       * not run yet. */
+    } else {
+      /* Re-gate: the odds the surviving wave takes the CURRENT
+       * garrison, reinforced for the remaining travel time. Formation
+       * priced this at op_take_target; the march holds until it falls
+       * through the lower abort floor -- hysteresis, so a wave formed
+       * at the bar does not turn back on the first wobble. Banked
+       * members go back to stock with a clean slate. */
+      if (tune->op_abort_floor > 0.0 && ns > 0) {
+        double odds = deep_take_odds_at_arrival(nmap, target, stream, ns,
+                                                eta);
+
+        if (odds < tune->op_abort_floor) {
+          for (i = 0; i < ns; i++) {
+            struct unit_ai *ud = def_ai_unit_data(stream[i], ait);
+
+            if (ud->task == AIUNIT_ATTACK) {
+              dai_unit_new_task(ait, stream[i], AIUNIT_NONE, NULL);
+            }
+          }
+          log_base(deep_metric_log_level(),
+                   "deep-op turn=%d player=\"%s\" op=%d regate target=%d"
+                   " odds=%.2f eta=%d members=%d",
+                   game.info.turn, player_name(pplayer), oi,
+                   op->target_city, odds, eta, ns);
+          deep_op_dissolve(op, oi, "abort-odds", pplayer);
+          return;
+        }
+      }
+
+      if (game.info.turn - op->march_turn
+          >= op->march_eta + tune->op_muster_wait) {
+        /* The wave has wandered: stock re-tasked members somewhere
+         * the eta never closes. Same patience knob as the muster. */
+        deep_op_dissolve(op, oi, "abort-march", pplayer);
+      }
       return;
     }
+  }
 
-    /* Re-gate: the odds the surviving wave takes the CURRENT
-     * garrison, reinforced for the remaining travel time. Formation
-     * priced this at op_take_target; the march holds until it falls
-     * through the lower abort floor -- hysteresis, so a wave formed
-     * at the bar does not turn back on the first wobble. Banked
-     * members go back to stock with a clean slate. */
-    if (tune->op_abort_floor > 0.0 && ns > 0) {
-      double odds = deep_take_odds_at_arrival(nmap, target, stream, ns,
-                                              eta);
-
-      if (odds < tune->op_abort_floor) {
-        for (i = 0; i < ns; i++) {
-          struct unit_ai *ud = def_ai_unit_data(stream[i], ait);
-
-          if (ud->task == AIUNIT_ATTACK) {
-            dai_unit_new_task(ait, stream[i], AIUNIT_NONE, NULL);
-          }
-        }
-        log_base(deep_metric_log_level(),
-                 "deep-op turn=%d player=\"%s\" op=%d regate target=%d"
-                 " odds=%.2f eta=%d members=%d",
-                 game.info.turn, player_name(pplayer), oi,
-                 op->target_city, odds, eta, ns);
-        deep_op_dissolve(op, oi, "abort-odds", pplayer);
-        return;
-      }
-    }
-
-    if (game.info.turn - op->march_turn
-        >= op->march_eta + tune->op_muster_wait) {
-      /* The wave has wandered: stock re-tasked members somewhere the
-       * eta never closes. Same patience knob as the muster. */
-      deep_op_dissolve(op, oi, "abort-march", pplayer);
-    }
+  if (op->state == DEEP_OP_STRIKE) {
+    deep_op_drive_strike(ait, pplayer, op, oi);
   }
 }
 
