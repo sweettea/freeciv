@@ -158,3 +158,44 @@ missing half. `site_tail_weight` (0.15), `site_overlap_weight` (0.05)
 and `site_potential_discount` (0.5) all shrink a site's value against
 what stock counts, and W02 owns the answer. Sweep them on a roomy cell
 against founder-want MAGNITUDE (max and mean), not prevalence.
+
+---
+
+## Site-weight probe: valuation is NOT the expansion bottleneck
+
+Five seeds per arm on `isolated-150`, deep arms against a stock
+reference on the same maps (2026-08-01):
+
+    config           cities  want>0  mean want   max   want mass
+    stock (classic)    327      47       136     507      6.4k
+    deep base          267      58       371     690     21.5k
+    site_tail 0.40     259      69       266     668     18.4k
+    site_tail 0.80     276      71       280     664     19.9k
+    site_overlap 0.30  263      46       370     652     17.0k
+    site_potential 1.0 267      73       333     798     24.3k
+
+**Deep wants 3.4x the land stock does and founds 22% fewer cities**
+(53.4 vs 65.4 per game). Every site-weight arm sits within +-3% of
+base on city count; none approach stock's 327. The three weights this
+probe was built to test -- `site_tail_weight`, `site_overlap_weight`,
+`site_potential_discount` -- do not move the outcome.
+
+This retires the hypothesis the T76 snapshot suggested (that deep
+under-values land and therefore under-expands). Deep over-values it.
+The bottleneck is CONVERSION: want -> settler built -> settler
+arrives -> city founded. Corroborated by the only knob that did move
+city count, `settler_fearfulness_mult`, which is a TRAVEL price and
+shifted 133 -> 150 cities while leaving want prevalence flat.
+
+Consequences:
+
+- Block X in the campaign is mostly valuation knobs, and valuation is
+  not the constraint. Expect little from it; the exception is
+  `settler_fearfulness_mult` (and `settler_risk_tolerance`), which
+  price the journey.
+- The real expansion questions are settler THROUGHPUT: does the
+  settler win the city's build auction against military, how long is
+  the journey, and how many die on it (W05).
+- The T76 12%-vs-41% want gap was a phase artefact, not a defect:
+  by T106 deep led on cities (14.2 vs 13.7) and both sides wanted at
+  16%.
