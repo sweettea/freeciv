@@ -1198,3 +1198,19 @@ says spawns are possible. New knobs: op_wave_window, raid_radius,
 hut_risk_radius, hut_risk_discount. B8 contested verification pass
 next; E5 sieges deliberately parked for a fresh session (needs
 per-city streak state); E4 parked pre-v4.
+
+B8 contested verdict (session close): E7 and E8 fire -- 211
+second-wave formations, 534 raid missions per 10 games. Score
+median 0.775 (B6 was 0.811; inside the evening's 0.78-0.82 noise
+band) BUT losses doubled 11->23: smaller first waves + raiders
+dying deep in enemy land. Whether raids are good trades is
+UNMEASURABLE yet -- the ledger counts our deaths, not our victims;
+a kills-side tripwire (enemy civilian deaths near our raiders, or a
+server-side victim hook) is the missing metric. Per rule 7, raid
+radius and wave sizing are v4's to referee, not tonight's to
+hand-tweak. Session totals: 35 commits from the pivot, binaries
+B1-B8 each contested-verified, tasks #18/#19/#20 closed, #16 open
+on the unexercised landing gate, #17 umbrella at E1-E3+E6-E8 landed
+/ E4-E5 parked. Next session: E5 sieges fresh, the raid exchange
+metric, exercise the invasion gate on the lategame cell, then the
+wide-n acceptance when the human calls the combat stream done.
