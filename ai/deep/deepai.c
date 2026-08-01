@@ -467,11 +467,29 @@ static void dpai_ferry_lost(struct unit *punit)
 }
 
 /**********************************************************************//**
-  Call default ai with deep ai type as parameter.
+  Call default ai with deep ai type as parameter. Also the stall
+  tripwire (W33 phase 3): a unit claimed by a live operation that
+  ends the turn with moves unspent is a blade the op froze without
+  using -- the exact symptom of deep's intentions and stock's manage
+  loop fighting over a unit, watched distributionally rather than
+  asserted (holds like tired-attack are legitimate stalls).
 **************************************************************************/
 static void dpai_unit_turn_end(struct unit *punit)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  struct player *owner = unit_owner(punit);
+  int oi = deep_op_claiming(owner, punit->id);
+
+  if (oi >= 0 && punit->moves_left > 0) {
+    const struct deep_operation *op = &deep_plr_data(owner)->ops[oi];
+
+    log_base(deep_metric_log_level(),
+             "deep-op-stall turn=%d player=\"%s\" op=%d kind=%d state=%d"
+             " unit=\"%s\" moves=%d at=(%d,%d)",
+             game.info.turn, player_name(owner), oi, op->kind, op->state,
+             unit_rule_name(punit), punit->moves_left,
+             TILE_XY(unit_tile(punit)));
+  }
 
   dai_unit_turn_end(deftype, punit);
 }
