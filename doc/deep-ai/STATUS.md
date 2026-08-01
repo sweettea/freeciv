@@ -1291,3 +1291,87 @@ That dynamic is strike control's (phase 3) to referee, with the
 raid/assault slot tension. Reconquest OUTCOME is proven by the
 fixture (10 retakes / 12 turns), not by contested, which has no
 barbarian city pool.
+
+## W33 phase 3: strike control + the manage-loop hole (2026-08-01)
+
+Task #21 phase 3, 8 commits. Both open questions refereed from the
+B11 ledger (contested-e8cb148a4574) BEFORE code moved.
+
+REFEREE 1 (54 marches -> 4 strikes): not the muster clock -- even
+waited<=2 marches aborted 13/14, and 27/47 odds-aborts re-gated on
+the launch turn itself. deep_op_eta priced the wave at the SLOWEST
+enrolled member (reserve stragglers: present=2/required=2 waves
+carrying eta=7), billing the quorum at the walls for its last
+straggler's walk in virtual reinforcements; all four B11 strikes
+launched at eta 1-2. Fixed: quorum eta (required-th smallest
+arrival). Launch-turn abort share: 57% (B11) -> 34% (B13).
+
+REFEREE 2 (raids crowding slots, forms 114 -> 40): confirmed,
+slot-shaped -- 711 raid forms at mean size 1.3 held >=2 of 4 slots
+on 56% of live player-turns; every one of the 750 fully-blocked
+player-turns included a raid. Fixed: one pooled raid op per player
++ release-on-idle (below). B13: ZERO fully-blocked player-turns,
+raids at >=2 slots on exactly 1 player-turn per 10 games.
+Assault-poaches-raiders is UNNECESSARY -- released raiders rejoin
+the pool by themselves. Closed.
+
+THE RISKY PART WAS REAL. The new stall tripwire (deep-op-stall)
+caught dai_manage_units clearing every done flag before managing:
+every hold the op layer ever issued was erased the turn it was set.
+The muster hold NEVER held in B9-B11, and a STRIKE member was
+watched walking AWAY from its target under find_something_to_kill.
+Fixed with deep_manage_units -- the stock loop verbatim (rule-2
+visibility: dai_airlift + dai_set_defenders static -> extern, zero
+behaviour change, neutrality covered by the B12/B13 runs) except
+op-held units keep their done flag. Holds cover assault MUSTER/
+STRIKE/CONSOLIDATE; marching members and raiders stay on stock's
+leash by design.
+
+STRIKE phase: at contact the op keeps its members and fights --
+best duel first against the target's current best defender, focus
+fire on the op target, walk-in conquest of emptied cities,
+stragglers converge under op control, eta-0 regate vs
+op_abort_floor before the first blow, op_muster_wait patience.
+CONSOLIDATE: a fallen city (strike or march capture) garrisons
+from the wave, best defender first, until survival_target clears
+(the existing bar -- no new constant); dissolve reason "held".
+cities.py grew op_consol/op_held/op_stall columns.
+
+B12 contested (10 paired, per-seed sum-score deep/baseline): median
+0.781 / mean 0.846 / max 1.116, 2 seeds >1. Ledger: 57 forms -> 38
+marches; "15 strikes" decomposed to 13 AMPHIBIOUS LAUNCHES + 2 land
+walls-strikes -- the real hold means musters now actually assemble,
+so convoys finally sail (#16's landing gate should at last see
+traffic). Stalls 10569, of which 9094 RAIDERS: the pooled raid op
+kept idle raiders claimed while anyone hunted, benching cavalry out
+of every pool. Fixed as commit 8: raid holds active hunters only.
+
+B13 contested (full stack): median 0.811 / mean 0.853 / max 1.045,
+2 seeds >1 -- median back at B11's level, best mean of the chain.
+Ledger: 49 forms -> 37 marches -> 7 strikes / 36 aborts, 2
+consolidate/held, conquests 5 (B11) -> 16, fewer forms with the
+same marches = formations sticking instead of churning. WATCH
+ITEMS, stated plainly: cities lost 10 (B11) -> 22 (B12) -> 26
+(B13) -- B11 may be the outlier (B8-B10: 16-23) and conquest tripled
+with score band-stable, but the trend is real and unexplained in
+detail; and 6948 residual raider stalls are task-ATTACK hunters
+that STOCK declines to move ("sit tight") while their claim
+excludes them from assault pools -- refereeing that needs
+per-member idle state, a next-session design question. All n=10
+quick-run directional, untuned placeholders throughout.
+
+Fixture: barb-reconquest green all session, retaken=14 best yet
+(B11: 10); full corpus 7/7. Housekeeping: CLAUDE.md's
+./build/tests/unit_tests path is stale (the suite is `meson test
+-C build`); report.py does not exist (ratios computed from
+metrics.csv, convention verified against B11's published numbers).
+Task numbering #16-22 lives in the PREVIOUS session's task store
+(~/.claude/tasks/90a0f237-*/); a fresh session starts a fresh
+store, so TaskGet by old ids fails -- the #21 spec was recovered
+from the old store's 21.json on disk.
+
+Next: #21 phase 4 (save/load of op state); E5 sieges fresh session;
+exercise #16's landing gate on the lategame cell now that musters
+assemble; v4 tuning owns the march reinforcement race
+(op_take_target/op_abort_floor spacing, invasion_reinforce_rate);
+raider sit-tight idles need a design decision.
