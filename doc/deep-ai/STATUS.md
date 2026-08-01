@@ -1860,3 +1860,68 @@ it respawn a batch in the gap — 22 orphans on EAST1 and 16 on EAST2
 survived into the new run and were stealing half the CPU until found by
 attributing each server to its campaign via `/proc/<pid>/cwd`. Kill the
 tuner first, then the servers, then verify by cwd.
+
+## The CM war gate, and the first clean win (2026-08-01, night)
+
+`497e313579` — a FOURTH site of "presence used where a probability was
+available", found by auditing for siblings of the three defects fixed
+earlier today. `deepcm.c`'s state machine switched a city to war weights
+on `urgency > 0 || grave_danger > 0`. Costliest of the four: it is the
+FIRST branch, so growth-capped / wonder / grow-hard were unreachable for
+any city with a neighbour, and T106 measured urgency on 69% of deep's
+wartime cities — so `cm_cap_*`, `cm_grow_*`, `cm_wonder_*` governed a
+minority of cities while the campaign optimised them.
+
+The threshold is a NEW knob, `cm_war_survival`, not `survival_target`.
+Rationale, and it generalises: `survival_target` arbitrates ~20 defence
+and operations decisions where being wrong loses a CITY; being wrong in
+the city manager loses some FOOD. One scalar cannot serve both. The
+split also fixed a block-assignment error — the CM is ECON work, but
+`survival_target` lives in ALL/MIL/S, so machine A could never have
+calibrated the gate its own block depends on.
+
+MEASURED, 10 paired mixed lategame-80 games, two binaries differing only
+in this gate (old built in `.worktrees/bench`):
+
+                       ratio     deep     base
+    presence counts   1.0026    10554    10527
+    cm_war_survival   1.0343    10670    10316
+                      +0.0318     +116     -211    9/10 seeds improved
+
+**The first change today that clears the bar.** Unlike the content and
+granary credits, deep's ABSOLUTE score rises, and 9/10 seeds is p ~ 0.011
+under a 50/50 null.
+
+THE THRESHOLD MATTERS, and 0.5 is not it. An earlier 5-seed run at 0.5
+moved the ratio while LOSING 85 points of deep's own score, 2/5 seeds.
+Human called 0.9; at 0.9 the sign of deep's own score flips positive.
+0.9 ships as a PLACEHOLDER, in the tuner's reach.
+
+**Methods warning worth more than the result:** that same 5-seed run read
+the presence baseline as 1.0399; ten seeds read 1.0026. Five paired seeds
+cannot baseline this cell, and a 5-seed A/B here is capable of inverting
+a verdict.
+
+### What the campaigns said before being restarted
+
+Cleanest comparison available: candidate 0 is the START POINT, not an RNG
+draw, so it is identical across runs while everything else shifts (the
+param list grew 42->43 and 81->82, moving the RNG stream — gen-0-BEST
+figures are therefore NOT comparable and should not be quoted).
+
+    machine A (ECON, econ-priors)     cand0  -57.3 -> -28.3   -49%
+    machine B (ALL,  europe-priors)   cand0 -110.1 -> -87.8   -20%
+
+24 games per candidate, same seeds and configs, only the code differing.
+The deficit halved; it did not close — the objective is still negative,
+so deep remains behind baseline on these blends at these priors. It also
+bundles every 2026-08-01 change, so no single one can claim it.
+
+### Start files reseeded (`458d66194f`)
+
+`econ-priors.ini` / `europe-priors.ini` now carry each machine's best
+gen-0 candidate, so restarting for the code change keeps the search
+progress. Both headers state plainly that these are the best of TEN
+RANDOM DRAWS in ONE generation, subject to winner's curse, and are not
+to be cited. `fold-tuning.py` was deliberately NOT used — it stamps
+defaults "tuned <date>", which would put a false claim in the source.
