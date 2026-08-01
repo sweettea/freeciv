@@ -62,6 +62,9 @@ static struct city *deep_op_pick_target(struct ai_type *ait,
   struct city *target = NULL;
   double best_score = 0.0;
   Continent_id home = tile_continent(from);
+  bool can_sail
+    = def_ai_player_data(pplayer, ait)->stats.boats > 0
+      || best_role_unit_for_player(pplayer, L_FERRYBOAT) != NULL;
 
   players_iterate_alive(aplayer) {
     if (!pplayers_at_war(pplayer, aplayer)
@@ -72,9 +75,14 @@ static struct city *deep_op_pick_target(struct ai_type *ait,
     }
     city_list_iterate(aplayer->cities, acity) {
       double score;
+      bool overseas = tile_continent(city_tile(acity)) != home;
 
-      if (tile_continent(city_tile(acity)) != home
-          || !map_is_known(city_tile(acity), pplayer)) {
+      if (!map_is_known(city_tile(acity), pplayer)
+          || (overseas
+              && (!can_sail
+                  || !is_terrain_class_near_tile(&(wld.map),
+                                                 city_tile(acity),
+                                                 TC_OCEAN)))) {
         continue;
       }
       score = def_ai_city_data(acity, ait)->worth
@@ -211,37 +219,74 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
     if (target == NULL) {
       return;
     }
-    n = deep_op_collect_pool(ait, pplayer,
-                             tile_continent(city_tile(home_city)),
-                             pool, DEEP_OP_MEMBERS);
-    for (i = 1; i <= n; i++) {
-      if (deep_take_odds(nmap, target, pool, i) >= tune->op_take_target) {
-        required = i;
-        break;
-      }
-    }
-    if (required <= 1) {
-      /* Nothing to coordinate: no force clears the bar, or one unit
-       * does and needs no operation for it. */
-      return;
-    }
-    staging = NULL;
     {
-      int best = FC_INFINITY;
+      bool overseas
+        = tile_continent(city_tile(target))
+          != tile_continent(city_tile(home_city));
+      int eta;
 
-      city_list_iterate(pplayer->cities, pcity) {
-        int d = real_map_distance(city_tile(pcity), city_tile(target));
+      /* Staging: nearest own city on the target's continent for a
+       * land assault; for an amphibious one, the nearest own COASTAL
+       * city on the members' continent -- the convoy gates (naval
+       * slice 3) own the crossing from there. */
+      staging = NULL;
+      {
+        int best = FC_INFINITY;
 
-        if (d < best
-            && tile_continent(city_tile(pcity))
-               == tile_continent(city_tile(target))) {
-          best = d;
-          staging = pcity;
+        city_list_iterate(pplayer->cities, pcity) {
+          int d = real_map_distance(city_tile(pcity),
+                                    city_tile(target));
+
+          if (d >= best) {
+            continue;
+          }
+          if (overseas
+              ? (tile_continent(city_tile(pcity))
+                   == tile_continent(city_tile(home_city))
+                 && is_terrain_class_near_tile(nmap, city_tile(pcity),
+                                               TC_OCEAN))
+              : tile_continent(city_tile(pcity))
+                  == tile_continent(city_tile(target))) {
+            best = d;
+            staging = pcity;
+          }
+        } city_list_iterate_end;
+      }
+      if (staging == NULL) {
+        return;
+      }
+
+      /* Required force is priced at the defence at arrival: sail (or
+       * march) time from the staging point is the defender's budget. */
+      {
+        int rate = SINGLE_MOVE;
+
+        if (overseas) {
+          const struct unit_type *ferrytype
+            = best_role_unit_for_player(pplayer, L_FERRYBOAT);
+
+          if (ferrytype != NULL) {
+            rate = MAX(ferrytype->move_rate, 1);
+          }
         }
-      } city_list_iterate_end;
-    }
-    if (staging == NULL) {
-      return;
+        eta = (real_map_distance(city_tile(staging), city_tile(target))
+               * SINGLE_MOVE + rate - 1) / rate + (overseas ? 2 : 0);
+      }
+      n = deep_op_collect_pool(ait, pplayer,
+                               tile_continent(city_tile(home_city)),
+                               pool, DEEP_OP_MEMBERS);
+      for (i = 1; i <= n; i++) {
+        if (deep_take_odds_at_arrival(nmap, target, pool, i, eta)
+            >= tune->op_take_target) {
+          required = i;
+          break;
+        }
+      }
+      if (required <= 1) {
+        /* Nothing to coordinate: no force clears the bar, or one
+         * unit does and needs no operation for it. */
+        return;
+      }
     }
     op->state = DEEP_OP_MUSTER;
     op->target_city = target->id;

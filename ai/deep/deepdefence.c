@@ -1961,35 +1961,49 @@ static void deep_assault_want(struct ai_type *ait,
     return;
   }
 
-  players_iterate_alive(aplayer) {
-    /* The initial diplstate between UNMET players is war, so the
-     * at-war test alone passes on turn one -- and unmet, ungarrisoned
-     * cities then price P(take)=1 and outbid every settler on the
-     * queue (contested run 2026-07-31, median 0.758: worth*1.0 wants
-     * of ~190 from turn 1). No contact, no target; unknown tile, no
-     * target. The offensive mirror of the no-fear-before-the-threat
-     * law. */
-    if (!pplayers_at_war(pplayer, aplayer)
-        || player_diplstate_get(pplayer, aplayer)->type
-           == DS_NO_CONTACT) {
-      continue;
-    }
-    city_list_iterate(aplayer->cities, acity) {
-      double score;
+  {
+    /* Overseas targets are eligible once we float (or could float)
+     * lift; the convoy gates own the launch decision (naval slice
+     * 3). Landlocked targets across water stay off the menu. */
+    bool can_sail
+      = def_ai_player_data(pplayer, ait)->stats.boats > 0
+        || best_role_unit_for_player(pplayer, L_FERRYBOAT) != NULL;
 
-      if (tile_continent(city_tile(acity)) != home
-          || !map_is_known(city_tile(acity), pplayer)) {
+    players_iterate_alive(aplayer) {
+      /* The initial diplstate between UNMET players is war, so the
+       * at-war test alone passes on turn one -- and unmet,
+       * ungarrisoned cities then price P(take)=1 and outbid every
+       * settler on the queue (contested run 2026-07-31, median
+       * 0.758: worth*1.0 wants of ~190 from turn 1). No contact, no
+       * target; unknown tile, no target. The offensive mirror of the
+       * no-fear-before-the-threat law. */
+      if (!pplayers_at_war(pplayer, aplayer)
+          || player_diplstate_get(pplayer, aplayer)->type
+             == DS_NO_CONTACT) {
         continue;
       }
-      score = def_ai_city_data(acity, ait)->worth
-              / (1.0 + real_map_distance(city_tile(pcity),
-                                         city_tile(acity)));
-      if (score > best_score) {
-        best_score = score;
-        target = acity;
-      }
-    } city_list_iterate_end;
-  } players_iterate_alive_end;
+      city_list_iterate(aplayer->cities, acity) {
+        double score;
+        bool overseas = tile_continent(city_tile(acity)) != home;
+
+        if (!map_is_known(city_tile(acity), pplayer)
+            || (overseas
+                && (!can_sail
+                    || !is_terrain_class_near_tile(nmap,
+                                                   city_tile(acity),
+                                                   TC_OCEAN)))) {
+          continue;
+        }
+        score = def_ai_city_data(acity, ait)->worth
+                / (1.0 + real_map_distance(city_tile(pcity),
+                                           city_tile(acity)));
+        if (score > best_score) {
+          best_score = score;
+          target = acity;
+        }
+      } city_list_iterate_end;
+    } players_iterate_alive_end;
+  }
   if (target == NULL) {
     return;
   }
@@ -2012,16 +2026,34 @@ static void deep_assault_want(struct ai_type *ait,
     pool[n_pool++] = punit;
   } unit_list_iterate_end;
 
+  {
+    /* March or sail time is the defender's budget on BOTH terrains
+     * (one law): the marginal odds are priced against the garrison
+     * as it will be at arrival. */
+    bool overseas
+      = tile_continent(city_tile(target)) != home;
+
+    if (overseas) {
+      const struct unit_type *ferrytype
+        = best_role_unit_for_player(pplayer, L_FERRYBOAT);
+
+      rate = MAX(ferrytype != NULL ? ferrytype->move_rate : SINGLE_MOVE,
+                 1);
+    } else {
+      rate = MAX(punittype->move_rate, 1);
+    }
+    eta = (real_map_distance(city_tile(pcity), city_tile(target))
+           * SINGLE_MOVE + rate - 1) / rate + (overseas ? 2 : 0);
+  }
+
   vunit = unit_virtual_create(pplayer, pcity, punittype, 1);
-  p0 = n_pool > 0 ? deep_take_odds(nmap, target, pool, n_pool) : 0.0;
+  p0 = n_pool > 0
+       ? deep_take_odds_at_arrival(nmap, target, pool, n_pool, eta)
+       : 0.0;
   pool[n_pool] = vunit;
-  p1 = deep_take_odds(nmap, target, pool, n_pool + 1);
+  p1 = deep_take_odds_at_arrival(nmap, target, pool, n_pool + 1, eta);
   unit_virtual_destroy(vunit);
   marginal = p1 - p0;
-
-  rate = MAX(punittype->move_rate, 1);
-  eta = (real_map_distance(city_tile(pcity), city_tile(target))
-         * SINGLE_MOVE + rate - 1) / rate;
   want = military_amortize(pplayer, pcity,
                            tune->attack_value_weight * tworth * marginal,
                            MAX(1, eta), build_cost_balanced(punittype));
