@@ -243,29 +243,20 @@ static struct unit *deep_raid_victim(const struct player *pplayer,
 }
 
 /**********************************************************************//**
-  Raid template (combat E8 graduated into the slot system; human
-  design: "opportunistic exploration of the enemy's land, pillaging
-  improvements and killing workers"). Claim idle FAST attackers that
-  have a victim in reach: a worker killed is every work-turn it had
-  sunk and every one it would have delivered, at the price of one
-  duel against defence 1. No target city, no staging, no quorum.
-  Assault formation ran first this turn, so the army's first claim
-  on fresh units stands.
+  Enroll idle FAST attackers with a victim in reach into `op`,
+  appending after any existing members. Returns how many joined.
 **************************************************************************/
-static bool deep_op_form_raid(struct ai_type *ait, struct player *pplayer,
-                              struct deep_operation *op, int oi)
+static int deep_op_enroll_raiders(struct ai_type *ait,
+                                  struct player *pplayer,
+                                  struct deep_operation *op)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   int enrolled = 0;
 
-  if (tune->raid_radius <= 0) {
-    return FALSE;
-  }
-
   unit_list_iterate(pplayer->units, u) {
     struct unit_ai *ud = def_ai_unit_data(u, ait);
 
-    if (enrolled >= DEEP_OP_MEMBERS) {
+    if (op->n_members + enrolled >= DEEP_OP_MEMBERS) {
       break;
     }
     if (u->hp <= 0
@@ -279,9 +270,37 @@ static bool deep_op_form_raid(struct ai_type *ait, struct player *pplayer,
         || deep_raid_victim(pplayer, u, tune->raid_radius) == NULL) {
       continue;
     }
-    op->members[enrolled++] = u->id;
+    op->members[op->n_members + enrolled++] = u->id;
   } unit_list_iterate_end;
 
+  return enrolled;
+}
+
+/**********************************************************************//**
+  Raid template (combat E8 graduated into the slot system; human
+  design: "opportunistic exploration of the enemy's land, pillaging
+  improvements and killing workers"). Claim idle FAST attackers that
+  have a victim in reach: a worker killed is every work-turn it had
+  sunk and every one it would have delivered, at the price of one
+  duel against defence 1. No target city, no staging, no quorum.
+  Assault formation ran first this turn, so the army's first claim
+  on fresh units stands. All of a player's raiders pool into ONE op:
+  a raid is a claim container, not a formation, and singleton hunts
+  each burning a slot starved assault formation of slots entirely
+  (B11: raids held 2+ of the 4 slots on 56% of live player-turns,
+  and every fully-blocked turn included one).
+**************************************************************************/
+static bool deep_op_form_raid(struct ai_type *ait, struct player *pplayer,
+                              struct deep_operation *op, int oi)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int enrolled;
+
+  if (tune->raid_radius <= 0) {
+    return FALSE;
+  }
+
+  enrolled = deep_op_enroll_raiders(ait, pplayer, op);
   if (enrolled == 0) {
     return FALSE;
   }
@@ -828,10 +847,27 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
   }
 
   /* Form at most one assault and one raid per turn; assault first,
-   * so the army's claim on fresh units outranks the hunt's. */
+   * so the army's claim on fresh units outranks the hunt's. Fresh
+   * raiders merge into a standing raid op rather than burning
+   * another slot -- one hunt container per player. */
   {
-    bool tried_assault = FALSE;
+    bool tried_assault = FALSE, tried_raid = FALSE;
 
+    for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+      if (dp->ops[oi].state != DEEP_OP_NONE
+          && dp->ops[oi].kind == DEEP_OPK_RAID) {
+        int joined = deep_op_enroll_raiders(ait, pplayer, &dp->ops[oi]);
+
+        tried_raid = TRUE;
+        if (joined > 0) {
+          dp->ops[oi].n_members += joined;
+          log_base(deep_metric_log_level(),
+                   "deep-op turn=%d player=\"%s\" op=%d raid members=%d",
+                   game.info.turn, player_name(pplayer), oi, joined);
+        }
+        break;
+      }
+    }
     for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
       if (dp->ops[oi].state != DEEP_OP_NONE) {
         continue;
@@ -842,7 +878,9 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
           continue;             /* The raid tries the next free slot. */
         }
       }
-      (void) deep_op_form_raid(ait, pplayer, &dp->ops[oi], oi);
+      if (!tried_raid) {
+        (void) deep_op_form_raid(ait, pplayer, &dp->ops[oi], oi);
+      }
       break;
     }
   }
