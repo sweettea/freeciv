@@ -40,6 +40,7 @@
 #include "daidata.h"
 #include "daiplayer.h"
 
+#include "deepcombat.h"
 #include "deeptuning.h"
 
 #include "deephorizon.h"
@@ -199,6 +200,7 @@ void deep_adjust_building_wants(struct ai_type *ait,
                                 struct player *pplayer)
 {
   struct adv_data *adv = adv_data_get(pplayer, NULL);
+  const struct deep_tuning *tune = deep_tuning_get();
 
   if (adv == NULL) {
     return;
@@ -208,8 +210,26 @@ void deep_adjust_building_wants(struct ai_type *ait,
     adv_want cap_credit;
     bool threatened;
 
-    threatened = def_ai_city_data(pcity, ait)->urgency > 0
-                 || def_ai_city_data(pcity, ait)->grave_danger > 0;
+    /* "Threatened" means the city would probably FALL, not that an
+     * enemy is nearby. Stock's urgency and grave_danger are presence
+     * counts -- grave_danger increments for any capture-capable unit
+     * within one turn's move, urgency within three, neither asking
+     * whether the garrison wins -- so a city with five Musketeers
+     * behind walls scores the same as an empty one (Europe T106: 69%
+     * of deep cities carried urgency, 86% of stock's). Deep owns a
+     * probability for exactly this question; use it, and fall back to
+     * the stock flags only when the survival model is switched off. */
+    if (tune->survival_target > 0.0) {
+      int wave = 0;
+      double surv = deep_city_stack_survival(&(wld.map), pcity,
+                                             tune->survival_horizon,
+                                             &wave);
+
+      threatened = wave > 0 && surv < tune->survival_target;
+    } else {
+      threatened = def_ai_city_data(pcity, ait)->urgency > 0
+                   || def_ai_city_data(pcity, ait)->grave_danger > 0;
+    }
     cap_credit = deep_capacity_credit(pcity, adv);
     if (threatened && cap_credit <= 0) {
       /* Growth is a peace-time investment: no horizon credits while
