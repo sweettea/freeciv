@@ -92,6 +92,10 @@ bool dai_military_rampage(struct unit *punit, int thresh_adj,
 void dai_manage_units(struct ai_type *ait, struct player *pplayer);
 void dai_manage_unit(struct ai_type *ait, struct player *pplayer,
                      struct unit *punit);
+/* Exposed (static -> non-static only, no behaviour change) so ai/deep
+ * can run the manage loop with its own done-flag policy. */
+void dai_airlift(struct ai_type *ait, struct player *pplayer);
+void dai_set_defenders(struct ai_type *ait, struct player *pplayer);
 void dai_manage_military(struct ai_type *ait, const struct civ_map *nmap,
                          struct player *pplayer, struct unit *punit);
 struct city *find_nearest_safe_city(struct unit *punit);

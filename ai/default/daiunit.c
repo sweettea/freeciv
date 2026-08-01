@@ -165,7 +165,7 @@ static struct city *find_neediest_airlift_city(struct ai_type *ait,
   That's because we want to avoid emergency actions to protect the city
   during the turn if that isn't necessary.
 **************************************************************************/
-static void dai_airlift(struct ai_type *ait, struct player *pplayer)
+void dai_airlift(struct ai_type *ait, struct player *pplayer)
 {
   struct city *most_needed;
   int comparison;
@@ -2863,7 +2863,7 @@ void dai_manage_unit(struct ai_type *ait, struct player *pplayer,
 
   TODO: Make homecity, respect homecity.
 **************************************************************************/
-static void dai_set_defenders(struct ai_type *ait, struct player *pplayer)
+void dai_set_defenders(struct ai_type *ait, struct player *pplayer)
 {
   city_list_iterate(pplayer->cities, pcity) {
     /* The idea here is that we should never keep more than two
