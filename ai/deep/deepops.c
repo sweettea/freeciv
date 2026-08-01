@@ -692,13 +692,41 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
 static void deep_op_launch(struct ai_type *ait, struct player *pplayer,
                            struct deep_operation *op)
 {
-  struct city *target = game_city_by_number(op->target_city);
   int i;
 
+  /* Re-resolve the target on EVERY iteration, and never hold the
+   * pointer across dai_gothere().
+   *
+   * dai_gothere() moves the member, and a move can end the target: deep
+   * takes undefended cities by walking into them, and an emptied city
+   * is destroyed outright rather than captured. The city struct is then
+   * freed, so a `target` hoisted out of this loop is dangling for every
+   * member after the one that won -- and city_tile() on it yields a
+   * plausible-looking pointer into freed memory. The wave's own success
+   * corrupts the rest of its launch.
+   *
+   * Observed as two different assertions from one cause, depending on
+   * what reoccupied the freed block: same_pos() [common/map.c:1087] on
+   * a null tile, which killed the EAST2 tuning campaign in r0-ALL gen1,
+   * and dai_gothere_bodyguard() [ai/default/daitools.c:178] on a tile
+   * whose unit list was null, reproduced locally on the same candidate,
+   * config and seed at the same turn (primary-120 seed 5, T102). */
   for (i = 0; i < op->n_members; i++) {
+    struct city *target = game_city_by_number(op->target_city);
     struct unit *m = game_unit_by_number(op->members[i]);
 
-    if (m == NULL) {
+    if (target == NULL) {
+      /* Taken or razed mid-launch -- by this wave, most likely. The
+       * remaining members have nowhere to be sent; the op layer will
+       * re-plan them next turn. */
+      log_base(deep_metric_log_level(),
+               "deep-op turn=%d player=\"%s\" launch stopped at member %d/%d:"
+               " target=%d no longer exists",
+               game.info.turn, player_name(pplayer), i, op->n_members,
+               op->target_city);
+      return;
+    }
+    if (m == NULL || unit_owner(m) != pplayer) {
       continue;
     }
     dai_unit_new_task(ait, m, AIUNIT_ATTACK, city_tile(target));
@@ -1488,15 +1516,21 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
     dp->ops_reissue = FALSE;
     for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
       struct deep_operation *op = &dp->ops[oi];
-      struct city *target = game_city_by_number(op->target_city);
 
       if (op->state != DEEP_OP_MARCH || op->kind != DEEP_OPK_ASSAULT
-          || target == NULL) {
+          || game_city_by_number(op->target_city) == NULL) {
         continue;
       }
       for (i = 0; i < op->n_members; i++) {
+        /* Re-resolved per member for the same reason as in
+         * deep_op_launch(): dai_gothere() below can end the target
+         * city, freeing it under a hoisted pointer. */
+        struct city *target = game_city_by_number(op->target_city);
         struct unit *m = game_unit_by_number(op->members[i]);
 
+        if (target == NULL) {
+          break;
+        }
         if (m != NULL && unit_owner(m) == pplayer
             && def_ai_unit_data(m, ait)->task == AIUNIT_NONE) {
           dai_unit_new_task(ait, m, AIUNIT_ATTACK, city_tile(target));
