@@ -282,6 +282,27 @@ Ireland). Three lessons, in leverage order:
    while classic Def_Italia parades 15 Phalanxes into the gunpowder
    era; and civil-war splinters correctly inherit ai_type deep.
 
+Second pass (same save):
+
+4. THE SEA IS EMPTY AND A PIRATE OWNS EUROPE. Three boats among 22
+   players on a mostly-coastline map; Francois's 24-city pirate
+   empire is uncontested because no navy exists to interdict or
+   reach it. W31's headline case observed live: on water maps sea
+   control is the game, and it is currently free. Evidence for #16's
+   priority once the operation machinery can carry it.
+
+5. THE SETTLER EPOCH ENDS -- FOR EVERYONE. Zero settlers on the
+   whole board (human included) at T153: from ~T100 the map is
+   carved and conquest is the ONLY remaining growth channel. E2/E6
+   are not "add aggression"; they restore growth after the land runs
+   out. Also why contested cells were flat: half of every game is a
+   phase deep could not play.
+
+6. Colour: everyone converges on Democracy -- all deep, most
+   classic, the human, and Boadicea the barbarian queen
+   constitutionally governing her 108-unit horde. Government choice
+   is not the differentiator on this board; posture is.
+
 ## Investigations closed: walls and caravans (2026-07-30 reads)
 
 WALLS (edge-builder #8): verdict CRUDE BUT NOT BROKEN, no action.
