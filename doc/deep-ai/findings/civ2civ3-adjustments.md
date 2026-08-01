@@ -245,6 +245,43 @@ comparisons and both subordinate to the global plan (W08/W33).
 Risk-proportionate escorts (naked early caravans to allies are FINE
 while the assessed sea is empty) filed to the naval epic (#16).
 
+## T153 live-game forensics: the hedge with nothing behind it (2026-07-31)
+
+Europe playtest at T153 (barbarian age survived; human playing
+Ireland). Three lessons, in leverage order:
+
+1. STANDING FEARS NEVER SLEEP -> THE QUEUE NEVER EXHALES. Across all
+   22 deep cities (Hellas 9, Anglia 7, Hannibal 6): ZERO growth
+   infrastructure at T153 -- no granary, aqueduct, temple, library,
+   marketplace, or harbor anywhere, production queues all Musketeers/
+   City Walls/Barracks/Diplomats, six Anglian cities pinned at the
+   size-6 wall with food stocks 0-8. The human's Ireland on the same
+   map under the same barbarian pressure: the full ladder in every
+   city, sizes 12-14, defended by 3 Phalanx. Mechanism: the standing
+   fear terms keep danger nonzero every turn of a hostile game, the
+   military advisor therefore outbids the granary in every auction,
+   153 straight times -- even though the garrisons were demonstrably
+   adequate (Hellas: 19 Musketeers, zero city losses through the
+   whole barbarian age). Insurance has no budget cap. Fix spec'd as
+   the SATISFACTION GATE (task #19, E4-lite): once survival >= target
+   + floor met + no urgency, the injected fears stop bidding and the
+   domestic ladder gets the queue; they wake when the odds slip.
+
+2. THE UNEATEN BANQUET. Civil wars littered the map with 3-city
+   splinter states under token garrisons; deep attempted zero
+   conquests. E2 (marginal take-odds wants) + E6 (assault
+   operations), landed this evening, are exactly the missing
+   appetite -- the live game predates them. Barbarian/pirate cities
+   (Francois: 24 cities, 2586 gold) are premium targets: war with
+   them is diplomatically free. Worth a targeting term when E6 grows.
+
+3. BUY-LOOP FIX VALIDATED IN THE WILD. Deep treasuries at T153:
+   9-128 gold (spending works); classic's dead buy loop hoards
+   1968/1023/2586 across Def_Polska/Def_Iberia/Francois. Also:
+   deep's garrisons all Musketeers/Pikemen (rotation upgraded them)
+   while classic Def_Italia parades 15 Phalanxes into the gunpowder
+   era; and civil-war splinters correctly inherit ai_type deep.
+
 ## Investigations closed: walls and caravans (2026-07-30 reads)
 
 WALLS (edge-builder #8): verdict CRUDE BUT NOT BROKEN, no action.
