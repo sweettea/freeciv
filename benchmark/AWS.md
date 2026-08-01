@@ -78,14 +78,56 @@ game and grep its log for "no AI type" (must be 0) and "deep-def"
   meson setup build -Dclients=stub -Dfcmp=cli -Daudio=none \
     -Dtools=[] -Daimodules=classic,tex,baseline,deep
 
-## Box inventory (2026-07-30)
+## Box inventory (verified 2026-08-01 against describe-instances)
 
-- us-east-2: i-05162168cf393cb20 (c7a.8xlarge, the original campaign
-  box; full toolchain + all aimodules). STOPPED when idle.
-- us-east-1: i-0e9a257ef3b781349 (c7a.8xlarge, added 2026-07-29 for
-  the parallel regime tune; server-only meson config per the
-  bring-up checklist above; key "sweettea", sg deep-tune-ssh).
-  STOPPED when idle. Public DNS changes on every start.
+Two long-lived boxes, both `c7a.8xlarge` (32 vCPU / 64 GB), both
+ssh'd as `ubuntu`, both STOPPED when idle (stopped, never terminated:
+the EBS volume is the result cache). **Public DNS changes on every
+start** — always re-read it, never reuse the last one.
+
+| | **EAST2 — campaign box** | **EAST1 — tune box** |
+|---|---|---|
+| instance | `i-05162168cf393cb20` | `i-0e9a257ef3b781349` |
+| region / AZ | us-east-2 / us-east-2c | us-east-1 / us-east-1b |
+| name tag | *(none)* | `deep-tune-east1` |
+| key / sg | `sweettea` / `launch-wizard-5` | `sweettea` / `deep-tune-ssh` |
+| root vol | `vol-0b814a4e4f8e737f9`, **500 GB** gp3 | `vol-0536838977de54c62`, **40 GB** gp3 |
+| AMI | `ami-0e5497a77ef21b5ac` | `ami-052355af2a014bd2c` |
+| build | full toolchain, all aimodules | server-only meson (checklist above) |
+
+- **EAST2 is the box of record.** It was the original campaign box and
+  its 500 GB volume holds the campaign result cache plus the
+  `defence-*` tuning lineage (G, H, Z2, Z3). Anything that needs the
+  cache, or a client/tools build, goes here.
+- **EAST1 is the parallel-tune box**, added 2026-07-29 so a second
+  search could run without contending for the cache. It carries the
+  v3 lineage: `~/freeciv/benchmark/results/tuning/v3b` and `v3c`,
+  `~/v3b-best.ini`, `~/accept4.log`. Its root volume is only **40 GB**
+  — it cannot hold a full campaign cache, so prune result dirs after
+  harvesting, or it will fill mid-run.
+- A third us-east-2 instance (`i-0e4e0ddb933c30bdc`, t3.medium,
+  "Claudeycodey", key `Twell`) is **unrelated** — leave it alone. The
+  `--filters Name=key-name,Values=sweettea` below excludes it.
+
+Cost is roughly a third of the 24xlarge figure above, i.e. ~$40/day
+each while running — which is why they live stopped.
+
+    # what exists, and is it up?
+    for r in us-east-1 us-east-2; do aws ec2 describe-instances --region $r \
+      --filters Name=key-name,Values=sweettea \
+      --query 'Reservations[].Instances[].[InstanceId,InstanceType,State.Name,PublicDnsName]' \
+      --output text; done
+
+    # start, then re-read the DNS (it changed)
+    aws ec2 start-instances --region us-east-2 --instance-ids i-05162168cf393cb20
+    host=$(aws ec2 describe-instances --region us-east-2 \
+      --instance-ids i-05162168cf393cb20 \
+      --query 'Reservations[].Instances[].PublicDnsName' --output text)
+    until ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 \
+      ubuntu@$host 'echo up'; do sleep 20; done
+
+    aws ec2 stop-instances --region us-east-2 --instance-ids i-05162168cf393cb20
+
 Pattern for unattended work: oneshot systemd unit whose ExecStart
 ends with `sudo shutdown -h +5 ...; sleep 420; sudo poweroff` (the
 double-tap; a plain scheduled shutdown silently failed once).
