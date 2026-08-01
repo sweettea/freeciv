@@ -281,6 +281,12 @@ struct deep_tuning {
    * barbarian spawn at home is not). radius 0 disables. */
   int hut_risk_radius;
   double hut_risk_discount;
+  /* March re-gate (W33 commit 2): a marching wave re-prices the take
+   * each turn at the remaining eta and turns back -- banking every
+   * member -- when the odds fall below this floor. Set below
+   * op_take_target for hysteresis: a wave formed at the bar should
+   * not turn back on the first wobble. <= 0 disables the re-gate. */
+  double op_abort_floor;
 };
 
 void deep_tuning_init(void);

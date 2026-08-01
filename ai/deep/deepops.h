@@ -34,9 +34,16 @@ struct ai_type;
  * clear op_take_target against it, so the count is self-limiting. */
 #define DEEP_OPS_MAX 4
 
+/* Phase list (W33 commit 2). A land assault runs MUSTER -> MARCH;
+ * launching into MARCH releases the members to the stock attack path
+ * while the operation shadows them -- re-gating the take odds at the
+ * remaining eta each turn and recording the strike at contact rather
+ * than at departure. Amphibious assaults still dissolve at launch:
+ * the convoy hold/escort/invade gates own the crossing unchanged. */
 enum deep_op_state {
   DEEP_OP_NONE = 0,
   DEEP_OP_MUSTER,
+  DEEP_OP_MARCH,
 };
 
 struct deep_operation {
@@ -45,6 +52,8 @@ struct deep_operation {
   int staging_city;             /* own city id */
   int required;                 /* members needed before launch */
   int formed_turn;
+  int march_turn;               /* turn the wave launched into MARCH */
+  int march_eta;                /* eta to target measured at launch */
   int n_members;
   int members[DEEP_OP_MEMBERS]; /* unit ids */
 };

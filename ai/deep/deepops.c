@@ -435,73 +435,194 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
-  Drive one live operation for a turn: walk members in, hold
-  arrivals, launch at quorum (or half-quorum at the wait cap).
-  Launching dissolves the operation: fire and forget, second waves
-  are E7's business. Caller has already validated target and staging.
+  Release every member at the target through the stock attack path.
+  They leave together; that was the whole point.
+**************************************************************************/
+static void deep_op_launch(struct ai_type *ait, struct player *pplayer,
+                           struct deep_operation *op)
+{
+  struct city *target = game_city_by_number(op->target_city);
+  int i;
+
+  for (i = 0; i < op->n_members; i++) {
+    struct unit *m = game_unit_by_number(op->members[i]);
+
+    if (m == NULL) {
+      continue;
+    }
+    dai_unit_new_task(ait, m, AIUNIT_ATTACK, city_tile(target));
+    (void) dai_gothere(ait, pplayer, m, city_tile(target));
+  }
+}
+
+/**********************************************************************//**
+  Turns until the slowest member reaches the target at its own move
+  rate. Raw-distance eta, same currency the formation pricing used.
+**************************************************************************/
+static int deep_op_eta(const struct deep_operation *op,
+                       const struct city *target)
+{
+  int i, eta = 0;
+
+  for (i = 0; i < op->n_members; i++) {
+    const struct unit *m = game_unit_by_number(op->members[i]);
+    int rate, t;
+
+    if (m == NULL) {
+      continue;
+    }
+    rate = MAX(unit_type_get(m)->move_rate, 1);
+    t = (real_map_distance(unit_tile(m), city_tile(target))
+         * SINGLE_MOVE + rate - 1) / rate;
+    eta = MAX(eta, t);
+  }
+
+  return eta;
+}
+
+/**********************************************************************//**
+  Drive one live operation for a turn. MUSTER: walk members in, hold
+  arrivals, launch at quorum (or half-quorum at the wait cap). A land
+  launch enters MARCH: members go to the stock attack path while the
+  operation shadows them -- keeping them claimed, re-gating the take
+  odds at the remaining eta each turn, banking everyone if the odds
+  collapse, and recording the strike at contact (so the E7 window
+  opens when the wave reaches the walls, not when it leaves home).
+  An amphibious launch still dissolves on the spot: the convoy
+  hold/escort/invade gates own the crossing unchanged. Caller has
+  already validated target and staging.
 **************************************************************************/
 static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
                           struct deep_operation *op, int oi)
 {
   const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
   struct deep_plr *dp = deep_plr_data(pplayer);
   struct city *target = game_city_by_number(op->target_city);
   struct city *staging = game_city_by_number(op->staging_city);
-  int present = 0, i;
+  int i;
 
-  for (i = 0; i < op->n_members; i++) {
-    struct unit *m = game_unit_by_number(op->members[i]);
+  if (op->state == DEEP_OP_MUSTER) {
+    int present = 0;
 
-    if (m != NULL && same_pos(unit_tile(m), city_tile(staging))) {
-      present++;
-    }
-  }
-
-  if (present >= op->required
-      || (game.info.turn - op->formed_turn >= tune->op_muster_wait
-          && present >= (op->required + 1) / 2)) {
-    /* Launch: everyone at the target through the stock attack path.
-     * They leave together; that was the whole point. */
-    log_base(deep_metric_log_level(),
-             "deep-op turn=%d player=\"%s\" op=%d strike target=%d"
-             " present=%d required=%d waited=%d",
-             game.info.turn, player_name(pplayer), oi, op->target_city,
-             present, op->required, game.info.turn - op->formed_turn);
     for (i = 0; i < op->n_members; i++) {
       struct unit *m = game_unit_by_number(op->members[i]);
 
-      if (m == NULL) {
-        continue;
+      if (m != NULL && same_pos(unit_tile(m), city_tile(staging))) {
+        present++;
       }
-      dai_unit_new_task(ait, m, AIUNIT_ATTACK, city_tile(target));
-      (void) dai_gothere(ait, pplayer, m, city_tile(target));
     }
-    dp->last_strike_city = op->target_city;
-    dp->last_strike_turn = game.info.turn;
-    deep_op_dissolve(op, oi, "launched", pplayer);
-    return;
+
+    if (present >= op->required
+        || (game.info.turn - op->formed_turn >= tune->op_muster_wait
+            && present >= (op->required + 1) / 2)) {
+      bool overseas = tile_continent(city_tile(target))
+                      != tile_continent(city_tile(staging));
+
+      deep_op_launch(ait, pplayer, op);
+      if (overseas) {
+        /* Amphibious: the ferry system and the convoy gates take it
+         * from here; sea phases are a later slice. The E7 clock has
+         * to start now -- the op no longer watches the crossing. */
+        log_base(deep_metric_log_level(),
+                 "deep-op turn=%d player=\"%s\" op=%d strike target=%d"
+                 " present=%d required=%d waited=%d",
+                 game.info.turn, player_name(pplayer), oi,
+                 op->target_city, present, op->required,
+                 game.info.turn - op->formed_turn);
+        dp->last_strike_city = op->target_city;
+        dp->last_strike_turn = game.info.turn;
+        deep_op_dissolve(op, oi, "launched", pplayer);
+        return;
+      }
+      op->state = DEEP_OP_MARCH;
+      op->march_turn = game.info.turn;
+      op->march_eta = MAX(deep_op_eta(op, target), 1);
+      log_base(deep_metric_log_level(),
+               "deep-op turn=%d player=\"%s\" op=%d march target=%d"
+               " present=%d required=%d waited=%d eta=%d",
+               game.info.turn, player_name(pplayer), oi, op->target_city,
+               present, op->required, game.info.turn - op->formed_turn,
+               op->march_eta);
+      /* Fall through: the first march turn re-gates immediately. */
+    } else if (game.info.turn - op->formed_turn >= tune->op_muster_wait) {
+      /* Wait cap without even half a quorum: bank the survivors. */
+      deep_op_dissolve(op, oi, "abort-wait", pplayer);
+      return;
+    } else {
+      for (i = 0; i < op->n_members; i++) {
+        struct unit *m = game_unit_by_number(op->members[i]);
+        struct unit_ai *ud;
+
+        if (m == NULL) {
+          continue;
+        }
+        ud = def_ai_unit_data(m, ait);
+        if (same_pos(unit_tile(m), city_tile(staging))) {
+          ud->done = TRUE;      /* Hold at the muster point. */
+        } else if (m->moves_left > 0) {
+          if (dai_unit_goto(ait, m, city_tile(staging))) {
+            ud->done = TRUE;
+          }
+        }
+      }
+      return;
+    }
   }
 
-  if (game.info.turn - op->formed_turn >= tune->op_muster_wait) {
-    /* Wait cap without even half a quorum: bank the survivors. */
-    deep_op_dissolve(op, oi, "abort-wait", pplayer);
-    return;
-  }
+  if (op->state == DEEP_OP_MARCH) {
+    struct unit *stream[DEEP_OP_MEMBERS];
+    int ns = 0, eta;
 
-  for (i = 0; i < op->n_members; i++) {
-    struct unit *m = game_unit_by_number(op->members[i]);
-    struct unit_ai *ud;
+    for (i = 0; i < op->n_members; i++) {
+      struct unit *m = game_unit_by_number(op->members[i]);
 
-    if (m == NULL) {
-      continue;
-    }
-    ud = def_ai_unit_data(m, ait);
-    if (same_pos(unit_tile(m), city_tile(staging))) {
-      ud->done = TRUE;          /* Hold at the muster point. */
-    } else if (m->moves_left > 0) {
-      if (dai_unit_goto(ait, m, city_tile(staging))) {
-        ud->done = TRUE;
+      if (m != NULL) {
+        stream[ns++] = m;
       }
+    }
+    eta = deep_op_eta(op, target);
+
+    if (eta <= 1) {
+      /* Contact: the wave stands at the walls. The op's work is
+       * done; stock fights the battle (strike control is the next
+       * slice), and the E7 second-wave window opens now. */
+      log_base(deep_metric_log_level(),
+               "deep-op turn=%d player=\"%s\" op=%d strike target=%d"
+               " present=%d required=%d waited=%d",
+               game.info.turn, player_name(pplayer), oi, op->target_city,
+               ns, op->required, game.info.turn - op->march_turn);
+      dp->last_strike_city = op->target_city;
+      dp->last_strike_turn = game.info.turn;
+      deep_op_dissolve(op, oi, "launched", pplayer);
+      return;
+    }
+
+    /* Re-gate: the odds the surviving wave takes the CURRENT
+     * garrison, reinforced for the remaining travel time. Formation
+     * priced this at op_take_target; the march holds until it falls
+     * through the lower abort floor -- hysteresis, so a wave formed
+     * at the bar does not turn back on the first wobble. Banked
+     * members go back to stock with a clean slate. */
+    if (tune->op_abort_floor > 0.0 && ns > 0
+        && deep_take_odds_at_arrival(nmap, target, stream, ns, eta)
+           < tune->op_abort_floor) {
+      for (i = 0; i < ns; i++) {
+        struct unit_ai *ud = def_ai_unit_data(stream[i], ait);
+
+        if (ud->task == AIUNIT_ATTACK) {
+          dai_unit_new_task(ait, stream[i], AIUNIT_NONE, NULL);
+        }
+      }
+      deep_op_dissolve(op, oi, "abort-odds", pplayer);
+      return;
+    }
+
+    if (game.info.turn - op->march_turn
+        >= op->march_eta + tune->op_muster_wait) {
+      /* The wave has wandered: stock re-tasked members somewhere the
+       * eta never closes. Same patience knob as the muster. */
+      deep_op_dissolve(op, oi, "abort-march", pplayer);
     }
   }
 }
@@ -531,7 +652,7 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
     struct city *target, *staging;
     int n;
 
-    if (op->state != DEEP_OP_MUSTER) {
+    if (op->state == DEEP_OP_NONE) {
       continue;
     }
     target = game_city_by_number(op->target_city);
@@ -545,10 +666,13 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
       }
     }
     op->n_members = n;
-    if (target == NULL || staging == NULL
-        || city_owner(staging) != pplayer
+    if (target == NULL
         || !pplayers_at_war(pplayer, city_owner(target))
-        || op->n_members == 0) {
+        || op->n_members == 0
+        /* A muster needs its staging city; a marching wave has
+         * already left it behind. */
+        || (op->state == DEEP_OP_MUSTER
+            && (staging == NULL || city_owner(staging) != pplayer))) {
       deep_op_dissolve(op, oi, "abort", pplayer);
     }
   }
@@ -561,7 +685,7 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
   }
 
   for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
-    if (dp->ops[oi].state == DEEP_OP_MUSTER) {
+    if (dp->ops[oi].state != DEEP_OP_NONE) {
       deep_op_drive(ait, pplayer, &dp->ops[oi], oi);
     }
   }
