@@ -2022,7 +2022,7 @@ static void deep_assault_want(struct ai_type *ait,
   double best_score = 0.0, p0, p1, marginal;
   Continent_id home = tile_continent(city_tile(pcity));
   struct unit *pool[32];      /* deep_take_odds caps the stream anyway */
-  int n_pool = 0, eta, rate;
+  int n_pool = 0, eta, rate, csize;
   struct unit *vunit;
   adv_want tworth, want;
 
@@ -2123,16 +2123,53 @@ static void deep_assault_want(struct ai_type *ait,
   p1 = deep_take_odds_at_arrival(nmap, target, pool, n_pool + 1, eta);
   unit_virtual_destroy(vunit);
   marginal = p1 - p0;
+
+  csize = 0;
+  if (tune->op_take_target > 0.0 && p1 < tune->op_take_target) {
+    /* Campaign pricing (T160 forensics): the S-curve bottom is
+     * self-strangling from a standing start -- against any real
+     * garrison, attacker #1 moves P(take) by ~0, so a nation with
+     * no offensive arm never grows one (at T160 every army in
+     * Europe was defensive infantry while 47 empty barbarian cities
+     * sat unclaimed). Price the campaign instead: the smallest
+     * force of this type that clears op_take_target values each
+     * member at the average rate -- the muster shortfall becomes
+     * build demand, the land analogue of lift-limited-means-build-
+     * the-boat. A target no affordable force cracks still prices
+     * zero: self-limiting survives, only the cold start dies. */
+    struct unit *virts[DEEP_OP_MEMBERS];
+    int made = 0;
+    int cap = MIN(DEEP_OP_MEMBERS, (int) ARRAY_SIZE(pool) - n_pool);
+
+    while (made < cap) {
+      double pk;
+
+      virts[made] = unit_virtual_create(pplayer, pcity, punittype, 1);
+      pool[n_pool + made] = virts[made];
+      made++;
+      pk = deep_take_odds_at_arrival(nmap, target, pool,
+                                     n_pool + made, eta);
+      if (pk >= tune->op_take_target) {
+        marginal = MAX(marginal, (pk - p0) / made);
+        csize = made;
+        break;
+      }
+    }
+    while (made > 0) {
+      unit_virtual_destroy(virts[--made]);
+    }
+  }
+
   want = military_amortize(pplayer, pcity,
                            tune->attack_value_weight * tworth * marginal,
                            MAX(1, eta), build_cost_balanced(punittype));
 
   log_base(deep_metric_log_level(),
            "deep-kill turn=%d player=\"%s\" city=%d target=%d"
-           " worth=" ADV_WANT_PRINTF " pool=%d p0=%.3f p1=%.3f"
+           " worth=" ADV_WANT_PRINTF " pool=%d p0=%.3f p1=%.3f ck=%d"
            " want=" ADV_WANT_PRINTF,
            game.info.turn, player_name(pplayer), pcity->id, target->id,
-           tworth, n_pool, p0, p1, want);
+           tworth, n_pool, p0, p1, csize, want);
 
   if (want > choice->want) {
     choice->value.utype = punittype;
