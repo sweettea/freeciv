@@ -479,3 +479,66 @@ Two defects in the hedgehog behaviour, observed live at T42-T111:
    not independent global values: this is the W08 doctrine
    architecture's case in one sentence. Until W08, a tunable
    time-ramp on density fear is the cheap palliative.
+
+## T160 autosave forensics (2026-07-31, live Europe game)
+
+Human hit the science-superpower stage: Irish #1 at 49 techs from a
+TALL 5-city empire (total size 75, avg 15) -- rapid-growth stage
+converted straight into research lead. Deep validates alongside:
+Suleiman (deep) is #2 overall at 48 techs, and deep holds 4 of the
+top-8 tech slots in a 22-player field. The satisfaction-gate growth
+ladder works in a live mixed game, not just the isolated cell.
+
+The map story is the barbarians: under HORDES, the Pirate and
+Barbarian players hold 52 captured cities (27+25) -- the two largest
+holdings on the map, mean size 4.1, max 8. Iberia (classic) collapsed
+outright (23 cities lost); deep players lost 12 between them
+(Hannibal 5, Gallia 5, Anglia 1, Rus 1). The land-barb field army is
+87 units (Knights x32, Musketeers x30, Cannon x20) -- more than the
+top three nations combined; the pirates add 33. Meanwhile EVERY
+nation's military, deep and classic alike, is defensive infantry
+(deep: 7-17 units, nearly all Musketeers; the only siege train in
+Europe is barbarian). The human runs 6 military units total behind
+the sea -- protected mostly by the AIs' inability to project force.
+
+Numbered lessons:
+
+1. FORTY-SEVEN OF THE 52 BARBARIAN CITIES ARE EMPTY (mean garrison
+   0.12/city; 4 have one defender). The barb army rages in the field
+   and never garrisons its takes. A quarter of Europe is free for
+   the walking, for ~40 turns, and nobody walks. Two deep mechanism
+   gaps compose to guarantee this:
+   a. THE required<=1 HOLE: op formation declines any target one
+      unit could take ("needs no operation for it"), assuming stock
+      handles singletons. Stock does not: garrison infantry is
+      AIUNIT_DEFEND_HOME, which the op pool also excludes. An empty
+      enemy city adjacent to a deep garrison is invisible to every
+      layer. Fix: a TAKE SORTIE mirroring the kill sortie -- a
+      garrison blade (or any spare unit) claims an adjacent/near
+      empty-or-trivial enemy city when take odds clear a high bar
+      AND home survival-without clears survival_target. Same
+      leave-home-briefly logic the human dictated for finishing
+      weakened attackers.
+   b. THE ARMY-OF-ZERO COLD START: the marginal attacker want prices
+      unit #1 by its marginal take-odds shift, ~0 against any real
+      garrison when the pool is empty -- the S-curve's self-limiting
+      bottom is self-strangling from zero. No deep player in this
+      game ever grew an offensive arm. Fix: MUSTER SHORTFALL DRIVES
+      ATTACKER BUILD WANTS -- when formation finds a priced target
+      but the pool cannot clear the bar, the gap (units needed) is
+      build demand amortized over the target's worth, exactly the
+      land analogue of lift-limited-means-build-the-boat (berth
+      shortfall -> ferry want, its third consumer). W33's formation
+      pass already computes everything needed.
+
+2. Iberia's 23-city collapse is W31 SS5 (coastal defence in depth) in
+   one nation: pirates took an entire classic empire from the sea.
+   Deep's own 10 coastal losses (Hannibal+Gallia) say boat-shadow
+   fear underprices HORDES-level sea pressure -- but note the fix is
+   posture, not more global fear (see T042-T111 critique above).
+
+3. Barbarian cities are legal, priced op targets already (at-war,
+   contact-exempt) -- the target menu is not the gap; the pool and
+   the singleton hole are. When 1a/1b land, this save is the natural
+   regression fixture: a deep nation adjacent to empty barb cities
+   should retake within a few turns.
