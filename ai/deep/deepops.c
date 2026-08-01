@@ -156,6 +156,77 @@ static void deep_op_dissolve(struct deep_operation *op, const char *why,
 }
 
 /**********************************************************************//**
+  Raids (combat E8, first slice; human design: "opportunistic
+  exploration of the enemy's land, pillaging improvements and killing
+  workers"). When no assault operation stands -- the pitched odds
+  cleared no bar this turn -- idle FAST attackers hunt exposed enemy
+  civilians instead: a worker killed is every work-turn it had sunk
+  and every one it would have delivered, at the price of one duel
+  against defence 1. The assault always owns the army first; raiding
+  is what the cavalry does between operations. Contact required, as
+  everywhere.
+**************************************************************************/
+void deep_run_raids(struct ai_type *ait, struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+
+  if (tune->raid_radius <= 0
+      || deep_plr_data(pplayer)->op.state != DEEP_OP_NONE) {
+    return;
+  }
+
+  unit_list_iterate(pplayer->units, u) {
+    struct unit_ai *ud = def_ai_unit_data(u, ait);
+    struct unit *best = NULL;
+    int bestd = tune->raid_radius + 1;
+
+    if (u->hp <= 0
+        || unit_has_type_flag(u, UTYF_CIVILIAN)
+        || adv_unit_att_rating(u) <= 0
+        || unit_type_get(u)->move_rate <= SINGLE_MOVE
+        || unit_transported(u)
+        || ud->task != AIUNIT_NONE
+        || ud->charge > 0) {
+      continue;
+    }
+    players_iterate_alive(aplayer) {
+      if (!pplayers_at_war(pplayer, aplayer)
+          || (!is_barbarian(aplayer)
+              && player_diplstate_get(pplayer, aplayer)->type
+                 == DS_NO_CONTACT)) {
+        continue;
+      }
+      unit_list_iterate(aplayer->units, v) {
+        int d;
+
+        if (!unit_has_type_flag(v, UTYF_CIVILIAN)
+            || tile_city(unit_tile(v)) != NULL
+            || unit_transported(v)
+            || tile_continent(unit_tile(v))
+               != tile_continent(unit_tile(u))) {
+          continue;
+        }
+        d = real_map_distance(unit_tile(u), unit_tile(v));
+        if (d < bestd) {
+          bestd = d;
+          best = v;
+        }
+      } unit_list_iterate_end;
+    } players_iterate_alive_end;
+
+    if (best != NULL) {
+      log_base(deep_metric_log_level(),
+               "deep-raid turn=%d player=\"%s\" raider=\"%s\""
+               " victim=\"%s\" dist=%d",
+               game.info.turn, player_name(pplayer), unit_rule_name(u),
+               unit_rule_name(best), bestd);
+      dai_unit_new_task(ait, u, AIUNIT_ATTACK, unit_tile(best));
+      (void) dai_gothere(ait, pplayer, u, unit_tile(best));
+    }
+  } unit_list_iterate_end;
+}
+
+/**********************************************************************//**
   The per-turn operation driver (combat E6, smallest slice): one
   operation per player. Form when enough free attackers EXIST to
   clear op_take_target against the best met target; muster them at

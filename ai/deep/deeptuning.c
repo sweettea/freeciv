@@ -103,6 +103,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .colony_lift_weight = 0.5,            /* PLACEHOLDER, untuned */
   .invasion_reinforce_rate = 0.34,      /* PLACEHOLDER, untuned */
   .op_wave_window = 6,                  /* PLACEHOLDER, untuned */
+  .raid_radius = 12,                    /* PLACEHOLDER, untuned */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -215,6 +216,7 @@ void deep_tuning_init(void)
   TUNE_DOUBLE(colony_lift_weight);
   TUNE_DOUBLE(invasion_reinforce_rate);
   TUNE_INT(op_wave_window);
+  TUNE_INT(raid_radius);
 
   secfile_destroy(sf);
 
@@ -222,7 +224,7 @@ void deep_tuning_init(void)
              " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
              " wos=%d wot=%d gb=%d gsm=%f sdw=%f gf=%d gs=%d gt=%d tqs=%f dip=%f tail=%f depth=%f ovl=%f pot=%f"
              " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f hhealth=%f htech=%f"
-             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d dfv=%d dfr=%d dfrt=%d dpv=%d dpt=%d wfw=%f srw=%f chk=%f cml=%d cwr=%d wfr=%d wgr=%d wdd=%f ugw=%f uuw=%f rpr=%f rwant=%d rfin=%f svt=%f svf=%f svh=%d taf=%f avw=%f swf=%f ott=%f omw=%d sfd=%f clw=%f irr=%f oww=%d",
+             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d dfv=%d dfr=%d dfrt=%d dpv=%d dpt=%d wfw=%f srw=%f chk=%f cml=%d cwr=%d wfr=%d wgr=%d wdd=%f ugw=%f uuw=%f rpr=%f rwant=%d rfin=%f svt=%f svf=%f svh=%d taf=%f avw=%f swf=%f ott=%f omw=%d sfd=%f clw=%f irr=%f oww=%d rrad=%d",
              path,
              deep_tuning_active.settler_fearfulness_mult,
              deep_tuning_active.incoming_defence_eta_weight,
@@ -297,7 +299,8 @@ void deep_tuning_init(void)
              deep_tuning_active.satisfied_fear_discount,
              deep_tuning_active.colony_lift_weight,
              deep_tuning_active.invasion_reinforce_rate,
-             deep_tuning_active.op_wave_window);
+             deep_tuning_active.op_wave_window,
+             deep_tuning_active.raid_radius);
 }
 
 /**********************************************************************//**

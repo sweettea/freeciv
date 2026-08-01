@@ -49,5 +49,6 @@ struct deep_operation {
 };
 
 void deep_run_operations(struct ai_type *ait, struct player *pplayer);
+void deep_run_raids(struct ai_type *ait, struct player *pplayer);
 
 #endif /* FC__DEEPOPS_H */

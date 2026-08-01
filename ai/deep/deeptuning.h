@@ -270,6 +270,10 @@ struct deep_tuning {
    * same target -- reinforce while the garrison is softened, or let
    * the window close as the formal withdrawal. */
   int op_wave_window;
+  /* Raids (E8): with no assault operation standing, idle fast
+   * attackers hunt exposed enemy civilians within this many tiles.
+   * 0 disables. */
+  int raid_radius;
 };
 
 void deep_tuning_init(void);

@@ -1390,6 +1390,7 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
   deep_kill_sorties(ait, pplayer);
   deep_cover_sorties(ait, pplayer);
   deep_run_operations(ait, pplayer);
+  deep_run_raids(ait, pplayer);
   deep_set_city_manager_params(ait, pplayer);
 
   TIMING_LOG(AIT_UNITS, TIMER_START);
