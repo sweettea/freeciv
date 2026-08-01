@@ -34,7 +34,12 @@ SURV_RE = re.compile(
 )
 TIRED_RE = re.compile(r'deep-tired turn=(\d+) player="([^"]*)"')
 SORTIE_RE = re.compile(r'deep-sortie turn=\d+ player="[^"]*" city=\d+ (kill|cover)')
-OP_RE = re.compile(r'deep-op turn=\d+ player="[^"]*" (form|strike|abort)')
+# op=<slot> arrived with the W33 multi-op substrate; optional so old
+# logs still parse. "launched" is the dissolve after a strike, not a
+# distinct event.
+OP_RE = re.compile(
+    r'deep-op turn=\d+ player="[^"]*" (?:op=\d+ )?(form|march|strike|abort)'
+)
 INVADE_RE = re.compile(r'deep-invade turn=\d+ player="[^"]*" (go|hold|sail-anyway)')
 COLONY_RE = re.compile(r'deep-colony turn=\d+ player="[^"]*" (demand|city)')
 
@@ -61,11 +66,12 @@ def main():
 
     tot = {"founded": 0, "conquered": 0, "lost": 0, "turns": 0,
            "surv_n": 0, "surv_sum": 0.0, "surv_low": 0, "tired": 0,
-           "s_kill": 0, "s_cover": 0, "op_form": 0, "op_strike": 0,
-           "op_abort": 0, "inv_go": 0, "inv_hold": 0, "colony": 0}
+           "s_kill": 0, "s_cover": 0, "op_form": 0, "op_march": 0,
+           "op_strike": 0, "op_abort": 0, "inv_go": 0, "inv_hold": 0,
+           "colony": 0}
     print("arm,seed,turns,founded,conquered,lost,conq_per_100t,"
           "lost_per_100t,surv_mean,surv_low_share,tired_holds,"
-          "sortie_kill,sortie_cover,op_form,op_strike,op_abort,"
+          "sortie_kill,sortie_cover,op_form,op_march,op_strike,op_abort,"
           "inv_go,inv_hold,colony_demand")
     for d in gamedirs:
         text = (d / "game.log").read_text(errors="replace")
@@ -93,8 +99,9 @@ def main():
         print(f"{d.parent.name},{d.name.removeprefix('seed-')},{turns},"
               f"{founded},{conquered},{lost},{cr:.2f},{lr:.2f},"
               f"{sm:.3f},{low:.3f},{tired},{sortie['kill']},"
-              f"{sortie['cover']},{ops['form']},{ops['strike']},"
-              f"{ops['abort']},{inv['go']},{inv['hold']},{colony}")
+              f"{sortie['cover']},{ops['form']},{ops['march']},"
+              f"{ops['strike']},{ops['abort']},{inv['go']},"
+              f"{inv['hold']},{colony}")
         tot["founded"] += founded
         tot["conquered"] += conquered
         tot["lost"] += lost
@@ -106,6 +113,7 @@ def main():
         tot["s_kill"] += sortie["kill"]
         tot["s_cover"] += sortie["cover"]
         tot["op_form"] += ops["form"]
+        tot["op_march"] += ops["march"]
         tot["op_strike"] += ops["strike"]
         tot["op_abort"] += ops["abort"]
         tot["inv_go"] += inv["go"]
@@ -119,7 +127,8 @@ def main():
     print(f"TOTAL,,{tot['turns']},{tot['founded']},{tot['conquered']},"
           f"{tot['lost']},{cr:.2f},{lr:.2f},{sm:.3f},{low:.3f},"
           f"{tot['tired']},{tot['s_kill']},{tot['s_cover']},"
-          f"{tot['op_form']},{tot['op_strike']},{tot['op_abort']},"
+          f"{tot['op_form']},{tot['op_march']},{tot['op_strike']},"
+          f"{tot['op_abort']},"
           f"{tot['inv_go']},{tot['inv_hold']},{tot['colony']}")
 
 
