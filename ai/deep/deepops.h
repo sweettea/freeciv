@@ -25,8 +25,10 @@ struct ai_type;
  * produces. A player runs up to DEEP_OPS_MAX of them at once, each
  * against its own target with its own claimed members.
  *
- * Not saved: an operation re-forms from the same want conditions
- * that created it, so a reload costs at most a few muster turns. */
+ * Saved under the deep_state namespace (W33 phase 4) -- benchmarks
+ * never reload, but human-game saves do, and an op that dissolved
+ * on every reload cost those games their assaults. The enum values
+ * below are part of the savegame format: append, never reorder. */
 #define DEEP_OP_MEMBERS 24
 /* Storage cap on concurrent operations, like DEEP_OP_MEMBERS a
  * bookkeeping bound rather than a tunable: forming an op at all

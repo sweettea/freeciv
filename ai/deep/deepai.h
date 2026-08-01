@@ -35,9 +35,15 @@ struct deep_plr {
   /* Deep-only state below. Everything here must either be saved in
    * dpai_player_save() or be recomputable. */
   int dv_turns_logged;          /* Decision-vector lines emitted */
-  /* Operation slots (W33); DEEP_OP_NONE marks a free slot.
-   * Recomputable: each re-forms from wants. */
+  /* Operation slots (W33); DEEP_OP_NONE marks a free slot. Saved
+   * (W33 phase 4): a mid-march wave that dissolved on every reload
+   * cost human-game players their assaults; member ids are
+   * re-validated at load. */
   struct deep_operation ops[DEEP_OPS_MAX];
+  /* Set at load when a marching op came back from a save: member
+   * tasks are not saved, so the first operations pass re-points
+   * marchers at their target. Not saved itself. */
+  bool ops_reissue;
   /* Second-wave bookkeeping (E7): the last launched strike, so the
    * next formation pass can ask "did it stick, and can the reserve
    * plus survivors crush what remains?" Player-level, not per-op:

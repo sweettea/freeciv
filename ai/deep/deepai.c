@@ -162,9 +162,49 @@ static void dpai_player_save(struct player *pplayer,
                              struct section_file *file, int plrno)
 {
   struct deep_plr *plr_data = deep_plr_data(pplayer);
+  int oi, i;
 
   secfile_insert_int(file, plr_data->dv_turns_logged,
                      "player%d.deep_state.dv_turns_logged", plrno);
+
+  /* The operations layer (W33 phase 4). Free slots save only their
+   * NONE state, so quiet players cost a handful of keys. */
+  secfile_insert_int(file, plr_data->last_strike_city,
+                     "player%d.deep_state.last_strike_city", plrno);
+  secfile_insert_int(file, plr_data->last_strike_turn,
+                     "player%d.deep_state.last_strike_turn", plrno);
+  for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+    const struct deep_operation *op = &plr_data->ops[oi];
+
+    secfile_insert_int(file, op->state,
+                       "player%d.deep_state.op%d.state", plrno, oi);
+    if (op->state == DEEP_OP_NONE) {
+      continue;
+    }
+    secfile_insert_int(file, op->kind,
+                       "player%d.deep_state.op%d.kind", plrno, oi);
+    secfile_insert_int(file, op->target_city,
+                       "player%d.deep_state.op%d.target", plrno, oi);
+    secfile_insert_int(file, op->staging_city,
+                       "player%d.deep_state.op%d.staging", plrno, oi);
+    secfile_insert_int(file, op->required,
+                       "player%d.deep_state.op%d.required", plrno, oi);
+    secfile_insert_int(file, op->formed_turn,
+                       "player%d.deep_state.op%d.formed_turn", plrno, oi);
+    secfile_insert_int(file, op->march_turn,
+                       "player%d.deep_state.op%d.march_turn", plrno, oi);
+    secfile_insert_int(file, op->march_eta,
+                       "player%d.deep_state.op%d.march_eta", plrno, oi);
+    secfile_insert_int(file, op->phase_turn,
+                       "player%d.deep_state.op%d.phase_turn", plrno, oi);
+    secfile_insert_int(file, op->n_members,
+                       "player%d.deep_state.op%d.n_members", plrno, oi);
+    for (i = 0; i < op->n_members; i++) {
+      secfile_insert_int(file, op->members[i],
+                         "player%d.deep_state.op%d.member%d",
+                         plrno, oi, i);
+    }
+  }
 }
 
 /**********************************************************************//**
@@ -175,11 +215,96 @@ static void dpai_player_load(struct player *pplayer,
                              const struct section_file *file, int plrno)
 {
   struct deep_plr *plr_data = deep_plr_data(pplayer);
+  int oi, i;
 
   plr_data->dv_turns_logged
     = secfile_lookup_int_default(file, 0,
                                  "player%d.deep_state.dv_turns_logged",
                                  plrno);
+
+  plr_data->last_strike_city
+    = secfile_lookup_int_default(file, 0,
+                                 "player%d.deep_state.last_strike_city",
+                                 plrno);
+  plr_data->last_strike_turn
+    = secfile_lookup_int_default(file, 0,
+                                 "player%d.deep_state.last_strike_turn",
+                                 plrno);
+  /* This hook fires inside sg_load_player_main, BEFORE the player's
+   * units load -- ids cannot be validated here (every lookup would
+   * come back NULL and empty the op). Restore them raw; the per-turn
+   * operations pass prunes dead and defected members and aborts
+   * hollowed ops before anything acts on them. */
+  for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+    struct deep_operation *op = &plr_data->ops[oi];
+    int state = secfile_lookup_int_default(file, DEEP_OP_NONE,
+                                           "player%d.deep_state.op%d.state",
+                                           plrno, oi);
+    int n;
+
+    if (state <= DEEP_OP_NONE || state > DEEP_OP_CONSOLIDATE) {
+      op->state = DEEP_OP_NONE;
+      op->n_members = 0;
+      continue;
+    }
+    op->state = state;
+    op->kind
+      = secfile_lookup_int_default(file, DEEP_OPK_ASSAULT,
+                                   "player%d.deep_state.op%d.kind",
+                                   plrno, oi) == DEEP_OPK_RAID
+        ? DEEP_OPK_RAID : DEEP_OPK_ASSAULT;
+    op->target_city
+      = secfile_lookup_int_default(file, 0,
+                                   "player%d.deep_state.op%d.target",
+                                   plrno, oi);
+    op->staging_city
+      = secfile_lookup_int_default(file, 0,
+                                   "player%d.deep_state.op%d.staging",
+                                   plrno, oi);
+    op->required
+      = secfile_lookup_int_default(file, 1,
+                                   "player%d.deep_state.op%d.required",
+                                   plrno, oi);
+    op->formed_turn
+      = secfile_lookup_int_default(file, 0,
+                                   "player%d.deep_state.op%d.formed_turn",
+                                   plrno, oi);
+    op->march_turn
+      = secfile_lookup_int_default(file, 0,
+                                   "player%d.deep_state.op%d.march_turn",
+                                   plrno, oi);
+    op->march_eta
+      = secfile_lookup_int_default(file, 0,
+                                   "player%d.deep_state.op%d.march_eta",
+                                   plrno, oi);
+    op->phase_turn
+      = secfile_lookup_int_default(file, 0,
+                                   "player%d.deep_state.op%d.phase_turn",
+                                   plrno, oi);
+    n = secfile_lookup_int_default(file, 0,
+                                   "player%d.deep_state.op%d.n_members",
+                                   plrno, oi);
+    n = MIN(MAX(n, 0), DEEP_OP_MEMBERS);
+    op->n_members = 0;
+    for (i = 0; i < n; i++) {
+      int id = secfile_lookup_int_default(file, 0,
+                                          "player%d.deep_state.op%d.member%d",
+                                          plrno, oi, i);
+
+      if (id > 0) {
+        op->members[op->n_members++] = id;
+      }
+    }
+    if (op->n_members == 0) {
+      op->state = DEEP_OP_NONE;
+      continue;
+    }
+    if (op->state == DEEP_OP_MARCH && op->kind == DEEP_OPK_ASSAULT) {
+      /* Member tasks are not saved: re-point the marchers once the
+       * server is fully up (the first operations pass). */
+      plr_data->ops_reissue = TRUE;
+    }
+  }
 }
 
 /**********************************************************************//**
