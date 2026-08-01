@@ -1699,3 +1699,8 @@ EAST2 also holds `stash@{0}` "pre-campaign-2026-08-01 box state":
 uncommitted ai/deep edits from an earlier session, preserved rather
 than discarded. EAST1 was rebuilt from a full bundle (its ~/freeciv
 had no .git); the old tree is `~/freeciv-old-<ts>`, 15 GB free.
+
+**Session handoff: `doc/deep-ai/HANDOFF-2026-08-01.md`** — what is
+running on the two cloud boxes (and how to stop them), what landed,
+what is still broken, the next four actions, and the six traps this
+session paid for.
