@@ -751,6 +751,109 @@ static bool deep_op_crossing(const struct deep_operation *op,
 }
 
 /**********************************************************************//**
+  Before any abort banks the wave, try to re-muster it where it
+  stands (human doctrine 2026-08-01: an army in the field -- or a
+  fleet at sea -- is a sunk investment that can pick a second
+  target). Candidates are every known at-war city except the one
+  being abandoned; feasibility is the FULL formation bar at the
+  force's own arrival eta (a retarget is a new commitment, not a
+  discount), and among the feasible the pick is formation's own
+  scoring, worth over distance, with the quorum eta as the distance
+  -- so near targets win and far ones pay their sail in virtual
+  defenders. Success re-launches the op as a fresh MARCH from here.
+**************************************************************************/
+static bool deep_op_retarget(struct ai_type *ait, struct player *pplayer,
+                             struct deep_operation *op, int oi)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  struct unit *stream[DEEP_OP_MEMBERS];
+  struct city *alt = NULL;
+  double alt_odds = 0.0, alt_score = 0.0;
+  int alt_eta = 0;
+  int i, ns = 0;
+  bool can_sail
+    = def_ai_player_data(pplayer, ait)->stats.boats > 0
+      || best_role_unit_for_player(pplayer, L_FERRYBOAT) != NULL;
+
+  if (tune->op_take_target <= 0.0 || op->kind != DEEP_OPK_ASSAULT) {
+    return FALSE;
+  }
+  for (i = 0; i < op->n_members; i++) {
+    struct unit *m = game_unit_by_number(op->members[i]);
+
+    if (m != NULL && m->hp > 0) {
+      stream[ns++] = m;
+    }
+  }
+  if (ns == 0) {
+    return FALSE;
+  }
+
+  players_iterate_alive(aplayer) {
+    if (!pplayers_at_war(pplayer, aplayer)
+        || (!is_barbarian(aplayer)
+            && player_diplstate_get(pplayer, aplayer)->type
+               == DS_NO_CONTACT)) {
+      continue;
+    }
+    city_list_iterate(aplayer->cities, acity) {
+      Continent_id ccont = tile_continent(city_tile(acity));
+      bool reachable = FALSE;
+      double codds, score;
+      int ceta;
+
+      if (acity->id == op->target_city
+          || deep_op_targeted(pplayer, acity->id)
+          || !map_is_known(city_tile(acity), pplayer)) {
+        continue;
+      }
+      for (i = 0; i < ns; i++) {
+        if (tile_continent(unit_tile(stream[i])) == ccont) {
+          reachable = TRUE;
+          break;
+        }
+      }
+      if (!reachable
+          && (!can_sail
+              || !is_terrain_class_near_tile(nmap, city_tile(acity),
+                                             TC_OCEAN))) {
+        continue;
+      }
+      ceta = deep_op_eta(pplayer, op, acity);
+      codds = deep_take_odds_at_arrival(nmap, acity, stream, ns, ceta);
+      if (codds < tune->op_take_target) {
+        continue;
+      }
+      score = def_ai_city_data(acity, ait)->worth / (1.0 + ceta);
+      if (score > alt_score) {
+        alt = acity;
+        alt_odds = codds;
+        alt_score = score;
+        alt_eta = ceta;
+      }
+    } city_list_iterate_end;
+  } players_iterate_alive_end;
+
+  if (alt == NULL) {
+    return FALSE;
+  }
+
+  log_base(deep_metric_log_level(),
+           "deep-op turn=%d player=\"%s\" op=%d retarget from=%d to=%d"
+           " members=%d eta=%d p=%.3f",
+           game.info.turn, player_name(pplayer), oi, op->target_city,
+           alt->id, ns, alt_eta, alt_odds);
+  op->target_city = alt->id;
+  op->state = DEEP_OP_MARCH;
+  op->march_turn = game.info.turn;
+  op->march_eta = MAX(alt_eta, 1);
+  deep_op_launch(ait, pplayer, op);
+
+  return TRUE;
+}
+
+/**********************************************************************//**
   Hold what the wave took (W33 phase 3, CONSOLIDATE). Members
   standing in the captured city convert to its garrison -- best
   defender first, handed to stock as AIUNIT_DEFEND_HOME and released
@@ -888,6 +991,11 @@ static void deep_op_drive_strike(struct ai_type *ait,
     double odds = deep_take_odds(nmap, target, stream, ns);
 
     if (odds < tune->op_abort_floor) {
+      /* The walls held: probe done, pick a second target if one is
+       * feasible from right here, else bank. */
+      if (deep_op_retarget(ait, pplayer, op, oi)) {
+        return;
+      }
       for (i = 0; i < ns; i++) {
         struct unit_ai *ud = def_ai_unit_data(stream[i], ait);
 
@@ -978,7 +1086,11 @@ static void deep_op_drive_strike(struct ai_type *ait,
 
   if (city_owner(target) != pplayer
       && game.info.turn - op->phase_turn >= tune->op_muster_wait) {
-    /* The walls held past our patience: bank the survivors. */
+    /* The walls held past our patience: a second target from here,
+     * or bank the survivors. */
+    if (deep_op_retarget(ait, pplayer, op, oi)) {
+      return;
+    }
     for (i = 0; i < op->n_members; i++) {
       struct unit *m = game_unit_by_number(op->members[i]);
 
@@ -1043,8 +1155,12 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
                op->march_eta);
       /* Fall through: the first march turn re-gates immediately. */
     } else if (game.info.turn - op->formed_turn >= tune->op_muster_wait) {
-      /* Wait cap without even half a quorum: bank the survivors. */
-      deep_op_dissolve(op, oi, "abort-wait", pplayer);
+      /* Wait cap without even half a quorum: before banking, see if
+       * the force that DID gather can take something else from
+       * where it stands. */
+      if (!deep_op_retarget(ait, pplayer, op, oi)) {
+        deep_op_dissolve(op, oi, "abort-wait", pplayer);
+      }
       return;
     } else {
       for (i = 0; i < op->n_members; i++) {
@@ -1132,71 +1248,9 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
                      " force=%d eta=%d p=%.3f",
                      game.info.turn, player_name(pplayer),
                      op->target_city, ns, eta, odds);
-            /* Before abandoning the sunk crossing, try a second
-             * target (human doctrine 2026-08-01: a fleet at sea can
-             * pick another beach). Any known coastal at-war city
-             * this force still takes at ITS arrival -- the full
-             * formation bar, not the abort floor: a retarget is a
-             * new commitment. Offshore probing proper waits on W04
-             * eyes; this is the pick-a-second-target half. */
-            {
-              struct city *alt = NULL;
-              double alt_odds = 0.0;
-              int alt_eta = 0;
-
-              players_iterate_alive(aplayer) {
-                if (!pplayers_at_war(pplayer, aplayer)
-                    || (!is_barbarian(aplayer)
-                        && player_diplstate_get(pplayer, aplayer)->type
-                           == DS_NO_CONTACT)) {
-                  continue;
-                }
-                city_list_iterate(aplayer->cities, acity) {
-                  int ceta;
-                  double codds;
-
-                  if (acity->id == op->target_city
-                      || deep_op_targeted(pplayer, acity->id)
-                      || !map_is_known(city_tile(acity), pplayer)
-                      || !is_terrain_class_near_tile(nmap,
-                                                     city_tile(acity),
-                                                     TC_OCEAN)) {
-                    continue;
-                  }
-                  ceta = deep_op_eta(pplayer, op, acity);
-                  codds = deep_take_odds_at_arrival(nmap, acity,
-                                                    stream, ns, ceta);
-                  if (codds >= tune->op_take_target
-                      && codds > alt_odds) {
-                    alt = acity;
-                    alt_odds = codds;
-                    alt_eta = ceta;
-                  }
-                } city_list_iterate_end;
-              } players_iterate_alive_end;
-
-              if (alt != NULL) {
-                log_base(deep_metric_log_level(),
-                         "deep-invade turn=%d player=\"%s\" retarget"
-                         " from=%d to=%d force=%d eta=%d p=%.3f",
-                         game.info.turn, player_name(pplayer),
-                         op->target_city, alt->id, ns, alt_eta,
-                         alt_odds);
-                op->target_city = alt->id;
-                /* Same clock, new leg: the timeout window extends
-                 * by exactly the fresh eta, no further. */
-                op->march_eta = alt_eta
-                                + (game.info.turn - op->march_turn);
-                for (i = 0; i < ns; i++) {
-                  if (def_ai_unit_data(stream[i], ait)->task
-                      == AIUNIT_ATTACK) {
-                    dai_unit_new_task(ait, stream[i], AIUNIT_ATTACK,
-                                      city_tile(alt));
-                  }
-                }
-                return;
-              }
-            }
+          }
+          if (deep_op_retarget(ait, pplayer, op, oi)) {
+            return;   /* Re-mustered in the field toward a new goal. */
           }
           for (i = 0; i < ns; i++) {
             struct unit_ai *ud = def_ai_unit_data(stream[i], ait);
@@ -1218,8 +1272,11 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
       if (game.info.turn - op->march_turn
           >= op->march_eta + tune->op_muster_wait) {
         /* The wave has wandered: stock re-tasked members somewhere
-         * the eta never closes. Same patience knob as the muster. */
-        deep_op_dissolve(op, oi, "abort-march", pplayer);
+         * the eta never closes. Same patience knob as the muster.
+         * A retarget re-launches from wherever they drifted to. */
+        if (!deep_op_retarget(ait, pplayer, op, oi)) {
+          deep_op_dissolve(op, oi, "abort-march", pplayer);
+        }
       }
       return;
     }
@@ -1340,7 +1397,13 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
          * already left it behind. */
         || (op->state == DEEP_OP_MUSTER
             && (staging == NULL || city_owner(staging) != pplayer))) {
-      deep_op_dissolve(op, oi, "abort", pplayer);
+      /* The world moved on -- target razed, taken by a rival, peace
+       * made, staging lost. The gathered force retargets from where
+       * it stands when anything feasible remains. */
+      if (op->n_members == 0
+          || !deep_op_retarget(ait, pplayer, op, oi)) {
+        deep_op_dissolve(op, oi, "abort", pplayer);
+      }
     }
   }
 
