@@ -1704,3 +1704,108 @@ had no .git); the old tree is `~/freeciv-old-<ts>`, 15 GB free.
 running on the two cloud boxes (and how to stop them), what landed,
 what is still broken, the next four actions, and the six traps this
 session paid for.
+
+## Two crashes, and the happiness column (2026-08-01, late)
+
+Session opened by resuming the handoff. The campaign harvest it asked
+for was not available: **EAST2 was already dead.**
+
+### The campaign did not survive gen 1
+
+EAST2 crashed at 20:30, ~25 min into `r0-ALL` gen 1, and idled (still
+billing) until found. Not OOM, not disk -- a real crash in ai/deep.
+EAST1 survived and reached gen 2 (`-40.4 -> -22.8`, so the ECON block
+does have headroom on the old code shape).
+
+**Bug 1 -- dangling target city (`79b5efc9d0`).** `deep_op_launch()`
+hoisted `game_city_by_number(op->target_city)` out of the loop over
+members, then called `dai_gothere()` inside it. `dai_gothere()` moves
+the member, and deep takes undefended cities by walking into them; an
+emptied city is destroyed, freeing the struct. Every member after the
+one that won then dereferenced freed memory. **The wave's own success
+corrupted the rest of its own launch.** One cause, two assertions
+depending on what reoccupied the block: `same_pos()` on a null tile
+(what killed EAST2) and `dai_gothere_bodyguard()` on a tile with a null
+unit list. Reproduced locally on the same candidate, config and seed,
+dying at the same turn (primary-120 seed 5, T102); with the fix that
+game runs to completion and logs the condition once, at T103. The same
+hoist existed in the `ops_reissue` remarch path and was fixed too.
+
+**Bug 2 -- NaN from a zero weight sum (`a8cbeeddec`).**
+`deep_catchment_average()` returns `vsum / wsum`. Every tile contributes
+`site_overlap_weight`, `1.0`, or `site_tail_weight`. With
+`site_overlap_weight = 0` and a catchment that is entirely overlapped,
+`wsum` is exactly 0 and the result is `0.0/0.0` = NaN. `MAX(0, NaN)`
+returns NaN rather than clamping, so it sailed through
+`deep_cityresult_fill()`'s clamp into
+`fc_assert_ret_val(cr->total >= 0, NULL)` -- which failed, returned
+NULL, leaked the cityresult and silently dropped the site. EAST1 logged
+it **148 times in one generation**; all four sampled candidates had
+`site_overlap_weight = 0.000000`, a value the tuner reaches because the
+range starts at 0. This does not merely add noise: candidates with a
+zero overlap weight were scored on FEWER surviving sites than
+candidates without one, so **the optimiser was comparing unequal
+things.** Verified on the campaign's own failing triples (cand3 tuning,
+primary-120 seeds 1 and 6): zero assertions after.
+
+**Bug 3 -- one bad game killed 22 hours (`50cc52b908`).** `tune.py`
+re-raised on any single game failure, so 1 crash in 288 games aborted
+the whole run. Now the seed is dropped, the loss is printed, a
+candidate that loses every game ranks last via `-inf`, and the
+per-generation tally is printed so a run shedding games cannot look
+healthy.
+
+### The happiness column of the horizon (`622f34ca76`)
+
+Full write-up: `findings/happiness-ladder.md`.
+
+The handoff predicted the ladder gap would need "a NEW credit term, not
+tuning". Right conclusion, wrong test -- **no knob in any block can move
+happiness buildings, because their want is structurally zero.**
+`advdata.c:91-100` has the whole `Make_Content`/`Force_Content` family
+inside an `#if 0` TODO, so a Temple keeps `ADV_IMPR_ESTIMATE` and
+`base_want()` returns 0 on its first line (`daicity.c:1529`). Its entire
+want is `35 x min(amount, citizens unhappy RIGHT NOW)` -- zero in
+exactly the city about to need it. That is RC1's headline defect
+("an aqueduct scores ~0") in the column W03 skipped.
+
+Unhappiness is the SOFT size cap: past it the city still grows but each
+new citizen must entertain instead of work. Deep priced the hard cap and
+not the soft one.
+
+Measured, 6 paired mixed lategame-80 games (current binary, post growth
+fixes) -- the one-sided-inflation signature:
+
+    per 100 cities        baseline   deep
+    CAPACITY  (credited)      3.4     8.9    deep 2.6x
+    HAPPINESS (no credit)     4.0     2.1    deep 0.5x
+    MULTIPLIER(no credit)     2.7     0.0    deep 0x
+    specialists per city     0.46    0.75    deep +63%
+
+Deep buys the size with its capacity credits, then parks the citizens it
+bought as entertainers. `deep_content_credit()` prices the citizens a
+content building frees, over the same MORT horizon and in the same
+tile-sum currency as the capacity credit. Same 6 games, only
+`horizon_content_weight` differing 0.0 -> 1.0:
+
+    happiness bldgs /100c   2.1 -> 39.6      (3 -> 55 buildings)
+    specialists per city   0.747 -> 0.525    (-30%)
+    max city size             9 -> 15
+    head-to-head score     1.047 -> 1.063
+
+**Mechanism confirmed and large; score NOT a result** -- 1.6pp over 3
+paired seeds is inside the noise floor (rule 6), and 39.6/100c against
+baseline's 4.0 says the placeholder 1.0 is too hot.
+`horizon_content_weight` ships as a PLACEHOLDER, registered in
+tuning-params.ini and the G/ALL/ECON blocks, and NEEDS A TUNING PASS.
+
+### Known-next, with the defect already located
+
+The Granary term is wired backwards: `deephorizon.c` gates the
+`EFT_GROWTH_FOOD` credit on `cap_credit > 0`, and `cap_credit` is
+nonzero only when the city is already jammed against the hard size gate.
+So a growth accelerator earns horizon credit exactly when growth is
+impossible, and nothing in the freely-growing city where it pays. Not
+fixed here -- deliberately not bundled with an unvalidated content
+credit. Census evidence for Granary specifically is thin (deep 0 vs
+baseline 1 across 295 cities); the code defect is not.
