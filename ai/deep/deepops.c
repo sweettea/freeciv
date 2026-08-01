@@ -86,11 +86,18 @@ bool deep_op_holds(const struct player *pplayer, int unit_id)
 {
   const struct deep_plr *dp = deep_plr_data(pplayer);
   int oi = deep_op_claiming(pplayer, unit_id);
+  const struct unit *m;
 
   if (oi < 0) {
     return FALSE;
   }
   if (dp->ops[oi].kind != DEEP_OPK_ASSAULT) {
+    return FALSE;
+  }
+  m = game_unit_by_number(unit_id);
+  if (m != NULL && unit_transported(m)) {
+    /* Aboard, the ferry system owns the unit: holding a passenger
+     * freezes its boat mid-ocean. The op re-claims it ashore. */
     return FALSE;
   }
   return dp->ops[oi].state == DEEP_OP_MUSTER
@@ -674,9 +681,13 @@ static void deep_op_launch(struct ai_type *ait, struct player *pplayer,
   at the walls priced as if it waited for its last reserve -- while
   all four waves that did strike launched at eta 1-2.)
 **************************************************************************/
-static int deep_op_eta(const struct deep_operation *op,
+static int deep_op_eta(struct player *pplayer,
+                       const struct deep_operation *op,
                        const struct city *target)
 {
+  const struct unit_type *ferrytype
+    = best_role_unit_for_player(pplayer, L_FERRYBOAT);
+  Continent_id tcont = tile_continent(city_tile(target));
   int t[DEEP_OP_MEMBERS];
   int i, j, n = 0, k;
 
@@ -687,7 +698,18 @@ static int deep_op_eta(const struct deep_operation *op,
     if (m == NULL) {
       continue;
     }
+    /* A member crossing water travels at the boat's pace, not its
+     * own: aboard, the transporter's rate; ashore on the wrong
+     * continent, the best ferry we could build (the same currency
+     * formation priced the sail with). */
     rate = MAX(unit_type_get(m)->move_rate, 1);
+    if (unit_transported(m)) {
+      rate = MAX(unit_type_get(unit_transport_get((struct unit *) m))
+                 ->move_rate, 1);
+    } else if (tile_continent(unit_tile(m)) != tcont
+               && ferrytype != NULL) {
+      rate = MAX(ferrytype->move_rate, 1);
+    }
     ti = (real_map_distance(unit_tile(m), city_tile(target))
           * SINGLE_MOVE + rate - 1) / rate;
     for (j = n; j > 0 && t[j - 1] > ti; j--) {
@@ -703,6 +725,29 @@ static int deep_op_eta(const struct deep_operation *op,
   k = MIN(MAX(op->required, 1), n);
 
   return t[k - 1];
+}
+
+/**********************************************************************//**
+  Is this operation (still) an amphibious crossing: any member
+  afloat, or ashore on a continent that is not the target's?
+**************************************************************************/
+static bool deep_op_crossing(const struct deep_operation *op,
+                             const struct city *target)
+{
+  Continent_id tcont = tile_continent(city_tile(target));
+  int i;
+
+  for (i = 0; i < op->n_members; i++) {
+    const struct unit *m = game_unit_by_number(op->members[i]);
+
+    if (m != NULL
+        && (unit_transported(m)
+            || tile_continent(unit_tile(m)) != tcont)) {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
 }
 
 /**********************************************************************//**
@@ -781,12 +826,12 @@ static void deep_op_drive_consolidate(struct ai_type *ait,
   }
 
   /* Bar still short: the rest of the wave walks in under op
-   * control. */
+   * control (passengers excepted -- the ferry lands them). */
   for (i = 0; i < op->n_members; i++) {
     struct unit *m = game_unit_by_number(op->members[i]);
     int m_id;
 
-    if (m == NULL || m->hp <= 0) {
+    if (m == NULL || m->hp <= 0 || unit_transported(m)) {
       continue;
     }
     m_id = m->id;
@@ -880,6 +925,7 @@ static void deep_op_drive_strike(struct ai_type *ait,
       if (m == NULL || m->hp <= 0 || m->moves_left <= 0
           || def_ai_unit_data(m, ait)->done
           || adv_unit_att_rating(m) <= 0
+          || unit_transported(m)   /* Ferry lands it; op waits. */
           || !is_tiles_adjacent(unit_tile(m), ctile)) {
         continue;
       }
@@ -906,12 +952,14 @@ static void deep_op_drive_strike(struct ai_type *ait,
 
   /* Convergence and commitment: stragglers close on the walls, and
    * every surviving member -- moved or not -- is done for the turn.
-   * The op owns them; stock gets them back when it banks or wins. */
+   * The op owns them; stock gets them back when it banks or wins.
+   * Transported members are the exception both ways: the ferry
+   * system lands them (never mark a passenger done). */
   for (i = 0; i < op->n_members; i++) {
     struct unit *m = game_unit_by_number(op->members[i]);
     int m_id;
 
-    if (m == NULL || m->hp <= 0) {
+    if (m == NULL || m->hp <= 0 || unit_transported(m)) {
       continue;
     }
     m_id = m->id;
@@ -979,28 +1027,14 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
     if (present >= op->required
         || (game.info.turn - op->formed_turn >= tune->op_muster_wait
             && present >= (op->required + 1) / 2)) {
-      bool overseas = tile_continent(city_tile(target))
-                      != tile_continent(city_tile(staging));
-
+      /* Land or sea, the wave marches shadowed: the ferry system
+       * carries the crossing (transported members stay on stock's
+       * leash throughout), while the op re-gates the landing every
+       * turn -- the invade gate, finally at the right seam. */
       deep_op_launch(ait, pplayer, op);
-      if (overseas) {
-        /* Amphibious: the ferry system and the convoy gates take it
-         * from here; sea phases are a later slice. The E7 clock has
-         * to start now -- the op no longer watches the crossing. */
-        log_base(deep_metric_log_level(),
-                 "deep-op turn=%d player=\"%s\" op=%d strike target=%d"
-                 " present=%d required=%d waited=%d",
-                 game.info.turn, player_name(pplayer), oi,
-                 op->target_city, present, op->required,
-                 game.info.turn - op->formed_turn);
-        dp->last_strike_city = op->target_city;
-        dp->last_strike_turn = game.info.turn;
-        deep_op_dissolve(op, oi, "launched", pplayer);
-        return;
-      }
       op->state = DEEP_OP_MARCH;
       op->march_turn = game.info.turn;
-      op->march_eta = MAX(deep_op_eta(op, target), 1);
+      op->march_eta = MAX(deep_op_eta(pplayer, op, target), 1);
       log_base(deep_metric_log_level(),
                "deep-op turn=%d player=\"%s\" op=%d march target=%d"
                " present=%d required=%d waited=%d eta=%d",
@@ -1044,12 +1078,24 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
         stream[ns++] = m;
       }
     }
-    eta = deep_op_eta(op, target);
+    eta = deep_op_eta(pplayer, op, target);
 
     if (eta <= 1) {
       /* Contact: the wave stands at the walls. The op takes its
        * members back from the stock attack path and fights the
        * battle itself; the E7 second-wave window opens now. */
+      if (deep_op_crossing(op, target) && ns > 0) {
+        /* The landing is on: the crossing cleared every re-gate.
+         * This is the invade gate's "go", at the seam where a
+         * landing actually happens (#16). */
+        log_base(deep_metric_log_level(),
+                 "deep-invade turn=%d player=\"%s\" go target=%d"
+                 " force=%d eta=%d p=%.3f",
+                 game.info.turn, player_name(pplayer), op->target_city,
+                 ns, eta,
+                 deep_take_odds_at_arrival(nmap, target, stream, ns,
+                                           eta));
+      }
       log_base(deep_metric_log_level(),
                "deep-op turn=%d player=\"%s\" op=%d strike target=%d"
                " present=%d required=%d waited=%d",
@@ -1074,6 +1120,19 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
                                                 eta);
 
         if (odds < tune->op_abort_floor) {
+          bool crossing = deep_op_crossing(op, target);
+
+          if (crossing) {
+            /* The invade gate's "hold": the target reinforced past
+             * the bar while we sailed, and the convoy does NOT land
+             * into it (#16 -- the decision the port scan never got
+             * to make). */
+            log_base(deep_metric_log_level(),
+                     "deep-invade turn=%d player=\"%s\" hold target=%d"
+                     " force=%d eta=%d p=%.3f",
+                     game.info.turn, player_name(pplayer),
+                     op->target_city, ns, eta, odds);
+          }
           for (i = 0; i < ns; i++) {
             struct unit_ai *ud = def_ai_unit_data(stream[i], ait);
 
