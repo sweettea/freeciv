@@ -1375,3 +1375,48 @@ exercise #16's landing gate on the lategame cell now that musters
 assemble; v4 tuning owns the march reinforcement race
 (op_take_target/op_abort_floor spacing, invasion_reinforce_rate);
 raider sit-tight idles need a design decision.
+
+## W33 phase 4 + two referee runs (2026-08-01, continued)
+
+OP SAVE/LOAD (2 commits, task #21 TERMINATES): ops persist under
+deep_state (free slots one key each; last_strike rides along for
+E7). Two traps found and coded around, verified on the T160 fossil:
+(1) the player_load hook fires inside sg_load_player_main BEFORE
+the player's units load, so member ids CANNOT be validated at load
+-- an id lookup there empties every op (watched it happen: 4 saved
+ops, reload, silent vanish, phantom re-form). Restored raw; the
+per-turn validation pass owns the cleaning. (2) no savegame carries
+unit_ai tasks, so loaded MARCH members are task-NONE: ops_reissue
+re-points them once at the op target ("remarch"), verified via a
+hand-edited MARCH save. Round-trip proven: save -> reload ->
+continue (one op aborted for honest world reasons, dissolve logged)
+-> next save still carries survivors.
+
+#16 LANDING GATE, sharper diagnosis, stays OPEN: lategame cell
+(deep vs baseline, 10 paired): median 0.867 / mean 0.883, ops at
+scale (209 forms -> 151 marches -> 58 strikes of which 36
+AMPHIBIOUS LAUNCHES, conquests 53). And STILL zero deep-invade
+lines: the gate scans for a LOADED convoy resting IN PORT at phase
+start, but stock's ferry system boards and sails within one manage
+pass, so the precondition never materializes even with Transports
+everywhere (convoy_min_load=2 active). The gate is hooked at the
+wrong seam -- it needs to sit in the ferry/boarding path (or the
+op layer's own future sea phases), not a port scan. Design item.
+
+CITIES-LOST FORENSICS (B13's 26): the muster holds are EXONERATED
+-- 1/26 was an op staging city. But 21/26 were seen threatened by
+the survival tripwire before falling and 18/26 fell with last
+recorded p < 0.5: the defence model watches them fall and the
+response side does not answer. Offense now claims units (ops +
+raids) while reactive defence has no counter-claim; whether a
+below-bar city should outbid a forming op for blades is a priority
+question FOR the ops layer, next session's referee. (Evacuation of
+the doomed is W14's, far off.)
+
+Fixture green throughout; meson tests green throughout. All n=10
+directional, placeholders untuned.
+
+Next now: E5 sieges (fresh session, per-city streak state) and the
+raider sit-tight design share a shape -- both add per-entity memory
+to ops; consider together. Defence counter-claim referee. #16 gate
+re-seam. v4 tuning: march reinforcement race + the whole knob set.
