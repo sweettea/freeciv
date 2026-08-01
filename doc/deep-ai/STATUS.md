@@ -1420,3 +1420,62 @@ Next now: E5 sieges (fresh session, per-city streak state) and the
 raider sit-tight design share a shape -- both add per-entity memory
 to ops; consider together. Defence counter-claim referee. #16 gate
 re-seam. v4 tuning: march reinforcement race + the whole knob set.
+
+## #16 closed: the invade gate at the right seam (2026-08-01, cont.)
+
+Five commits re-seat the landing decision where landings happen.
+The crossing SHADOW: an overseas launch enters MARCH like a land one
+(sea-aware quorum eta: aboard = the boat's rate, ashore
+off-continent = best buildable ferry); the ferry system still
+carries the crossing -- transported members stay on stock's leash
+in every phase, because holding a passenger freezes its boat -- and
+the per-turn re-gate IS the invade gate: refusing to land into a
+garrison that reinforced past the floor logs deep-invade hold,
+reaching the beach logs go. The port-scan gate retired (measured
+dead: its precondition, a loaded convoy resting in port at phase
+start, cannot occur when stock ferries board and sail in one pass).
+
+Human doctrine landed the same arc: ANY abort now asks whether the
+gathered force, where it stands, can take something else -- the
+full formation bar at the force's own arrival eta, worth over
+quorum-eta scoring, no new constants -- and a retargeted land wave
+rallies at an own city on the way (never backtracking) instead of
+re-mustering on random squares. Fleets mid-crossing march direct;
+their port call is the offshore-hold future work (task #3, with the
+engineer-fortress-at-field-muster idea, which needs op claims on
+civilians -- W28 territory).
+
+VERDICT (final binary, 10 paired seeds each):
+- lategame: deep-invade 11 go / 57 hold -- 68 real landing
+  decisions per 10 games where every prior run had ZERO -- and 106
+  retargets: refused fleets pick a second beach ~10x/game. Median
+  0.875 / mean 0.872 (pre-fix 0.867/0.883, in-band); conquests 53
+  -> 70, consolidates 3 -> 9, cities lost 60 -> 78 (aggression up
+  both ways; WATCH).
+- contested B14: median 0.798 / mean 0.830 (B13 0.811/0.853,
+  in-band), 2 go / 1 hold even in a low-water config, losses 26 ->
+  11 with conquests 16 -> 5: the honest gates refuse marginal
+  attacks in both directions. Whether that trade leaves value on
+  the table is op_take_target/op_abort_floor spacing -- v4's.
+- Slot health: raids capped at one slot, zero blocked player-turns.
+
+Also this arc: benchmark hygiene -- a mid-run ninja swaps the binary
+under an in-flight benchmark and taints it (one lategame run killed
+and its result dir deleted for exactly this). Adopted: a bench
+worktree (.worktrees/bench, own build dir) pins the binary under
+test; dev continues in the main tree. run.sh --server + the
+sha-keyed result cache keep provenance exact.
+
+In flight at close of this stretch (bench worktree validating):
+task #22 settler-assertion fix (pf danger maps read past an empty
+segment on a dangerous START tile -- recorded in upstream-bugs.md;
+deep-side fix: the civilian danger callback exempts the start tile,
+which is semantically right regardless), settler_risk_tolerance
+(human doctrine: a hard any-threat veto is too absolute; knob at
+1.0 = stock bar until v4), the defence counter-claim epic
+(findings/defence-counter-claim.md: below-bar cities claim one
+defender per turn -- free pool, then released raiders, then a
+muster poach priced as expected worth vs expected take), and the
+posture pass (mustering armies CREDIT nearby cities via the W11
+reserve formula; committed_fear_mult scales fear up when every
+launched blade is beyond the horizon, 1.0 until v4).
