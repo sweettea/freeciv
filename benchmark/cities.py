@@ -40,7 +40,7 @@ SORTIE_RE = re.compile(r'deep-sortie turn=\d+ player="[^"]*" city=\d+ (kill|cove
 # stall tripwire (deep-op-stall) is the done-flag discipline watch.
 OP_RE = re.compile(
     r'deep-op turn=\d+ player="[^"]*" (?:op=\d+ )?'
-    r'(form|march|strike|abort|consolidate|held)'
+    r'(form|march|strike|abort|consolidate|held|retarget)'
 )
 STALL_RE = re.compile(r'deep-op-stall turn=\d+ player="[^"]*"')
 INVADE_RE = re.compile(r'deep-invade turn=\d+ player="[^"]*" (go|hold|sail-anyway)')
@@ -71,12 +71,13 @@ def main():
            "surv_n": 0, "surv_sum": 0.0, "surv_low": 0, "tired": 0,
            "s_kill": 0, "s_cover": 0, "op_form": 0, "op_march": 0,
            "op_strike": 0, "op_abort": 0, "op_consol": 0, "op_held": 0,
-           "op_stall": 0, "inv_go": 0, "inv_hold": 0,
+           "op_stall": 0, "op_retgt": 0, "inv_go": 0, "inv_hold": 0,
            "colony": 0}
     print("arm,seed,turns,founded,conquered,lost,conq_per_100t,"
           "lost_per_100t,surv_mean,surv_low_share,tired_holds,"
           "sortie_kill,sortie_cover,op_form,op_march,op_strike,op_abort,"
-          "op_consol,op_held,op_stall,inv_go,inv_hold,colony_demand")
+          "op_consol,op_held,op_stall,op_retarget,inv_go,inv_hold,"
+          "colony_demand")
     for d in gamedirs:
         text = (d / "game.log").read_text(errors="replace")
         founded = conquered = lost = 0
@@ -106,7 +107,7 @@ def main():
               f"{sm:.3f},{low:.3f},{tired},{sortie['kill']},"
               f"{sortie['cover']},{ops['form']},{ops['march']},"
               f"{ops['strike']},{ops['abort']},{ops['consolidate']},"
-              f"{ops['held']},{stalls},{inv['go']},"
+              f"{ops['held']},{stalls},{ops['retarget']},{inv['go']},"
               f"{inv['hold']},{colony}")
         tot["founded"] += founded
         tot["conquered"] += conquered
@@ -125,6 +126,7 @@ def main():
         tot["op_consol"] += ops["consolidate"]
         tot["op_held"] += ops["held"]
         tot["op_stall"] += stalls
+        tot["op_retgt"] += ops["retarget"]
         tot["inv_go"] += inv["go"]
         tot["inv_hold"] += inv["hold"] + inv["sail-anyway"]
         tot["colony"] += colony
@@ -138,7 +140,7 @@ def main():
           f"{tot['tired']},{tot['s_kill']},{tot['s_cover']},"
           f"{tot['op_form']},{tot['op_march']},{tot['op_strike']},"
           f"{tot['op_abort']},{tot['op_consol']},{tot['op_held']},"
-          f"{tot['op_stall']},"
+          f"{tot['op_stall']},{tot['op_retgt']},"
           f"{tot['inv_go']},{tot['inv_hold']},{tot['colony']}")
 
 
