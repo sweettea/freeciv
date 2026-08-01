@@ -43,6 +43,10 @@ OP_RE = re.compile(
     r'(form|march|strike|abort|consolidate|held|retarget)'
 )
 STALL_RE = re.compile(r'deep-op-stall turn=\d+ player="[^"]*"')
+DEFEND_RE = re.compile(
+    r'deep-defend turn=\d+ player="[^"]*" city=\d+ claim="[^"]*"'
+    r' src=(free|raid|op)'
+)
 INVADE_RE = re.compile(r'deep-invade turn=\d+ player="[^"]*" (go|hold|sail-anyway)')
 COLONY_RE = re.compile(r'deep-colony turn=\d+ player="[^"]*" (demand|city)')
 
@@ -71,13 +75,13 @@ def main():
            "surv_n": 0, "surv_sum": 0.0, "surv_low": 0, "tired": 0,
            "s_kill": 0, "s_cover": 0, "op_form": 0, "op_march": 0,
            "op_strike": 0, "op_abort": 0, "op_consol": 0, "op_held": 0,
-           "op_stall": 0, "op_retgt": 0, "inv_go": 0, "inv_hold": 0,
-           "colony": 0}
+           "op_stall": 0, "op_retgt": 0, "def_claim": 0, "inv_go": 0,
+           "inv_hold": 0, "colony": 0}
     print("arm,seed,turns,founded,conquered,lost,conq_per_100t,"
           "lost_per_100t,surv_mean,surv_low_share,tired_holds,"
           "sortie_kill,sortie_cover,op_form,op_march,op_strike,op_abort,"
-          "op_consol,op_held,op_stall,op_retarget,inv_go,inv_hold,"
-          "colony_demand")
+          "op_consol,op_held,op_stall,op_retarget,def_claim,inv_go,"
+          "inv_hold,colony_demand")
     for d in gamedirs:
         text = (d / "game.log").read_text(errors="replace")
         founded = conquered = lost = 0
@@ -94,6 +98,7 @@ def main():
         sortie = Counter(m.group(1) for m in SORTIE_RE.finditer(text))
         ops = Counter(m.group(1) for m in OP_RE.finditer(text))
         stalls = len(STALL_RE.findall(text))
+        claims = len(DEFEND_RE.findall(text))
         inv = Counter(m.group(1) for m in INVADE_RE.finditer(text))
         colony = len(COLONY_RE.findall(text))
         turns = final_turn(d / "scorelog.txt")
@@ -107,8 +112,8 @@ def main():
               f"{sm:.3f},{low:.3f},{tired},{sortie['kill']},"
               f"{sortie['cover']},{ops['form']},{ops['march']},"
               f"{ops['strike']},{ops['abort']},{ops['consolidate']},"
-              f"{ops['held']},{stalls},{ops['retarget']},{inv['go']},"
-              f"{inv['hold']},{colony}")
+              f"{ops['held']},{stalls},{ops['retarget']},{claims},"
+              f"{inv['go']},{inv['hold']},{colony}")
         tot["founded"] += founded
         tot["conquered"] += conquered
         tot["lost"] += lost
@@ -127,6 +132,7 @@ def main():
         tot["op_held"] += ops["held"]
         tot["op_stall"] += stalls
         tot["op_retgt"] += ops["retarget"]
+        tot["def_claim"] += claims
         tot["inv_go"] += inv["go"]
         tot["inv_hold"] += inv["hold"] + inv["sail-anyway"]
         tot["colony"] += colony
@@ -140,7 +146,7 @@ def main():
           f"{tot['tired']},{tot['s_kill']},{tot['s_cover']},"
           f"{tot['op_form']},{tot['op_march']},{tot['op_strike']},"
           f"{tot['op_abort']},{tot['op_consol']},{tot['op_held']},"
-          f"{tot['op_stall']},{tot['op_retgt']},"
+          f"{tot['op_stall']},{tot['op_retgt']},{tot['def_claim']},"
           f"{tot['inv_go']},{tot['inv_hold']},{tot['colony']}")
 
 
