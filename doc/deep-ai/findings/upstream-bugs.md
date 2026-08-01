@@ -108,3 +108,18 @@ Deep-side fix: run the spend pass on live choices (spend_gold's own
 internal want=-1 marking already prevents double-processing);
 restore the sentinel only after the spend pass. Do NOT fix in
 ai/default (rule 2).
+
+## adjust_ai_unit_choice swaps in a Barracks with no garrison check
+
+`daimilitary.c` `adjust_ai_unit_choice()` converts any non-veteran
+military unit choice into the EFT_VETERAN_BUILD building when one is
+available and unbuilt -- with no check that the city has any
+defenders, no urgency check, nothing. The walls path in
+`military_advisor_choose_build()` explicitly refuses walls before the
+first defender ("Walls will help nothing if there's nobody behind
+them"); the veterancy path fires in an empty city, replacing the
+"build first defender" choice with an academy for an army that does
+not exist, at gold upkeep. Observed live (Europe playtest T153,
+2026-07-31): early Barracks queues across brains. Deep gates the call
+on the garrison floor and grave danger (deepdefence.c); fix left out
+of ai/default per the freeze rule.

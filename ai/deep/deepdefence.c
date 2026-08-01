@@ -1761,8 +1761,29 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
   /* Consider a hunter */
   dai_hunter_choice(ait, pplayer, pcity, choice, allow_gold_upkeep);
 
-  /* Consider veteran level enhancing buildings before non-urgent units */
-  adjust_ai_unit_choice(pcity, choice);
+  /* Consider veteran level enhancing buildings before non-urgent
+   * units -- but never before BODIES. Stock swaps the unit choice
+   * for a Barracks with no garrison check at all, even in an empty
+   * city (its own walls logic guards against exactly this; the
+   * veterancy path never got the memo), which filled early queues
+   * with academies for armies that did not exist (human observation,
+   * Europe T153). The floor and grave-danger gates are the deep
+   * rule: a sized garrison may invest in veterancy, a bare one
+   * builds the soldier. */
+  {
+    int floor_def = 0;
+
+    unit_list_iterate(ptile->units, fu) {
+      if (unit_owner(fu) == pplayer
+          && !unit_has_type_flag(fu, UTYF_CIVILIAN)) {
+        floor_def++;
+      }
+    } unit_list_iterate_end;
+    if (floor_def >= MAX(deep_tuning_get()->garrison_floor, 1)
+        && city_data->grave_danger == 0) {
+      adjust_ai_unit_choice(pcity, choice);
+    }
+  }
 
   if (choice->want <= 0) {
     CITY_LOG(LOGLEVEL_BUILD, pcity, "deep military advisor has no advice");
