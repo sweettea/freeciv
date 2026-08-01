@@ -769,12 +769,20 @@ static double deep_fear_satisfaction(const struct civ_map *nmap,
   if (tune->satisfied_fear_discount >= 1.0) {
     return 1.0;                 /* Gate disabled. */
   }
-  if (city_data->urgency > 0 || city_data->grave_danger > 0) {
-    return 1.0;
-  }
   if (unit_list_size(city_tile(pcity)->units) < tune->garrison_floor) {
     return 1.0;
   }
+  /* Deliberately NOT gated on urgency/grave_danger. Those are
+   * presence counts -- any capture-capable enemy within three tiles
+   * (one for grave_danger), with no reference to whether the
+   * garrison wins -- and they pre-empted the honest test below. In a
+   * war they are set on most cities most of the time (Europe T106:
+   * 69% of deep's, 86% of stock's), so satisfaction never arrived,
+   * every injected fear kept bidding at full strength, and the
+   * military choice outbid settlers and growth buildings for the
+   * rest of the game. That is the "flips to war mode and never
+   * expands again" failure. The survival test below asks the real
+   * question over the same horizon those counters scan. */
   if (tune->survival_target > 0.0) {
     int wave = 0;
     double surv = deep_city_stack_survival(nmap, pcity,
