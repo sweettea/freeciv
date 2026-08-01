@@ -287,6 +287,11 @@ struct deep_tuning {
    * op_take_target for hysteresis: a wave formed at the bar should
    * not turn back on the first wobble. <= 0 disables the re-gate. */
   double op_abort_floor;
+  /* Barbarian targets reinforce at this rate instead of
+   * invasion_reinforce_rate (T160: barbarians field armies and lean
+   * against garrisoning their takes -- 47/52 cities empty). 0 prices
+   * a barb city exactly as it stands today. */
+  double barb_reinforce_rate;
 };
 
 void deep_tuning_init(void);

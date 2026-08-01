@@ -107,6 +107,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .hut_risk_radius = 5,                 /* PLACEHOLDER, untuned */
   .hut_risk_discount = 0.25,            /* PLACEHOLDER, untuned */
   .op_abort_floor = 0.35,               /* PLACEHOLDER, untuned */
+  .barb_reinforce_rate = 0.0,           /* PLACEHOLDER; T160 observed 0 */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -223,6 +224,7 @@ void deep_tuning_init(void)
   TUNE_INT(hut_risk_radius);
   TUNE_DOUBLE(hut_risk_discount);
   TUNE_DOUBLE(op_abort_floor);
+  TUNE_DOUBLE(barb_reinforce_rate);
 
   secfile_destroy(sf);
 
@@ -230,7 +232,7 @@ void deep_tuning_init(void)
              " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
              " wos=%d wot=%d gb=%d gsm=%f sdw=%f gf=%d gs=%d gt=%d tqs=%f dip=%f tail=%f depth=%f ovl=%f pot=%f"
              " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f hhealth=%f htech=%f"
-             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d dfv=%d dfr=%d dfrt=%d dpv=%d dpt=%d wfw=%f srw=%f chk=%f cml=%d cwr=%d wfr=%d wgr=%d wdd=%f ugw=%f uuw=%f rpr=%f rwant=%d rfin=%f svt=%f svf=%f svh=%d taf=%f avw=%f swf=%f ott=%f omw=%d sfd=%f clw=%f irr=%f oww=%d rrad=%d hrr=%d hrd=%f oaf=%f",
+             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d dfv=%d dfr=%d dfrt=%d dpv=%d dpt=%d wfw=%f srw=%f chk=%f cml=%d cwr=%d wfr=%d wgr=%d wdd=%f ugw=%f uuw=%f rpr=%f rwant=%d rfin=%f svt=%f svf=%f svh=%d taf=%f avw=%f swf=%f ott=%f omw=%d sfd=%f clw=%f irr=%f oww=%d rrad=%d hrr=%d hrd=%f oaf=%f brr=%f",
              path,
              deep_tuning_active.settler_fearfulness_mult,
              deep_tuning_active.incoming_defence_eta_weight,
@@ -309,7 +311,8 @@ void deep_tuning_init(void)
              deep_tuning_active.raid_radius,
              deep_tuning_active.hut_risk_radius,
              deep_tuning_active.hut_risk_discount,
-             deep_tuning_active.op_abort_floor);
+             deep_tuning_active.op_abort_floor,
+             deep_tuning_active.barb_reinforce_rate);
 }
 
 /**********************************************************************//**

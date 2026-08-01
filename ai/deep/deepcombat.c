@@ -310,8 +310,16 @@ double deep_take_odds_at_arrival(const struct civ_map *nmap,
 
   if (eta > 0) {
     const struct deep_tuning *tune = deep_tuning_get();
+    /* Barbarians lean against defending their takes (human doctrine
+     * + T160 forensics: 47 of 52 barb-held cities garrisonless for
+     * ~40 turns while an 87-unit horde raged in the field). Pricing
+     * them with the civilised reactive-build model walls off the
+     * whole reconquest pool behind phantom Musketeers. */
+    double rrate = is_barbarian(city_owner(acity))
+                   ? tune->barb_reinforce_rate
+                   : tune->invasion_reinforce_rate;
 
-    reinforce = (int) (eta * tune->invasion_reinforce_rate + 0.5);
+    reinforce = (int) (eta * rrate + 0.5);
   }
   if (reinforce > 0) {
     struct player *owner = city_owner(acity);
