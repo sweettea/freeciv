@@ -50,6 +50,70 @@
 #include "deepops.h"
 
 /**********************************************************************//**
+  The slot index of the live operation claiming this unit, or -1.
+  Every pool -- operations, raids, ordinary management borrow -- asks
+  this before touching a unit, so two intentions never own one blade.
+**************************************************************************/
+int deep_op_claiming(const struct player *pplayer, int unit_id)
+{
+  const struct deep_plr *dp = deep_plr_data(pplayer);
+  int oi, i;
+
+  for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+    const struct deep_operation *op = &dp->ops[oi];
+
+    if (op->state == DEEP_OP_NONE) {
+      continue;
+    }
+    for (i = 0; i < op->n_members; i++) {
+      if (op->members[i] == unit_id) {
+        return oi;
+      }
+    }
+  }
+
+  return -1;
+}
+
+/**********************************************************************//**
+  Is any live operation already committed against this city? One op
+  per target: a second wave at the same city is the reserve's claim
+  (E7), not a parallel operation.
+**************************************************************************/
+static bool deep_op_targeted(const struct player *pplayer, int city_id)
+{
+  const struct deep_plr *dp = deep_plr_data(pplayer);
+  int oi;
+
+  for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+    if (dp->ops[oi].state != DEEP_OP_NONE
+        && dp->ops[oi].target_city == city_id) {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+/**********************************************************************//**
+  Does any live operation stand? Raids yield to assaults while one
+  does (E8's gate).
+**************************************************************************/
+static bool deep_op_any_live(const struct player *pplayer)
+{
+  const struct deep_plr *dp = deep_plr_data(pplayer);
+  int oi;
+
+  for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+    if (dp->ops[oi].state != DEEP_OP_NONE) {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+/**********************************************************************//**
   The most valuable assault target we have actually met and seen:
   best worth over distance from `from` on the same continent. Shared
   gate logic with deep_assault_want (deepdefence.c) -- contact
@@ -77,7 +141,8 @@ static struct city *deep_op_pick_target(struct ai_type *ait,
       double score;
       bool overseas = tile_continent(city_tile(acity)) != home;
 
-      if (!map_is_known(city_tile(acity), pplayer)
+      if (deep_op_targeted(pplayer, acity->id)
+          || !map_is_known(city_tile(acity), pplayer)
           || (overseas
               && (!can_sail
                   || !is_terrain_class_near_tile(&(wld.map),
@@ -100,7 +165,7 @@ static struct city *deep_op_pick_target(struct ai_type *ait,
 /**********************************************************************//**
   Collect the player's free attackers on `home`, strongest first:
   military, attack-capable, not bodyguarding, not defending home,
-  not already spoken for by `except_op`.
+  not already claimed by any live operation.
 **************************************************************************/
 static int deep_op_collect_pool(struct ai_type *ait,
                                 struct player *pplayer,
@@ -120,7 +185,8 @@ static int deep_op_collect_pool(struct ai_type *ait,
         || adv_unit_att_rating(punit) <= 0
         || tile_continent(unit_tile(punit)) != home
         || ud->task == AIUNIT_DEFEND_HOME
-        || ud->charge > 0) {
+        || ud->charge > 0
+        || deep_op_claiming(pplayer, punit->id) >= 0) {
       continue;
     }
     pool[n++] = punit;
@@ -144,12 +210,12 @@ static int deep_op_collect_pool(struct ai_type *ait,
   Release every member back to ordinary management (survivors are
   banked, never wasted -- the deliberate-abort rule).
 **************************************************************************/
-static void deep_op_dissolve(struct deep_operation *op, const char *why,
-                             struct player *pplayer)
+static void deep_op_dissolve(struct deep_operation *op, int oi,
+                             const char *why, struct player *pplayer)
 {
   log_base(deep_metric_log_level(),
-           "deep-op turn=%d player=\"%s\" %s target=%d members=%d",
-           game.info.turn, player_name(pplayer), why, op->target_city,
+           "deep-op turn=%d player=\"%s\" op=%d %s target=%d members=%d",
+           game.info.turn, player_name(pplayer), oi, why, op->target_city,
            op->n_members);
   op->state = DEEP_OP_NONE;
   op->n_members = 0;
@@ -170,8 +236,7 @@ void deep_run_raids(struct ai_type *ait, struct player *pplayer)
 {
   const struct deep_tuning *tune = deep_tuning_get();
 
-  if (tune->raid_radius <= 0
-      || deep_plr_data(pplayer)->op.state != DEEP_OP_NONE) {
+  if (tune->raid_radius <= 0 || deep_op_any_live(pplayer)) {
     return;
   }
 
@@ -227,192 +292,163 @@ void deep_run_raids(struct ai_type *ait, struct player *pplayer)
 }
 
 /**********************************************************************//**
-  The per-turn operation driver (combat E6, smallest slice): one
-  operation per player. Form when enough free attackers EXIST to
-  clear op_take_target against the best met target; muster them at
-  the staging city nearest the target; when the quorum stands there
-  (or op_muster_wait runs out with at least half), launch everyone
-  at the target through the stock attack path -- they leave together,
-  so they arrive as a wave instead of stock's one-at-a-time trickle.
-  Launching dissolves the operation: fire and forget, second waves
-  are E7's business.
+  Try to form a new operation in slot `oi`: is there a met, unclaimed
+  target our free attackers could actually take? required = the
+  smallest strongest-first prefix of the unclaimed pool that clears
+  op_take_target. Returns TRUE if the slot went live.
 **************************************************************************/
-void deep_run_operations(struct ai_type *ait, struct player *pplayer)
+static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
+                         struct deep_operation *op, int oi)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   const struct civ_map *nmap = &(wld.map);
-  struct deep_operation *op = &deep_plr_data(pplayer)->op;
-  struct city *target, *staging;
+  struct deep_plr *dp = deep_plr_data(pplayer);
   struct unit *pool[DEEP_OP_MEMBERS];
-  int n, i, present;
+  struct city *home_city = NULL, *target, *staging;
+  int required = 0;
+  int n, i, eta;
+  bool overseas;
 
-  if (tune->op_take_target <= 0.0) {
-    return;
+  city_list_iterate(pplayer->cities, pcity) {
+    home_city = pcity;
+    break;
+  } city_list_iterate_end;
+  if (home_city == NULL) {
+    return FALSE;
   }
 
-  /* Validate a live operation: prune dead members, drop the op if
-   * the world moved on. */
-  if (op->state == DEEP_OP_MUSTER) {
-    target = game_city_by_number(op->target_city);
-    staging = game_city_by_number(op->staging_city);
-    n = 0;
-    for (i = 0; i < op->n_members; i++) {
-      struct unit *m = game_unit_by_number(op->members[i]);
+  /* Second wave first (E7, human design: "backup attackers around
+   * the nation as a second wave if the first fails and we think we
+   * can crush with just a little more"): while the last strike is
+   * fresh and its target still stands hostile, the reserve gets
+   * first claim on the next operation -- the garrison it faces is
+   * the one wave one softened. If the window closes or the odds
+   * say no, formation falls through to ordinary target picking,
+   * which is the formal withdrawal (survivors are already banked). */
+  target = NULL;
+  if (dp->last_strike_city > 0
+      && game.info.turn - dp->last_strike_turn <= tune->op_wave_window) {
+    struct city *prev = game_city_by_number(dp->last_strike_city);
 
-      if (m != NULL && unit_owner(m) == pplayer && m->hp > 0) {
-        op->members[n++] = op->members[i];
-      }
+    if (prev == NULL || !pplayers_at_war(pplayer, city_owner(prev))) {
+      /* Taken or turned: the strike is history. */
+      dp->last_strike_city = 0;
+    } else if (!deep_op_targeted(pplayer, prev->id)) {
+      target = prev;
     }
-    op->n_members = n;
-    if (target == NULL || staging == NULL
-        || city_owner(staging) != pplayer
-        || !pplayers_at_war(pplayer, city_owner(target))
-        || op->n_members == 0) {
-      deep_op_dissolve(op, "abort", pplayer);
-    }
+  } else {
+    dp->last_strike_city = 0;
+  }
+  if (target == NULL) {
+    target = deep_op_pick_target(ait, pplayer, city_tile(home_city));
+  }
+  if (target == NULL) {
+    return FALSE;
   }
 
-  if (op->state == DEEP_OP_NONE) {
-    /* Form: is there a met target our free attackers could actually
-     * take? required = the smallest strongest-first prefix of the
-     * pool that clears op_take_target. */
-    struct city *home_city = NULL;
-    int required = 0;
+  overseas = tile_continent(city_tile(target))
+             != tile_continent(city_tile(home_city));
+
+  /* Staging: nearest own city on the target's continent for a land
+   * assault; for an amphibious one, the nearest own COASTAL city on
+   * the members' continent -- the convoy gates (naval slice 3) own
+   * the crossing from there. */
+  staging = NULL;
+  {
+    int best = FC_INFINITY;
 
     city_list_iterate(pplayer->cities, pcity) {
-      home_city = pcity;
-      break;
+      int d = real_map_distance(city_tile(pcity), city_tile(target));
+
+      if (d >= best) {
+        continue;
+      }
+      if (overseas
+          ? (tile_continent(city_tile(pcity))
+               == tile_continent(city_tile(home_city))
+             && is_terrain_class_near_tile(nmap, city_tile(pcity),
+                                           TC_OCEAN))
+          : tile_continent(city_tile(pcity))
+              == tile_continent(city_tile(target))) {
+        best = d;
+        staging = pcity;
+      }
     } city_list_iterate_end;
-    if (home_city == NULL) {
-      return;
-    }
-    /* Second wave first (E7, human design: "backup attackers around
-     * the nation as a second wave if the first fails and we think we
-     * can crush with just a little more"): while the last strike is
-     * fresh and its target still stands hostile, the reserve gets
-     * first claim on the next operation -- the garrison it faces is
-     * the one wave one softened. If the window closes or the odds
-     * say no, formation falls through to ordinary target picking,
-     * which is the formal withdrawal (survivors are already banked). */
-    target = NULL;
-    if (op->last_strike_city > 0
-        && game.info.turn - op->last_strike_turn
-           <= tune->op_wave_window) {
-      struct city *prev = game_city_by_number(op->last_strike_city);
-
-      if (prev != NULL && pplayers_at_war(pplayer, city_owner(prev))) {
-        target = prev;
-      } else {
-        /* Taken or turned: the strike is history. */
-        op->last_strike_city = 0;
-      }
-    } else {
-      op->last_strike_city = 0;
-    }
-    if (target == NULL) {
-      target = deep_op_pick_target(ait, pplayer, city_tile(home_city));
-    }
-    if (target == NULL) {
-      return;
-    }
-    {
-      bool overseas
-        = tile_continent(city_tile(target))
-          != tile_continent(city_tile(home_city));
-      int eta;
-
-      /* Staging: nearest own city on the target's continent for a
-       * land assault; for an amphibious one, the nearest own COASTAL
-       * city on the members' continent -- the convoy gates (naval
-       * slice 3) own the crossing from there. */
-      staging = NULL;
-      {
-        int best = FC_INFINITY;
-
-        city_list_iterate(pplayer->cities, pcity) {
-          int d = real_map_distance(city_tile(pcity),
-                                    city_tile(target));
-
-          if (d >= best) {
-            continue;
-          }
-          if (overseas
-              ? (tile_continent(city_tile(pcity))
-                   == tile_continent(city_tile(home_city))
-                 && is_terrain_class_near_tile(nmap, city_tile(pcity),
-                                               TC_OCEAN))
-              : tile_continent(city_tile(pcity))
-                  == tile_continent(city_tile(target))) {
-            best = d;
-            staging = pcity;
-          }
-        } city_list_iterate_end;
-      }
-      if (staging == NULL) {
-        return;
-      }
-
-      /* Required force is priced at the defence at arrival: sail (or
-       * march) time from the staging point is the defender's budget. */
-      {
-        int rate = SINGLE_MOVE;
-
-        if (overseas) {
-          const struct unit_type *ferrytype
-            = best_role_unit_for_player(pplayer, L_FERRYBOAT);
-
-          if (ferrytype != NULL) {
-            rate = MAX(ferrytype->move_rate, 1);
-          }
-        }
-        eta = (real_map_distance(city_tile(staging), city_tile(target))
-               * SINGLE_MOVE + rate - 1) / rate + (overseas ? 2 : 0);
-      }
-      n = deep_op_collect_pool(ait, pplayer,
-                               tile_continent(city_tile(home_city)),
-                               pool, DEEP_OP_MEMBERS);
-      for (i = 1; i <= n; i++) {
-        if (deep_take_odds_at_arrival(nmap, target, pool, i, eta)
-            >= tune->op_take_target) {
-          required = i;
-          break;
-        }
-      }
-      if (required <= 1) {
-        /* Nothing to coordinate: no force clears the bar, or one
-         * unit does and needs no operation for it. */
-        return;
-      }
-    }
-    op->state = DEEP_OP_MUSTER;
-    op->target_city = target->id;
-    op->staging_city = staging->id;
-    op->required = required;
-    op->formed_turn = game.info.turn;
-    /* Enroll the required force plus a small margin; the rest of the
-     * pool stays free as the designated reserve (E7) -- the second
-     * wave if the first falls short, ordinary units otherwise. */
-    op->n_members = MIN(MIN(n, required + (required + 1) / 2),
-                        DEEP_OP_MEMBERS);
-    for (i = 0; i < op->n_members; i++) {
-      op->members[i] = pool[i]->id;
-    }
-    log_base(deep_metric_log_level(),
-             "deep-op turn=%d player=\"%s\" form target=%d staging=%d"
-             " required=%d pool=%d wave2=%d",
-             game.info.turn, player_name(pplayer), op->target_city,
-             op->staging_city, op->required, op->n_members,
-             op->last_strike_city == target->id ? 1 : 0);
+  }
+  if (staging == NULL) {
+    return FALSE;
   }
 
-  if (op->state != DEEP_OP_MUSTER) {
-    return;
+  /* Required force is priced at the defence at arrival: sail (or
+   * march) time from the staging point is the defender's budget. */
+  {
+    int rate = SINGLE_MOVE;
+
+    if (overseas) {
+      const struct unit_type *ferrytype
+        = best_role_unit_for_player(pplayer, L_FERRYBOAT);
+
+      if (ferrytype != NULL) {
+        rate = MAX(ferrytype->move_rate, 1);
+      }
+    }
+    eta = (real_map_distance(city_tile(staging), city_tile(target))
+           * SINGLE_MOVE + rate - 1) / rate + (overseas ? 2 : 0);
+  }
+  n = deep_op_collect_pool(ait, pplayer,
+                           tile_continent(city_tile(home_city)),
+                           pool, DEEP_OP_MEMBERS);
+  for (i = 1; i <= n; i++) {
+    if (deep_take_odds_at_arrival(nmap, target, pool, i, eta)
+        >= tune->op_take_target) {
+      required = i;
+      break;
+    }
+  }
+  if (required <= 1) {
+    /* Nothing to coordinate: no force clears the bar, or one unit
+     * does and needs no operation for it. */
+    return FALSE;
   }
 
-  /* Muster: walk members in, hold arrivals. */
-  target = game_city_by_number(op->target_city);
-  staging = game_city_by_number(op->staging_city);
-  present = 0;
+  op->state = DEEP_OP_MUSTER;
+  op->target_city = target->id;
+  op->staging_city = staging->id;
+  op->required = required;
+  op->formed_turn = game.info.turn;
+  /* Enroll the required force plus a small margin; the rest of the
+   * pool stays free as the designated reserve (E7) -- the second
+   * wave if the first falls short, ordinary units otherwise. */
+  op->n_members = MIN(MIN(n, required + (required + 1) / 2),
+                      DEEP_OP_MEMBERS);
+  for (i = 0; i < op->n_members; i++) {
+    op->members[i] = pool[i]->id;
+  }
+  log_base(deep_metric_log_level(),
+           "deep-op turn=%d player=\"%s\" op=%d form target=%d staging=%d"
+           " required=%d pool=%d wave2=%d",
+           game.info.turn, player_name(pplayer), oi, op->target_city,
+           op->staging_city, op->required, op->n_members,
+           dp->last_strike_city == target->id ? 1 : 0);
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Drive one live operation for a turn: walk members in, hold
+  arrivals, launch at quorum (or half-quorum at the wait cap).
+  Launching dissolves the operation: fire and forget, second waves
+  are E7's business. Caller has already validated target and staging.
+**************************************************************************/
+static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
+                          struct deep_operation *op, int oi)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  struct city *target = game_city_by_number(op->target_city);
+  struct city *staging = game_city_by_number(op->staging_city);
+  int present = 0, i;
+
   for (i = 0; i < op->n_members; i++) {
     struct unit *m = game_unit_by_number(op->members[i]);
 
@@ -427,9 +463,9 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
     /* Launch: everyone at the target through the stock attack path.
      * They leave together; that was the whole point. */
     log_base(deep_metric_log_level(),
-             "deep-op turn=%d player=\"%s\" strike target=%d present=%d"
-             " required=%d waited=%d",
-             game.info.turn, player_name(pplayer), op->target_city,
+             "deep-op turn=%d player=\"%s\" op=%d strike target=%d"
+             " present=%d required=%d waited=%d",
+             game.info.turn, player_name(pplayer), oi, op->target_city,
              present, op->required, game.info.turn - op->formed_turn);
     for (i = 0; i < op->n_members; i++) {
       struct unit *m = game_unit_by_number(op->members[i]);
@@ -440,15 +476,15 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
       dai_unit_new_task(ait, m, AIUNIT_ATTACK, city_tile(target));
       (void) dai_gothere(ait, pplayer, m, city_tile(target));
     }
-    op->last_strike_city = op->target_city;
-    op->last_strike_turn = game.info.turn;
-    deep_op_dissolve(op, "launched", pplayer);
+    dp->last_strike_city = op->target_city;
+    dp->last_strike_turn = game.info.turn;
+    deep_op_dissolve(op, oi, "launched", pplayer);
     return;
   }
 
   if (game.info.turn - op->formed_turn >= tune->op_muster_wait) {
     /* Wait cap without even half a quorum: bank the survivors. */
-    deep_op_dissolve(op, "abort-wait", pplayer);
+    deep_op_dissolve(op, oi, "abort-wait", pplayer);
     return;
   }
 
@@ -466,6 +502,67 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
       if (dai_unit_goto(ait, m, city_tile(staging))) {
         ud->done = TRUE;
       }
+    }
+  }
+}
+
+/**********************************************************************//**
+  The per-turn operation driver (combat E6; multi-op substrate,
+  W33 commit 1): validate every live slot, form at most one new
+  operation per turn -- the pool shrinks as live ops claim members,
+  and a one-per-turn cadence keeps the single-op behaviour as the
+  degenerate case when targets or attackers are scarce -- then drive
+  every live operation.
+**************************************************************************/
+void deep_run_operations(struct ai_type *ait, struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  int oi, i;
+
+  if (tune->op_take_target <= 0.0) {
+    return;
+  }
+
+  /* Validate each live operation: prune dead members, drop the op
+   * if the world moved on. */
+  for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+    struct deep_operation *op = &dp->ops[oi];
+    struct city *target, *staging;
+    int n;
+
+    if (op->state != DEEP_OP_MUSTER) {
+      continue;
+    }
+    target = game_city_by_number(op->target_city);
+    staging = game_city_by_number(op->staging_city);
+    n = 0;
+    for (i = 0; i < op->n_members; i++) {
+      struct unit *m = game_unit_by_number(op->members[i]);
+
+      if (m != NULL && unit_owner(m) == pplayer && m->hp > 0) {
+        op->members[n++] = op->members[i];
+      }
+    }
+    op->n_members = n;
+    if (target == NULL || staging == NULL
+        || city_owner(staging) != pplayer
+        || !pplayers_at_war(pplayer, city_owner(target))
+        || op->n_members == 0) {
+      deep_op_dissolve(op, oi, "abort", pplayer);
+    }
+  }
+
+  for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+    if (dp->ops[oi].state == DEEP_OP_NONE) {
+      (void) deep_op_form(ait, pplayer, &dp->ops[oi], oi);
+      break;
+    }
+  }
+
+  for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+    if (dp->ops[oi].state == DEEP_OP_MUSTER) {
+      deep_op_drive(ait, pplayer, &dp->ops[oi], oi);
     }
   }
 }

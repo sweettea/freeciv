@@ -1892,14 +1892,27 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     if (dp->colony_want > 0 && dp->colony_turn >= game.info.turn - 1) {
       lift_demand = dp->colony_want;
     }
-    if (dp->op.state == DEEP_OP_MUSTER) {
+    {
       /* An amphibious muster short on hulls is lift demand too
        * (naval slice 3): count the fleet's berths against the
-       * required force. */
-      struct city *ot = game_city_by_number(dp->op.target_city);
+       * combined required force of every overseas operation. */
+      int oi, needed = 0, worth = 0;
 
-      if (ot != NULL
-          && tile_continent(city_tile(ot)) != tile_continent(ptile)) {
+      for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+        const struct deep_operation *dop = &dp->ops[oi];
+        struct city *ot;
+
+        if (dop->state != DEEP_OP_MUSTER) {
+          continue;
+        }
+        ot = game_city_by_number(dop->target_city);
+        if (ot != NULL
+            && tile_continent(city_tile(ot)) != tile_continent(ptile)) {
+          needed += dop->required;
+          worth = MAX(worth, (int) def_ai_city_data(ot, ait)->worth);
+        }
+      }
+      if (needed > 0) {
         int berths = 0;
 
         unit_list_iterate(pplayer->units, b) {
@@ -1910,9 +1923,8 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
             berths += btt->transport_capacity;
           }
         } unit_list_iterate_end;
-        if (berths < dp->op.required) {
-          lift_demand = MAX(lift_demand,
-                            (int) def_ai_city_data(ot, ait)->worth);
+        if (berths < needed) {
+          lift_demand = MAX(lift_demand, worth);
         }
       }
     }

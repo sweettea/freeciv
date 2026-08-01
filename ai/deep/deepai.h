@@ -35,7 +35,15 @@ struct deep_plr {
   /* Deep-only state below. Everything here must either be saved in
    * dpai_player_save() or be recomputable. */
   int dv_turns_logged;          /* Decision-vector lines emitted */
-  struct deep_operation op;     /* Recomputable: re-forms from wants */
+  /* Operation slots (W33); DEEP_OP_NONE marks a free slot.
+   * Recomputable: each re-forms from wants. */
+  struct deep_operation ops[DEEP_OPS_MAX];
+  /* Second-wave bookkeeping (E7): the last launched strike, so the
+   * next formation pass can ask "did it stick, and can the reserve
+   * plus survivors crush what remains?" Player-level, not per-op:
+   * the reserve answers whichever strike was most recent. */
+  int last_strike_city;
+  int last_strike_turn;
   /* Colony lift demand (task #20): the best overseas site score a
    * lift-limited settler evaluation recorded, and when. Recomputable
    * -- refreshed every turn the settler pipeline runs. */

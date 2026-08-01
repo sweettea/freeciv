@@ -19,14 +19,20 @@
 struct ai_type;
 
 /* An operation: the first object in the tree that represents a
- * multi-turn intention (combat E6; W33's substrate, smallest viable
- * slice). One per player for now -- the smash the human asked for:
- * mass troops at a staging city, then launch at a specific goal as
- * one wave instead of the per-turn trickle stock produces.
+ * multi-turn intention (combat E6; W33's substrate). The smash the
+ * human asked for: mass troops at a staging city, then launch at a
+ * specific goal as one wave instead of the per-turn trickle stock
+ * produces. A player runs up to DEEP_OPS_MAX of them at once, each
+ * against its own target with its own claimed members.
  *
  * Not saved: an operation re-forms from the same want conditions
  * that created it, so a reload costs at most a few muster turns. */
 #define DEEP_OP_MEMBERS 24
+/* Storage cap on concurrent operations, like DEEP_OP_MEMBERS a
+ * bookkeeping bound rather than a tunable: forming an op at all
+ * requires a distinct unclaimed target plus enough free attackers to
+ * clear op_take_target against it, so the count is self-limiting. */
+#define DEEP_OPS_MAX 4
 
 enum deep_op_state {
   DEEP_OP_NONE = 0,
@@ -41,14 +47,11 @@ struct deep_operation {
   int formed_turn;
   int n_members;
   int members[DEEP_OP_MEMBERS]; /* unit ids */
-  /* Second-wave bookkeeping (E7): the last launched strike, so the
-   * next formation pass can ask "did it stick, and can the reserve
-   * plus survivors crush what remains?" */
-  int last_strike_city;
-  int last_strike_turn;
 };
 
 void deep_run_operations(struct ai_type *ait, struct player *pplayer);
 void deep_run_raids(struct ai_type *ait, struct player *pplayer);
+
+int deep_op_claiming(const struct player *pplayer, int unit_id);
 
 #endif /* FC__DEEPOPS_H */
