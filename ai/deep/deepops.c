@@ -365,7 +365,7 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
   struct deep_plr *dp = deep_plr_data(pplayer);
   struct unit *pool[DEEP_OP_MEMBERS];
   struct city *home_city = NULL, *target, *staging;
-  int required = 0;
+  int required = 0, drafted = 0;
   int n, i, eta;
   bool overseas;
 
@@ -465,17 +465,69 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
       break;
     }
   }
+  if (required == 0 && tune->survival_target > 0.0) {
+    /* Garrison draft (T160 forensics): when the free pool cannot
+     * clear the bar, borrow from the walls -- one sparable blade per
+     * city, weakest defender first, and only where the city still
+     * clears survival_target without it. The same leave-home-briefly
+     * honesty gate the sorties use, pointed at reconquest: a nation
+     * whose whole army is DEFEND_HOME infantry can still claim the
+     * empty city two tiles away. Drafted blades are ordinary members
+     * -- claimed, marched, re-gated, banked on dissolve. */
+    city_list_iterate(pplayer->cities, pcity) {
+      struct unit *weak = NULL;
+
+      if (n >= DEEP_OP_MEMBERS) {
+        break;
+      }
+      if (tile_continent(city_tile(pcity))
+          != tile_continent(city_tile(home_city))) {
+        continue;
+      }
+      unit_list_iterate(city_tile(pcity)->units, u) {
+        if (unit_owner(u) != pplayer
+            || unit_has_type_flag(u, UTYF_CIVILIAN)
+            || u->hp <= 0
+            || adv_unit_att_rating(u) <= 0
+            || def_ai_unit_data(u, ait)->charge > 0
+            || deep_op_claiming(pplayer, u->id) >= 0) {
+          continue;
+        }
+        if (weak == NULL
+            || adv_unit_def_rating_basic(u)
+               < adv_unit_def_rating_basic(weak)) {
+          weak = u;
+        }
+      } unit_list_iterate_end;
+      if (weak != NULL
+          && deep_city_stack_survival_without(nmap, pcity,
+                                              tune->survival_horizon,
+                                              weak, NULL)
+             >= tune->survival_target) {
+        pool[n++] = weak;
+        drafted++;
+      }
+    } city_list_iterate_end;
+    if (drafted > 0) {
+      for (i = 1; i <= n; i++) {
+        if (deep_take_odds_at_arrival(nmap, target, pool, i, eta)
+            >= tune->op_take_target) {
+          required = i;
+          break;
+        }
+      }
+    }
+  }
   if (required < 1) {
     /* No force clears the bar. */
     return FALSE;
   }
   /* required == 1 forms too (T160 forensics): "one unit needs no
    * operation" assumed stock would claim singleton targets, but
-   * stock garrisons sit at AIUNIT_DEFEND_HOME and never walk into
-   * even an EMPTY city -- 47 of the 52 barbarian-held cities at T160
-   * had no garrison and no suitor. The op machinery gives the
-   * singleton exactly what it needs: a claimed unit, a march, a
-   * re-gate. */
+   * stock garrisons sit at DEFEND_HOME and never walk into even an
+   * EMPTY city -- 47 of the 52 barbarian-held cities at T160 had no
+   * garrison and no suitor. The op machinery gives the singleton
+   * exactly what it needs: a claimed unit, a march, a re-gate. */
 
   op->state = DEEP_OP_MUSTER;
   op->kind = DEEP_OPK_ASSAULT;
@@ -493,9 +545,9 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
   }
   log_base(deep_metric_log_level(),
            "deep-op turn=%d player=\"%s\" op=%d form target=%d staging=%d"
-           " required=%d pool=%d wave2=%d",
+           " required=%d pool=%d drafted=%d wave2=%d",
            game.info.turn, player_name(pplayer), oi, op->target_city,
-           op->staging_city, op->required, op->n_members,
+           op->staging_city, op->required, op->n_members, drafted,
            dp->last_strike_city == target->id ? 1 : 0);
 
   return TRUE;
