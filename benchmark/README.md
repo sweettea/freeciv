@@ -44,12 +44,14 @@ different regimes, not just more cores. Plan and rationale:
 `doc/deep-ai/findings/objective-layer.md`.
 
 **Machine A -- economy, military zeroed.** Deep's military surcharge
-is pinned off by a start file, so only block E moves and the shield
-budget it allocates is stable across candidates:
+is pinned off by a start file (econ-priors.ini = the T76/T106
+evidence priors overlaid with the zeroed regime), so only the
+civilian blocks move and the shield budget they allocate is stable
+across candidates:
 
     python3 benchmark/tune.py \
-      --start benchmark/tuning/econ-regime.ini \
-      --blocks E --rounds 1 \
+      --start benchmark/tuning/econ-priors.ini \
+      --blocks X,G --rounds 2 \
       --config benchmark/configs/lategame-80.conf,benchmark/configs/isolated-150.conf,benchmark/configs/primary-120.conf \
       --count 8 --gens 4 --pop 6 --jobs $(nproc) \
       --out benchmark/results/tuning/econ
@@ -71,7 +73,8 @@ belongs to machine B, not here.
 **Machine B -- the war half, blended objective.** Blocks S and M,
 and the blend matters more than it looks:
 
-    python3 benchmark/tune.py --blocks S,M --rounds 2 \
+    python3 benchmark/tune.py --start benchmark/tuning/europe-priors.ini \
+      --blocks S,M --rounds 2 \
       --config benchmark/configs/lategame-80.conf,benchmark/configs/isolated-150.conf,benchmark/configs/primary-120.conf \
       --count 8 --gens 4 --pop 6 --jobs $(nproc) \
       --out benchmark/results/tuning/war
