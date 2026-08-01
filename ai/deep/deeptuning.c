@@ -99,6 +99,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .sortie_win_floor = 0.85,             /* PLACEHOLDER, untuned */
   .op_take_target = 0.7,                /* PLACEHOLDER, untuned */
   .op_muster_wait = 10,                 /* PLACEHOLDER, untuned */
+  .satisfied_fear_discount = 0.0,       /* PLACEHOLDER, untuned */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -207,6 +208,7 @@ void deep_tuning_init(void)
   TUNE_DOUBLE(sortie_win_floor);
   TUNE_DOUBLE(op_take_target);
   TUNE_INT(op_muster_wait);
+  TUNE_DOUBLE(satisfied_fear_discount);
 
   secfile_destroy(sf);
 
@@ -214,7 +216,7 @@ void deep_tuning_init(void)
              " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
              " wos=%d wot=%d gb=%d gsm=%f sdw=%f gf=%d gs=%d gt=%d tqs=%f dip=%f tail=%f depth=%f ovl=%f pot=%f"
              " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f hhealth=%f htech=%f"
-             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d dfv=%d dfr=%d dfrt=%d dpv=%d dpt=%d wfw=%f srw=%f chk=%f cml=%d cwr=%d wfr=%d wgr=%d wdd=%f ugw=%f uuw=%f rpr=%f rwant=%d rfin=%f svt=%f svf=%f svh=%d taf=%f avw=%f swf=%f ott=%f omw=%d",
+             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d dfv=%d dfr=%d dfrt=%d dpv=%d dpt=%d wfw=%f srw=%f chk=%f cml=%d cwr=%d wfr=%d wgr=%d wdd=%f ugw=%f uuw=%f rpr=%f rwant=%d rfin=%f svt=%f svf=%f svh=%d taf=%f avw=%f swf=%f ott=%f omw=%d sfd=%f",
              path,
              deep_tuning_active.settler_fearfulness_mult,
              deep_tuning_active.incoming_defence_eta_weight,
@@ -285,7 +287,8 @@ void deep_tuning_init(void)
              deep_tuning_active.attack_value_weight,
              deep_tuning_active.sortie_win_floor,
              deep_tuning_active.op_take_target,
-             deep_tuning_active.op_muster_wait);
+             deep_tuning_active.op_muster_wait,
+             deep_tuning_active.satisfied_fear_discount);
 }
 
 /**********************************************************************//**

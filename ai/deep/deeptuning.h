@@ -250,6 +250,13 @@ struct deep_tuning {
    * quorum) or dissolving. */
   double op_take_target;
   int op_muster_wait;
+  /* Satisfaction gate (T153 forensics): once the garrison floor is
+   * met, urgency and grave danger are zero, and survival against
+   * the observed wave clears the target, the injected fear terms
+   * scale by this factor so the domestic ladder can win the build
+   * auction. 0 = satisfied cities are quiet (default; also lets the
+   * danger==0 rotation hygiene run); >= 1 disables the gate. */
+  double satisfied_fear_discount;
 };
 
 void deep_tuning_init(void);

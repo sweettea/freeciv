@@ -611,6 +611,49 @@ static unsigned int deep_survival_deficit_fear(const struct civ_map *nmap,
 }
 
 /**********************************************************************//**
+  Satisfaction gate (task #19, from the T153 live-game forensics):
+  the standing fears keep danger nonzero every turn of a hostile
+  game, so the military advisor outbids the granary in every auction
+  forever -- 22 deep cities reached T153 with zero growth
+  infrastructure while their garrisons were demonstrably adequate.
+  Once the garrison is SIZED -- floor met, no urgency or grave
+  danger, and survival against the observed wave at target -- the
+  injected fears stop bidding (scaled by satisfied_fear_discount,
+  default 0: satisfied means quiet, which also lets the danger==0
+  rotation and melt hygiene run) and the domestic ladder gets the
+  queue. The fears wake the moment the odds slip: the survival check
+  sees real approaching threats, including embarked cargo, so
+  evidence un-satisfies a city before its fear terms are needed.
+**************************************************************************/
+static double deep_fear_satisfaction(const struct civ_map *nmap,
+                                     struct city *pcity,
+                                     const struct ai_city *city_data)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+
+  if (tune->satisfied_fear_discount >= 1.0) {
+    return 1.0;                 /* Gate disabled. */
+  }
+  if (city_data->urgency > 0 || city_data->grave_danger > 0) {
+    return 1.0;
+  }
+  if (unit_list_size(city_tile(pcity)->units) < tune->garrison_floor) {
+    return 1.0;
+  }
+  if (tune->survival_target > 0.0) {
+    int wave = 0;
+    double surv = deep_city_stack_survival(nmap, pcity,
+                                           tune->survival_horizon,
+                                           &wave);
+
+    if (wave > 0 && surv < tune->survival_target) {
+      return 1.0;
+    }
+  }
+  return MAX(tune->satisfied_fear_discount, 0.0);
+}
+
+/**********************************************************************//**
   Apply the overseas fear, the en-route credit and the garrison floor
   to every city's freshly assessed danger.
 **************************************************************************/
@@ -622,15 +665,22 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
   city_list_iterate(pplayer->cities, pcity) {
     struct ai_city *city_data = def_ai_city_data(pcity, ait);
     double updisc = deep_defender_upkeep_discount(&(wld.map), pcity);
+    double sat = deep_fear_satisfaction(&(wld.map), pcity, city_data);
     unsigned int credit;
 
+    if (sat < 1.0) {
+      log_base(deep_metric_log_level(),
+               "deep-sat turn=%d player=\"%s\" city=%d",
+               game.info.turn, player_name(pplayer), pcity->id);
+    }
     city_data->danger += (unsigned int)
-      (deep_overseas_danger(&(wld.map), pcity) * updisc);
+      (deep_overseas_danger(&(wld.map), pcity) * updisc * sat);
     city_data->danger += (unsigned int)
-      (deep_boat_shadow_fear(&(wld.map), pcity) * updisc);
+      (deep_boat_shadow_fear(&(wld.map), pcity) * updisc * sat);
     city_data->danger += (unsigned int)
-      (deep_density_fear(pcity) * updisc);
-    city_data->danger += (unsigned int) (deep_barbarian_fear() * updisc);
+      (deep_density_fear(pcity) * updisc * sat);
+    city_data->danger += (unsigned int)
+      (deep_barbarian_fear() * updisc * sat);
     city_data->danger
       += deep_survival_deficit_fear(&(wld.map), pcity, updisc, TRUE);
     credit = deep_incoming_defence_credit(ait, pcity);
@@ -1300,17 +1350,19 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
      * garrison. All injected fear is discounted by what the ruleset
      * charges to keep the marginal defender. */
     double updisc = deep_defender_upkeep_discount(nmap, pcity);
+    double sat = deep_fear_satisfaction(nmap, pcity, city_data);
     unsigned int credit;
 
     city_data->danger += (unsigned int)
-      (deep_overseas_danger(nmap, pcity) * updisc);
+      (deep_overseas_danger(nmap, pcity) * updisc * sat);
     city_data->danger += (unsigned int)
-      (deep_boat_shadow_fear(nmap, pcity) * updisc);
+      (deep_boat_shadow_fear(nmap, pcity) * updisc * sat);
     city_data->danger += (unsigned int)
-      (deep_density_fear(pcity) * updisc);
+      (deep_density_fear(pcity) * updisc * sat);
     city_data->danger += (unsigned int)
-      (deep_density_prior(pplayer) * updisc);
-    city_data->danger += (unsigned int) (deep_barbarian_fear() * updisc);
+      (deep_density_prior(pplayer) * updisc * sat);
+    city_data->danger += (unsigned int)
+      (deep_barbarian_fear() * updisc * sat);
     city_data->danger
       += deep_survival_deficit_fear(nmap, pcity, updisc, FALSE);
     credit = deep_incoming_defence_credit(ait, pcity);
