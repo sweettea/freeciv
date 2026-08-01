@@ -257,6 +257,10 @@ struct deep_tuning {
    * auction. 0 = satisfied cities are quiet (default; also lets the
    * danger==0 rotation hygiene run); >= 1 disables the gate. */
   double satisfied_fear_discount;
+  /* Colony lift (task #20): weight on a fresh lift-limited overseas
+   * site score converted into a transport build want in coastal
+   * cities, amortized over the boat's build time. <= 0 disables. */
+  double colony_lift_weight;
 };
 
 void deep_tuning_init(void);

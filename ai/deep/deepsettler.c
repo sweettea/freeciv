@@ -359,7 +359,51 @@ struct cityresult *deep_find_best_city_placement(struct ai_type *ait,
        * unit at a dock indefinitely (seed 205: five settlers on
        * cross-water missions at T135, two boats, half the home
        * island unfounded). Take the best on-continent site instead;
-       * the cap is the ferry count itself, not a tunable. */
+       * the cap is the ferry count itself, not a tunable.
+       *
+       * But record what the cap is COSTING (task #20): with zero
+       * boats this branch reads 0 >= 0 and silences overseas demand
+       * forever -- nobody wants a transport nobody has asked for,
+       * so colonization never starts while 71% of the world sits
+       * unowned (Europe T153). A demand-only probe with a virtual
+       * boat scores the best overseas site and leaves the number
+       * for the build side's colony-lift want; the mission itself
+       * stays on land. */
+      if (tile_city(unit_tile(punit)) != NULL
+          && is_terrain_class_near_tile(nmap, unit_tile(punit),
+                                        TC_OCEAN)) {
+        struct unit_type *boattype
+          = best_role_unit_for_player(pplayer, L_FERRYBOAT);
+
+        if (boattype != NULL) {
+          struct unit *probe
+            = unit_virtual_create(pplayer, NULL, boattype, 0);
+          struct cityresult *crd;
+
+          unit_tile_set(probe, unit_tile(punit));
+          pft_fill_unit_overlap_param(&parameter, nmap, probe);
+          parameter.omniscience = !has_handicap(pplayer, H_MAP);
+          parameter.get_TB = no_fights_or_unknown;
+          crd = deep_settler_map_iterate(ait, &parameter, punit,
+                                         unit_build_shield_cost_base(
+                                           probe));
+          unit_virtual_destroy(probe);
+          if (crd != NULL) {
+            if (cr1 == NULL || crd->result > cr1->result) {
+              struct deep_plr *dp = deep_plr_data(pplayer);
+
+              dp->colony_want = (int) crd->result;
+              dp->colony_turn = game.info.turn;
+              log_base(deep_metric_log_level(),
+                       "deep-colony turn=%d player=\"%s\" demand=%d"
+                       " at=(%d,%d)",
+                       game.info.turn, player_name(pplayer),
+                       dp->colony_want, TILE_XY(crd->tile));
+            }
+            cityresult_destroy(crd);
+          }
+        }
+      }
       return cr1;
     }
     {

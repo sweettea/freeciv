@@ -36,6 +36,11 @@ struct deep_plr {
    * dpai_player_save() or be recomputable. */
   int dv_turns_logged;          /* Decision-vector lines emitted */
   struct deep_operation op;     /* Recomputable: re-forms from wants */
+  /* Colony lift demand (task #20): the best overseas site score a
+   * lift-limited settler evaluation recorded, and when. Recomputable
+   * -- refreshed every turn the settler pipeline runs. */
+  int colony_want;
+  int colony_turn;
 };
 
 static inline struct deep_plr *deep_plr_data(const struct player *pplayer)

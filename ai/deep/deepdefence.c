@@ -1758,6 +1758,46 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     deep_assault_want(ait, nmap, pplayer, pcity, punittype, choice);
   }
 
+  /* Colony lift (task #20): a lift-limited settler evaluation left a
+   * fresh overseas-demand score (deepsettler.c); a coastal city
+   * answers it by building the boat. This is the same
+   * lift-limited-means-build-the-boat rule the invasion side uses,
+   * pointed at settlement -- it breaks the 0-boats/0-demand deadlock
+   * that left 71% of the Europe map unowned. */
+  {
+    struct deep_plr *dp = deep_plr_data(pplayer);
+
+    if (deep_tuning_get()->colony_lift_weight > 0.0
+        && dp->colony_want > 0
+        && dp->colony_turn >= game.info.turn - 1
+        && is_terrain_class_near_tile(nmap, ptile, TC_OCEAN)) {
+      struct unit_type *boattype
+        = best_role_unit_for_player(pplayer, L_FERRYBOAT);
+
+      if (boattype != NULL
+          && can_city_build_unit_now(nmap, pcity, boattype,
+                                     RPT_CERTAIN)) {
+        int bt = utype_build_shield_cost(pcity, NULL, boattype)
+                 / MAX(pcity->surplus[O_SHIELD], 1);
+        adv_want w
+          = amortize(deep_tuning_get()->colony_lift_weight
+                     * dp->colony_want, MAX(1, bt));
+
+        log_base(deep_metric_log_level(),
+                 "deep-colony turn=%d player=\"%s\" city=%d lift=\"%s\""
+                 " want=" ADV_WANT_PRINTF,
+                 game.info.turn, player_name(pplayer), pcity->id,
+                 utype_rule_name(boattype), w);
+        if (w > choice->want) {
+          choice->value.utype = boattype;
+          choice->want = w;
+          choice->type = CT_ATTACKER;
+          adv_choice_set_use(choice, "colony lift");
+        }
+      }
+    }
+  }
+
   /* Consider a hunter */
   dai_hunter_choice(ait, pplayer, pcity, choice, allow_gold_upkeep);
 
