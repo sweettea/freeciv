@@ -106,6 +106,69 @@ static int deep_fresh_attack_power(struct unit *att, const struct unit *def)
 }
 
 /**********************************************************************//**
+  The city's military garrison as a sorted (best first) defender list.
+**************************************************************************/
+static int deep_collect_defenders(struct city *pcity,
+                                  struct deep_combatant *def)
+{
+  struct player *pplayer = city_owner(pcity);
+  int n_def = 0;
+
+  unit_list_iterate(city_tile(pcity)->units, punit) {
+    if (unit_owner(punit) == pplayer
+        && !unit_has_type_flag(punit, UTYF_CIVILIAN)
+        && punit->hp > 0) {
+      deep_combatant_add(def, &n_def, DEEP_STACK_MAX, punit,
+                         adv_unit_def_rating_basic(punit));
+    }
+  } unit_list_iterate_end;
+  qsort(def, n_def, sizeof(def[0]), deep_combatant_cmp);
+
+  return n_def;
+}
+
+/**********************************************************************//**
+  P(the garrison outlives the stream): fill the per-pair parameters
+  and run the chained-duel model. Shared by both reads -- the city's
+  survival against an enemy wave, and (as 1 minus) our assault's
+  chance against an enemy garrison.
+**************************************************************************/
+static double deep_garrison_vs_stream(const struct civ_map *nmap,
+                                      struct deep_combatant *att, int n_att,
+                                      struct deep_combatant *def, int n_def)
+{
+  int att_hp[DEEP_WAVE_MAX], def_hp[DEEP_STACK_MAX];
+  struct deep_duel pair[DEEP_WAVE_MAX * DEEP_STACK_MAX];
+  int i, j;
+
+  if (n_att == 0) {
+    return 1.0;
+  }
+  if (n_def == 0) {
+    return 0.0;
+  }
+
+  for (j = 0; j < n_att; j++) {
+    att_hp[j] = att[j].punit->hp;
+  }
+  for (i = 0; i < n_def; i++) {
+    def_hp[i] = def[i].punit->hp;
+  }
+  for (j = 0; j < n_att; j++) {
+    for (i = 0; i < n_def; i++) {
+      struct deep_duel *d = &pair[j * n_def + i];
+
+      d->att_str = deep_fresh_attack_power(att[j].punit, def[i].punit);
+      d->def_str = get_total_defense_power(att[j].punit, def[i].punit);
+      get_modified_firepower(nmap, att[j].punit, def[i].punit,
+                             &d->att_fp, &d->def_fp);
+    }
+  }
+
+  return deep_stack_survival(n_att, att_hp, n_def, def_hp, pair);
+}
+
+/**********************************************************************//**
   Probability that this city's garrison survives the wave of at-war
   units that could plausibly reach it within `horizon` turns, resolved
   as sequential duels to the death (deepodds.c). Strongest attackers
@@ -122,9 +185,7 @@ double deep_city_stack_survival(const struct civ_map *nmap,
                                 int *wave_out)
 {
   struct deep_combatant att[DEEP_WAVE_MAX], def[DEEP_STACK_MAX];
-  int att_hp[DEEP_WAVE_MAX], def_hp[DEEP_STACK_MAX];
-  struct deep_duel pair[DEEP_WAVE_MAX * DEEP_STACK_MAX];
-  int n_att = 0, n_def = 0, i, j;
+  int n_att = 0, n_def;
   struct player *pplayer = city_owner(pcity);
   struct tile *ctile = city_tile(pcity);
   Continent_id home = tile_continent(ctile);
@@ -170,38 +231,36 @@ double deep_city_stack_survival(const struct civ_map *nmap,
     *wave_out = n_att;
   }
 
-  unit_list_iterate(ctile->units, punit) {
-    if (unit_owner(punit) == pplayer
-        && !unit_has_type_flag(punit, UTYF_CIVILIAN)
-        && punit->hp > 0) {
-      deep_combatant_add(def, &n_def, DEEP_STACK_MAX, punit,
-                         adv_unit_def_rating_basic(punit));
-    }
-  } unit_list_iterate_end;
+  n_def = deep_collect_defenders(pcity, def);
+  qsort(att, n_att, sizeof(att[0]), deep_combatant_cmp);
 
-  if (n_def == 0) {
+  return deep_garrison_vs_stream(nmap, att, n_att, def, n_def);
+}
+
+/**********************************************************************//**
+  The other direction of the same arithmetic: the chance that OUR
+  ordered stream of attackers takes acity's garrison -- one minus the
+  garrison's survival. The stream is priced as arriving together and
+  fresh; making that simultaneity true is the operations layer's job,
+  so build-side consumers should treat this as the ceiling the
+  assembled force could reach.
+**************************************************************************/
+double deep_take_odds(const struct civ_map *nmap, struct city *acity,
+                      struct unit *const *stream, int n_stream)
+{
+  struct deep_combatant att[DEEP_WAVE_MAX], def[DEEP_STACK_MAX];
+  int n_att = 0, n_def, j;
+
+  for (j = 0; j < n_stream; j++) {
+    deep_combatant_add(att, &n_att, DEEP_WAVE_MAX, stream[j],
+                       adv_unit_att_rating(stream[j]));
+  }
+  if (n_att == 0) {
     return 0.0;
   }
-
   qsort(att, n_att, sizeof(att[0]), deep_combatant_cmp);
-  qsort(def, n_def, sizeof(def[0]), deep_combatant_cmp);
 
-  for (j = 0; j < n_att; j++) {
-    att_hp[j] = att[j].punit->hp;
-  }
-  for (i = 0; i < n_def; i++) {
-    def_hp[i] = def[i].punit->hp;
-  }
-  for (j = 0; j < n_att; j++) {
-    for (i = 0; i < n_def; i++) {
-      struct deep_duel *d = &pair[j * n_def + i];
+  n_def = deep_collect_defenders(acity, def);
 
-      d->att_str = deep_fresh_attack_power(att[j].punit, def[i].punit);
-      d->def_str = get_total_defense_power(att[j].punit, def[i].punit);
-      get_modified_firepower(nmap, att[j].punit, def[i].punit,
-                             &d->att_fp, &d->def_fp);
-    }
-  }
-
-  return deep_stack_survival(n_att, att_hp, n_def, def_hp, pair);
+  return 1.0 - deep_garrison_vs_stream(nmap, att, n_att, def, n_def);
 }
