@@ -1604,3 +1604,98 @@ NOT DONE, and the honest state of the headline: deep is still below
 component split says nothing in the combat workstream will. The next
 session's work is the objective layer and then the tuning campaign,
 in that order, per findings/objective-layer.md.
+
+## The growth trap, and the campaign launch (2026-08-01, evening)
+
+Driven almost entirely by human forensics on a live Europe game.
+Three fixes, all the same defect wearing different hats, plus the
+tuning campaign now running on both cloud boxes.
+
+THE DEFECT, three times: **presence used where a probability was
+available.** Stock's `urgency` and `grave_danger` (daimilitary.c) are
+COUNTS -- grave_danger increments for any capture-capable enemy
+within one turn's move, urgency within three -- and neither asks
+whether the garrison wins. A city with five Musketeers behind walls
+scores what an empty city facing ten scores. In a war they are set
+on most cities most of the time: Europe T106 measured 69% of deep's
+cities, 86% of stock's. Deep gates behaviour on them in three
+places, and deep already computes the honest quantity
+(`deep_city_stack_survival`, the chained-duel probability) for its
+whole defence layer.
+
+  1. Horizon credits skipped entirely while "threatened", so a
+     capped city never funded its cap-lifter.
+  2. Hence, with the gate closed nearly always: deep held ZERO
+     Aqueducts across 85 cities, NO city above size 8, 19 parked
+     exactly at the ceiling -- while stock (86% urgency, no gate)
+     built 9 Aqueducts + 6 Sewers and ran cities to 22. RC1's own
+     headline example ("an aqueduct scores ~0") reintroduced by a
+     gate added to protect a *contested-cell* score.
+  3. `deep_fear_satisfaction` short-circuited on the same flags,
+     pre-empting its own survival test three lines below. So every
+     injected fear kept bidding at full strength for the rest of any
+     war, the military choice kept outbidding founders in
+     daidomestic's `founder_want > choice->want`, and deep stopped
+     expanding permanently -- while stock queued eight settlers in
+     the same Europe turn deep queued zero. This is the "flips to
+     war mode and never expands again" failure.
+
+VERIFIED on the human's own save (T106 +45 turns, deep and classic in
+one game, so classic is the in-world control):
+
+    deep            before (T106)   after (T151)
+    cities                85             89
+    population           489            555   (+13.5%)
+    aqueducts              0              1   (first ever)
+    cities over size 8     0              1
+    max city size          8             10   (ceiling broken)
+    ladder buildings       0              0   (still stuck)
+    settlers               0              0   (still stuck)
+
+Classic over the same window went 96 -> 81 cities and 632 -> 600
+pop. An earlier 25-turn run WITHOUT the satisfaction fix had deep
+going 85 -> 76. Caveat stated plainly: one game, no matched-length
+control on the old binary, so magnitudes are indicative. The ladder
+(Temple/Market/Library) and settler production are NOT fixed; those
+credits remain gated and `upkeep_gold_weight` still charges triple
+against every building.
+
+FORENSICS THAT DIED ON CONTACT WITH DATA (recorded so nobody redoes
+them): the T76 snapshot suggested deep under-values land. It does
+not. Europe is 39.9% unowned with deep sitting next to the same free
+land as classic (1230 vs 1213 tiles within 8 of a city) and packing
+identically (2.62 vs 2.47 mean nearest-city distance). A 7-arm site
+weight probe on isolated-150 (5 seeds, stock reference on the same
+maps) settled it: deep wants 3.4x the land stock does (want mass
+21.5k vs 6.4k) and founds 22% FEWER cities; no site-weight setting
+moved city count more than 3%. Expansion is a CONVERSION problem --
+want -> settler built -> settler arrives -> city founded -- not a
+valuation one. The only knob that moved it was
+`settler_fearfulness_mult`, which prices the JOURNEY (133 -> 150
+cities, want prevalence flat at ~28%).
+
+CAMPAIGN RUNNING (both boxes, branch `campaign` at d0e2cbfd7b):
+
+  EAST2  machine B  --blocks ALL,ECON,MIL --rounds 3, pop 12
+                    --start europe-priors.ini
+  EAST1  machine A  --blocks ECON --rounds 3, pop 10
+                    --start econ-priors.ini (military zeroed)
+
+Both: cells lategame-80 + isolated-150 + primary-120 (all with
+citizen migration, mgr_distance 6), 8 seeds, gens 3, jobs 22.
+Verified at launch with the AWS.md bring-up check (no-AI-type 0,
+deep-def >0) -- the trap that once cost 2.5h. primary-120 timed at
+221s/game, so the blend is affordable. Watch `~/campaign-{a,b}.log`;
+`best-tuning.ini` is rewritten every generation.
+
+Read at the end: the ALTERNATION TABLE on EAST2 (a block still
+gaining in a later round means the blocks are coupled, which is the
+empirical case for the objective layer), and the merge check in
+benchmark/README.md (does machine A's economy optimum compose with
+machine B's?).
+
+Not shut down automatically -- the boxes bill until stopped.
+EAST2 also holds `stash@{0}` "pre-campaign-2026-08-01 box state":
+uncommitted ai/deep edits from an earlier session, preserved rather
+than discarded. EAST1 was rebuilt from a full bundle (its ~/freeciv
+had no .git); the old tree is `~/freeciv-old-<ts>`, 15 GB free.
