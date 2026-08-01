@@ -197,10 +197,11 @@ double deep_city_stack_survival(const struct civ_map *nmap,
   As deep_city_stack_survival(), with one garrison unit left out of
   the stack -- what the night costs if that blade sorties or is lent.
 **************************************************************************/
-double deep_city_stack_survival_without(const struct civ_map *nmap,
-                                        struct city *pcity, int horizon,
-                                        const struct unit *except,
-                                        int *wave_out)
+static double deep_city_survival_core(const struct civ_map *nmap,
+                                      struct city *pcity, int horizon,
+                                      const struct unit *except,
+                                      struct unit *const *extra, int n_extra,
+                                      int *wave_out)
 {
   struct deep_combatant att[DEEP_WAVE_MAX], def[DEEP_STACK_MAX];
   int n_att = 0, n_def;
@@ -257,9 +258,50 @@ double deep_city_stack_survival_without(const struct civ_map *nmap,
   }
 
   n_def = deep_collect_defenders(pcity, def, except);
+  {
+    int e;
+
+    for (e = 0; e < n_extra; e++) {
+      deep_combatant_add(def, &n_def, DEEP_STACK_MAX, extra[e],
+                         adv_unit_def_rating_basic(extra[e]));
+    }
+    if (n_extra > 0) {
+      qsort(def, n_def, sizeof(def[0]), deep_combatant_cmp);
+    }
+  }
   qsort(att, n_att, sizeof(att[0]), deep_combatant_cmp);
 
   return deep_garrison_vs_stream(nmap, att, n_att, def, n_def);
+}
+
+/**********************************************************************//**
+  The garrison's survival without one of its own blades (the sortie
+  and lending gates: what does this city's night look like if this
+  unit leaves?).
+**************************************************************************/
+double deep_city_stack_survival_without(const struct civ_map *nmap,
+                                        struct city *pcity, int horizon,
+                                        const struct unit *except,
+                                        int *wave_out)
+{
+  return deep_city_survival_core(nmap, pcity, horizon, except, NULL, 0,
+                                 wave_out);
+}
+
+/**********************************************************************//**
+  The garrison's survival WITH reinforcements that are not standing
+  here yet: what this city's night looks like if these blades arrive
+  in time. The defence counter-claim sizes a relief force this way --
+  send enough or send none, the same massing discipline the operations
+  layer imposes on attacks.
+**************************************************************************/
+double deep_city_stack_survival_with(const struct civ_map *nmap,
+                                     struct city *pcity, int horizon,
+                                     struct unit *const *extra, int n_extra,
+                                     int *wave_out)
+{
+  return deep_city_survival_core(nmap, pcity, horizon, NULL, extra, n_extra,
+                                 wave_out);
 }
 
 /**********************************************************************//**

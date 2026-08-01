@@ -1426,6 +1426,168 @@ static void deep_flee_workers(struct ai_type *ait, struct player *pplayer)
   travels on the stock bodyguard framework (ESCORT + city charge),
   which self-releases when the danger passes.
 **************************************************************************/
+/* Relay search bound: cities examined in one brigade. A bookkeeping
+ * cap, not a tunable -- the BFS takes the shortest chain and stops
+ * at the first genuinely sparable garrison. */
+#define DEEP_RELAY_MAX 64
+/* Cap on one city's relief force in a turn (bookkeeping). */
+#define DEEP_RELIEF_MAX 12
+
+/**********************************************************************//**
+  The weakest blade `lender` can send: own military, not bodyguarding
+  or op-claimed. With `must_stay_safe`, the lender must still clear
+  survival_target without it (the terminal link of a brigade, which
+  gets no backfill); intermediate links skip that check because the
+  same pass refills them from behind.
+**************************************************************************/
+static struct unit *deep_city_sparable_blade(struct ai_type *ait,
+                                             struct city *lender,
+                                             bool must_stay_safe)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  struct player *pplayer = city_owner(lender);
+  struct unit *spare = NULL;
+
+  unit_list_iterate(city_tile(lender)->units, g) {
+    if (unit_owner(g) != pplayer
+        || unit_has_type_flag(g, UTYF_CIVILIAN)
+        || g->hp <= 0
+        || adv_unit_def_rating_basic(g) <= 0
+        || utype_move_type(unit_type_get(g)) != UMT_LAND
+        || def_ai_unit_data(g, ait)->charge > 0
+        || deep_op_claiming(pplayer, g->id) >= 0) {
+      continue;
+    }
+    if (spare != NULL
+        && adv_unit_def_rating_basic(g)
+           >= adv_unit_def_rating_basic(spare)) {
+      continue;                 /* Send the weakest blade. */
+    }
+    if (must_stay_safe
+        && deep_city_stack_survival_without(nmap, lender,
+                                            tune->survival_horizon,
+                                            g, NULL)
+           < tune->survival_target) {
+      continue;                 /* The lender needs it tonight. */
+    }
+    spare = g;
+  } unit_list_iterate_end;
+
+  return spare;
+}
+
+/**********************************************************************//**
+  Find a BRIGADE that could reinforce `pcity` (human design
+  2026-08-01). Marching one blade five turns from the nearest safe
+  city is strictly worse than five blades each stepping one city
+  along a connected chain: the front is reinforced now, every city
+  in the middle ends net even (sends one forward, receives one from
+  behind), and the hole migrates to the far, safe end.
+
+  BFS from pcity over own cities on its continent, hops of at most
+  survival_horizon tiles, THROUGH cities holding any movable blade,
+  stopping at the first that can spare one and stay above the bar.
+  Fills `path` back-to-front (path[0] = pcity) and returns its
+  length, or 0 when no chain terminates in a genuinely sparable
+  garrison -- a brigade that would only shuffle the hole between two
+  unsafe cities is never started.
+**************************************************************************/
+static int deep_relay_chain(struct ai_type *ait, struct player *pplayer,
+                            struct city *pcity, struct city **path)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct city *q[DEEP_RELAY_MAX];
+  int parent[DEEP_RELAY_MAX];
+  int nq = 0, head = 0, found = -1, idx, i, len = 0;
+
+  q[nq] = pcity;
+  parent[nq] = -1;
+  nq++;
+
+  while (head < nq && found < 0) {
+    struct city *cur = q[head];
+
+    city_list_iterate(pplayer->cities, other) {
+      bool seen = FALSE;
+      int d;
+
+      if (nq >= DEEP_RELAY_MAX) {
+        break;
+      }
+      for (i = 0; i < nq; i++) {
+        if (q[i] == other) {
+          seen = TRUE;
+          break;
+        }
+      }
+      if (seen
+          || tile_continent(city_tile(other))
+             != tile_continent(city_tile(cur))) {
+        continue;
+      }
+      d = real_map_distance(city_tile(cur), city_tile(other));
+      if (d > tune->survival_horizon) {
+        continue;               /* Not one hop for this brigade. */
+      }
+      if (deep_city_sparable_blade(ait, other, TRUE) != NULL) {
+        q[nq] = other;
+        parent[nq] = head;
+        found = nq++;
+        break;                  /* Shortest chain wins. */
+      }
+      if (deep_city_sparable_blade(ait, other, FALSE) != NULL) {
+        q[nq] = other;
+        parent[nq] = head;
+        nq++;                   /* Can relay, cannot terminate. */
+      }
+    } city_list_iterate_end;
+    head++;
+  }
+
+  if (found < 0) {
+    return 0;
+  }
+  for (idx = found; idx >= 0; idx = parent[idx]) {
+    len++;
+  }
+  i = len;
+  for (idx = found; idx >= 0; idx = parent[idx]) {
+    path[--i] = q[idx];
+  }
+
+  return len;
+}
+
+/**********************************************************************//**
+  Walk a brigade: one blade moves per edge, back to front. The
+  terminal garrison sends a blade it can genuinely spare; every
+  intermediate sends any movable blade because the same pass refills
+  it from behind.
+**************************************************************************/
+static void deep_relay_execute(struct ai_type *ait, struct player *pplayer,
+                               struct city **path, int len)
+{
+  int i;
+
+  for (i = len - 1; i > 0; i--) {
+    struct city *from = path[i], *to = path[i - 1];
+    struct unit *blade = deep_city_sparable_blade(ait, from,
+                                                  i == len - 1);
+
+    if (blade == NULL) {
+      continue;                 /* Raced away; the rest still moves. */
+    }
+    log_base(deep_metric_log_level(),
+             "deep-defend turn=%d player=\"%s\" city=%d claim=\"%s\""
+             " src=relay hop=%d from=%d",
+             game.info.turn, player_name(pplayer), to->id,
+             unit_rule_name(blade), i, from->id);
+    aiguard_assign_guard_city(ait, to, blade);
+    dai_unit_new_task(ait, blade, AIUNIT_ESCORT, city_tile(to));
+  }
+}
+
 static void deep_defend_counter_claims(struct ai_type *ait,
                                        struct player *pplayer)
 {
@@ -1437,11 +1599,11 @@ static void deep_defend_counter_claims(struct ai_type *ait,
   }
 
   city_list_iterate(pplayer->cities, pcity) {
-    double p;
+    struct unit *cand[DEEP_RELIEF_MAX], *force[DEEP_RELIEF_MAX];
+    struct city *backfill[DEEP_RELIEF_MAX];
+    int n_cand = 0, n_force = 0, i, j;
     int wave = 0;
-    struct unit *best = NULL;
-    int best_eta = 0;
-    const char *src = "free";
+    double p, relieved;
 
     p = deep_city_stack_survival(nmap, pcity, tune->survival_horizon,
                                  &wave);
@@ -1449,10 +1611,16 @@ static void deep_defend_counter_claims(struct ai_type *ait,
       continue;
     }
 
+    /* Every blade that could stand here in time, from any pool the
+     * defence may draw on. */
     unit_list_iterate(pplayer->units, u) {
       struct unit_ai *ud = def_ai_unit_data(u, ait);
+      struct city *needs_backfill = NULL;
       int oi, rate, eta;
 
+      if (n_cand >= DEEP_RELIEF_MAX) {
+        break;
+      }
       if (u->hp <= 0
           || unit_has_type_flag(u, UTYF_CIVILIAN)
           || adv_unit_def_rating_basic(u) <= 0
@@ -1461,8 +1629,7 @@ static void deep_defend_counter_claims(struct ai_type *ait,
           || tile_continent(unit_tile(u))
              != tile_continent(city_tile(pcity))
           || same_pos(unit_tile(u), city_tile(pcity))
-          || ud->charge > 0
-          || ud->task == AIUNIT_DEFEND_HOME) {
+          || ud->charge > 0) {
         continue;
       }
       oi = deep_op_claiming(pplayer, u->id);
@@ -1476,37 +1643,107 @@ static void deep_defend_counter_claims(struct ai_type *ait,
       if (eta > tune->survival_horizon) {
         continue;   /* Would arrive after the wave. */
       }
-      if (best == NULL || eta < best_eta
-          || (eta == best_eta
-              && adv_unit_def_rating_basic(u)
-                 > adv_unit_def_rating_basic(best))) {
-        best = u;
-        best_eta = eta;
+      if (ud->task == AIUNIT_DEFEND_HOME) {
+        /* Another city's garrison. It goes if that city can spare it
+         * -- or if a brigade can refill that city behind it, which
+         * is how a blade five cities away arrives tonight instead of
+         * in five turns. */
+        struct city *home = tile_city(unit_tile(u));
+        struct city *chain[DEEP_RELAY_MAX];
+
+        if (home == NULL || city_owner(home) != pplayer) {
+          continue;
+        }
+        if (deep_city_stack_survival_without(nmap, home,
+                                             tune->survival_horizon,
+                                             u, NULL)
+            < tune->survival_target) {
+          if (deep_relay_chain(ait, pplayer, home, chain) == 0) {
+            continue;   /* Its own night needs it and nobody backs it. */
+          }
+          needs_backfill = home;
+        }
       }
+      cand[n_cand] = u;
+      backfill[n_cand] = needs_backfill;
+      n_cand++;
     } unit_list_iterate_end;
 
-    if (best != NULL && deep_op_claiming(pplayer, best->id) >= 0) {
-      deep_op_release_member(pplayer, best->id);
-      src = "raid";
-    }
-    if (best == NULL) {
-      best = deep_op_poach_defender(ait, pplayer, pcity, p);
-      if (best != NULL) {
-        src = "op";
-        best_eta = 0;
+    /* Strongest first: a relief force is sized, not scraped. */
+    for (i = 1; i < n_cand; i++) {
+      struct unit *cu = cand[i];
+      struct city *cb = backfill[i];
+
+      for (j = i; j > 0
+           && adv_unit_def_rating_basic(cand[j - 1])
+              < adv_unit_def_rating_basic(cu); j--) {
+        cand[j] = cand[j - 1];
+        backfill[j] = backfill[j - 1];
       }
-    }
-    if (best == NULL) {
-      continue;
+      cand[j] = cu;
+      backfill[j] = cb;
     }
 
-    log_base(deep_metric_log_level(),
-             "deep-defend turn=%d player=\"%s\" city=%d claim=\"%s\""
-             " src=%s p=%.3f wave=%d eta=%d",
-             game.info.turn, player_name(pplayer), pcity->id,
-             unit_rule_name(best), src, p, wave, best_eta);
-    aiguard_assign_guard_city(ait, pcity, best);
-    dai_unit_new_task(ait, best, AIUNIT_ESCORT, city_tile(pcity));
+    /* Take blades until the city would actually hold. Sending fewer
+     * is the trickle the operations layer refuses on the attacking
+     * side: units fed in one at a time die one at a time. If the
+     * whole reachable pool cannot clear the bar, send NOBODY -- the
+     * triage falls out of the arithmetic, not a new knob. What to do
+     * with a city written off this way (delay, or evacuate) is
+     * W14's, and a human call: findings/defence-counter-claim.md. */
+    relieved = p;
+    for (i = 0; i < n_cand && relieved < tune->survival_target; i++) {
+      force[n_force++] = cand[i];
+      relieved = deep_city_stack_survival_with(nmap, pcity,
+                                               tune->survival_horizon,
+                                               force, n_force, NULL);
+    }
+    if (relieved < tune->survival_target && n_force < DEEP_RELIEF_MAX) {
+      struct unit *poach = deep_op_poach_defender(ait, pplayer, pcity, p);
+
+      if (poach != NULL) {
+        backfill[n_force] = NULL;
+        force[n_force++] = poach;
+        relieved = deep_city_stack_survival_with(nmap, pcity,
+                                                 tune->survival_horizon,
+                                                 force, n_force, NULL);
+      }
+    }
+    if (relieved < tune->survival_target) {
+      log_base(deep_metric_log_level(),
+               "deep-defend turn=%d player=\"%s\" city=%d writeoff"
+               " p=%.3f wave=%d pool=%d best=%.3f",
+               game.info.turn, player_name(pplayer), pcity->id, p, wave,
+               n_cand, relieved);
+      continue;   /* Cannot be held tonight: do not feed it blades. */
+    }
+
+    for (i = 0; i < n_force; i++) {
+      struct unit *u = force[i];
+
+      if (deep_op_claiming(pplayer, u->id) >= 0) {
+        deep_op_release_member(pplayer, u->id);
+      }
+      log_base(deep_metric_log_level(),
+               "deep-defend turn=%d player=\"%s\" city=%d claim=\"%s\""
+               " src=%s p=%.3f wave=%d force=%d relieved=%.3f",
+               game.info.turn, player_name(pplayer), pcity->id,
+               unit_rule_name(u),
+               i < n_cand && backfill[i] != NULL ? "brigade"
+                 : (def_ai_unit_data(u, ait)->task == AIUNIT_DEFEND_HOME
+                    ? "lend" : "free"),
+               p, wave, n_force, relieved);
+      aiguard_assign_guard_city(ait, pcity, u);
+      dai_unit_new_task(ait, u, AIUNIT_ESCORT, city_tile(pcity));
+      if (i < n_cand && backfill[i] != NULL) {
+        struct city *chain[DEEP_RELAY_MAX];
+        int len = deep_relay_chain(ait, pplayer, backfill[i], chain);
+
+        if (len > 0) {
+          deep_relay_execute(ait, pplayer, chain, len);
+        }
+      }
+    }
   } city_list_iterate_end;
 }
 
