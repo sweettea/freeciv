@@ -31,6 +31,7 @@
 static const struct deep_tuning deep_tuning_defaults = {
   .settler_fearfulness_mult = 2.0,      /* PLACEHOLDER, untuned */
   .settler_risk_tolerance = 1.0,        /* PLACEHOLDER = stock bar */
+  .committed_fear_mult = 1.0,           /* PLACEHOLDER = no effect */
   .incoming_defence_eta_weight = 0.5,   /* PLACEHOLDER, untuned */
   .incoming_defence_survival = 0.9,     /* PLACEHOLDER, untuned */
   .site_tail_weight = 0.15,             /* PLACEHOLDER, untuned */
@@ -149,6 +150,7 @@ void deep_tuning_init(void)
 
   TUNE_DOUBLE(settler_fearfulness_mult);
   TUNE_DOUBLE(settler_risk_tolerance);
+  TUNE_DOUBLE(committed_fear_mult);
   TUNE_DOUBLE(incoming_defence_eta_weight);
   TUNE_DOUBLE(incoming_defence_survival);
   TUNE_DOUBLE(embassy_science_value);
@@ -230,7 +232,7 @@ void deep_tuning_init(void)
 
   secfile_destroy(sf);
 
-  log_normal("deep-tuning file=\"%s\" fear=%f srt=%f eta=%f surv=%f emb=%f hut=%f"
+  log_normal("deep-tuning file=\"%s\" fear=%f srt=%f cfm=%f eta=%f surv=%f emb=%f hut=%f"
              " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
              " wos=%d wot=%d gb=%d gsm=%f sdw=%f gf=%d gs=%d gt=%d tqs=%f dip=%f tail=%f depth=%f ovl=%f pot=%f"
              " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f hhealth=%f htech=%f"
@@ -238,6 +240,7 @@ void deep_tuning_init(void)
              path,
              deep_tuning_active.settler_fearfulness_mult,
              deep_tuning_active.settler_risk_tolerance,
+             deep_tuning_active.committed_fear_mult,
              deep_tuning_active.incoming_defence_eta_weight,
              deep_tuning_active.incoming_defence_survival,
              deep_tuning_active.embassy_science_value,

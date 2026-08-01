@@ -32,6 +32,14 @@ struct deep_tuning {
    * wastes every turn already spent walking (W05). */
   double settler_fearfulness_mult;
 
+  /* Survival-deficit fear multiplier for a city none of whose
+   * LAUNCHED assault members (MARCH onward) could reach it within
+   * survival_horizon (human doctrine 2026-08-01: a faraway
+   * committed army thins the home front, so reactive defence should
+   * outbid sooner). 1.0 = no posture effect; mustering armies
+   * instead CREDIT nearby cities through the W11 reserve credit. */
+  double committed_fear_mult;
+
   /* Multiplier on the overnight-danger bar for settler pathing
    * (human doctrine 2026-08-01: a hard any-threat veto is too
    * absolute -- some loss chance is affordable on the way to a very

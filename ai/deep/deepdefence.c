@@ -185,6 +185,99 @@ static unsigned int deep_incoming_defence_credit(struct ai_type *ait,
 }
 
 /**********************************************************************//**
+  A mustering army is a reserve (human doctrine 2026-08-01: attack
+  plans belong inside defence plans). Members of an assault op still
+  in MUSTER have not been spent -- the counter-claim and the poach
+  can redeploy them -- so each credits nearby cities' danger exactly
+  like an en-route defender: same formula, same knobs (W11), decay
+  doing the "nearby". Launched members (MARCH onward) credit
+  nothing: committed is committed.
+**************************************************************************/
+static unsigned int deep_muster_reserve_credit(struct ai_type *ait,
+                                               struct city *pcity)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct player *pplayer = city_owner(pcity);
+  const struct deep_plr *dp = deep_plr_data(pplayer);
+  unsigned int credit = 0;
+  int oi, i;
+
+  for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+    const struct deep_operation *op = &dp->ops[oi];
+
+    if (op->state != DEEP_OP_MUSTER || op->kind != DEEP_OPK_ASSAULT) {
+      continue;
+    }
+    for (i = 0; i < op->n_members; i++) {
+      struct unit *m = game_unit_by_number(op->members[i]);
+      int eta, power;
+
+      if (m == NULL || m->hp <= 0
+          || same_pos(unit_tile(m), city_tile(pcity))
+          || tile_continent(unit_tile(m))
+             != tile_continent(city_tile(pcity))) {
+        /* Units standing here are already counted by
+         * assess_defense(). */
+        continue;
+      }
+      power = assess_defense_unit(ait, pcity, m, FALSE);
+      if (power <= 0) {
+        continue;
+      }
+      eta = real_map_distance(unit_tile(m), city_tile(pcity))
+            * SINGLE_MOVE / MAX(unit_type_get(m)->move_rate, 1);
+      credit += power
+                * pow(tune->incoming_defence_survival, eta)
+                / (1.0 + tune->incoming_defence_eta_weight * eta);
+    }
+  }
+
+  return credit;
+}
+
+/**********************************************************************//**
+  Is every committed blade too far to matter here? TRUE when the
+  player has at least one LAUNCHED assault (MARCH or beyond) and
+  none of its members could reach this city within the survival
+  horizon -- the army is away, the home front is thinner than the
+  unit count suggests, and the fear conversion scales up by
+  committed_fear_mult (human doctrine 2026-08-01).
+**************************************************************************/
+static bool deep_committed_away(struct city *pcity)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct deep_plr *dp = deep_plr_data(city_owner(pcity));
+  bool any = FALSE;
+  int oi, i;
+
+  for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+    const struct deep_operation *op = &dp->ops[oi];
+
+    if (op->kind != DEEP_OPK_ASSAULT
+        || (op->state != DEEP_OP_MARCH && op->state != DEEP_OP_STRIKE
+            && op->state != DEEP_OP_CONSOLIDATE)) {
+      continue;
+    }
+    for (i = 0; i < op->n_members; i++) {
+      const struct unit *m = game_unit_by_number(op->members[i]);
+      int eta;
+
+      if (m == NULL || m->hp <= 0) {
+        continue;
+      }
+      any = TRUE;
+      eta = real_map_distance(unit_tile(m), city_tile(pcity))
+            * SINGLE_MOVE / MAX(unit_type_get(m)->move_rate, 1);
+      if (eta <= tune->survival_horizon) {
+        return FALSE;           /* One could still come home. */
+      }
+    }
+  }
+
+  return any;
+}
+
+/**********************************************************************//**
   Danger a coastal city faces from an invasion the stock assessment
   cannot see: at-war units EMBARKED ON BOATS that could reach the
   city's neighbourhood within about one transport move. assess_danger()
@@ -624,10 +717,13 @@ static unsigned int deep_survival_deficit_fear(const struct civ_map *nmap,
     return 0;
   }
   if (surv < tune->survival_target) {
+    double away_mult
+      = deep_committed_away(pcity) ? tune->committed_fear_mult : 1.0;
+
     fear = (unsigned int)
       (tune->survival_fear_value
        * (tune->survival_target - surv) / tune->survival_target
-       * updisc);
+       * updisc * away_mult);
   }
   if (log_it) {
     log_base(deep_metric_log_level(),
@@ -712,7 +808,8 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
       (deep_barbarian_fear() * updisc * sat);
     city_data->danger
       += deep_survival_deficit_fear(&(wld.map), pcity, updisc, TRUE);
-    credit = deep_incoming_defence_credit(ait, pcity);
+    credit = deep_incoming_defence_credit(ait, pcity)
+             + deep_muster_reserve_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
     deep_apply_garrison_floor(pcity, city_data, updisc, menace);
   } city_list_iterate_end;
@@ -1501,7 +1598,8 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
       (deep_barbarian_fear() * updisc * sat);
     city_data->danger
       += deep_survival_deficit_fear(nmap, pcity, updisc, FALSE);
-    credit = deep_incoming_defence_credit(ait, pcity);
+    credit = deep_incoming_defence_credit(ait, pcity)
+             + deep_muster_reserve_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
     deep_apply_garrison_floor(pcity, city_data, updisc,
                               deep_garrison_menace(pplayer));
