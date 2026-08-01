@@ -213,7 +213,14 @@ double deep_city_stack_survival_without(const struct civ_map *nmap,
   }
 
   players_iterate_alive(aplayer) {
-    if (!pplayers_at_war(pplayer, aplayer)) {
+    /* The initial diplstate between unmet players is war; fearing
+     * their starting units pre-contact is insurance bought before
+     * evidence (the ramp law). Barbarians never make contact -- their
+     * units on the map ARE the evidence. */
+    if (!pplayers_at_war(pplayer, aplayer)
+        || (!is_barbarian(aplayer)
+            && player_diplstate_get(pplayer, aplayer)->type
+               == DS_NO_CONTACT)) {
       continue;
     }
     unit_list_iterate(aplayer->units, aunit) {

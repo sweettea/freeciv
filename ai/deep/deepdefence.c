@@ -42,6 +42,7 @@
 
 /* server */
 #include "cityhand.h"
+#include "maphand.h"
 #include "citytools.h"
 #include "cityturn.h"
 #include "sernet.h"
@@ -932,7 +933,13 @@ static void deep_kill_sorties(struct ai_type *ait, struct player *pplayer)
         double chance;
 
         if (pdef == NULL
-            || !pplayers_at_war(pplayer, unit_owner(pdef))) {
+            || !pplayers_at_war(pplayer, unit_owner(pdef))
+            || (!is_barbarian(unit_owner(pdef))
+                && player_diplstate_get(pplayer, unit_owner(pdef))->type
+                   == DS_NO_CONTACT)) {
+          /* Unmet neighbours are nominally at war (initial
+           * diplstate); picking that fight is diplomacy's call, not
+           * the sortie pass's. */
           continue;
         }
         chance = unit_win_chance(nmap, u, pdef, NULL);
@@ -1750,13 +1757,23 @@ static void deep_assault_want(struct ai_type *ait,
   }
 
   players_iterate_alive(aplayer) {
-    if (!pplayers_at_war(pplayer, aplayer)) {
+    /* The initial diplstate between UNMET players is war, so the
+     * at-war test alone passes on turn one -- and unmet, ungarrisoned
+     * cities then price P(take)=1 and outbid every settler on the
+     * queue (contested run 2026-07-31, median 0.758: worth*1.0 wants
+     * of ~190 from turn 1). No contact, no target; unknown tile, no
+     * target. The offensive mirror of the no-fear-before-the-threat
+     * law. */
+    if (!pplayers_at_war(pplayer, aplayer)
+        || player_diplstate_get(pplayer, aplayer)->type
+           == DS_NO_CONTACT) {
       continue;
     }
     city_list_iterate(aplayer->cities, acity) {
       double score;
 
-      if (tile_continent(city_tile(acity)) != home) {
+      if (tile_continent(city_tile(acity)) != home
+          || !map_is_known(city_tile(acity), pplayer)) {
         continue;
       }
       score = def_ai_city_data(acity, ait)->worth
