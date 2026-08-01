@@ -1479,3 +1479,77 @@ muster poach priced as expected worth vs expected take), and the
 posture pass (mustering armies CREDIT nearby cities via the W11
 reserve formula; committed_fear_mult scales fear up when every
 launched blade is beyond the horizon, 1.0 until v4).
+
+## The score gap is ECONOMIC, not military (2026-08-01, evidence)
+
+Human, reading the chain: "it seems poooooor that we are below 1.0."
+Correct, and worth stating plainly at the top of this file's next
+read: **deep has been below baseline in every cell all session** --
+contested 0.78-0.83, lategame 0.86-0.88, isolated 0.85, smoke 0.89.
+The whole combat arc (B9-B16) moved the number INSIDE that band. It
+never crossed 1.0. Nothing in the combat workstream is going to
+cross it either, and here is the evidence.
+
+COMPONENT SPLIT, B15 contested (totals, 10 paired games, deep vs
+baseline as a ratio):
+
+  score 0.847 | cities 0.920 | pop 0.773 | techs 0.851
+  bnp 0.709 | mfg 0.738 | wonders 0.667 | landarea 0.945
+  munits 1.572 | unitsbuilt 1.241 | unitslost 1.719 | unitskilled 1.687
+
+Deep fields **1.57x the standing army**, builds 1.24x the units and
+loses 1.72x of them, while its economy runs 25-30% behind. Score in
+this ruleset is economic; the army is the cost, not the product.
+
+BUILD CENSUS, same run, T151 finals -- this is the whole story:
+
+  deep P1 (2 cities):     Barracks x2, City Walls x2, Palace
+  deep P5 (2 cities):     Barracks x2, City Walls x2, Palace -- and
+                          TEN Phalanx
+  deep P6 (3 cities):     Barracks x2, City Walls x2, Palace
+  baseline P5 (2 cities): Colosseum x2, Library x2, Temple x2,
+                          Granary, Marketplace, Courthouse, 2 Aqueducts
+  baseline P3 (4 cities): the full ladder + Marketplace
+
+Whole deep empires reach T151 with barracks, walls and garrisons and
+NO growth ladder. This is the T153 pathology (see "satisfaction
+gate", task #19) still alive at scale: the injected fear terms keep
+danger nonzero, the military advisor outbids the granary every turn
+forever, and the economy that scores never gets built. #19 narrowed
+the window; it did not close it.
+
+Corroborating sign, and the direction of the fix: B15 posted the
+best contested numbers of the entire chain (median 0.832 / mean
+0.863, two seeds >1.0, best single seed 1.188) and the thing it
+added was the counter-claim -- which satisfies danger by MOVING an
+existing blade instead of BUYING a new one. Cheap defence is
+economic policy. That is why "count claimed relief as incoming
+defence" landed immediately after: a city that has summoned help
+was still requisitioning a replacement for it.
+
+WHAT SHOULD HAPPEN NEXT, in order:
+
+1. **The v4 tuning campaign. It has never been run.** ~40 knobs
+   ship at compiled PLACEHOLDER defaults, and the ones that set the
+   military/economy split are exactly the untuned ones:
+   survival_fear_value, survival_target, garrison_floor(_danger),
+   barbarian_fear, boat_shadow_fear, density_fear_*, overseas_fear,
+   wall_fear_weight, satisfied_fear_discount. Rule 7 says tuning is
+   how these get set, and rule 6 says the claim needs the numbers.
+   This is the single largest untried lever in the project.
+2. **An economy audit against the same census method.** Ask of every
+   deep player: which ladder buildings are missing versus the
+   baseline player on the same seed, and which want lost the auction
+   on the turn they were skipped. W01/W02/W03 are phase-2 work whose
+   payoff the military layer has been sitting on top of.
+3. Combat features only after those two. The layer works -- ops
+   form, march, strike, consolidate, land, retarget, relieve -- and
+   its remaining questions (doomed-city triage, E5 sieges, W31 sea
+   phases) are refinements on a subsystem that is not what is losing
+   the game.
+
+Stated as a falsifiable claim for the next session to test: if the
+fear knobs are tuned down to where deep's army approaches baseline's
+size, the economy ratios should move toward 1.0 and the score with
+them. If they do not, the deficit is in W02/W03 site and building
+evaluation instead, and the census in step 2 will say so.
