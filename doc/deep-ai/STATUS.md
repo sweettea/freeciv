@@ -1214,3 +1214,66 @@ on the unexercised landing gate, #17 umbrella at E1-E3+E6-E8 landed
 / E4-E5 parked. Next session: E5 sieges fresh, the raid exchange
 metric, exercise the invasion gate on the lategame cell, then the
 wide-n acceptance when the human calls the combat stream done.
+
+## W33 first arc + the T160 reconquest stack (2026-07-31, small hours II)
+
+Task #21 opened on human "march onward". Binary chain continues
+(contested quick, 10 paired seeds, per-seed deep/baseline):
+
+- B9 (multi-op substrate + MARCH phase): 0.826 median / 0.825 mean --
+  top of the evening's 0.78-0.82 band. Substrate: deep_plr holds
+  ops[4] slots, deep_op_claiming() keeps every pool honest, E7's
+  second-wave claim moved to player level, berth-shortfall lift sums
+  across overseas musters. MARCH: launch releases members to stock
+  but the op SHADOWS them -- re-gate each turn at remaining eta
+  against the CURRENT garrison (abort-odds banks everyone, tasks
+  cleared), strike recorded at contact so the E7 window opens at the
+  walls, march timeout reuses op_muster_wait. New knob
+  op_abort_floor (PLACEHOLDER 0.35). Ledger: 114 forms -> 78
+  marches -> 15 strikes / 72 odds-aborts: the re-gate is honest but
+  2-4-unit waves lose the race against one reactively-bought
+  defender (root cause = the cold start, fixed in the T160 stack).
+- B10 (+raid op template): 0.784 median / 0.834 mean, three seeds
+  above 1.0. E8 graduates into DEEP_OPK_RAID slots claiming idle
+  fast attackers; 369 raid formations, 489 hunts per 10 games.
+  WATCH: assault forms fell 114 -> 40 -- standing raids occupy
+  slots and claim units; strike-control commit should referee this
+  with data (raid yields to forming assault?) rather than a guess.
+- B11 (+T160 reconquest stack): running at close. The stack, all
+  from live-save forensics (findings "T160"): barb_reinforce_rate
+  (barbarians price as non-reinforcing, PLACEHOLDER 0.0 = observed);
+  singleton ops (required==1 forms -- stock never claims even empty
+  cities, garrisons are DEFEND_HOME); garrison draft (formation
+  borrows one sparable blade per city, survival-gated, when the free
+  pool can't clear the bar); campaign pricing (deep-kill ck= --
+  smallest clearing force priced at average rate when the marginal
+  is cold-start zero); snap-up sweep (deep-kill type= -- cheapest
+  land attacker that clears alone wins the amortization race).
+  A walk-in adjacent sortie was prototyped and DROPPED: citymindist
+  makes the geometry impossible.
+
+NEW FIXTURE: benchmark/corpus/barb-reconquest -- the T160 Europe
+autosave (human seat aitoggled by direct save edit), 52 barb cities
+/ 47 empty. Asserts singleton formation + >=1 tile retaken + nobody
+dies, 12 turns. Proof: 10 tiles retaken where the live game managed
+0 in ~40; full corpus 7/7 green. Runner allowlists the pre-existing
+recoverable deep-settler pf assertion -- task #22 (100 deep-arm
+logs, 0 baseline; deep_settler_apply_risk parameter mix suspected).
+
+Human doctrine notes banked this stretch: barbarians lean against
+defending their cities (encoded as barb_reinforce_rate); defence
+first, then quick snap-up units (defence-first already emerges from
+the fear auction + satisfaction gate; snap-up = the sweep).
+
+T160 forensics headline (findings file has the numbers): human
+Irish #1 at 49 techs from 5 tall cities; Suleiman (deep) #2 at 48;
+deep holds 4 of top-8 in a 22-player field. Pirates+Barbarians hold
+the two biggest empires; Iberia (classic) collapsed 23 cities.
+Every nation's army is defensive infantry; the only siege train in
+Europe is barbarian.
+
+Next: B11 verdict -> #21 phase 3 (strike control, THE RISKY PART)
+with the raid/assault slot tension refereed by its ledger; then
+save/load (#21 phase 4); E5 sieges still parked for a fresh
+session; wide-n + v4 tuning wait for the human's call that the
+combat stream is done.
