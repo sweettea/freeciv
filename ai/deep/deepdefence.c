@@ -1422,7 +1422,9 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
   deep_set_city_manager_params(ait, pplayer);
 
   TIMING_LOG(AIT_UNITS, TIMER_START);
-  dai_manage_units(ait, pplayer);
+  /* The stock loop with op holds honoured -- dai_manage_units()
+   * would clear the done flags the operations just set. */
+  deep_manage_units(ait, pplayer);
   TIMING_LOG(AIT_UNITS, TIMER_STOP);
   /* STOP.  Everything else is at end of turn. */
 

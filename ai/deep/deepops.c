@@ -76,6 +76,66 @@ int deep_op_claiming(const struct player *pplayer, int unit_id)
 }
 
 /**********************************************************************//**
+  Does an operation hold this unit against the manage loop? TRUE for
+  members whose phase the op itself drives: an assault mustering,
+  striking or consolidating. Marching members are deliberately NOT
+  held -- the stock attack path walks them -- and raiders hunt on
+  stock's leash too.
+**************************************************************************/
+bool deep_op_holds(const struct player *pplayer, int unit_id)
+{
+  const struct deep_plr *dp = deep_plr_data(pplayer);
+  int oi = deep_op_claiming(pplayer, unit_id);
+
+  if (oi < 0) {
+    return FALSE;
+  }
+  if (dp->ops[oi].kind != DEEP_OPK_ASSAULT) {
+    return FALSE;
+  }
+  return dp->ops[oi].state == DEEP_OP_MUSTER
+         || dp->ops[oi].state == DEEP_OP_STRIKE
+         || dp->ops[oi].state == DEEP_OP_CONSOLIDATE;
+}
+
+/**********************************************************************//**
+  The stock manage loop with one change: operation holds survive.
+  dai_manage_units() clears every unit's done flag before managing,
+  which silently erased everything the operation layer had marked --
+  the muster "hold" never held, and STRIKE members were re-tasked by
+  find_something_to_kill the same turn the op fought the battle (the
+  stall tripwire caught a strike member walking AWAY from the walls
+  under stock orders). Same airlift, same defender assignment, same
+  per-unit management; the only difference is that units an op holds
+  stay done.
+**************************************************************************/
+void deep_manage_units(struct ai_type *ait, struct player *pplayer)
+{
+  TIMING_LOG(AIT_AIRLIFT, TIMER_START);
+  dai_airlift(ait, pplayer);
+  TIMING_LOG(AIT_AIRLIFT, TIMER_STOP);
+
+  unit_list_iterate(pplayer->units, punit) {
+    struct unit_ai *unit_data = def_ai_unit_data(punit, ait);
+
+    unit_data->done = deep_op_holds(pplayer, punit->id);
+    if (unit_data->task == AIUNIT_DEFEND_HOME && !unit_data->done) {
+      dai_unit_new_task(ait, punit, AIUNIT_NONE, NULL);
+    }
+  } unit_list_iterate_end;
+
+  dai_set_defenders(ait, pplayer);
+
+  unit_list_iterate_safe(pplayer->units, punit) {
+    if ((!unit_transported(punit)
+         || unit_owner(unit_transport_get(punit)) != pplayer)
+        && !def_ai_unit_data(punit, ait)->done) {
+      dai_manage_unit(ait, pplayer, punit);
+    }
+  } unit_list_iterate_safe_end;
+}
+
+/**********************************************************************//**
   Is any live operation already committed against this city? One op
   per target: a second wave at the same city is the reserve's claim
   (E7), not a parallel operation.
