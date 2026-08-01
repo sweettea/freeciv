@@ -945,97 +945,13 @@ static void deep_manage_convoys(struct ai_type *ait,
 
     want = MIN(get_transporter_capacity(boat), tune->convoy_min_load);
     if (cargo >= want) {
-      /* Slice 3, massed landings: a LOADED convoy whose cargo is an
-       * invasion still holds while the assembled force (all cargo on
-       * this port's transports) cannot clear the target's defence at
-       * arrival -- and only while more force is inbound, the same
-       * stateless anti-deadlock as the load gate: the moment nobody
-       * else is coming, sail with what we have. */
-      if (tune->op_take_target > 0.0) {
-        struct city *target = NULL;
-        struct unit *force[32];
-        int n_force = 0;
-
-        unit_list_iterate(unit_tile(boat)->units, tb) {
-          const struct unit_type *tbt = unit_type_get(tb);
-
-          if (unit_owner(tb) != pplayer
-              || tbt->transport_capacity <= 0
-              || utype_move_type(tbt) != UMT_SEA) {
-            continue;
-          }
-          unit_list_iterate(unit_transport_cargo(tb), pcargo) {
-            struct unit_ai *cd = def_ai_unit_data(pcargo, ait);
-
-            if (adv_unit_att_rating(pcargo) > 0
-                && n_force < (int) ARRAY_SIZE(force)) {
-              force[n_force++] = pcargo;
-            }
-            if (target == NULL && cd->task == AIUNIT_ATTACK
-                && pcargo->goto_tile != NULL) {
-              struct city *tc = tile_city(pcargo->goto_tile);
-
-              if (tc == NULL) {
-                adjc_iterate(&(wld.map), pcargo->goto_tile, atile) {
-                  struct city *ac = tile_city(atile);
-
-                  if (ac != NULL
-                      && pplayers_at_war(pplayer, city_owner(ac))) {
-                    tc = ac;
-                    break;
-                  }
-                } adjc_iterate_end;
-              }
-              if (tc != NULL
-                  && pplayers_at_war(pplayer, city_owner(tc))) {
-                target = tc;
-              }
-            }
-          } unit_list_iterate_end;
-        } unit_list_iterate_end;
-
-        if (target != NULL && n_force > 0) {
-          int rate = MAX(unit_type_get(boat)->move_rate, 1);
-          int eta = (real_map_distance(unit_tile(boat),
-                                       city_tile(target)) * SINGLE_MOVE
-                     + rate - 1) / rate + 1;
-          double p = deep_take_odds_at_arrival(&(wld.map), target,
-                                               force, n_force, eta);
-
-          if (p < tune->op_take_target) {
-            bool more_coming = FALSE;
-
-            unit_list_iterate(pplayer->units, r) {
-              if ((def_ai_unit_data(r, ait)->ferryboat > 0
-                   || (def_ai_unit_data(r, ait)->task == AIUNIT_ATTACK
-                       && adv_unit_att_rating(r) > 0))
-                  && !unit_transported(r)
-                  && !same_pos(unit_tile(r), unit_tile(boat))
-                  && real_map_distance(unit_tile(r), unit_tile(boat))
-                     <= tune->convoy_wait_radius) {
-                more_coming = TRUE;
-                break;
-              }
-            } unit_list_iterate_end;
-            log_base(deep_metric_log_level(),
-                     "deep-invade turn=%d player=\"%s\" %s boat=%d"
-                     " target=%d force=%d eta=%d p=%.3f",
-                     game.info.turn, player_name(pplayer),
-                     more_coming ? "hold" : "sail-anyway", boat->id,
-                     target->id, n_force, eta, p);
-            if (more_coming) {
-              def_ai_unit_data(boat, ait)->done = TRUE;
-              continue;
-            }
-          } else {
-            log_base(deep_metric_log_level(),
-                     "deep-invade turn=%d player=\"%s\" go boat=%d"
-                     " target=%d force=%d eta=%d p=%.3f",
-                     game.info.turn, player_name(pplayer), boat->id,
-                     target->id, n_force, eta, p);
-          }
-        }
-      }
+      /* Loaded to the bar: sail. The massed-landing decision this
+       * branch once tried to make (naval slice 3's port scan) never
+       * fired -- stock ferries board and sail within one manage
+       * pass, so a loaded convoy resting in port does not exist at
+       * phase time. The invade gate lives in the operation layer's
+       * crossing shadow now (deepops.c), at the seam where a
+       * landing is actually decided. */
       continue;
     }
     {
