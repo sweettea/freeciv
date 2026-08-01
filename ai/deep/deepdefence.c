@@ -423,6 +423,8 @@ static unsigned int deep_density_fear(struct city *pcity)
   }
 
   players_iterate_alive(aplayer) {
+    int floats = -1;    /* Lazily: does this neighbour own sea lift? */
+
     if (aplayer == pplayer
         || pplayers_allied(pplayer, aplayer)
         || player_diplstate_get(pplayer, aplayer)->type
@@ -431,10 +433,37 @@ static unsigned int deep_density_fear(struct city *pcity)
     }
     city_list_iterate(aplayer->cities, acity) {
       int d = real_map_distance(city_tile(acity), city_tile(pcity));
+      double w;
 
-      if (d <= tune->density_fear_radius) {
-        fear += tune->density_fear_value / (1.0 + d);
+      if (d > tune->density_fear_radius) {
+        continue;
       }
+      w = tune->density_fear_value / (1.0 + d);
+      if (tile_continent(city_tile(acity))
+          != tile_continent(city_tile(pcity))) {
+        /* Reachability gate (task #18, spec'd 0112a65112 from the
+         * Europe playtest: Hannibal hedgehogged against neighbours
+         * across a strait none of them could cross). A land army
+         * over water is only as frightening as its lift: full
+         * weight once the neighbour floats transports, the standing
+         * menace_overseas_weight before. */
+        if (floats < 0) {
+          floats = 0;
+          unit_list_iterate(aplayer->units, aunit) {
+            const struct unit_type *at = unit_type_get(aunit);
+
+            if (at->transport_capacity > 0
+                && utype_move_type(at) == UMT_SEA) {
+              floats = 1;
+              break;
+            }
+          } unit_list_iterate_end;
+        }
+        if (floats == 0) {
+          w *= tune->menace_overseas_weight;
+        }
+      }
+      fear += w;
     } city_list_iterate_end;
   } players_iterate_alive_end;
 
