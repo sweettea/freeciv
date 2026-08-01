@@ -2164,12 +2164,58 @@ static void deep_assault_want(struct ai_type *ait,
                            tune->attack_value_weight * tworth * marginal,
                            MAX(1, eta), build_cost_balanced(punittype));
 
+  if (tune->op_take_target > 0.0 && p1 >= tune->op_take_target) {
+    /* Snap-up sweep (human doctrine, T160: "build quick snap-up
+     * units to steal their cities back"): one unit of the proposed
+     * type takes this target alone, so the build is a price/speed
+     * race, not a power race -- stock's attacker proposal is
+     * power-biased. Sweep the buildable land attackers for the type
+     * whose amortized want is best: cheap and fast wins on its own
+     * arithmetic, no extra weighting. */
+    bool overseas = tile_continent(city_tile(target)) != home;
+
+    unit_type_iterate(ut) {
+      struct unit *v2;
+      double pa;
+      adv_want w2;
+      int rate2, eta2;
+
+      if (ut == punittype
+          || ut->attack_strength <= 0
+          || utype_has_flag(ut, UTYF_CIVILIAN)
+          || utype_move_type(ut) != UMT_LAND
+          || !can_city_build_unit_now(nmap, pcity, ut, RPT_CERTAIN)) {
+        continue;
+      }
+      rate2 = MAX(overseas ? rate : ut->move_rate, 1);
+      eta2 = (real_map_distance(city_tile(pcity), city_tile(target))
+              * SINGLE_MOVE + rate2 - 1) / rate2 + (overseas ? 2 : 0);
+      v2 = unit_virtual_create(pplayer, pcity, ut, 1);
+      pool[n_pool] = v2;
+      pa = deep_take_odds_at_arrival(nmap, target, pool, n_pool + 1,
+                                     eta2);
+      unit_virtual_destroy(v2);
+      if (pa < tune->op_take_target) {
+        continue;               /* Too light to snap it up alone. */
+      }
+      w2 = military_amortize(pplayer, pcity,
+                             tune->attack_value_weight * tworth
+                             * (pa - p0),
+                             MAX(1, eta2), build_cost_balanced(ut));
+      if (w2 > want) {
+        want = w2;
+        punittype = ut;
+      }
+    } unit_type_iterate_end;
+  }
+
   log_base(deep_metric_log_level(),
            "deep-kill turn=%d player=\"%s\" city=%d target=%d"
            " worth=" ADV_WANT_PRINTF " pool=%d p0=%.3f p1=%.3f ck=%d"
-           " want=" ADV_WANT_PRINTF,
+           " type=\"%s\" want=" ADV_WANT_PRINTF,
            game.info.turn, player_name(pplayer), pcity->id, target->id,
-           tworth, n_pool, p0, p1, csize, want);
+           tworth, n_pool, p0, p1, csize, utype_rule_name(punittype),
+           want);
 
   if (want > choice->want) {
     choice->value.utype = punittype;
