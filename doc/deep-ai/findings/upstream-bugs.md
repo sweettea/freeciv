@@ -123,3 +123,26 @@ not exist, at gold upkeep. Observed live (Europe playtest T153,
 2026-07-31): early Barracks queues across brains. Deep gates the call
 on the garrison floor and grave danger (deepdefence.c); fix left out
 of ai/default per the freeze rule.
+
+## pf danger maps read past an empty segment when the start is dangerous
+
+`common/aicore/path_finding.c`: `pf_danger_map_create_segment()`'s
+back-walk excludes the origin tile whenever it is the map's start
+(`direction8_is_valid(node->dir_to_here)` is false there), so a path
+whose START tile satisfies `is_pos_dangerous` gets a zero-length
+danger segment. `pf_danger_map_construct_path()` then hits the start
+node with `is_dangerous` set and a non-NULL (empty) segment pointer
+and fills `positions[0]` from `danger_seg->cost` -- a read past a
+malloc(0) allocation. Symptom under PF_DEBUG: the
+`pos->moves_left == param->moves_left_initially` assertion in
+`pf_map_path()` (path_finding.c:3253), garbage `positions[0]`
+otherwise. Latent upstream: nothing in-tree ever sets
+`is_pos_dangerous` (the callback is documented and unassigned), so
+only ai/deep's settler risk mix triggered it -- ~100 of ~1300 deep-arm
+benchmark logs, zero baseline. Deep-side fix: the civilian danger
+callback returns FALSE for `param->start_tile` (you cannot refuse to
+be where you already are), which is semantically right regardless of
+the pf bug. Upstream fix would be: treat a dangerous start like a
+safe origin in segment construction (include it in the segment, or
+have construct_path fall back to `node->cost` when the segment is
+exhausted). Not fixed in place per rule 2's spirit for common/.
