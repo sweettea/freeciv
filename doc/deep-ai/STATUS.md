@@ -1161,3 +1161,40 @@ and healing remain unmodelled; W31's deeper layers (sea lanes, fleet
 composition, bombardment) unstarted. Remaining E-map: E7 second
 waves, E8 raids, E4 aggregation swap (pre-v4 only), E5 sieges; #18
 small gates still pending.
+
+## B6 isolated verdict + the small-hours epics (2026-07-31, very late)
+
+B6 verification chain complete. Smoke median 0.891 == B1's exactly
+(the whole evening added zero quiet-cell regression; mean up 0.913).
+Contested holds 0.811 with foundings 324->401 and losses down to 11.
+ISOLATED (T300 islands, the #19/#20 proving ground) is a different
+species from the Europe T153 fossil: 7618 overseas settler picks
+across 10 games, colonial empires of 29-36 cities, real navies
+(Cruisers x35 / Destroyers x16 / Transports x17 in single players),
+and THE FULL GROWTH LADDER -- Granary 7 / Temple 9 / Marketplace 7 /
+Aqueduct 6 / Harbour 6 / Library 6 / Banks / Sewers in P1 where the
+Europe game had zero of everything at T153. Score at untuned
+defaults: isolated median 0.853 -- closing that gap is v4's job.
+Tasks #19 (satisfaction gate) and #20 (colony expeditions) VERIFIED
+AND CLOSED. #16 stays open on one honest gap: the deep-invade
+assault gate fired zero times in every cell (self-play never
+produced an amphibious assault); exercise it via the lategame cell
+or mixed arms before closing. Watch items confirmed alive: explorer
+census creep (18 Explorers in one player), diplomat count (20).
+
+Landed after B6's launch (B8 binary, combat-first per human call --
+"go further on the combat workstream before the tuning run"):
+E7 SECOND WAVES -- wave one enrolls required x1.5, the rest stays a
+designated reserve; for op_wave_window turns the struck target has
+first claim on the next formation, re-priced against the garrison
+wave one softened; the window closing is the formal withdrawal.
+E8 RAIDS (first slice) -- with no operation standing, idle fast
+attackers hunt exposed enemy civilians within raid_radius; pillage
+missions deferred. #18 CLOSED -- cross-water density fear scales by
+the neighbour's actual lift (menace_overseas_weight reused, no new
+knob), and huts near own cities discount by hut_risk_discount
+within hut_risk_radius while barbarian.c's exact gate (rate+onset)
+says spawns are possible. New knobs: op_wave_window, raid_radius,
+hut_risk_radius, hut_risk_discount. B8 contested verification pass
+next; E5 sieges deliberately parked for a fresh session (needs
+per-city streak state); E4 parked pre-v4.
