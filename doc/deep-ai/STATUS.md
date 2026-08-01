@@ -1553,3 +1553,54 @@ fear knobs are tuned down to where deep's army approaches baseline's
 size, the economy ratios should move toward 1.0 and the score with
 them. If they do not, the deficit is in W02/W03 site and building
 evaluation instead, and the census in step 2 will say so.
+
+## Counter-claim epic verdict, and the tuning machinery (2026-08-01)
+
+B15 (counter-claim as a per-turn drip) vs B16 (relief force sized to
+the wave + claimed relief counted as incoming defence), contested,
+10 paired seeds each:
+
+  B15  median 0.832 / mean 0.863  (best of the whole chain)
+  B16  median 0.806 / mean 0.857
+
+Inside the noise band at n=10 (CLAUDE.md rule 6: a 3% move over 10
+games is noise), so on SCORE the sizing neither paid nor cost. On
+mechanism it is plainly better behaved:
+
+  claims        2672 -> 2006 (and every one now sized)
+  relief size   1050x1, 698x2, 156x3, 72x4, 16x5, 13x6
+  the sizing works: p=0.000 -> relieved 0.988; 0.122 -> 0.983;
+                    0.403 -> 0.924 (it takes the city OVER the bar)
+  write-offs    1472, of which 1020 had pool=0 -- no reachable blade
+                existed at all, so the triage is almost never
+                discarding usable help
+  re-claims     2238 same-city-within-3-turns (B15) -> 392 (B16)
+  brigade       7 relays fired; rare because the direct pool usually
+                answers first on these maps
+  op_form       65 (B13 49, B15 66): offense is NOT strangled
+
+Human doctrine folded in this stretch: attack posture inside the
+defence ledger (mustering armies CREDIT nearby cities via the W11
+formula; committed_fear_mult scales fear up when every launched
+blade is beyond the horizon), settler_risk_tolerance (an absolute
+overnight veto is wrong -- some loss chance is affordable en route
+to a very good site), and the brigade.
+
+TUNING MACHINERY (benchmark/README.md "Two-machine tuning split"):
+tune.py grew --blocks/--rounds (alternating block coordinate descent
+over tuning-blocks.ini: S = fear -> military want, E = civilian
+allocation, M = war allocation), --start (pin a regime; the merge
+mechanism), and --evaluate (score a tuning file without optimising).
+benchmark/tuning/econ-regime.ini zeroes deep's military SURCHARGE
+(not stock's defence underneath) so block E can be tuned against a
+stable shield budget; garden2b-150 and lategame-80 are the truncated
+economy cells. The alternation table tune.py prints is itself the
+experiment: a block that still gains in a later round is coupled,
+which is the empirical case for landing the objective layer first
+(findings/objective-layer.md).
+
+NOT DONE, and the honest state of the headline: deep is still below
+1.0 everywhere. Nothing in this session changed that, and the
+component split says nothing in the combat workstream will. The next
+session's work is the objective layer and then the tuning campaign,
+in that order, per findings/objective-layer.md.
