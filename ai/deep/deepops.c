@@ -465,11 +465,17 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
       break;
     }
   }
-  if (required <= 1) {
-    /* Nothing to coordinate: no force clears the bar, or one unit
-     * does and needs no operation for it. */
+  if (required < 1) {
+    /* No force clears the bar. */
     return FALSE;
   }
+  /* required == 1 forms too (T160 forensics): "one unit needs no
+   * operation" assumed stock would claim singleton targets, but
+   * stock garrisons sit at AIUNIT_DEFEND_HOME and never walk into
+   * even an EMPTY city -- 47 of the 52 barbarian-held cities at T160
+   * had no garrison and no suitor. The op machinery gives the
+   * singleton exactly what it needs: a claimed unit, a march, a
+   * re-gate. */
 
   op->state = DEEP_OP_MUSTER;
   op->kind = DEEP_OPK_ASSAULT;
