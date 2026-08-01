@@ -1132,6 +1132,71 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
                      " force=%d eta=%d p=%.3f",
                      game.info.turn, player_name(pplayer),
                      op->target_city, ns, eta, odds);
+            /* Before abandoning the sunk crossing, try a second
+             * target (human doctrine 2026-08-01: a fleet at sea can
+             * pick another beach). Any known coastal at-war city
+             * this force still takes at ITS arrival -- the full
+             * formation bar, not the abort floor: a retarget is a
+             * new commitment. Offshore probing proper waits on W04
+             * eyes; this is the pick-a-second-target half. */
+            {
+              struct city *alt = NULL;
+              double alt_odds = 0.0;
+              int alt_eta = 0;
+
+              players_iterate_alive(aplayer) {
+                if (!pplayers_at_war(pplayer, aplayer)
+                    || (!is_barbarian(aplayer)
+                        && player_diplstate_get(pplayer, aplayer)->type
+                           == DS_NO_CONTACT)) {
+                  continue;
+                }
+                city_list_iterate(aplayer->cities, acity) {
+                  int ceta;
+                  double codds;
+
+                  if (acity->id == op->target_city
+                      || deep_op_targeted(pplayer, acity->id)
+                      || !map_is_known(city_tile(acity), pplayer)
+                      || !is_terrain_class_near_tile(nmap,
+                                                     city_tile(acity),
+                                                     TC_OCEAN)) {
+                    continue;
+                  }
+                  ceta = deep_op_eta(pplayer, op, acity);
+                  codds = deep_take_odds_at_arrival(nmap, acity,
+                                                    stream, ns, ceta);
+                  if (codds >= tune->op_take_target
+                      && codds > alt_odds) {
+                    alt = acity;
+                    alt_odds = codds;
+                    alt_eta = ceta;
+                  }
+                } city_list_iterate_end;
+              } players_iterate_alive_end;
+
+              if (alt != NULL) {
+                log_base(deep_metric_log_level(),
+                         "deep-invade turn=%d player=\"%s\" retarget"
+                         " from=%d to=%d force=%d eta=%d p=%.3f",
+                         game.info.turn, player_name(pplayer),
+                         op->target_city, alt->id, ns, alt_eta,
+                         alt_odds);
+                op->target_city = alt->id;
+                /* Same clock, new leg: the timeout window extends
+                 * by exactly the fresh eta, no further. */
+                op->march_eta = alt_eta
+                                + (game.info.turn - op->march_turn);
+                for (i = 0; i < ns; i++) {
+                  if (def_ai_unit_data(stream[i], ait)->task
+                      == AIUNIT_ATTACK) {
+                    dai_unit_new_task(ait, stream[i], AIUNIT_ATTACK,
+                                      city_tile(alt));
+                  }
+                }
+                return;
+              }
+            }
           }
           for (i = 0; i < ns; i++) {
             struct unit_ai *ud = def_ai_unit_data(stream[i], ait);
