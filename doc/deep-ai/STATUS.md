@@ -1277,3 +1277,17 @@ with the raid/assault slot tension refereed by its ledger; then
 save/load (#21 phase 4); E5 sieges still parked for a fresh
 session; wide-n + v4 tuning wait for the human's call that the
 combat stream is done.
+
+B11 verdict (T160 reconquest stack, contested): median 0.812 / mean
+0.839 -- band-stable, best mean and best single seed (1.116) of the
+chain. Losses HALVED to 10 (B9/B10: 16/17), observed not attributed
+(n=10). Mechanisms all alive in contested: campaign pricing on 75%
+of deep-kill lines (25149/33308 ck>0), snap-up sweep won by Chariot
+22045 / Horsemen 4857 (cheap-fast beats power-bias as designed), 27
+singleton formations, 41 drafted formations. Still open: 54 marches
+-> 4 strikes / 54 odds-aborts -- civilised targets reinforce faster
+than small waves march; composition shifts need more than one game.
+That dynamic is strike control's (phase 3) to referee, with the
+raid/assault slot tension. Reconquest OUTCOME is proven by the
+fixture (10 retakes / 12 turns), not by contested, which has no
+barbarian city pool.
