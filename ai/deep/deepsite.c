@@ -180,6 +180,25 @@ static adv_want deep_catchment_average(int *sums, int *foods,
                  + tune->site_potential_discount * potentials[i]);
   }
 
+  if (wsum <= 0.0) {
+    /* Every catchment tile drew a zero weight, so there is no weighted
+     * average to take. This is reachable from legal tuning: a site whose
+     * tiles are all overlapped or all in the tail, with
+     * site_overlap_weight and site_tail_weight both at 0 -- values the
+     * tuner explores, since both ranges start at 0.
+     *
+     * 0.0/0.0 is NaN, and NaN is not merely wrong here, it is invisible:
+     * MAX(0, NaN) returns NaN rather than clamping it, so the NaN
+     * reached deep_city_desirability()'s `cr->total >= 0` assertion,
+     * which failed, returned NULL and leaked the cityresult. The site
+     * was then silently dropped -- 148 times in one campaign-a
+     * generation. Candidates with small tail/overlap weights were
+     * therefore scored on FEWER surviving sites than candidates with
+     * large ones, which biases the tuning run rather than just adding
+     * noise to it. */
+    return 0;
+  }
+
   return vsum / wsum;
 }
 
