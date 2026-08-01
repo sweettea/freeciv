@@ -47,6 +47,11 @@ enum deep_op_state {
   DEEP_OP_MUSTER,
   DEEP_OP_MARCH,
   DEEP_OP_STRIKE,
+  /* The city fell to the wave: garrison it from the wave itself,
+   * best defender first, until the stack clears the same survival
+   * bar every other city answers to -- a capture left open is a
+   * recapture (B9-B11 games lost takes this way). */
+  DEEP_OP_CONSOLIDATE,
 };
 
 /* Op templates (W33). ASSAULT is the muster-and-smash above. RAID

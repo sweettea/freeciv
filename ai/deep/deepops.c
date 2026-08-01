@@ -636,6 +636,103 @@ static int deep_op_eta(const struct deep_operation *op,
 }
 
 /**********************************************************************//**
+  Hold what the wave took (W33 phase 3, CONSOLIDATE). Members
+  standing in the captured city convert to its garrison -- best
+  defender first, handed to stock as AIUNIT_DEFEND_HOME and released
+  from the op -- until the stack clears survival_target, the same
+  bar every other city answers to (no new constant). Members still
+  outside walk in under op control while the bar is short. When the
+  bar clears, or the patience knob runs out, the rest are banked and
+  the op dissolves: "held".
+**************************************************************************/
+static void deep_op_drive_consolidate(struct ai_type *ait,
+                                      struct player *pplayer,
+                                      struct deep_operation *op, int oi)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  struct city *target = game_city_by_number(op->target_city);
+  struct tile *ctile = city_tile(target);
+  bool cleared;
+  int i;
+
+  /* Convert best defenders in the city until the bar clears. */
+  for (;;) {
+    struct unit *gar = NULL;
+    int gar_i = -1;
+
+    cleared = tune->survival_target <= 0.0
+              || deep_city_stack_survival(nmap, target,
+                                          tune->survival_horizon, NULL)
+                 >= tune->survival_target;
+    if (cleared) {
+      break;
+    }
+    for (i = 0; i < op->n_members; i++) {
+      struct unit *m = game_unit_by_number(op->members[i]);
+
+      if (m == NULL || m->hp <= 0
+          || adv_unit_def_rating_basic(m) <= 0
+          || !same_pos(unit_tile(m), ctile)) {
+        continue;
+      }
+      if (gar == NULL
+          || adv_unit_def_rating_basic(m)
+             > adv_unit_def_rating_basic(gar)) {
+        gar = m;
+        gar_i = i;
+      }
+    }
+    if (gar == NULL) {
+      break;
+    }
+    log_base(deep_metric_log_level(),
+             "deep-op turn=%d player=\"%s\" op=%d garrison target=%d"
+             " unit=\"%s\"",
+             game.info.turn, player_name(pplayer), oi, op->target_city,
+             unit_rule_name(gar));
+    dai_unit_new_task(ait, gar, AIUNIT_DEFEND_HOME, ctile);
+    def_ai_unit_data(gar, ait)->done = TRUE;
+    op->members[gar_i] = op->members[--op->n_members];
+  }
+
+  if (cleared || game.info.turn - op->phase_turn >= tune->op_muster_wait) {
+    /* Held (or held as well as this wave ever will): bank the rest. */
+    for (i = 0; i < op->n_members; i++) {
+      struct unit *m = game_unit_by_number(op->members[i]);
+
+      if (m != NULL
+          && def_ai_unit_data(m, ait)->task == AIUNIT_ATTACK) {
+        dai_unit_new_task(ait, m, AIUNIT_NONE, NULL);
+      }
+    }
+    deep_op_dissolve(op, oi, "held", pplayer);
+    return;
+  }
+
+  /* Bar still short: the rest of the wave walks in under op
+   * control. */
+  for (i = 0; i < op->n_members; i++) {
+    struct unit *m = game_unit_by_number(op->members[i]);
+    int m_id;
+
+    if (m == NULL || m->hp <= 0) {
+      continue;
+    }
+    m_id = m->id;
+    if (!def_ai_unit_data(m, ait)->done
+        && m->moves_left > 0
+        && !same_pos(unit_tile(m), ctile)) {
+      (void) dai_gothere(ait, pplayer, m, ctile);
+      m = game_unit_by_number(m_id);
+    }
+    if (m != NULL) {
+      def_ai_unit_data(m, ait)->done = TRUE;
+    }
+  }
+}
+
+/**********************************************************************//**
   Fight the battle under op control (W33 phase 3, strike control).
   The wave stands at the walls; instead of two dozen independent
   find_something_to_kill passes, the op orders the attacks itself:
@@ -936,6 +1033,11 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
 
   if (op->state == DEEP_OP_STRIKE) {
     deep_op_drive_strike(ait, pplayer, op, oi);
+    return;
+  }
+
+  if (op->state == DEEP_OP_CONSOLIDATE) {
+    deep_op_drive_consolidate(ait, pplayer, op, oi);
   }
 }
 
@@ -981,6 +1083,28 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
     if (op->kind == DEEP_OPK_RAID) {
       if (op->n_members == 0) {
         deep_op_dissolve(op, oi, "raid-done", pplayer);
+      }
+      continue;
+    }
+    if (target != NULL && city_owner(target) == pplayer
+        && (op->state == DEEP_OP_MARCH || op->state == DEEP_OP_STRIKE)) {
+      /* The city fell to us: hold it. (A march can capture too --
+       * its members fight on the stock attack path.) */
+      op->state = DEEP_OP_CONSOLIDATE;
+      op->phase_turn = game.info.turn;
+      log_base(deep_metric_log_level(),
+               "deep-op turn=%d player=\"%s\" op=%d consolidate"
+               " target=%d members=%d",
+               game.info.turn, player_name(pplayer), oi, op->target_city,
+               op->n_members);
+    }
+    if (op->state == DEEP_OP_CONSOLIDATE) {
+      if (target == NULL || city_owner(target) != pplayer) {
+        deep_op_dissolve(op, oi, "abort", pplayer);
+      } else if (op->n_members == 0) {
+        /* Everyone converted to garrison (or died): the hold is
+         * whatever it is; the op's work is over. */
+        deep_op_dissolve(op, oi, "held", pplayer);
       }
       continue;
     }
