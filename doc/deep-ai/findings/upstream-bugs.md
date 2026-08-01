@@ -146,3 +146,14 @@ the pf bug. Upstream fix would be: treat a dangerous start like a
 safe origin in segment construction (include it in the segment, or
 have construct_path fall back to `node->cost` when the segment is
 exhausted). Not fixed in place per rule 2's spirit for common/.
+
+30. **`dai_sanity_check()` asserts a diplomacy invariant that the AI
+    itself violates** — `ai/default/daisanity.c:51`,
+    `adip->countdown >= -1 || at_war || war_target`. Fires in ordinary
+    benchmark play: 6 logs per ~240-game generation, with the frozen
+    control's twin `bl_dai_sanity_check()` (`ai/baseline/default/`)
+    firing at the SAME count on the same generation. Module-symmetric,
+    therefore not a deep regression and not a measurement hazard — it
+    costs both arms equally. Recorded rather than fixed per rule 2;
+    noted here so a future session does not re-diagnose it after the
+    two deep-side assertions around it were cleared (2026-08-01).
