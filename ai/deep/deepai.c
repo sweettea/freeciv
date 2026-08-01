@@ -33,6 +33,7 @@
 #include "research.h"
 
 /* server */
+#include "srv_main.h"
 #include "unittools.h"
 
 /* server/advisors */
@@ -278,6 +279,9 @@ static void dpai_city_free(struct city *pcity)
 **************************************************************************/
 static void dpai_city_got(struct player *pplayer, struct city *pcity)
 {
+  if (server_state() != S_S_RUNNING) {
+    return;   /* Savegame load is not a founding. */
+  }
   log_base(deep_metric_log_level(),
            "deep-city turn=%d player=\"%s\" got=%d size=%d founded=%d"
            " at=(%d,%d)",
@@ -291,6 +295,12 @@ static void dpai_city_got(struct player *pplayer, struct city *pcity)
 **************************************************************************/
 static void dpai_city_lost(struct player *pplayer, struct city *pcity)
 {
+  if (server_state() != S_S_RUNNING) {
+    return;   /* Game-end teardown frees every city through
+               * remove_city(); that is not a defence failure.
+               * (Smoke run 2026-07-31: founded == lost in every
+               * seed, all at the final turn.) */
+  }
   log_base(deep_metric_log_level(),
            "deep-city turn=%d player=\"%s\" lost=%d size=%d founded=%d"
            " at=(%d,%d)",
