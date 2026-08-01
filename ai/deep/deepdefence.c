@@ -887,6 +887,61 @@ static void deep_manage_convoys(struct ai_type *ait,
 }
 
 /**********************************************************************//**
+  Tired-attack discipline (combat workstream): under
+  game.info.tired_attack, striking with moves_left < SINGLE_MOVE
+  scales attack power by moves_left/SINGLE_MOVE (combat.c) -- an
+  attack on one-third moves is an attack at one-third strength, a
+  trade the stock AI never prices. A unit on an attack mission,
+  standing adjacent to its target with only a tired strike left,
+  holds this turn and strikes fresh next -- unless the tired odds
+  already clear tired_attack_floor (a wounded straggler does not earn
+  a night's rest). The hold is one turn of initiative given up for
+  roughly SINGLE_MOVE/moves_left more strength; the knob referees.
+**************************************************************************/
+static void deep_hold_tired_attackers(struct ai_type *ait,
+                                      struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+
+  if (!game.info.tired_attack || tune->tired_attack_floor <= 0.0) {
+    return;
+  }
+
+  unit_list_iterate(pplayer->units, punit) {
+    struct unit_ai *unit_data = def_ai_unit_data(punit, ait);
+    struct unit *pdefender;
+    double chance;
+
+    if (unit_data->task != AIUNIT_ATTACK
+        || punit->goto_tile == NULL
+        || punit->moves_left <= 0
+        || punit->moves_left >= SINGLE_MOVE
+        || real_map_distance(unit_tile(punit), punit->goto_tile) != 1) {
+      continue;
+    }
+    pdefender = get_defender(nmap, punit, punit->goto_tile, NULL);
+    if (pdefender == NULL
+        || !pplayers_at_war(pplayer, unit_owner(pdefender))) {
+      /* Nothing (visible) to duel: a walk-in capture needs no rest,
+       * and a stale mission is the manager's to re-decide. */
+      continue;
+    }
+    chance = unit_win_chance(nmap, punit, pdefender, NULL);
+    if (chance >= tune->tired_attack_floor) {
+      continue;
+    }
+    log_base(deep_metric_log_level(),
+             "deep-tired turn=%d player=\"%s\" unit=\"%s\" moves=%d"
+             " p=%.3f at=(%d,%d)",
+             game.info.turn, player_name(pplayer),
+             unit_rule_name(punit), punit->moves_left, chance,
+             TILE_XY(unit_tile(punit)));
+    unit_data->done = TRUE;
+  } unit_list_iterate_end;
+}
+
+/**********************************************************************//**
   Interrupt working civilians in danger and run them to the nearest
   own city (human request 2026-07-30: a mid-transform Engineer keeps
   digging as the Knights ride up -- stock auto-workers fear PATHS but
@@ -1023,6 +1078,7 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
   deep_credit_incoming_defence(ait, pplayer);
   deep_melt_surplus_defenders(ait, pplayer);
   deep_manage_convoys(ait, pplayer);
+  deep_hold_tired_attackers(ait, pplayer);
   deep_flee_workers(ait, pplayer);
   deep_set_city_manager_params(ait, pplayer);
 

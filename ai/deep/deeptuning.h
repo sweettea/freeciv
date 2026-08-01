@@ -229,6 +229,11 @@ struct deep_tuning {
   double survival_target;
   double survival_fear_value;
   int survival_horizon;
+  /* Tired-attack discipline: a unit adjacent to its attack target
+   * with only a tired strike left (moves_left < SINGLE_MOVE scales
+   * attack power down) holds a turn to strike fresh, unless its
+   * tired win chance already reaches this floor. <= 0 disables. */
+  double tired_attack_floor;
 };
 
 void deep_tuning_init(void);
