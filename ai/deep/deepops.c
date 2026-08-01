@@ -393,7 +393,7 @@ static void deep_op_drive_raid(struct ai_type *ait, struct player *pplayer,
                                struct deep_operation *op, int oi)
 {
   const struct deep_tuning *tune = deep_tuning_get();
-  int i, hunting = 0;
+  int i, n = 0, hunting = 0;
 
   for (i = 0; i < op->n_members; i++) {
     struct unit *m = game_unit_by_number(op->members[i]);
@@ -405,6 +405,7 @@ static void deep_op_drive_raid(struct ai_type *ait, struct player *pplayer,
     }
     ud = def_ai_unit_data(m, ait);
     if (ud->task == AIUNIT_ATTACK) {
+      op->members[n++] = op->members[i];
       hunting++;
       continue;
     }
@@ -421,9 +422,18 @@ static void deep_op_drive_raid(struct ai_type *ait, struct player *pplayer,
                real_map_distance(unit_tile(m), unit_tile(victim)));
       dai_unit_new_task(ait, m, AIUNIT_ATTACK, unit_tile(victim));
       (void) dai_gothere(ait, pplayer, m, unit_tile(victim));
+      op->members[n++] = op->members[i];
       hunting++;
     }
+    /* No hunt and no victim in reach: released. The pooled raid op
+     * (one per player) otherwise keeps idle raiders claimed for as
+     * long as ANYONE still hunts -- B12 measured 9094 stalled
+     * raider-turns per 10 games, cavalry benched out of the assault
+     * pool, the garrison draft and fresh raids alike. The raid
+     * holds active hunters only; a released raider re-enrolls the
+     * moment a new victim strays into reach. */
   }
+  op->n_members = n;
 
   if (hunting == 0) {
     deep_op_dissolve(op, oi, "raid-done", pplayer);
