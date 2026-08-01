@@ -56,20 +56,42 @@ budget it allocates is stable across candidates:
 
 `garden2b-150` (2 players, islands, many settlers/workers, 150 turns)
 and `lategame-80` (6 players, techlevel 50, 8 settlers + 10 workers,
-80 turns) are truncated copies of the shipped cells -- economy ramps,
-short horizons, little time for a war to decide the game.
+dispersion 3, 80 turns) are truncated copies of the shipped cells --
+economy ramps, short horizons, little time for a war to decide the
+game.
 
-**Machine B -- the war half, blended objective.** Blocks S and M
-against three regimes at once; the objective is the mean over configs,
-so a candidate cannot overfit one map shape:
+What each economy cell is FOR (human, 2026-08-01): `lategame` is the
+high-opportunity build-out test -- given tech and settlers and room,
+does deep actually build improvements AND terrain improvements? Judge
+it with `buildmix.py` (improvement census) and `terraform.py`, not
+score alone. `isolated` exercises SCIENCE over a long peaceful game.
+`primary` (shared continent, FRACTAL) is the warlike regime and
+belongs to machine B, not here.
+
+**Machine B -- the war half, blended objective.** Blocks S and M,
+and the blend matters more than it looks:
 
     python3 benchmark/tune.py --blocks S,M --rounds 2 \
-      --config benchmark/configs/isolated.conf,benchmark/configs/cramped.conf,benchmark/configs/contested.conf \
+      --config benchmark/configs/primary.conf,benchmark/configs/isolated.conf \
       --count 8 --gens 4 --pop 6 --jobs $(nproc) \
       --out benchmark/results/tuning/war
 
+**Block S must see a peaceful cell and a warlike one in the same
+objective.** S is the fear -> military-want conversion; tuned only on
+warlike maps it learns "always arm", which is the exact pathology
+measured on 2026-08-01 (deep fielding 1.57x baseline's army with an
+economy 25-30% behind). `primary` supplies the war -- FRACTAL, 400
+land tiles per player, startpos ALL, i.e. everyone on one continent
+and early contact -- and `isolated` supplies the cost of over-arming.
+`contested` may be added for M only; it is a mechanism cell (~38 land
+tiles per player, see cell sizing below), not a venue for the split.
+
 (There is no `compact.conf`; the small crowded cell is `cramped` --
 3 players, 30x30, 300 turns.)
+
+**Cost warning.** `primary` is 300 turns on ~8000 tiles with
+TIMEOUT_S=7200: these are long games, and a pop-6 x gens-4 x 8-seed
+pass over it is a cloud-box job (see AWS.md), not a laptop job.
 
 **Blended `--config a,b,c` is not the same as `--mixed`.** The first
 averages the paired objective over several configs. The second puts
