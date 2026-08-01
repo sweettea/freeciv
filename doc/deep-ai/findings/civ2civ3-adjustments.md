@@ -291,12 +291,21 @@ Second pass (same save):
    control is the game, and it is currently free. Evidence for #16's
    priority once the operation machinery can carry it.
 
-5. THE SETTLER EPOCH ENDS -- FOR EVERYONE. Zero settlers on the
-   whole board (human included) at T153: from ~T100 the map is
-   carved and conquest is the ONLY remaining growth channel. E2/E6
-   are not "add aggression"; they restore growth after the land runs
-   out. Also why contested cells were flat: half of every game is a
-   phase deep could not play.
+5. NOBODY COLONIZES -- WITH 71% OF THE LAND UNOWNED. (Corrected by
+   the human 2026-07-31: first written as "the settler epoch ends";
+   it does not.) Zero settlers on the whole board at T153 while
+   ~7300 of ~10300 land tiles are unclaimed -- plains and grassland,
+   not just tundra scraps. Every AI abandons expansion the moment it
+   requires a boat or a march past danger; conquest AND colonization
+   are both open growth channels the brains refuse. Deep's
+   self-inflicted half traced: the settler pipeline cap
+   (passengers >= boats -> land-only placement) reads 0 >= 0 with no
+   boats owned, so overseas site demand is never expressed, so
+   nothing ever wants a transport, so colonization never starts --
+   the same chicken-and-egg the invasion lift-want breaks for
+   attackers. Fix filed as COLONY EXPEDITIONS (task #20): when
+   overseas sites score well and lift binds, build the boat; a
+   colony ship + escort is a small E6 operation.
 
 6. Colour: everyone converges on Democracy -- all deep, most
    classic, the human, and Boadicea the barbarian queen
