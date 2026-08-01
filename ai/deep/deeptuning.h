@@ -94,6 +94,15 @@ struct deep_tuning {
    * which is today's-state pricing of a future-state asset: exactly
    * the defect W03 was built to fix, in the column W03 skipped. */
   double horizon_content_weight;
+  /* Survival probability at or above which a city does NOT switch to
+   * war weights in the city manager. Deliberately separate from
+   * survival_target: that one arbitrates ~20 defence and operations
+   * decisions where being wrong loses a city, while being wrong here
+   * loses some food, so the two want different answers -- and sharing
+   * one scalar would put the ECON and MIL tuning blocks in a tug of war
+   * over it. 0 falls the gate back to stock's urgency/grave_danger
+   * presence counts. */
+  double cm_war_survival;
   /* Share of a tech-gated cap-lifter's capacity credit routed into
    * the gating advance's tech want (the credit cannot buy the
    * building, but it can buy the research). */

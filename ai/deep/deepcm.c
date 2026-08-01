@@ -176,10 +176,47 @@ void deep_set_city_manager_params(struct ai_type *ait,
     struct ai_city *city_data = def_ai_city_data(pcity, ait);
     struct cm_parameter cmp;
     bool matched = TRUE;
+    bool threatened;
 
     deep_cm_base(&cmp, pcity);
 
-    if (city_data->urgency > 0 || city_data->grave_danger > 0) {
+    /* "Under threat" has to mean the city could FALL, not that an enemy
+     * is standing near it. urgency and grave_danger are presence COUNTS
+     * -- grave_danger increments for any capture-capable unit within one
+     * turn's move, urgency within three -- and neither asks whether the
+     * garrison wins, so a city behind walls with five Musketeers scores
+     * what an empty one scores. The same substitution was corrected in
+     * three other places on 2026-08-01; this was the fourth site, and
+     * the costliest of them, for two reasons.
+     *
+     * It is the FIRST branch of this state machine, so growth-capped,
+     * wonder and grow-hard are all UNREACHABLE for a city that merely
+     * has a neighbour. And Europe T106 measured urgency > 0 on 69% of
+     * deep's cities during a war -- which left cm_cap_*, cm_grow_* and
+     * cm_wonder_* governing a minority of cities while the tuning
+     * campaign spent its budget optimising them.
+     *
+     * The threshold is cm_war_survival and NOT survival_target, even
+     * though both ask "will this city hold". survival_target already
+     * arbitrates some twenty decisions across the defence and operations
+     * layers -- garrison lending, worker guards, brigade relay, relief
+     * sizing -- where being wrong loses a city. Being wrong here loses
+     * some food. Those want different answers, and one scalar cannot
+     * give both; sharing it would also put ECON and MIL in a tug of war
+     * over a single number, which is the block coupling machine B's
+     * alternation table exists to detect. Fall back to the stock flags
+     * only when the gate is switched off entirely. */
+    if (tune->cm_war_survival > 0.0) {
+      int wave = 0;
+      double surv = deep_city_stack_survival(&(wld.map), pcity,
+                                             tune->survival_horizon, &wave);
+
+      threatened = wave > 0 && surv < tune->cm_war_survival;
+    } else {
+      threatened = city_data->urgency > 0 || city_data->grave_danger > 0;
+    }
+
+    if (threatened) {
       /* Under threat: shields now; the happy factor stops the
        * arrangement fighting the (stock-ignored) happiness signal. */
       cmp.factor[O_FOOD] = tune->cm_war_food;
