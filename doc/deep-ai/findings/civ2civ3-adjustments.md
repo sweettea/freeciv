@@ -203,6 +203,48 @@ model (defence vs ordered attacker stream) would upgrade every
 consumer of danger/defence comparisons -- future combat workstream,
 pairs with tired-attack discipline.
 
+## Combat workstream epic 1: the survival model (2026-07-31, landed)
+
+Sequenced BEFORE naval slice 3 (human call): the invasion go/no-go
+gate is itself a combat-odds comparison, and building it on linear
+sums would mean rewriting its heart one epic later. Naval recon is
+banked in task #16.
+
+What landed: deepodds.c, the exact duel math -- win_chance()'s own
+recurrence (common/combat.c) with roles swapped, keeping the
+defender-HP distribution its 30-year-old comment wished the AI had,
+chained across an ordered attacker stream over a defender stack.
+Freestanding by design; tests/deepodds_test.c checks it against an
+independent forward-DP oracle (first L0 unit test in the tree).
+deepcombat.c grounds it: the wave is at-war units that could reach
+the city within survival_horizon turns, fresh-arrival attack power,
+strongest first, against the garrison's best defender until it
+falls. Consumers: survival-deficit fear in both danger passes
+(deep-surv tripwire), a grow-release veto beside the linear margin
+test, and tired-attack discipline (hold an adjacent tired strike
+below tired_attack_floor win chance -- attack power scales by
+moves_left/SINGLE_MOVE and stock never prices it; deep-tired
+tripwire). deep-city conquest ledger (city_got/city_lost hooks were
+NULL) + benchmark/cities.py close the measurement loop.
+
+Model assumptions, stated so the next reader can attack them:
+single-wave (no healing, promotion, or reinforcement between duels);
+defenders engage best-first and attackers strike strongest-first;
+military garrison only (civilian meat-shields uncounted); observed
+units only (synthetic fears keep covering the unseen); wave bounded
+at 32, stack at 16 (computational caps, not tuning). Multi-turn
+sieges are priced as one wave per turn, re-evaluated fresh -- the
+compounding across turns is real but unmodelled.
+
+Queued consumers from the human mid-epic notes: COVER SORTIE (step a
+defender onto a nearly-done worker/settler under imminent threat,
+even briefly emptying the city), KILL SORTIE (finish a weakened
+besieger at the same brief cost -- an attacker erased is subtracted
+from every future wave), both priced as survival-delta x value
+comparisons and both subordinate to the global plan (W08/W33).
+Risk-proportionate escorts (naked early caravans to allies are FINE
+while the assessed sea is empty) filed to the naval epic (#16).
+
 ## Investigations closed: walls and caravans (2026-07-30 reads)
 
 WALLS (edge-builder #8): verdict CRUDE BUT NOT BROKEN, no action.

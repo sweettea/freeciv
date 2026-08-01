@@ -1034,3 +1034,54 @@ Mechanism epoch queue, roughly by size:
    hut->barbarian lottery; v3b priced around it, code should know.
 5. Watch items: drop-pick cosmetics, explorer census creep, W08
    doctrine coupling (the architecture bet, after the above).
+
+## Combat workstream E1: survival substrate (2026-07-31 late, epic closed)
+
+Resequenced BEFORE naval slice 3 (human call): the invasion go/no-go
+is a combat-odds comparison and must be written in survival currency;
+naval recon banked in task #16. Workstream then expanded twice on
+human direction ("not big enough") into an E1-E8 map held in task
+#17: arithmetic (E1, this epic) -> offensive force sizing (E2) ->
+sorties (E3) -> ASSAULT OPERATIONS (E6: mass in a city/fortress,
+launch a smash -- the first real W33 phase list; #16's convoy gates
+are its naval instance) -> second-wave reserves (E7) -> raiding ops
+(E8) -> aggregation swap (E4, deliberately pre-v4 only) -> sieges
+(E5). Human posture notes banked in task metadata: cover/kill
+sorties priced as survival-deltas; escort demand scales from zero
+with observed sea threat (naked early caravans to allies are fine).
+
+Landed (8 commits, ecaad878e0..3fdc3d3fa6): deepodds.c -- exact duel
+math, win_chance()'s recurrence with roles swapped keeping the
+defender-HP distribution, chained over an ordered attacker stream vs
+a defender stack; freestanding, checked by tests/deepodds_test.c
+against an independent forward-DP oracle (first L0 unit test in the
+tree, meson 'deepodds'). deepcombat.c grounds it (wave = at-war
+units reachable within survival_horizon, fresh-arrival power,
+strongest-first vs best-defender-first; caps 32/16 computational).
+Consumers: survival-deficit fear in both danger passes (deep-surv),
+grow-release survival veto beside the linear margin test,
+tired-attack holds (deep-tired; attack power scales by
+moves_left/SINGLE_MOVE and stock never priced it). Measurement:
+city ledger via previously-NULL city_got/lost hooks (deep-city;
+teardown flood found by the first smoke run, guarded to
+S_S_RUNNING) + benchmark/cities.py.
+
+Numbers (smoke cell, 10 paired seeds, compiled defaults, T100):
+deep/baseline median 0.891 with survival machinery ON and OFF alike
+-- 8/10 seeds byte-identical (the gap is pre-existing
+defaults-on-smoke posture, not this epic). The one seed with a real
+war (seed 1, the only conquests in the set): ON 0.836 vs OFF 0.798.
+Mechanism distributions: 1218 threatened city-turns, mean survival
+0.881, 11.3% below even odds; tired holds 0 on smoke (no
+adjacent-tired moments; civ2civ3 tired_attack=TRUE confirmed).
+Smoke self-play barely fights -- E2 + contested cells are the real
+proving ground.
+
+New PLACEHOLDER knobs (all four edits + ini): survival_target 0.5,
+survival_fear_value 20, survival_horizon 3, tired_attack_floor 0.9.
+Model assumptions stated in findings (single-wave, no healing,
+military-only garrison, observed units only).
+
+Session mode (human 2026-07-31): epic-by-epic THROUGH the queue in
+one sitting -- close each with code + numbers + STATUS before
+opening the next. E2 next.
