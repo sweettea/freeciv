@@ -234,6 +234,11 @@ struct deep_tuning {
    * attack power down) holds a turn to strike fresh, unless its
    * tired win chance already reaches this floor. <= 0 disables. */
   double tired_attack_floor;
+  /* Marginal-take-odds attacker want (combat E2): one more attacker
+   * is worth weight x target worth x the shift it makes in P(pool
+   * takes the best at-war city on this continent), amortized over
+   * the march. <= 0 disables. */
+  double attack_value_weight;
 };
 
 void deep_tuning_init(void);

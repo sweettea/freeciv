@@ -104,6 +104,11 @@
   after arms measure need on the same scale.
 **************************************************************************/
 static double deep_garrison_menace(struct player *pplayer);
+static void deep_assault_want(struct ai_type *ait,
+                              const struct civ_map *nmap,
+                              struct player *pplayer, struct city *pcity,
+                              struct unit_type *punittype,
+                              struct adv_choice *choice);
 
 static void deep_log_defence(struct ai_type *ait, struct player *pplayer)
 {
@@ -1531,6 +1536,10 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     choice = kill_something_with(ait, nmap, pplayer, pcity, virtualunit,
                                  choice);
     unit_virtual_destroy(virtualunit);
+    /* Deep's own pricing runs beside the stock evaluation and the
+     * larger want wins; distributions of the two are compared via
+     * the deep-kill/deep-want tripwires before stock is cut out. */
+    deep_assault_want(ait, nmap, pplayer, pcity, punittype, choice);
   }
 
   /* Consider a hunter */
@@ -1549,6 +1558,109 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
   }
 
   return choice;
+}
+
+/**********************************************************************//**
+  Marginal-take-odds attacker want (combat E2). Stock kill_desire
+  arithmetic saturates linearly where sequential combat compounds --
+  the horde-of-weak-units bug (readme-audit 2.5). Deep prices the
+  build directly: pick the best-value at-war city on this continent,
+  and value one more attacker of this type by how much it moves
+  P(our committed pool takes that garrison), times the target's
+  worth, amortized over the march. The marginal form is self-limiting
+  everywhere the linear form pumps: hopeless targets and complete
+  forces both price the next unit near zero, and a nearly-sufficient
+  force surges up the S-curve to completion. The pool is priced as
+  arriving together (deep_take_odds); making that true is the
+  operations layer's job (E6), so this is the assembled ceiling.
+**************************************************************************/
+static void deep_assault_want(struct ai_type *ait,
+                              const struct civ_map *nmap,
+                              struct player *pplayer, struct city *pcity,
+                              struct unit_type *punittype,
+                              struct adv_choice *choice)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct city *target = NULL;
+  double best_score = 0.0, p0, p1, marginal;
+  Continent_id home = tile_continent(city_tile(pcity));
+  struct unit *pool[32];      /* deep_take_odds caps the stream anyway */
+  int n_pool = 0, eta, rate;
+  struct unit *vunit;
+  adv_want tworth, want;
+
+  if (tune->attack_value_weight <= 0.0 || punittype == NULL) {
+    return;
+  }
+
+  players_iterate_alive(aplayer) {
+    if (!pplayers_at_war(pplayer, aplayer)) {
+      continue;
+    }
+    city_list_iterate(aplayer->cities, acity) {
+      double score;
+
+      if (tile_continent(city_tile(acity)) != home) {
+        continue;
+      }
+      score = def_ai_city_data(acity, ait)->worth
+              / (1.0 + real_map_distance(city_tile(pcity),
+                                         city_tile(acity)));
+      if (score > best_score) {
+        best_score = score;
+        target = acity;
+      }
+    } city_list_iterate_end;
+  } players_iterate_alive_end;
+  if (target == NULL) {
+    return;
+  }
+  tworth = def_ai_city_data(target, ait)->worth;
+
+  /* The committed pool: own attackers on this continent not tied to
+   * home defence. Counting them all as one assault is exactly the
+   * simultaneity assumption documented above. */
+  unit_list_iterate(pplayer->units, punit) {
+    if (n_pool >= (int) ARRAY_SIZE(pool) - 1) {
+      break;
+    }
+    if (punit->hp <= 0
+        || unit_has_type_flag(punit, UTYF_CIVILIAN)
+        || adv_unit_att_rating(punit) <= 0
+        || tile_continent(unit_tile(punit)) != home
+        || def_ai_unit_data(punit, ait)->task == AIUNIT_DEFEND_HOME) {
+      continue;
+    }
+    pool[n_pool++] = punit;
+  } unit_list_iterate_end;
+
+  vunit = unit_virtual_create(pplayer, pcity, punittype, 1);
+  p0 = n_pool > 0 ? deep_take_odds(nmap, target, pool, n_pool) : 0.0;
+  pool[n_pool] = vunit;
+  p1 = deep_take_odds(nmap, target, pool, n_pool + 1);
+  unit_virtual_destroy(vunit);
+  marginal = p1 - p0;
+
+  rate = MAX(punittype->move_rate, 1);
+  eta = (real_map_distance(city_tile(pcity), city_tile(target))
+         * SINGLE_MOVE + rate - 1) / rate;
+  want = military_amortize(pplayer, pcity,
+                           tune->attack_value_weight * tworth * marginal,
+                           MAX(1, eta), build_cost_balanced(punittype));
+
+  log_base(deep_metric_log_level(),
+           "deep-kill turn=%d player=\"%s\" city=%d target=%d"
+           " worth=" ADV_WANT_PRINTF " pool=%d p0=%.3f p1=%.3f"
+           " want=" ADV_WANT_PRINTF,
+           game.info.turn, player_name(pplayer), pcity->id, target->id,
+           tworth, n_pool, p0, p1, want);
+
+  if (want > choice->want) {
+    choice->value.utype = punittype;
+    choice->want = want;
+    choice->type = CT_ATTACKER;
+    adv_choice_set_use(choice, "deep assault");
+  }
 }
 
 struct deep_emergency {
