@@ -1809,3 +1809,54 @@ impossible, and nothing in the freely-growing city where it pays. Not
 fixed here -- deliberately not bundled with an unvalidated content
 credit. Census evidence for Granary specifically is thin (deep 0 vs
 baseline 1 across 295 cities); the code defect is not.
+
+## The Granary inversion, and a tunables audit (2026-08-01, later)
+
+`fc7073184a` — the `EFT_GROWTH_FOOD` credit was gated on
+`cap_credit > 0`, and `deep_capacity_credit()` is nonzero only when
+`!city_can_grow_to(size + 1)`. So the growth accelerator was paid
+**exactly when growth was impossible** and paid nothing in the small,
+freely-growing city where a Granary earns. `deep_growth_credit()` now
+values it directly — growths within MORT (`MORT/ttg`) × the share of
+the food box handed back × what a new citizen earns — returning 0 when
+capped and 0 with no food surplus.
+
+MEASURED, 5 paired mixed lategame-80 games, only `horizon_growth_weight`
+differing 0.0 -> 0.5:
+
+    per 100 cities      OFF     ON
+    Granary (count)       0     12      deep built NONE before
+    CAPACITY            7.9   10.1
+    mean city size      5.28   5.45
+    head-to-head score  1.0367 1.0399
+
+**The mechanism landed; the score did not move.** +0.3pp over 5 paired
+seeds is smaller than the content credit's already-inside-noise 1.6pp,
+one seed regressed (1.087 -> 1.054) and one was identical. The
+justification for this change is the inverted condition — a defect
+provable by reading — NOT a demonstrated gain. `Courthouse 0 -> 5` in
+the same census is noise: Courthouse has no Growth_Food effect and
+nothing here should touch it.
+
+### Tunables audit (`6180544979`)
+
+`benchmark/tune-audit.py` cross-checks the four places a tuning field
+must appear — struct member, compiled default, `TUNE_` loader macro,
+`tuning-params.ini` entry, block membership — in both directions,
+including type agreement. Missing any one fails SILENTLY: no loader
+macro means the ini value is read and discarded (this happened once
+already, `fadb2a1f70`); no registry entry means a campaign quietly
+optimises a smaller space than it reports.
+
+Current: **82 fields, 82 loader macros, 82 registry entries, all 82 in
+the ALL block, no mismatches or orphans in either direction.** All
+three horizon knobs are in ALL, ECON and G.
+
+### Campaigns relaunched a second time (campaign-a3 / campaign-b3)
+
+Both boxes at `6180544979`. Fresh dirs again, for the same reason as
+before. **Trap paid for here:** killing servers BEFORE the tuner lets
+it respawn a batch in the gap — 22 orphans on EAST1 and 16 on EAST2
+survived into the new run and were stealing half the CPU until found by
+attributing each server to its campaign via `/proc/<pid>/cwd`. Kill the
+tuner first, then the servers, then verify by cwd.
