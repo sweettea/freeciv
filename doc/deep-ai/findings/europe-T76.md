@@ -105,3 +105,56 @@ M (war, 19): 81 of 81, each knob in exactly one block.
    city size without them. Measure before assuming it is a defect.
 3. **Upkeep.** `--blocks S` reaches the upkeep weights now; the gold
    gap is the metric to watch, not score.
+
+---
+
+## Correction (same day): it is NOT room, pressure, or packing
+
+The first draft guessed that Europe's crowding suppressed deep's
+founder want via `site_pressure_factor`. The human pushed back --
+"europe has so much room though" -- and they were right. Measured off
+the same save:
+
+    map 177x100, 11,483 land tiles, 4,576 unowned (39.9%)
+
+    free land within 8 tiles of a city   deep 1230   classic 1213
+    cities wanting to found              deep 12%    classic 41%
+
+Deep and classic sit next to **the same amount of free land** and want
+it at a third the rate. The sharpest case: classic's Poniatowski has
+55 free tiles near him and wants to found from all 13 of his cities;
+deep's Dmitriy Donskoy has 263 free tiles and wants from 3 of 8.
+
+Packing was the next suspect and it dies too -- nearest-own-city
+distance is the same for both (mean 2.62 deep / 2.47 classic, median 2
+each, 93% within 3 tiles). Deep is not refusing to pack; stock is not
+packing tighter.
+
+**What is left is the magnitude of the want itself.** Deep's founder
+wants top out at ~545 (398, 380, 514, 484, 545 across its players);
+classic's reach 1105, 964, 836. Deep prices the same land at roughly
+half, so settlers lose the city build auction to defenders and
+buildings far more often -- RC4 (incommensurable wants) biting inside
+deep's own scales rather than any map-reading failure.
+
+Corroborating, from the corrected fearfulness sweep on isolated-150
+(3 seeds each, cell with 235 tiles/player):
+
+    fearfulness   cities   want>0   prevalence   mean want
+    0.5             150      43       28.7%         367
+    1.0             153      43       28.1%         375
+    2.0 (default)   133      37       27.8%         429
+    4.0             140      33       23.6%         287
+
+Prevalence is flat from 0.5 to 2.0 while city COUNT moves 133 -> 150,
+consistently in all three seeds (40->42, 38->43, 55->65). So
+`settler_fearfulness_mult` acts on settler EXECUTION -- risk-priced
+paths making journeys longer or routes unacceptable -- and not on
+appetite. It is worth lowering to 1.0 (0.5 buys nothing more), but it
+is not the expansion defect.
+
+**Next probe, then:** which term in `deepsite.c` costs the want its
+missing half. `site_tail_weight` (0.15), `site_overlap_weight` (0.05)
+and `site_potential_discount` (0.5) all shrink a site's value against
+what stock counts, and W02 owns the answer. Sweep them on a roomy cell
+against founder-want MAGNITUDE (max and mean), not prevalence.
