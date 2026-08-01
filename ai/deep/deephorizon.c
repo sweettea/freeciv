@@ -206,16 +206,29 @@ void deep_adjust_building_wants(struct ai_type *ait,
 
   city_list_iterate(pplayer->cities, pcity) {
     adv_want cap_credit;
+    bool threatened;
 
-    if (def_ai_city_data(pcity, ait)->urgency > 0
-        || def_ai_city_data(pcity, ait)->grave_danger > 0) {
+    threatened = def_ai_city_data(pcity, ait)->urgency > 0
+                 || def_ai_city_data(pcity, ait)->grave_danger > 0;
+    cap_credit = deep_capacity_credit(pcity, adv);
+    if (threatened && cap_credit <= 0) {
       /* Growth is a peace-time investment: no horizon credits while
        * the city is under threat (the contested ablation showed the
        * credits, not the site terms, carried the war-map score cost:
-       * site-only 0.997 vs full stack 0.948). */
+       * site-only 0.997 vs full stack 0.948).
+       *
+       * EXCEPT the cap-lifter. A growth CEILING is structural, not a
+       * luxury: a city at the ruleset's size gate stays there for the
+       * rest of the game, and in a permanent-war world the gate never
+       * reopens. Europe T106 measured the cost -- 69% of deep cities
+       * carried urgency>0, including 17 of the 19 sitting exactly at
+       * the cap, so deep held ZERO Aqueducts across 85 cities and no
+       * city exceeded size 8, while stock (86% urgency, no such gate)
+       * built 9 Aqueducts and ran cities to 22. This is RC1's own
+       * headline example, reintroduced by the gate that was meant to
+       * protect a contested-cell score. */
       continue;
     }
-    cap_credit = deep_capacity_credit(pcity, adv);
 
     improvement_iterate(pimprove) {
       Impr_type_id id = improvement_number(pimprove);
@@ -265,9 +278,11 @@ void deep_adjust_building_wants(struct ai_type *ait,
         /* Growth accelerator: same currency, shaped separately. */
         add += cap_credit * deep_tuning_get()->horizon_growth_weight;
       }
-      add += deep_bundle_credit(pcity, pimprove, adv);
+      if (!threatened) {
+        add += deep_bundle_credit(pcity, pimprove, adv);
+      }
 
-      if (game.info.illness_on
+      if (!threatened && game.info.illness_on
           && city_size_get(pcity) + 1 >= game.info.illness_min_size) {
         int health = get_potential_improvement_bonus(pimprove, pcity,
                                                      EFT_HEALTH_PCT,
