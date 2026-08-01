@@ -1681,6 +1681,16 @@ test('baseline-frozen',
      find_program('scripts/check-baseline-frozen.sh'))
 endif
 
+if get_option('aimodules').contains('deep')
+test('deepodds',
+     executable('deepodds_test',
+                'tests/deepodds_test.c',
+                'ai/deep/deepodds.c',
+                include_directories: include_directories('ai/deep'),
+                dependencies: m_dep,
+                install: false))
+endif
+
 endif
 
 server_lib = static_library('fc_server',
