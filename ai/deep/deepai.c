@@ -269,6 +269,37 @@ static void dpai_city_free(struct city *pcity)
 }
 
 /**********************************************************************//**
+  City-ownership ledger (benchmark/cities.py). city_got fires both when
+  a city is founded and when one is taken; founded==turn tells the
+  extractor which. city_lost fires when a city is taken away or
+  destroyed; the server does not say which here, and both count as a
+  defence failure. The stock AI has no handler on either hook, so
+  logging is all these do.
+**************************************************************************/
+static void dpai_city_got(struct player *pplayer, struct city *pcity)
+{
+  log_base(deep_metric_log_level(),
+           "deep-city turn=%d player=\"%s\" got=%d size=%d founded=%d"
+           " at=(%d,%d)",
+           game.info.turn, player_name(pplayer), pcity->id,
+           city_size_get(pcity), pcity->turn_founded,
+           TILE_XY(city_tile(pcity)));
+}
+
+/**********************************************************************//**
+  See dpai_city_got().
+**************************************************************************/
+static void dpai_city_lost(struct player *pplayer, struct city *pcity)
+{
+  log_base(deep_metric_log_level(),
+           "deep-city turn=%d player=\"%s\" lost=%d size=%d founded=%d"
+           " at=(%d,%d)",
+           game.info.turn, player_name(pplayer), pcity->id,
+           city_size_get(pcity), pcity->turn_founded,
+           TILE_XY(city_tile(pcity)));
+}
+
+/**********************************************************************//**
   Call default ai with deep ai type as parameter.
 **************************************************************************/
 static void dpai_city_save(struct section_file *file, const struct city *pcity,
@@ -728,9 +759,9 @@ bool fc_ai_deep_setup(struct ai_type *ai)
   /*
     ai->funcs.city_created = NULL;
     ai->funcs.city_destroyed = NULL;
-    ai->funcs.city_got = NULL;
-    ai->funcs.city_lost = NULL;
   */
+  ai->funcs.city_got = dpai_city_got;
+  ai->funcs.city_lost = dpai_city_lost;
   ai->funcs.city_save = dpai_city_save;
   ai->funcs.city_load = dpai_city_load;
   ai->funcs.choose_building = dpai_build_adv_override;
