@@ -1857,10 +1857,38 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
    * that left 71% of the Europe map unowned. */
   {
     struct deep_plr *dp = deep_plr_data(pplayer);
+    int lift_demand = 0;
+
+    if (dp->colony_want > 0 && dp->colony_turn >= game.info.turn - 1) {
+      lift_demand = dp->colony_want;
+    }
+    if (dp->op.state == DEEP_OP_MUSTER) {
+      /* An amphibious muster short on hulls is lift demand too
+       * (naval slice 3): count the fleet's berths against the
+       * required force. */
+      struct city *ot = game_city_by_number(dp->op.target_city);
+
+      if (ot != NULL
+          && tile_continent(city_tile(ot)) != tile_continent(ptile)) {
+        int berths = 0;
+
+        unit_list_iterate(pplayer->units, b) {
+          const struct unit_type *btt = unit_type_get(b);
+
+          if (btt->transport_capacity > 0
+              && utype_move_type(btt) == UMT_SEA) {
+            berths += btt->transport_capacity;
+          }
+        } unit_list_iterate_end;
+        if (berths < dp->op.required) {
+          lift_demand = MAX(lift_demand,
+                            (int) def_ai_city_data(ot, ait)->worth);
+        }
+      }
+    }
 
     if (deep_tuning_get()->colony_lift_weight > 0.0
-        && dp->colony_want > 0
-        && dp->colony_turn >= game.info.turn - 1
+        && lift_demand > 0
         && is_terrain_class_near_tile(nmap, ptile, TC_OCEAN)) {
       struct unit_type *boattype
         = best_role_unit_for_player(pplayer, L_FERRYBOAT);
@@ -1872,7 +1900,7 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
                  / MAX(pcity->surplus[O_SHIELD], 1);
         adv_want w
           = amortize(deep_tuning_get()->colony_lift_weight
-                     * dp->colony_want, MAX(1, bt));
+                     * lift_demand, MAX(1, bt));
 
         log_base(deep_metric_log_level(),
                  "deep-colony turn=%d player=\"%s\" city=%d lift=\"%s\""
