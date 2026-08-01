@@ -21,6 +21,7 @@ and invasion epics (cities taken, cities kept).
 import argparse
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 CITY_RE = re.compile(
@@ -32,6 +33,8 @@ SURV_RE = re.compile(
     r' wave=(\d+) fear=(\d+)'
 )
 TIRED_RE = re.compile(r'deep-tired turn=(\d+) player="([^"]*)"')
+SORTIE_RE = re.compile(r'deep-sortie turn=\d+ player="[^"]*" city=\d+ (kill|cover)')
+OP_RE = re.compile(r'deep-op turn=\d+ player="[^"]*" (form|strike|abort)')
 
 
 def final_turn(scorelog):
@@ -55,9 +58,12 @@ def main():
         sys.exit(f"no completed games under {args.root}/{pattern}")
 
     tot = {"founded": 0, "conquered": 0, "lost": 0, "turns": 0,
-           "surv_n": 0, "surv_sum": 0.0, "surv_low": 0, "tired": 0}
+           "surv_n": 0, "surv_sum": 0.0, "surv_low": 0, "tired": 0,
+           "s_kill": 0, "s_cover": 0, "op_form": 0, "op_strike": 0,
+           "op_abort": 0}
     print("arm,seed,turns,founded,conquered,lost,conq_per_100t,"
-          "lost_per_100t,surv_mean,surv_low_share,tired_holds")
+          "lost_per_100t,surv_mean,surv_low_share,tired_holds,"
+          "sortie_kill,sortie_cover,op_form,op_strike,op_abort")
     for d in gamedirs:
         text = (d / "game.log").read_text(errors="replace")
         founded = conquered = lost = 0
@@ -71,6 +77,8 @@ def main():
                 conquered += 1
         surv = [float(m.group(4)) for m in SURV_RE.finditer(text)]
         tired = len(TIRED_RE.findall(text))
+        sortie = Counter(m.group(1) for m in SORTIE_RE.finditer(text))
+        ops = Counter(m.group(1) for m in OP_RE.finditer(text))
         turns = final_turn(d / "scorelog.txt")
         cr = 100.0 * conquered / turns if turns else 0.0
         lr = 100.0 * lost / turns if turns else 0.0
@@ -79,7 +87,9 @@ def main():
                if surv else float("nan"))
         print(f"{d.parent.name},{d.name.removeprefix('seed-')},{turns},"
               f"{founded},{conquered},{lost},{cr:.2f},{lr:.2f},"
-              f"{sm:.3f},{low:.3f},{tired}")
+              f"{sm:.3f},{low:.3f},{tired},{sortie['kill']},"
+              f"{sortie['cover']},{ops['form']},{ops['strike']},"
+              f"{ops['abort']}")
         tot["founded"] += founded
         tot["conquered"] += conquered
         tot["lost"] += lost
@@ -88,6 +98,11 @@ def main():
         tot["surv_sum"] += sum(surv)
         tot["surv_low"] += sum(1 for p in surv if p < 0.5)
         tot["tired"] += tired
+        tot["s_kill"] += sortie["kill"]
+        tot["s_cover"] += sortie["cover"]
+        tot["op_form"] += ops["form"]
+        tot["op_strike"] += ops["strike"]
+        tot["op_abort"] += ops["abort"]
 
     cr = 100.0 * tot["conquered"] / tot["turns"] if tot["turns"] else 0.0
     lr = 100.0 * tot["lost"] / tot["turns"] if tot["turns"] else 0.0
@@ -95,7 +110,8 @@ def main():
     low = tot["surv_low"] / tot["surv_n"] if tot["surv_n"] else float("nan")
     print(f"TOTAL,,{tot['turns']},{tot['founded']},{tot['conquered']},"
           f"{tot['lost']},{cr:.2f},{lr:.2f},{sm:.3f},{low:.3f},"
-          f"{tot['tired']}")
+          f"{tot['tired']},{tot['s_kill']},{tot['s_cover']},"
+          f"{tot['op_form']},{tot['op_strike']},{tot['op_abort']}")
 
 
 if __name__ == "__main__":
