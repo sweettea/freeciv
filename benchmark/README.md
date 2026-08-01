@@ -114,3 +114,37 @@ single box via the alternation table.
 
 Final numbers come only from `--report-holdout`, never from a
 training run.
+
+## Cell sizing: how much room each regime actually gives (2026-08-01)
+
+Human, on `cramped`: "3 players 30x30 seems insanely small, that's
+basically room for 4 cities apiece at 30% landmass??" -- correct, and
+`contested` is far smaller still. Land per player at ~30% landmass,
+and how many non-overlapping 21-tile catchments that affords:
+
+    cell                 land/player   ~cities   observed cities/player
+    cramped   30x30 p3          90       4.3     --
+    contested 32x32 p8          38       1.8     4.7 deep / 5.2 base
+    lategame  40x40 p6          80       3.8     8.3 deep / 10.2 base
+    isolated  56x56 p4         235      11.2     --
+    primary  ~89x89 p6         400      19.0     (rarely run: slow)
+
+**`contested` gives under two city catchments per player.** It is a
+knife fight, not a civilization game, and the observed ~5 cities per
+player only happens because catchments overlap and players conquer
+each other. Every binary of the 2026-07-31/08-01 combat arc (B9-B16)
+was verified there, which is fine for "does the combat layer work"
+and wrong for any claim about being better than stock.
+
+Rules of thumb this implies:
+
+- **Headline claims belong on `primary` (and `isolated`)**, the cells
+  the matrix was designed around. `contested` is a mechanism cell.
+- **Economy constants want room.** Tuning the civilian block where
+  there is space for two cities teaches it to win a knife fight.
+- Check a finding on at least one roomy cell before believing it. The
+  "gap is economic" diagnosis survives that test -- on `lategame`
+  deep has FEWER units than baseline (0.688) and still trails cities
+  0.80 / mfg 0.69 / wonders 0.45 -- but it survives by a different
+  mechanism than on `contested`, which is exactly why one cell is
+  never enough.
