@@ -542,3 +542,20 @@ Numbered lessons:
    the singleton hole are. When 1a/1b land, this save is the natural
    regression fixture: a deep nation adjacent to empty barb cities
    should retake within a few turns.
+
+## Hut safe-window timing (2026-08-01, human far-back idea)
+
+Verified: before game.server.onsetbarbarian (default T60),
+unleash_barbarians() (barbarian.c:293) WIPES the would-be barbarian
+units and returns FALSE -- a hut popped pre-onset cannot spawn
+anything, ever; the popper always survives. Deep's #18 gate in
+deepexplore.c keys the exact same rate+onset pair, so huts price at
+full value in the safe window and the near-home discount starts
+only when spawns become possible. Already encoded.
+
+The unimplemented refinement: pre-onset, a NEAR-HOME hut is worth
+more than a far one -- popping it inside the window permanently
+defuses a future doorstep spawn. Acting on this means steering
+which huts explorers visit first, and explore pathing is stock
+auto-explore; deep only sizes the explorer fleet. File under W06's
+next visit (explore-path shaping), not a want-side change.
