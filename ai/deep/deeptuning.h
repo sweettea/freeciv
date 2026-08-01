@@ -265,6 +265,11 @@ struct deep_tuning {
    * a target's garrison when pricing an amphibious take -- travel
    * time is the defender's budget. 0 prices arrival like adjacency. */
   double invasion_reinforce_rate;
+  /* Second waves (E7): for this many turns after a strike launches,
+   * the reserve gets first claim on the next operation against the
+   * same target -- reinforce while the garrison is softened, or let
+   * the window close as the formal withdrawal. */
+  int op_wave_window;
 };
 
 void deep_tuning_init(void);

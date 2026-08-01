@@ -215,7 +215,32 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
     if (home_city == NULL) {
       return;
     }
-    target = deep_op_pick_target(ait, pplayer, city_tile(home_city));
+    /* Second wave first (E7, human design: "backup attackers around
+     * the nation as a second wave if the first fails and we think we
+     * can crush with just a little more"): while the last strike is
+     * fresh and its target still stands hostile, the reserve gets
+     * first claim on the next operation -- the garrison it faces is
+     * the one wave one softened. If the window closes or the odds
+     * say no, formation falls through to ordinary target picking,
+     * which is the formal withdrawal (survivors are already banked). */
+    target = NULL;
+    if (op->last_strike_city > 0
+        && game.info.turn - op->last_strike_turn
+           <= tune->op_wave_window) {
+      struct city *prev = game_city_by_number(op->last_strike_city);
+
+      if (prev != NULL && pplayers_at_war(pplayer, city_owner(prev))) {
+        target = prev;
+      } else {
+        /* Taken or turned: the strike is history. */
+        op->last_strike_city = 0;
+      }
+    } else {
+      op->last_strike_city = 0;
+    }
+    if (target == NULL) {
+      target = deep_op_pick_target(ait, pplayer, city_tile(home_city));
+    }
     if (target == NULL) {
       return;
     }
@@ -293,15 +318,20 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
     op->staging_city = staging->id;
     op->required = required;
     op->formed_turn = game.info.turn;
-    op->n_members = MIN(n, DEEP_OP_MEMBERS);
+    /* Enroll the required force plus a small margin; the rest of the
+     * pool stays free as the designated reserve (E7) -- the second
+     * wave if the first falls short, ordinary units otherwise. */
+    op->n_members = MIN(MIN(n, required + (required + 1) / 2),
+                        DEEP_OP_MEMBERS);
     for (i = 0; i < op->n_members; i++) {
       op->members[i] = pool[i]->id;
     }
     log_base(deep_metric_log_level(),
              "deep-op turn=%d player=\"%s\" form target=%d staging=%d"
-             " required=%d pool=%d",
+             " required=%d pool=%d wave2=%d",
              game.info.turn, player_name(pplayer), op->target_city,
-             op->staging_city, op->required, op->n_members);
+             op->staging_city, op->required, op->n_members,
+             op->last_strike_city == target->id ? 1 : 0);
   }
 
   if (op->state != DEEP_OP_MUSTER) {
@@ -339,6 +369,8 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
       dai_unit_new_task(ait, m, AIUNIT_ATTACK, city_tile(target));
       (void) dai_gothere(ait, pplayer, m, city_tile(target));
     }
+    op->last_strike_city = op->target_city;
+    op->last_strike_turn = game.info.turn;
     deep_op_dissolve(op, "launched", pplayer);
     return;
   }

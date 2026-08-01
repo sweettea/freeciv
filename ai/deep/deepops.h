@@ -41,6 +41,11 @@ struct deep_operation {
   int formed_turn;
   int n_members;
   int members[DEEP_OP_MEMBERS]; /* unit ids */
+  /* Second-wave bookkeeping (E7): the last launched strike, so the
+   * next formation pass can ask "did it stick, and can the reserve
+   * plus survivors crush what remains?" */
+  int last_strike_city;
+  int last_strike_turn;
 };
 
 void deep_run_operations(struct ai_type *ait, struct player *pplayer);
