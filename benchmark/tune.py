@@ -4,6 +4,18 @@
     tune.py [--config FILE[,FILE...]] [--seeds FILE] [--count N]
             [--gens G] [--pop P] [--params a,b,...] [--server BIN]
             [--jobs J] [--out DIR] [--portbase N] [--mixed]
+            [--blocks S,E,M] [--rounds R]
+
+--blocks runs alternating block coordinate descent: each named block
+(defined in tuning-blocks.ini) is evolved in turn with every other
+constant held at the incumbent value, and the winner carries forward
+into the next block. With --rounds > 1 the cycle repeats.
+
+The per-round deltas are the point, not just the tuning: if a block
+still gains materially in round 2 -- after the other blocks moved --
+the blocks are COUPLED and constants tuned in isolation do not
+compose (see findings/objective-layer.md). If round 2 is flat, they
+are near-separable and one pass per block was enough.
 
 Multiple --config files give a blended objective: the mean over
 configs of the mean paired score diff, so a candidate must not
@@ -61,6 +73,18 @@ def parse_params(path):
         out.append({"name": m.group(1), "default": float(m.group(2)),
                     "lo": float(m.group(3)), "hi": float(m.group(4)),
                     "is_int": m.group(5) == "int"})
+    return out
+
+
+def parse_blocks(path):
+    """{name: [param, ...]} from tuning-blocks.ini."""
+    out = {}
+    for line in open(path):
+        line = line.split(";", 1)[0].strip()
+        if not line or line.startswith(("[", "#")):
+            continue
+        name, _, rest = line.partition("=")
+        out[name.strip()] = [x.strip() for x in rest.split(",") if x.strip()]
     return out
 
 
@@ -188,6 +212,60 @@ def eval_candidate(args, seeds, cand_dir, tuning_file, baseline, portbase):
                            baseline, portbase)[0]
 
 
+def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
+    """Evolve only allp[idx]; every other constant stays at cur's value.
+
+    Candidates are always written as the FULL parameter vector, so a
+    block pass inherits whatever the previous blocks decided rather
+    than silently reverting them to compiled defaults."""
+    mean = [cur[i] for i in idx]
+    sigma = [(allp[i]["hi"] - allp[i]["lo"]) / 6.0 for i in idx]
+    best = (None, list(cur))
+
+    for gen in range(args.gens):
+        cands = []
+        for c in range(args.pop):
+            vals = list(cur)
+            if not (gen == 0 and c == 0):
+                for k, i in enumerate(idx):
+                    p = allp[i]
+                    vals[i] = min(p["hi"],
+                                  max(p["lo"], rng.gauss(mean[k], sigma[k])))
+            cands.append(vals)
+
+        cand_dirs, tuning_files = [], []
+        for c, vals in enumerate(cands):
+            cdir = out / tag / f"gen{gen}" / f"cand{c}"
+            cdir.mkdir(parents=True, exist_ok=True)
+            tf = cdir / "tuning.ini"
+            write_tuning(tf, allp, vals)
+            cand_dirs.append(cdir)
+            tuning_files.append(tf.resolve())
+        objs = eval_population(args, seeds, cand_dirs, tuning_files,
+                               baseline, args.portbase)
+        scored = sorted(zip(objs, cands), key=lambda t: -t[0])
+        for c, (obj, vals) in enumerate(zip(objs, cands)):
+            print(f"[{tag}] gen {gen} cand {c}: obj {obj:+.1f}  "
+                  + " ".join(f"{allp[i]['name']}={vals[i]:.3g}"
+                             for i in idx), flush=True)
+
+        if best[0] is None or scored[0][0] > best[0]:
+            best = scored[0]
+        else:
+            sigma = [s * 0.7 for s in sigma]   # stagnation: narrow
+
+        write_tuning(out / "best-tuning.ini", allp, best[1])
+        mu = max(2, args.pop // 2)
+        weights = [mu - i for i in range(mu)]
+        wsum = sum(weights)
+        mean = [sum(w * scored[i][1][j] for i, w in enumerate(weights))
+                / wsum for j in idx]
+        print(f"[{tag}] gen {gen} best {scored[0][0]:+.1f}; "
+              f"block best {best[0]:+.1f}", flush=True)
+
+    return best
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=str(HERE / "configs/smoke.conf"))
@@ -202,6 +280,23 @@ def main():
     ap.add_argument("--portbase", type=int, default=6200)
     ap.add_argument("--seed-rng", type=int, default=42)
     ap.add_argument("--report-holdout", metavar="TUNINGFILE")
+    ap.add_argument("--evaluate", metavar="TUNINGFILE",
+                    help="evaluate one tuning file on the chosen seeds"
+                         " and configs without optimising -- how a"
+                         " merge of two machines' block results is"
+                         " checked against each machine's own best")
+    ap.add_argument("--start", metavar="TUNINGFILE",
+                    help="initial values for every constant (default:"
+                         " compiled defaults). Constants outside"
+                         " --blocks/--params keep these values, so this"
+                         " is how a regime is pinned (e.g. military"
+                         " zeroed while the economy is tuned) and how"
+                         " two machines' results are merged.")
+    ap.add_argument("--blocks",
+                    help="comma list of block names from"
+                         " tuning-blocks.ini, evolved in turn")
+    ap.add_argument("--rounds", type=int, default=1,
+                    help="alternation rounds over --blocks")
     ap.add_argument("--mixed", action="store_true",
                     help="head-to-head seat-mirrored games; objective is"
                          " within-game deep-side minus baseline-side")
@@ -250,6 +345,15 @@ def main():
                 baseline[futs[f]] = f.result()
         print(f"baseline totals: {baseline}", flush=True)
 
+    if args.evaluate:
+        obj = eval_candidate(args, seeds, out / "evaluate",
+                             Path(args.evaluate).resolve(), baseline,
+                             args.portbase)
+        print(f"EVALUATE {args.evaluate}: mean paired diff {obj:+.1f}"
+              f" over {len(seeds)} seeds, configs {args.configs}",
+              flush=True)
+        return
+
     if args.report_holdout:
         cand = out / "holdout-report"
         obj = eval_candidate(args, seeds, cand,
@@ -261,61 +365,72 @@ def main():
         return
 
     rng = random.Random(args.seed_rng)
-    mean = [p["default"] for p in params]
-    sigma = [(p["hi"] - p["lo"]) / 6.0 for p in params]
-    best = (None, None)   # (objective, values)
+    cur = [p["default"] for p in allp]
+    if args.start:
+        start = {}
+        for line in open(args.start):
+            line = line.split(";", 1)[0].strip()
+            if not line or line.startswith(("[", "#")):
+                continue
+            k, _, v = line.partition("=")
+            try:
+                start[k.strip()] = float(v)
+            except ValueError:
+                sys.exit(f"bad --start line: {line}")
+        unknown = set(start) - {p["name"] for p in allp}
+        if unknown:
+            sys.exit(f"--start has unknown constants: {sorted(unknown)}")
+        cur = [start.get(p["name"], p["default"]) for p in allp]
+        print(f"start from {args.start}: {len(start)} constants pinned",
+              flush=True)
 
-    # Generation 0 includes the exact defaults as a control candidate.
-    for gen in range(args.gens):
-        cands = []
-        for c in range(args.pop):
-            if gen == 0 and c == 0:
-                vals = list(mean)
-            else:
-                vals = [min(p["hi"], max(p["lo"],
-                        rng.gauss(m, s)))
-                        for p, m, s in zip(params, mean, sigma)]
-            cands.append(vals)
+    if args.blocks:
+        blocks = parse_blocks(HERE / "tuning-blocks.ini")
+        unknown = set(args.blocks.split(",")) - set(blocks)
+        if unknown:
+            sys.exit(f"unknown blocks: {sorted(unknown)}")
+        plan = args.blocks.split(",")
+    else:
+        blocks = {"all": [p["name"] for p in params]}
+        plan = ["all"]
 
-        cand_dirs, tuning_files = [], []
-        for c, vals in enumerate(cands):
-            cdir = out / f"gen{gen}" / f"cand{c}"
-            cdir.mkdir(parents=True, exist_ok=True)
-            tf = cdir / "tuning.ini"
-            write_tuning(tf, params, vals)
-            cand_dirs.append(cdir)
-            tuning_files.append(tf.resolve())
-        objs = eval_population(args, seeds, cand_dirs, tuning_files,
-                               baseline, args.portbase)
-        scored = list(zip(objs, cands))
-        for c, (obj, vals) in enumerate(scored):
-            print(f"gen {gen} cand {c}: obj {obj:+.1f}  "
-                  + " ".join(f"{p['name']}={v:.3g}"
-                             for p, v in zip(params, vals)), flush=True)
-
-        scored.sort(key=lambda t: -t[0])
-        if best[0] is None or scored[0][0] > best[0]:
-            best = scored[0]
-        else:
-            sigma = [s * 0.7 for s in sigma]   # stagnation: narrow search
-
-        # Persist the incumbent after every generation, so a
-        # time-capped or interrupted campaign still has a verdict
-        # candidate to report on.
-        write_tuning(out / "best-tuning.ini", params, best[1])
-
-        mu = max(2, args.pop // 2)
-        weights = [mu - i for i in range(mu)]
-        wsum = sum(weights)
-        mean = [sum(w * scored[i][1][k] for i, w in enumerate(weights))
-                / wsum for k in range(len(params))]
-        print(f"gen {gen} best {scored[0][0]:+.1f}; overall best "
-              f"{best[0]:+.1f}", flush=True)
+    history = []
+    for rnd in range(args.rounds):
+        for bname in plan:
+            names = set(blocks[bname])
+            idx = [i for i, p in enumerate(allp) if p["name"] in names]
+            if not idx:
+                sys.exit(f"block {bname} matches no tunable parameter")
+            tag = f"r{rnd}-{bname}"
+            print(f"=== round {rnd} block {bname}: "
+                  f"{len(idx)} params", flush=True)
+            obj, vals = run_block(args, seeds, allp, idx, cur, baseline,
+                                  out, rng, tag)
+            gain = obj - history[-1][2] if history else None
+            history.append((rnd, bname, obj))
+            cur = vals
+            print(f"=== round {rnd} block {bname} done: obj {obj:+.1f}"
+                  + (f" (delta {gain:+.1f})" if gain is not None else ""),
+                  flush=True)
 
     tf = out / "best-tuning.ini"
-    write_tuning(tf, params, best[1])
-    print(f"BEST objective {best[0]:+.1f}; tuning written to {tf}",
-          flush=True)
+    write_tuning(tf, allp, cur)
+    print("\nALTERNATION TABLE (objective after each block pass)")
+    for rnd, bname, obj in history:
+        print(f"  round {rnd}  block {bname:<6} obj {obj:+.1f}")
+    if args.rounds > 1:
+        first = {}
+        for rnd, bname, obj in history:
+            first.setdefault(bname, []).append(obj)
+        print("\nCOUPLING READ: per-block gain in the last round vs the"
+              " first")
+        for bname, objs in first.items():
+            if len(objs) > 1:
+                print(f"  {bname:<6} first {objs[0]:+.1f} -> last "
+                      f"{objs[-1]:+.1f}  (moved {objs[-1] - objs[0]:+.1f})")
+        print("  A block that still moves late is coupled to the others;"
+              " see findings/objective-layer.md")
+    print(f"\nBEST tuning written to {tf}", flush=True)
     print("report on holdout with: tune.py --report-holdout "
           f"{tf} --config {args.config}", flush=True)
 
