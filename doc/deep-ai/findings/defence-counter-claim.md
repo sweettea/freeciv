@@ -87,3 +87,48 @@ symmetric), NOT a new scale (RC4).
   everything = the old timid AI reborn).
 - Counter-claim events per loss avoided (new ledger line).
 - Score, obviously, contested + lategame.
+
+---
+
+## Implementation notes (2026-08-01, as landed)
+
+**Claim sources, in order:** nearest free land defender arriving within
+the horizon; a raider released from the hunt; a BRIGADE relay (below);
+last, a poach from a mustering op priced worth-vs-worth. One claim per
+city per turn (the sorties' discipline).
+
+**The brigade (human design 2026-08-01).** Marching one blade five
+turns from the nearest genuinely safe city is strictly worse than five
+blades each stepping one city along a connected chain: the front is
+reinforced *now*, every intermediate city ends the pass net even (sends
+one forward, receives one from behind), and the hole migrates to the
+far safe end. Implemented as BFS from the endangered city over own
+cities on its continent, hops of at most `survival_horizon` tiles,
+*through* cities holding any movable blade, *stopping* at the first
+that can spare one and stay above the bar; then one blade moves per
+edge along the path. If no chain terminates in a genuinely sparable
+garrison, nothing moves -- a brigade that would only shuffle the hole
+between two unsafe cities is never started.
+
+## OPEN DOCTRINE QUESTION: reinforcing the doomed
+
+First observation from the T160 fossil: claims fire on cities at
+p=0.003, p=0.019, p=0.081 against waves of 6-14. One blade cannot save
+those; sending it is *feeding units in*, the precise failure the
+operations layer exists to stop on the attacking side. Three possible
+doctrines, none chosen:
+
+1. **Triage floor** -- claim only when the city plausibly clears the
+   bar with the help (computable: survival of stack+blade vs target);
+   below that, write the city off. Risks abandoning cities that a
+   *sequence* of claims would have saved (the brigade delivers one per
+   turn by design).
+2. **Delay is worth something** -- a doomed city that costs the enemy
+   two more turns and two more units is a fair trade at this price.
+   Wants the war ledger (W14) to price it.
+3. **Evacuate** -- W14's losing-war branch: take the garrison and the
+   valuables out, keep the blades for a line that can hold.
+
+This is a human call, not a tuning knob. Until it is made, the
+counter-claim reinforces everything below the bar, and the ledger
+counts what that costs.
