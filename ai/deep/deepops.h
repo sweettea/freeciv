@@ -46,8 +46,21 @@ enum deep_op_state {
   DEEP_OP_MARCH,
 };
 
+/* Op templates (W33). ASSAULT is the muster-and-smash above. RAID
+ * (combat E8 graduated into the slot system) claims only fast idle
+ * attackers and hunts exposed enemy civilians; it has no target
+ * city, no staging, no quorum -- it forms when victims are in reach
+ * and dissolves when the hunting stops. Raids coexist with assaults
+ * now, but assault formation runs first each turn: the army's first
+ * claim on fresh units stands. */
+enum deep_op_kind {
+  DEEP_OPK_ASSAULT = 0,
+  DEEP_OPK_RAID,
+};
+
 struct deep_operation {
   enum deep_op_state state;
+  enum deep_op_kind kind;
   int target_city;              /* enemy city id */
   int staging_city;             /* own city id */
   int required;                 /* members needed before launch */
@@ -59,7 +72,6 @@ struct deep_operation {
 };
 
 void deep_run_operations(struct ai_type *ait, struct player *pplayer);
-void deep_run_raids(struct ai_type *ait, struct player *pplayer);
 
 int deep_op_claiming(const struct player *pplayer, int unit_id);
 

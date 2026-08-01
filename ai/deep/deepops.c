@@ -96,24 +96,6 @@ static bool deep_op_targeted(const struct player *pplayer, int city_id)
 }
 
 /**********************************************************************//**
-  Does any live operation stand? Raids yield to assaults while one
-  does (E8's gate).
-**************************************************************************/
-static bool deep_op_any_live(const struct player *pplayer)
-{
-  const struct deep_plr *dp = deep_plr_data(pplayer);
-  int oi;
-
-  for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
-    if (dp->ops[oi].state != DEEP_OP_NONE) {
-      return TRUE;
-    }
-  }
-
-  return FALSE;
-}
-
-/**********************************************************************//**
   The most valuable assault target we have actually met and seen:
   best worth over distance from `from` on the same continent. Shared
   gate logic with deep_assault_want (deepdefence.c) -- contact
@@ -222,73 +204,151 @@ static void deep_op_dissolve(struct deep_operation *op, int oi,
 }
 
 /**********************************************************************//**
-  Raids (combat E8, first slice; human design: "opportunistic
-  exploration of the enemy's land, pillaging improvements and killing
-  workers"). When no assault operation stands -- the pitched odds
-  cleared no bar this turn -- idle FAST attackers hunt exposed enemy
-  civilians instead: a worker killed is every work-turn it had sunk
-  and every one it would have delivered, at the price of one duel
-  against defence 1. The assault always owns the army first; raiding
-  is what the cavalry does between operations. Contact required, as
-  everywhere.
+  The nearest exposed enemy civilian this raider could hunt: at war,
+  contact made (barbarians exempt: their units ARE the contact), out
+  of any city, not aboard, same continent, within `radius` tiles.
 **************************************************************************/
-void deep_run_raids(struct ai_type *ait, struct player *pplayer)
+static struct unit *deep_raid_victim(const struct player *pplayer,
+                                     const struct unit *u, int radius)
+{
+  struct unit *best = NULL;
+  int bestd = radius + 1;
+
+  players_iterate_alive(aplayer) {
+    if (!pplayers_at_war(pplayer, aplayer)
+        || (!is_barbarian(aplayer)
+            && player_diplstate_get(pplayer, aplayer)->type
+               == DS_NO_CONTACT)) {
+      continue;
+    }
+    unit_list_iterate(aplayer->units, v) {
+      int d;
+
+      if (!unit_has_type_flag(v, UTYF_CIVILIAN)
+          || tile_city(unit_tile(v)) != NULL
+          || unit_transported(v)
+          || tile_continent(unit_tile(v))
+             != tile_continent(unit_tile(u))) {
+        continue;
+      }
+      d = real_map_distance(unit_tile(u), unit_tile(v));
+      if (d < bestd) {
+        bestd = d;
+        best = v;
+      }
+    } unit_list_iterate_end;
+  } players_iterate_alive_end;
+
+  return best;
+}
+
+/**********************************************************************//**
+  Raid template (combat E8 graduated into the slot system; human
+  design: "opportunistic exploration of the enemy's land, pillaging
+  improvements and killing workers"). Claim idle FAST attackers that
+  have a victim in reach: a worker killed is every work-turn it had
+  sunk and every one it would have delivered, at the price of one
+  duel against defence 1. No target city, no staging, no quorum.
+  Assault formation ran first this turn, so the army's first claim
+  on fresh units stands.
+**************************************************************************/
+static bool deep_op_form_raid(struct ai_type *ait, struct player *pplayer,
+                              struct deep_operation *op, int oi)
 {
   const struct deep_tuning *tune = deep_tuning_get();
+  int enrolled = 0;
 
-  if (tune->raid_radius <= 0 || deep_op_any_live(pplayer)) {
-    return;
+  if (tune->raid_radius <= 0) {
+    return FALSE;
   }
 
   unit_list_iterate(pplayer->units, u) {
     struct unit_ai *ud = def_ai_unit_data(u, ait);
-    struct unit *best = NULL;
-    int bestd = tune->raid_radius + 1;
 
+    if (enrolled >= DEEP_OP_MEMBERS) {
+      break;
+    }
     if (u->hp <= 0
         || unit_has_type_flag(u, UTYF_CIVILIAN)
         || adv_unit_att_rating(u) <= 0
         || unit_type_get(u)->move_rate <= SINGLE_MOVE
         || unit_transported(u)
         || ud->task != AIUNIT_NONE
-        || ud->charge > 0) {
+        || ud->charge > 0
+        || deep_op_claiming(pplayer, u->id) >= 0
+        || deep_raid_victim(pplayer, u, tune->raid_radius) == NULL) {
       continue;
     }
-    players_iterate_alive(aplayer) {
-      if (!pplayers_at_war(pplayer, aplayer)
-          || (!is_barbarian(aplayer)
-              && player_diplstate_get(pplayer, aplayer)->type
-                 == DS_NO_CONTACT)) {
-        continue;
-      }
-      unit_list_iterate(aplayer->units, v) {
-        int d;
-
-        if (!unit_has_type_flag(v, UTYF_CIVILIAN)
-            || tile_city(unit_tile(v)) != NULL
-            || unit_transported(v)
-            || tile_continent(unit_tile(v))
-               != tile_continent(unit_tile(u))) {
-          continue;
-        }
-        d = real_map_distance(unit_tile(u), unit_tile(v));
-        if (d < bestd) {
-          bestd = d;
-          best = v;
-        }
-      } unit_list_iterate_end;
-    } players_iterate_alive_end;
-
-    if (best != NULL) {
-      log_base(deep_metric_log_level(),
-               "deep-raid turn=%d player=\"%s\" raider=\"%s\""
-               " victim=\"%s\" dist=%d",
-               game.info.turn, player_name(pplayer), unit_rule_name(u),
-               unit_rule_name(best), bestd);
-      dai_unit_new_task(ait, u, AIUNIT_ATTACK, unit_tile(best));
-      (void) dai_gothere(ait, pplayer, u, unit_tile(best));
-    }
+    op->members[enrolled++] = u->id;
   } unit_list_iterate_end;
+
+  if (enrolled == 0) {
+    return FALSE;
+  }
+
+  op->state = DEEP_OP_MARCH;
+  op->kind = DEEP_OPK_RAID;
+  op->target_city = 0;
+  op->staging_city = 0;
+  op->required = 0;
+  op->formed_turn = game.info.turn;
+  op->march_turn = game.info.turn;
+  op->march_eta = 0;
+  op->n_members = enrolled;
+  /* "raid" deliberately dodges cities.py's (form|march|strike|abort)
+   * pool: the assault ledger stays pure. */
+  log_base(deep_metric_log_level(),
+           "deep-op turn=%d player=\"%s\" op=%d raid members=%d",
+           game.info.turn, player_name(pplayer), oi, op->n_members);
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Drive a raid for a turn: members whose last hunt resolved (task
+  back to none) get the nearest fresh victim; when nobody is hunting
+  any more -- victims cleared out, members re-purposed or dead --
+  the raid dissolves and the cavalry goes back to the pool.
+**************************************************************************/
+static void deep_op_drive_raid(struct ai_type *ait, struct player *pplayer,
+                               struct deep_operation *op, int oi)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int i, hunting = 0;
+
+  for (i = 0; i < op->n_members; i++) {
+    struct unit *m = game_unit_by_number(op->members[i]);
+    struct unit_ai *ud;
+    struct unit *victim;
+
+    if (m == NULL) {
+      continue;
+    }
+    ud = def_ai_unit_data(m, ait);
+    if (ud->task == AIUNIT_ATTACK) {
+      hunting++;
+      continue;
+    }
+    if (ud->task != AIUNIT_NONE) {
+      continue;                 /* Re-purposed: no longer ours. */
+    }
+    victim = deep_raid_victim(pplayer, m, tune->raid_radius);
+    if (victim != NULL) {
+      log_base(deep_metric_log_level(),
+               "deep-raid turn=%d player=\"%s\" op=%d raider=\"%s\""
+               " victim=\"%s\" dist=%d",
+               game.info.turn, player_name(pplayer), oi,
+               unit_rule_name(m), unit_rule_name(victim),
+               real_map_distance(unit_tile(m), unit_tile(victim)));
+      dai_unit_new_task(ait, m, AIUNIT_ATTACK, unit_tile(victim));
+      (void) dai_gothere(ait, pplayer, m, unit_tile(victim));
+      hunting++;
+    }
+  }
+
+  if (hunting == 0) {
+    deep_op_dissolve(op, oi, "raid-done", pplayer);
+  }
 }
 
 /**********************************************************************//**
@@ -412,6 +472,7 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
   }
 
   op->state = DEEP_OP_MUSTER;
+  op->kind = DEEP_OPK_ASSAULT;
   op->target_city = target->id;
   op->staging_city = staging->id;
   op->required = required;
@@ -604,18 +665,26 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
      * through the lower abort floor -- hysteresis, so a wave formed
      * at the bar does not turn back on the first wobble. Banked
      * members go back to stock with a clean slate. */
-    if (tune->op_abort_floor > 0.0 && ns > 0
-        && deep_take_odds_at_arrival(nmap, target, stream, ns, eta)
-           < tune->op_abort_floor) {
-      for (i = 0; i < ns; i++) {
-        struct unit_ai *ud = def_ai_unit_data(stream[i], ait);
+    if (tune->op_abort_floor > 0.0 && ns > 0) {
+      double odds = deep_take_odds_at_arrival(nmap, target, stream, ns,
+                                              eta);
 
-        if (ud->task == AIUNIT_ATTACK) {
-          dai_unit_new_task(ait, stream[i], AIUNIT_NONE, NULL);
+      if (odds < tune->op_abort_floor) {
+        for (i = 0; i < ns; i++) {
+          struct unit_ai *ud = def_ai_unit_data(stream[i], ait);
+
+          if (ud->task == AIUNIT_ATTACK) {
+            dai_unit_new_task(ait, stream[i], AIUNIT_NONE, NULL);
+          }
         }
+        log_base(deep_metric_log_level(),
+                 "deep-op turn=%d player=\"%s\" op=%d regate target=%d"
+                 " odds=%.2f eta=%d members=%d",
+                 game.info.turn, player_name(pplayer), oi,
+                 op->target_city, odds, eta, ns);
+        deep_op_dissolve(op, oi, "abort-odds", pplayer);
+        return;
       }
-      deep_op_dissolve(op, oi, "abort-odds", pplayer);
-      return;
     }
 
     if (game.info.turn - op->march_turn
@@ -666,6 +735,12 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
       }
     }
     op->n_members = n;
+    if (op->kind == DEEP_OPK_RAID) {
+      if (op->n_members == 0) {
+        deep_op_dissolve(op, oi, "raid-done", pplayer);
+      }
+      continue;
+    }
     if (target == NULL
         || !pplayers_at_war(pplayer, city_owner(target))
         || op->n_members == 0
@@ -677,15 +752,33 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
     }
   }
 
-  for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
-    if (dp->ops[oi].state == DEEP_OP_NONE) {
-      (void) deep_op_form(ait, pplayer, &dp->ops[oi], oi);
+  /* Form at most one assault and one raid per turn; assault first,
+   * so the army's claim on fresh units outranks the hunt's. */
+  {
+    bool tried_assault = FALSE;
+
+    for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+      if (dp->ops[oi].state != DEEP_OP_NONE) {
+        continue;
+      }
+      if (!tried_assault) {
+        tried_assault = TRUE;
+        if (deep_op_form(ait, pplayer, &dp->ops[oi], oi)) {
+          continue;             /* The raid tries the next free slot. */
+        }
+      }
+      (void) deep_op_form_raid(ait, pplayer, &dp->ops[oi], oi);
       break;
     }
   }
 
   for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
-    if (dp->ops[oi].state != DEEP_OP_NONE) {
+    if (dp->ops[oi].state == DEEP_OP_NONE) {
+      continue;
+    }
+    if (dp->ops[oi].kind == DEEP_OPK_RAID) {
+      deep_op_drive_raid(ait, pplayer, &dp->ops[oi], oi);
+    } else {
       deep_op_drive(ait, pplayer, &dp->ops[oi], oi);
     }
   }
