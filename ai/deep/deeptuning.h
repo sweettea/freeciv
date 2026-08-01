@@ -83,6 +83,17 @@ struct deep_tuning {
    * having before the size gate the building's other effects wait
    * for. */
   double horizon_health_weight;
+  /* Credit per citizen a Make_Content/Force_Content building frees
+   * from pacification duty, in the same tile-sum currency as the
+   * capacity credit. Unhappiness is the SOFT size cap: past it the
+   * city still grows, but each new citizen becomes an entertainer
+   * earning nothing instead of working a tile. Stock cannot see this
+   * at all -- happiness effects are #if 0'd out of advdata.c's
+   * impr_calc switch, so a Temple's base_want() is structurally ZERO
+   * and its whole want is a 35-per-currently-unhappy-citizen WAG,
+   * which is today's-state pricing of a future-state asset: exactly
+   * the defect W03 was built to fix, in the column W03 skipped. */
+  double horizon_content_weight;
   /* Share of a tech-gated cap-lifter's capacity credit routed into
    * the gating advance's tech want (the credit cannot buy the
    * building, but it can buy the research). */

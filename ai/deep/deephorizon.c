@@ -27,6 +27,7 @@
 #include "player.h"
 #include "requirements.h"
 #include "research.h"
+#include "specialist.h"
 #include "tech.h"
 #include "tile.h"
 
@@ -135,6 +136,92 @@ static adv_want deep_capacity_credit(struct city *pcity,
 
   return amortize(per_citizen * steps * tune->horizon_capacity_weight,
                   ttg);
+}
+
+/**********************************************************************//**
+  Citizens this city is currently spending on keeping order rather than
+  on working tiles: entertainer-equivalent specialists (those whose
+  luxury output pays the ruleset's happy_cost) plus the citizens still
+  unhappy after everything. This is stock's own quantity
+  (dai_content_effect_value in daieffects.c), recomputed here because
+  its helper is static; keeping the definitions identical means the
+  horizon credit EXTENDS stock's WAG rather than competing with it.
+**************************************************************************/
+static int deep_pacification_load(const struct city *pcity)
+{
+  int load = pcity->feel[CITIZEN_UNHAPPY][FEELING_FINAL];
+
+  normal_specialist_type_iterate(sp) {
+    if (get_specialist_output(pcity, sp, O_LUXURY) >= game.info.happy_cost) {
+      load += pcity->specialists[sp];
+    }
+  } normal_specialist_type_iterate_end;
+
+  return load;
+}
+
+/**********************************************************************//**
+  Credit for a building that makes citizens content: the citizens it
+  frees from pacification duty over the planning horizon, valued at
+  what a freed citizen would earn from the best unworked tiles -- the
+  same currency, and the same MORT horizon, as the capacity credit.
+
+  Unhappiness is the city's SOFT size cap. The hard cap (Size_Adj) stops
+  growth outright and deep_capacity_credit() prices it; past the soft
+  cap the city keeps growing but each new citizen must entertain instead
+  of work, so the marginal citizen earns zero. Both are "the city cannot
+  use another worker"; only one of them was priced.
+
+  Stock cannot price this at all. advdata.c's impr_calc switch has the
+  whole happiness family #if 0'd out under a TODO, so a building whose
+  only effects are Make_Content -- Temple, Colosseum -- gets
+  ADV_IMPR_ESTIMATE, and base_want() returns zero for it on its first
+  line. Its entire want is 35 per citizen that is unhappy RIGHT NOW,
+  which is zero in precisely the city that is about to need it.
+**************************************************************************/
+static adv_want deep_content_credit(struct city *pcity,
+                                    const struct impr_type *pimprove,
+                                    struct adv_data *adv)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int amount, load, ttg, arriving, freed;
+  adv_want per_citizen;
+
+  if (get_city_bonus(pcity, EFT_NO_UNHAPPY) > 0) {
+    /* Nothing to pacify, now or ever. */
+    return 0;
+  }
+
+  amount = get_potential_improvement_bonus(pimprove, pcity,
+                                           EFT_MAKE_CONTENT,
+                                           RPT_CERTAIN, FALSE)
+           + get_potential_improvement_bonus(pimprove, pcity,
+                                             EFT_FORCE_CONTENT,
+                                             RPT_CERTAIN, FALSE);
+  if (amount <= 0) {
+    return 0;
+  }
+
+  load = deep_pacification_load(pcity);
+  ttg = city_turns_to_grow(pcity);
+
+  /* Citizens due to arrive within the horizon. Past the content limit
+   * each of them lands on pacification duty, so they are demand for
+   * this building just as surely as today's entertainers are. */
+  arriving = (ttg > 0 ? MORT / ttg : 0);
+
+  /* A building can only ever convert its own `amount`. */
+  freed = MIN(amount, load + arriving);
+  if (freed <= 0) {
+    return 0;
+  }
+
+  per_citizen = deep_unworked_tile_value(pcity, adv, 3);
+
+  /* Immediate if the load is already there; otherwise it starts paying
+   * when the city next grows. */
+  return amortize(freed * per_citizen * tune->horizon_content_weight,
+                  load > 0 ? 0 : ttg);
 }
 
 /**********************************************************************//**
@@ -300,6 +387,7 @@ void deep_adjust_building_wants(struct ai_type *ait,
       }
       if (!threatened) {
         add += deep_bundle_credit(pcity, pimprove, adv);
+        add += deep_content_credit(pcity, pimprove, adv);
       }
 
       if (!threatened && game.info.illness_on
