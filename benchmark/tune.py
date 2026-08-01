@@ -189,20 +189,39 @@ def eval_population(args, seeds, cand_dirs, tuning_files, baseline,
                                        d, port, tf, mixed)] = (k, c, seed)
                         port += 1
         diffs = {}
+        lost = []
         for f in concurrent.futures.as_completed(futs):
             k, c, seed = futs[f]
-            if mixed:
-                deep, base = f.result()
-                per_seed = diffs.setdefault((k, c), {})
-                per_seed[seed] = per_seed.get(seed, 0) + deep - base
-            else:
-                diffs.setdefault((k, c), {})[seed] \
-                    = f.result() - baseline[(c, seed)]
+            # A game that dies takes its datum with it, not the campaign.
+            # One crashed server out of 288 used to abort a 22-hour run
+            # (EAST2, r0-ALL gen1). Drop the seed, say so loudly, and let
+            # the remaining seeds carry the candidate.
+            try:
+                if mixed:
+                    deep, base = f.result()
+                    per_seed = diffs.setdefault((k, c), {})
+                    per_seed[seed] = per_seed.get(seed, 0) + deep - base
+                else:
+                    diffs.setdefault((k, c), {})[seed] \
+                        = f.result() - baseline[(c, seed)]
+            except Exception as exc:                      # noqa: BLE001
+                lost.append((k, c, seed))
+                print(f"  LOST GAME cand={k} cfg={c} seed={seed}: {exc}",
+                      flush=True)
+    if lost:
+        print(f"  {len(lost)} of {len(futs)} games lost this generation",
+              flush=True)
     objs = []
     for k in range(len(cand_dirs)):
-        per_cfg = [sum(diffs[(k, c)].values()) / len(diffs[(k, c)])
-                   for c in range(len(args.configs))]
-        objs.append(sum(per_cfg) / len(per_cfg))
+        per_cfg = []
+        for c in range(len(args.configs)):
+            got = diffs.get((k, c), {})
+            if got:
+                per_cfg.append(sum(got.values()) / len(got))
+        # A candidate that lost EVERY game is not comparable to one that
+        # merely scored badly; rank it last rather than inventing a value.
+        objs.append(sum(per_cfg) / len(per_cfg) if per_cfg
+                    else -float("inf"))
     return objs
 
 
