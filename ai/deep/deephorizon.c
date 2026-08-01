@@ -225,6 +225,54 @@ static adv_want deep_content_credit(struct city *pcity,
 }
 
 /**********************************************************************//**
+  Credit for a growth ACCELERATOR (Growth_Food: the Granary keeps a
+  share of the food box across a growth, so the next citizen arrives
+  sooner). Valued as the extra citizens the horizon buys, in the same
+  currency and over the same MORT horizon as the other credits.
+
+  This deliberately does NOT reuse the capacity credit. The two answer
+  opposite questions, and conflating them inverted the accelerator:
+  deep_capacity_credit() is nonzero only when `!city_can_grow_to(size+1)`
+  -- when the city is jammed against the ruleset's size gate -- so
+  gating the Growth_Food credit on `cap_credit > 0` paid a growth
+  accelerator EXACTLY WHEN GROWTH WAS IMPOSSIBLE, and paid it nothing in
+  the small, freely-growing city where a Granary actually earns. A
+  Granary in a capped city saves food the city cannot spend.
+**************************************************************************/
+static adv_want deep_growth_credit(struct city *pcity,
+                                   const struct impr_type *pimprove,
+                                   struct adv_data *adv)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int pct, ttg, steps;
+  adv_want per_citizen, extra;
+
+  pct = get_potential_improvement_bonus(pimprove, pcity, EFT_GROWTH_FOOD,
+                                        RPT_CERTAIN, FALSE);
+  if (pct <= 0) {
+    return 0;
+  }
+  if (!city_can_grow_to(pcity, city_size_get(pcity) + 1)) {
+    /* Capped: the saved food has nowhere to go. The cap-lifter is the
+     * building this city needs, and it has its own credit. */
+    return 0;
+  }
+  ttg = city_turns_to_grow(pcity);
+  if (ttg <= 0) {
+    /* No food surplus: nothing to accelerate. */
+    return 0;
+  }
+
+  /* Growths within the horizon, and the share of one growth-cycle's
+   * food the building hands back each time. */
+  steps = MAX(1, MORT / ttg);
+  extra = (adv_want) steps * pct / 100.0;
+  per_citizen = deep_unworked_tile_value(pcity, adv, 3);
+
+  return amortize(extra * per_citizen * tune->horizon_growth_weight, ttg);
+}
+
+/**********************************************************************//**
   Credit bundle buildings: effects whose requirements contain BOTH a
   building at city range and an extra at tile range (the civ2civ3
   farmland + supermarket pattern, detected generically). Returns the
@@ -380,14 +428,14 @@ void deep_adjust_building_wants(struct ai_type *ait,
               || building_has_effect(pimprove, EFT_SIZE_UNLIMIT))) {
         add += cap_credit;
       }
-      if (cap_credit > 0
-          && building_has_effect(pimprove, EFT_GROWTH_FOOD)) {
-        /* Growth accelerator: same currency, shaped separately. */
-        add += cap_credit * deep_tuning_get()->horizon_growth_weight;
-      }
       if (!threatened) {
         add += deep_bundle_credit(pcity, pimprove, adv);
         add += deep_content_credit(pcity, pimprove, adv);
+        /* Growth accelerator: peace-time investment like the other two.
+         * The structural cap-lifter above keeps its wartime exemption
+         * because a size GATE never reopens on its own; a Granary is
+         * only ever an optimisation. */
+        add += deep_growth_credit(pcity, pimprove, adv);
       }
 
       if (!threatened && game.info.illness_on
