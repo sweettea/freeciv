@@ -199,3 +199,77 @@ Consequences:
 - The T76 12%-vs-41% want gap was a phase artefact, not a defect:
   by T106 deep led on cities (14.2 vs 13.7) and both sides wanted at
   16%.
+
+---
+
+## Manual dig: why the ordinary ladder is never built (2026-08-01)
+
+Instrumented single game from the T106 Europe save, one turn, global
+debug (`-d d`; note the file-scoped form `-d d:file.c` silently
+logged nothing, which cost a run).
+
+**First, a measurement bug of mine, now fixed.** civ2civ3 has
+improvements literally named `"Aqueduct, Lake"` and
+`"Aqueduct, River"`. My census split `improvement_vector` on commas,
+shattering those and shifting every index after them, which produced
+the nonsense "stock builds 123 Banks and 0 Temples". A quote-aware
+parse (`/tmp/claude-1000/impr.py` pattern: `csv.reader` over the
+vector) fixes it. The EUROPE numbers were unaffected -- the classic
+ruleset has no comma-bearing names -- so "deep builds zero ladder in
+Europe" survives, but the civ2civ3 figures had to be redone:
+
+    isolated-150 (civ2civ3, PEACEFUL), per city
+                    deep      stock
+    Temple          0.17      0.24
+    Marketplace     0.048     0.089
+    Library         0.024     0.073
+    Granary         0.095     0.061
+    Colosseum       0.31      0.33
+    Aqueducts       0.45      0.32
+
+So the ladder is NOT structurally unreachable: in a peaceful game
+deep builds it at broadly stock's rate, and out-builds stock on
+Aqueducts. The failure is war-specific.
+
+**What the instrumented turn shows.** The horizon credits fire --
+78 lines in one turn -- but they are small: Aqueduct 30.7, Granary
+15.4, Pyramids 18.4 (66 of the 78 were Supermarket, max 991). The
+build auction is decided far above that:
+
+    Gades (s6) {d30 u0 g0} d_m_c_b wants first defender with 1100.0
+    Ryazan: Diplomat is desired with want 4420.2 (tech theft 42156)
+
+Note `u0 g0`: urgency and grave_danger are zero, so the satisfaction
+fix IS applying. The city still buys a defender because deep's own
+injected danger (d30) leaves it wanting one, and stock's
+first-defender want is 1100 against building credits of 15-30.
+
+**A hypothesis that died:** "deep drains its cities via ops/drafts,
+so they are perpetually defenderless and perpetually buying the
+first defender." Measured false -- deep has FEWER defenderless
+cities than stock (27% vs 46%) and a bigger mean garrison (1.11 vs
+0.75). Stock is emptier and still builds temples.
+
+**What is left, and it is not a bug.** Deep keeps buying defenders
+because its injected fear keeps danger above zero, and defender
+wants sit above building wants. Satisfaction (which zeroes the
+injected fears) requires the garrison floor AND survival >=
+survival_target -- and in a losing permanent war, survival rarely
+clears the bar, so the fears legitimately keep bidding. The ladder is
+the casualty of an alarm that is arguably correct.
+
+That makes it the same question the counter-claim raised: **should a
+city that will probably fall buy its third defender, or a
+Marketplace?** It is a doctrine call, not a defect:
+
+- If "no" -- write-off cities below some survival floor should stop
+  buying defence and start buying economy, which is nearly the
+  opposite of today's rule.
+- If "yes" -- then the ladder gap in war games is the price of the
+  war, and the fix belongs in not-losing rather than in the auction.
+
+The tuning campaign can move the balance (`survival_fear_value`,
+`garrison_floor_danger`, the fear terms, `horizon_*`, and
+`upkeep_gold_weight` which charges 3x building upkeep against every
+credit) but it cannot answer the doctrine question. Flagging per
+CLAUDE.md's "stop and ask the human" rule.
