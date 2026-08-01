@@ -274,6 +274,13 @@ struct deep_tuning {
    * attackers hunt exposed enemy civilians within this many tiles.
    * 0 disables. */
   int raid_radius;
+  /* Hut risk (task #18): while the server can unleash hut
+   * barbarians, huts within hut_risk_radius of an own city count at
+   * hut_risk_discount in the explore want -- far huts stay full
+   * value (a lost explorer is a fine trade for tech and gold; a
+   * barbarian spawn at home is not). radius 0 disables. */
+  int hut_risk_radius;
+  double hut_risk_discount;
 };
 
 void deep_tuning_init(void);

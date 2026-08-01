@@ -52,6 +52,8 @@ adv_want deep_explore_want(struct player *pplayer, int queued)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   int huts_visible = 0, unknown = 0, explorers = 0;
+  double hut_weight = 0.0;
+  bool hut_risk;
   Continent_id ours[64];
   int nours = 0, i;
   adv_want want;
@@ -59,6 +61,18 @@ adv_want deep_explore_want(struct player *pplayer, int queued)
   if (wld.map.server.huts <= 0) {
     return 0;
   }
+
+  /* Hut-risk awareness (task #18; human rule 2026-07-31: exploring
+   * away from home, the worst case is a lost explorer -- a fine
+   * trade for the tech and gold -- but a hut popped NEXT TO OUR
+   * CITIES can spawn the barbarians on our doorstep). Huts within
+   * hut_risk_radius of an own city count at hut_risk_discount, and
+   * only while the server can actually unleash hut barbarians (the
+   * exact gate barbarian.c uses: rate + onset). v3b's tuner priced
+   * around this blindly by zeroing hut value on classic; the code
+   * now knows why. */
+  hut_risk = BARBS_DISABLED != game.server.barbarianrate
+             && game.info.turn >= game.server.onsetbarbarian;
 
   /* Continents where this player has feet on the ground: an explorer
    * can only walk its own landmass, so unknown or hutted tiles
@@ -111,7 +125,19 @@ adv_want deep_explore_want(struct player *pplayer, int queued)
     if (!map_is_known(ptile, pplayer)) {
       unknown++;
     } else if (hut_on_tile(ptile)) {
+      double w = 1.0;
+
+      if (hut_risk && tune->hut_risk_radius > 0) {
+        city_list_iterate(pplayer->cities, hc) {
+          if (real_map_distance(city_tile(hc), ptile)
+              <= tune->hut_risk_radius) {
+            w = tune->hut_risk_discount;
+            break;
+          }
+        } city_list_iterate_end;
+      }
       huts_visible++;
+      hut_weight += w;
     }
   } whole_map_iterate_end;
 
@@ -124,7 +150,7 @@ adv_want deep_explore_want(struct player *pplayer, int queued)
   /* queued = explorer builds already claimed by other cities in this
    * same management pass, so one global want cannot order a fleet
    * (25 cities x one number was the other half of the pump). */
-  want = (huts_visible * tune->explore_hut_value
+  want = (hut_weight * tune->explore_hut_value
           + unknown * tune->explore_discovery_value)
          / (1 + explorers + queued);
 
