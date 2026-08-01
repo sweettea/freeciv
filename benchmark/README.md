@@ -50,7 +50,7 @@ budget it allocates is stable across candidates:
     python3 benchmark/tune.py \
       --start benchmark/tuning/econ-regime.ini \
       --blocks E --rounds 1 \
-      --config benchmark/configs/garden2b-150.conf,benchmark/configs/lategame-80.conf \
+      --config benchmark/configs/lategame-80.conf,benchmark/configs/isolated-150.conf,benchmark/configs/primary-120.conf \
       --count 8 --gens 4 --pop 6 --jobs $(nproc) \
       --out benchmark/results/tuning/econ
 
@@ -72,9 +72,24 @@ belongs to machine B, not here.
 and the blend matters more than it looks:
 
     python3 benchmark/tune.py --blocks S,M --rounds 2 \
-      --config benchmark/configs/primary.conf,benchmark/configs/isolated.conf \
+      --config benchmark/configs/lategame-80.conf,benchmark/configs/isolated-150.conf,benchmark/configs/primary-120.conf \
       --count 8 --gens 4 --pop 6 --jobs $(nproc) \
       --out benchmark/results/tuning/war
+
+**Both machines run the SAME three cells** (human decision
+2026-08-01): `lategame-80` (build-out: tech 50, 8 settlers, 10
+workers), `isolated-150` (science, peaceful islands) and
+`primary-120` (FRACTAL, 400 tiles/player, shared continent -- the
+warlike one). Same venues under different regimes is what makes the
+two machines' results mergeable, and it gives block S the tension it
+needs.
+
+All three enable **citizen migration with `mgr_distance 6`** -- the
+maximum the server allows (`1 + CITY_MAP_MAX_RADIUS`). Citizens walk
+toward the better empire, so economic quality shows up in city sizes
+and score rather than only in build orders. Neither AI models
+migration (that is W17), so it is an environmental force applied
+equally to both paired arms.
 
 **Block S must see a peaceful cell and a warlike one in the same
 objective.** S is the fear -> military-want conversion; tuned only on
