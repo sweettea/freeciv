@@ -45,6 +45,7 @@
 #include "daidata.h"
 #include "daiplayer.h"
 
+#include "deepcombat.h"
 #include "deeptuning.h"
 
 #include "deepcm.h"
@@ -140,6 +141,30 @@ static double deep_cm_sortie_value(struct city *pcity)
 }
 
 /**********************************************************************//**
+  Sequential-attrition check on the grow-release: the linear margin
+  test below passes at parity, but parity against a wave of N means
+  winning N straight duels (the exact overreach the margin knob's own
+  comment admits to papering over). With a wave observed, grow-hard
+  resumes only when the garrison's survival odds also clear the
+  target; with no observed wave the linear test keeps sole custody,
+  so synthetic-fear-only cities (boat shadow, density) behave exactly
+  as before.
+**************************************************************************/
+static bool deep_cm_survival_ok(struct city *pcity)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int wave = 0;
+  double surv;
+
+  if (tune->survival_target <= 0.0) {
+    return TRUE;
+  }
+  surv = deep_city_stack_survival(&(wld.map), pcity,
+                                  tune->survival_horizon, &wave);
+  return wave == 0 || surv >= tune->survival_target;
+}
+
+/**********************************************************************//**
   Derive and set (or clear) cm_parameter for every owned city.
 **************************************************************************/
 void deep_set_city_manager_params(struct ai_type *ait,
@@ -178,10 +203,11 @@ void deep_set_city_manager_params(struct ai_type *ait,
       cmp.happy_factor = tune->cm_happy_factor;
     } else if (city_size_get(pcity) < tune->cm_grow_below
                && (city_data->danger == 0
-                   || assess_defense(ait, pcity)
-                      + deep_cm_sortie_value(pcity)
-                      >= tune->cm_grow_safety_margin
-                         * city_data->danger)) {
+                   || (assess_defense(ait, pcity)
+                       + deep_cm_sortie_value(pcity)
+                       >= tune->cm_grow_safety_margin
+                          * city_data->danger
+                       && deep_cm_survival_ok(pcity)))) {
       /* Young city with headroom whose fear, if any, is already PAID
        * FOR: grow-hard yields to the garrison only while defence
        * lags the assessed danger. assess_defense_quadratic()
