@@ -839,16 +839,62 @@ static bool deep_op_retarget(struct ai_type *ait, struct player *pplayer,
     return FALSE;
   }
 
-  log_base(deep_metric_log_level(),
-           "deep-op turn=%d player=\"%s\" op=%d retarget from=%d to=%d"
-           " members=%d eta=%d p=%.3f",
-           game.info.turn, player_name(pplayer), oi, op->target_city,
-           alt->id, ns, alt_eta, alt_odds);
-  op->target_city = alt->id;
-  op->state = DEEP_OP_MARCH;
-  op->march_turn = game.info.turn;
-  op->march_eta = MAX(alt_eta, 1);
-  deep_op_launch(ait, pplayer, op);
+  /* Prefer a city as the re-muster point (human doctrine
+   * 2026-08-01: field musters are random squares). A land wave
+   * rallies at the own city nearest the new target among those no
+   * farther from it than the wave's quorum already stands -- on the
+   * way, never backtracking -- and walks the proper MUSTER there.
+   * No city on the route, or a fleet mid-crossing (its port call is
+   * the offshore-hold future work): march direct. */
+  {
+    struct city *rally = NULL;
+
+    if (!deep_op_crossing(op, alt)) {
+      int wd[DEEP_OP_MEMBERS];
+      int j, k, nq = 0, best = FC_INFINITY;
+
+      for (i = 0; i < ns; i++) {
+        int d = real_map_distance(unit_tile(stream[i]),
+                                  city_tile(alt));
+
+        for (j = nq; j > 0 && wd[j - 1] > d; j--) {
+          wd[j] = wd[j - 1];
+        }
+        wd[j] = d;
+        nq++;
+      }
+      k = MIN(MAX(op->required, 1), nq);
+      city_list_iterate(pplayer->cities, pcity) {
+        int d = real_map_distance(city_tile(pcity), city_tile(alt));
+
+        if (d <= wd[k - 1] && d < best
+            && tile_continent(city_tile(pcity))
+               == tile_continent(city_tile(alt))) {
+          best = d;
+          rally = pcity;
+        }
+      } city_list_iterate_end;
+    }
+
+    log_base(deep_metric_log_level(),
+             "deep-op turn=%d player=\"%s\" op=%d retarget from=%d"
+             " to=%d staging=%d members=%d eta=%d p=%.3f",
+             game.info.turn, player_name(pplayer), oi, op->target_city,
+             alt->id, rally != NULL ? rally->id : 0, ns, alt_eta,
+             alt_odds);
+    op->target_city = alt->id;
+    if (rally != NULL) {
+      op->staging_city = rally->id;
+      op->required = ns;
+      op->state = DEEP_OP_MUSTER;
+      op->formed_turn = game.info.turn;
+    } else {
+      op->state = DEEP_OP_MARCH;
+      op->march_turn = game.info.turn;
+      op->march_eta = MAX(alt_eta, 1);
+      deep_op_launch(ait, pplayer, op);
+    }
+  }
 
   return TRUE;
 }
