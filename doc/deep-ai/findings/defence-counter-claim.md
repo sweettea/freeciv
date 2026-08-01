@@ -132,3 +132,70 @@ doctrines, none chosen:
 This is a human call, not a tuning knob. Until it is made, the
 counter-claim reinforces everything below the bar, and the ledger
 counts what that costs.
+
+---
+
+## DOCTRINE DECIDED (human, 2026-08-01): evacuate the doomed
+
+Answering the open question above. A city that is nearly falling
+should **sell its buildings** and **rehome its defenders to nearby
+cities if they can get there within a turn**, rather than buy its
+third defender or feed relief into a loss.
+
+Rationale: both halves recover value that is otherwise burned. A
+captured city hands its buildings to the enemy intact; a garrison
+that dies in a city that falls anyway converts into nothing, while
+the same blades in a city that CAN hold convert into a defence.
+
+### Gates
+
+The doomed test must be stricter than the counter-claim's bar, or
+the two fight: the counter-claim relieves cities below
+`survival_target`, so evacuation must trigger only well below that.
+Needs a knob -- `city_writeoff_floor`, PLACEHOLDER, tuned later --
+with the invariant `city_writeoff_floor < survival_target` asserted
+at load. Cities between the two bars are RELIEVED; cities below
+`city_writeoff_floor` are EVACUATED. Nothing may be both.
+
+### Mechanism
+
+1. **Sell.** One building per city per turn is the server's limit
+   (`do_sell_building`). Sell highest-value first; skip City Walls
+   and Coastal Defense while any relief is still inbound, since
+   selling them lowers survival further and could flip a relievable
+   city into a doomed one -- the hysteresis trap.
+2. **Rehome.** For each garrison unit, find own cities reachable
+   THIS turn (move_rate, not eta) whose survival stays >= target
+   after receiving it; send the unit and change its home city so the
+   upkeep follows. Units that cannot reach safety stay and fight --
+   a unit stranded outside a city is worth less than one behind
+   walls.
+3. Order matters: rehome first, then sell, so the sale decision sees
+   the garrison that is actually leaving.
+
+### Risks to measure, not assume
+
+- **Self-fulfilling write-off.** Withdrawing the garrison turns
+  "probably falls" into "certainly falls", and an empty city is
+  walked into by anything. If the survival model is even slightly
+  pessimistic, this abandons holdable cities. Metric: cities
+  evacuated that the enemy then FAILED to take (should be near
+  zero; a high number means the floor is too generous).
+- **Cascade.** Evacuating city A reinforces city B, which may push
+  A's neighbours below the floor next turn. Watch for evacuation
+  chains -- more than ~2 in a row on the same front is a runaway.
+- **Gold spike.** Mass selling is a one-off treasury bump that can
+  look like an economic win in the score while representing lost
+  infrastructure. Report buildings sold alongside gold.
+
+### Placement
+
+`ai/deep` (deepdefence.c), beside the counter-claim so the two share
+the survival read and cannot both fire on one city. This is W14's
+losing-war branch arriving early; W14 keeps the war ledger that
+would eventually price the decision properly.
+
+NOT IMPLEMENTED YET -- spec only, written while the tuning campaign
+holds the binary. Implement, then verify on the T160 fossil or the
+Europe save (a losing war is exactly the position that exercises it)
+before any benchmark claim.
