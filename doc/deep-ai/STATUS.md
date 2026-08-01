@@ -1085,3 +1085,79 @@ military-only garrison, observed units only).
 Session mode (human 2026-07-31): epic-by-epic THROUGH the queue in
 one sitting -- close each with code + numbers + STATUS before
 opening the next. E2 next.
+
+## The operations evening: E2/E3/E6, gates, colonies, naval slice 3 (2026-07-31 night)
+
+Rolling epics on human direction ("multiple of these epics... might
+as well do the naval epics too"; "stay active"). Binary chain, each
+step contested-verified (10 paired seeds, placeholder defaults,
+deep/baseline self-play score ratio):
+
+- B2 (E2 marginal take-odds attacker wants): 0.758 -- CAUGHT A REAL
+  BUG. Unmet players are nominally at war (initial diplstate), so
+  turn-1 ungarrisoned "enemy" cities priced P(take)=1.0 and
+  worth-scale wants outbid every settler. 29k deep-kill lines.
+- B3 (+contact gates + E3 sorties): 0.819, 8/10 seeds improved.
+  Contact required before targeting, fearing, or sortieing at a
+  player (barbarians exempt: their units ARE the contact). E3: kill
+  sortie (finish an adjacent weak besieger when duel odds clear
+  sortie_win_floor AND the city clears survival_target without the
+  blade -- stock only rampages above 5x bodyguard threshold in
+  kill_desire currency) + cover sortie (lend the weakest sparable
+  garrison blade to an unanswered worker bodyguard request). Fired
+  34/448 times per 10 games.
+- B4 (+E6 assault operations): 0.796 on / 0.731 all-off (median;
+  the stack's net worth ~+0.065 at defaults). Ops alive: 1117
+  formed, 1029 struck, 62 aborted per 10 games; required forces
+  2-4 (proportionate to contested's thin garrisons), quorums in 0-1
+  turns, wait-cap fires with half-quorum launches. Score-neutral vs
+  B3: small waves, correct but not yet decisive.
+- B5 (+satisfaction gate #19 + barracks guard): 0.812 on / 0.730
+  all-off median (means tied 0.796); foundings 299->324, conquests
+  13->7, losses 22->13 -- quieter, more expansive. Same-seed T151
+  finals: Barracks 20->12, Temples 4->7 EVEN UNDER CONSTANT WAR.
+  The gate's real payoff cell is quiet growth (isolated/smoke);
+  contested keeps cities honestly unsatisfied.
+- B6 (+naval slice 3 #16 + colony lift #20): smoke/contested/
+  isolated chain running at session close; isolated (island starts,
+  T300) is the amphibious + colony + growth-ladder proving ground.
+
+Landed beyond the E-epics, all from live-game forensics (findings
+"T153"): SATISFACTION GATE (#19) -- injected fears scale by
+satisfied_fear_discount (default 0) once floor met + no urgency/
+grave danger + survival at target; 22 deep cities had reached T153
+with ZERO growth infrastructure because standing fears outbid the
+granary in every auction forever. BARRACKS GUARD -- stock
+adjust_ai_unit_choice swaps any unit choice for the veterancy
+building with NO garrison check, even in an empty city (upstream
+defect recorded); deep requires the floor met first. COLONY LIFT
+(#20) -- the settler pipeline cap read 0>=0 with no boats and
+silenced overseas demand forever (71% of the Europe map unowned);
+a demand-only virtual-boat probe now records the best overseas
+site score and coastal cities answer fresh demand by building the
+boat. NAVAL SLICE 3 (#16) -- deep_take_odds_at_arrival adds
+eta x invasion_reinforce_rate virtual best-buildable defenders
+(travel time is the defender's budget, BOTH terrains, one law);
+loaded convoys hold until the assembled landing clears
+op_take_target at arrival, with the stateless nobody-else-coming
+release; overseas at-war coastal cities join the want/op target
+menus; amphibious ops stage at the nearest own port; muster berth
+shortfalls drive the lift want (third consumer of the
+lift-limited-means-build-the-boat rule).
+
+New PLACEHOLDER knobs this stretch (all four edits + ini):
+attack_value_weight, sortie_win_floor, op_take_target,
+op_muster_wait, satisfied_fear_discount, colony_lift_weight,
+invasion_reinforce_rate. Benchmark: lategame cell added (techlevel
+50, colonial startunits, dispersion 3 -- human design; validated,
+joins the v4 mix); cities.py pools all new tripwires (deep-city/
+surv/tired/sortie/op/invade/colony/sat).
+
+Caveats for the next session, stated plainly: every number above is
+n=10 quick-run directional, not the n>=50 methods bar; the whole
+stack runs at compiled placeholder defaults, untuned; op quality is
+mechanical-not-strategic (small waves); multi-turn siege compounding
+and healing remain unmodelled; W31's deeper layers (sea lanes, fleet
+composition, bombardment) unstarted. Remaining E-map: E7 second
+waves, E8 raids, E4 aggregation swap (pre-v4 only), E5 sieges; #18
+small gates still pending.
