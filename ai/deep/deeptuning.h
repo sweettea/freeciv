@@ -32,6 +32,16 @@ struct deep_tuning {
    * wastes every turn already spent walking (W05). */
   double settler_fearfulness_mult;
 
+  /* Multiplier on the overnight-danger bar for settler pathing
+   * (human doctrine 2026-08-01: a hard any-threat veto is too
+   * absolute -- some loss chance is affordable on the way to a very
+   * good site). The veto fires when enemy a^2*10 >= defence *
+   * THIS; 1.0 is exactly the stock bar, above 1.0 is braver. Mild
+   * danger stays priced by fearfulness either way. Site-value
+   * modulation (braver toward better sites) is the eventual form;
+   * v4 owns the number. */
+  double settler_risk_tolerance;
+
   /* How steeply an en-route defender's contribution to its target
    * city's effective danger reduction decays per turn of distance
    * (W11): credit = power * survival^eta / (1 + eta_weight * eta). */

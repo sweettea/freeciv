@@ -20,6 +20,7 @@
 
 /* common */
 #include "city.h"
+#include "combat.h"
 #include "game.h"
 #include "map.h"
 #include "movement.h"
@@ -38,6 +39,7 @@
 /* server */
 #include "citytools.h"
 #include "handicaps.h"
+#include "maphand.h"
 #include "srv_log.h"
 #include "unittools.h"
 
@@ -106,14 +108,70 @@ deep_settler_tile_behavior(const struct tile *ptile,
 }
 
 /**********************************************************************//**
+  The overnight-danger bar with a tolerance multiplier. Same
+  arithmetic as dai_consider_tile_dangerous() -- the authoritative
+  path for AI players inside adv_danger_at() -- copied because the
+  public function cannot carry a tolerance (rule 3, stated reason):
+  the veto fires when accumulated adjacent enemy attack a^2 * 10
+  reaches defence * tolerance, so 1.0 reproduces the stock bar
+  exactly and higher is braver.
+**************************************************************************/
+static bool deep_settler_overnight_veto(struct unit *punit,
+                                        const struct tile *ptile,
+                                        double tolerance)
+{
+  struct player *pplayer = unit_owner(punit);
+  struct city *pcity = tile_city(ptile);
+  int a = 0, d, db;
+  int extras_bonus = 0;
+
+  if (pcity != NULL && pplayers_allied(city_owner(pcity), pplayer)
+      && !is_non_allied_unit_tile(ptile, pplayer,
+                                  unit_has_type_flag(punit,
+                                                     UTYF_FLAGLESS))) {
+    return FALSE;               /* Safe in a friendly city. */
+  }
+
+  db = 10 + tile_terrain(ptile)->defense_bonus / 10;
+  extras_bonus += tile_extras_defense_bonus(ptile, unit_type_get(punit));
+  db += (db * extras_bonus) / 100;
+  d = adv_unit_def_rating_basic_squared(punit) * db;
+
+  adjc_iterate(&(wld.map), (struct tile *) ptile, ptile1) {
+    if (has_handicap(pplayer, H_FOG)
+        && !map_is_known_and_seen(ptile1, pplayer, V_MAIN)) {
+      continue;                 /* Cannot see it: assume no danger. */
+    }
+    unit_list_iterate(ptile1->units, enemy) {
+      if (pplayers_at_war(unit_owner(enemy), pplayer)
+          && (unit_attack_unit_at_tile_result(enemy, NULL, punit,
+                                              (struct tile *) ptile)
+              == ATT_OK)
+          && (unit_attack_units_at_tile_result(enemy, NULL,
+                                               (struct tile *) ptile)
+              == ATT_OK)) {
+        a += adv_unit_att_rating(enemy);
+      }
+    } unit_list_iterate_end;
+  } adjc_iterate_end;
+
+  return (double) (a * a * 10) >= (double) d * tolerance;
+}
+
+/**********************************************************************//**
   pf_parameter is_pos_dangerous callback for civilians: never plan to
-  end a turn where visible enemies could kill us.
+  end a turn where visible enemies likely kill us -- "likely" priced
+  by settler_risk_tolerance (human doctrine 2026-08-01: some loss
+  chance is affordable on the way to a very good site; the hard
+  any-threat veto was too absolute). Milder danger stays priced into
+  the path by fearfulness rather than forbidden.
 **************************************************************************/
 static bool deep_civilian_pos_dangerous(const struct tile *ptile,
                                         enum known_type known,
                                         const struct pf_parameter *param)
 {
   const struct deep_settler_risk *risk = param->data;
+  double tolerance = deep_tuning_get()->settler_risk_tolerance;
 
   if (ptile == param->start_tile) {
     /* "Never plan to end a turn where enemies could kill us" cannot
@@ -125,6 +183,9 @@ static bool deep_civilian_pos_dangerous(const struct tile *ptile,
     return FALSE;
   }
 
+  if (tolerance > 0.0) {
+    return deep_settler_overnight_veto(risk->punit, ptile, tolerance);
+  }
   return adv_danger_at(risk->punit, (struct tile *) ptile);
 }
 
