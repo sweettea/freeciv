@@ -101,6 +101,13 @@ Benchmark runs are resumable — the result cache is keyed on
 `(tuning_hash, config, seed)`, so an interrupted `--full` picks up where it left
 off rather than restarting.
 
+**Never rebuild while a benchmark is in flight** — later games silently exec the
+new binary and the run is tainted (it happened; the result dir had to be
+deleted). Validate new work in the bench worktree instead: `.worktrees/bench`
+has its own `build/`, benchmarks take `--server`, and the sha-keyed cache keeps
+provenance exact. Sync files or commits into the worktree, build there, and
+leave the main tree's binary pinned for whatever run is using it.
+
 ---
 
 ## Session protocol
