@@ -51,7 +51,7 @@ across candidates:
 
     python3 benchmark/tune.py \
       --start benchmark/tuning/econ-priors.ini \
-      --blocks X,G --rounds 2 \
+      --blocks ECON --rounds 3 \
       --config benchmark/configs/lategame-80.conf,benchmark/configs/isolated-150.conf,benchmark/configs/primary-120.conf \
       --count 8 --gens 4 --pop 6 --jobs $(nproc) \
       --out benchmark/results/tuning/econ
@@ -70,11 +70,14 @@ score alone. `isolated` exercises SCIENCE over a long peaceful game.
 `primary` (shared continent, FRACTAL) is the warlike regime and
 belongs to machine B, not here.
 
-**Machine B -- the war half, blended objective.** Blocks S and M,
-and the blend matters more than it looks:
+**Machine B -- the alternating search (human design 2026-08-01).**
+Each round runs a global re-centring pass over every constant, then
+refines the civilian side, then the military side; repeat. The
+focused passes inherit the centre the global pass found, and the
+global pass then re-reads a world the focused passes changed:
 
     python3 benchmark/tune.py --start benchmark/tuning/europe-priors.ini \
-      --blocks S,M --rounds 2 \
+      --blocks ALL,ECON,MIL --rounds 3 \
       --config benchmark/configs/lategame-80.conf,benchmark/configs/isolated-150.conf,benchmark/configs/primary-120.conf \
       --count 8 --gens 4 --pop 6 --jobs $(nproc) \
       --out benchmark/results/tuning/war
@@ -94,8 +97,11 @@ and score rather than only in build orders. Neither AI models
 migration (that is W17), so it is an environmental force applied
 equally to both paired arms.
 
-**Block S must see a peaceful cell and a warlike one in the same
-objective.** S is the fear -> military-want conversion; tuned only on
+ALL is 81 dimensions, far more than a small-population ES can
+search: treat it as coarse re-centring and give it the largest --pop
+the box affords. ECON (42) and MIL (39) do the real work.
+
+**The blend must contain a peaceful cell and a warlike one.** S is the fear -> military-want conversion; tuned only on
 warlike maps it learns "always arm", which is the exact pathology
 measured on 2026-08-01 (deep fielding 1.57x baseline's army with an
 economy 25-30% behind). `primary` supplies the war -- FRACTAL, 400
