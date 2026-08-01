@@ -3,6 +3,15 @@
 **Phase 3, ai/deep. Phase lists over W33.** Full design: `findings/naval-doctrine.md`.
 Root causes: RC2, RC3-at-sea.
 
+**Landed early (2026-07-31, opportunistic slices, see STATUS "operations
+evening"):** convoy hold + escort recruit (slices 1+2); defence-at-arrival
+go/no-go on loaded convoys (`deep_take_odds_at_arrival`, launch bar
+`op_take_target`); overseas targets in assault wants and operations with
+staging at own ports; lift wants from muster berth shortfalls and colony
+demand. Still open here: sea-lane graph (§2 of the findings design), fleet
+role templates, patrol/blockade wants, bombardment phases, coastal
+defence-in-depth, and the W08 naval doctrine axis.
+
 ## The problem
 `dai_choose_attacker(TC_OCEAN)` (`daimilitary.c:143/2033`) picks one best sea unit
 per city by generic desirability. No fleet, no sea control (grep blockade/patrol/
