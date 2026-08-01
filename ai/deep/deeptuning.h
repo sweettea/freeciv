@@ -219,6 +219,16 @@ struct deep_tuning {
    * shields) scaling every CM state's trade factor: the map sets the
    * trade appetite. 0 restores plain constants; 1 is proportional. */
   double cm_trade_quality_slope;
+
+  /* Sequential-attrition survival model (combat workstream): a city's
+   * garrison must survive the observed attacker wave with probability
+   * survival_target, computed by chained duels (deepodds.c) over
+   * at-war units reachable within survival_horizon turns. When the
+   * odds fall short, survival_fear_value scales the deficit into the
+   * danger field. target <= 0 disables every survival consumer. */
+  double survival_target;
+  double survival_fear_value;
+  int survival_horizon;
 };
 
 void deep_tuning_init(void);

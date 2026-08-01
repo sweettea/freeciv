@@ -75,6 +75,7 @@
 #include "daiunit.h"
 
 #include "deepai.h"
+#include "deepcombat.h"
 #include "deepexplore.h"
 #include "deephorizon.h"
 #include "deepsite.h"
@@ -561,6 +562,49 @@ static void deep_apply_garrison_floor(struct city *pcity,
 }
 
 /**********************************************************************//**
+  Sequential-attrition deficit (combat workstream): the linear danger
+  sum sits at parity when the garrison is rated equal to the wave, but
+  surviving the wave means winning every duel in it, and that
+  compounds down (deepodds.c). When the computed survival odds fall
+  short of the target, the shortfall funds extra defence -- from
+  observed units only; the anticipatory fear terms keep covering what
+  cannot be seen. log_it is set by the once-per-turn caller so the
+  deep-surv distribution counts each city once.
+**************************************************************************/
+static unsigned int deep_survival_deficit_fear(const struct civ_map *nmap,
+                                               struct city *pcity,
+                                               double updisc, bool log_it)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  unsigned int fear = 0;
+  double surv;
+  int wave = 0;
+
+  if (tune->survival_target <= 0.0 || tune->survival_fear_value <= 0.0) {
+    return 0;
+  }
+  surv = deep_city_stack_survival(nmap, pcity, tune->survival_horizon,
+                                  &wave);
+  if (wave == 0) {
+    return 0;
+  }
+  if (surv < tune->survival_target) {
+    fear = (unsigned int)
+      (tune->survival_fear_value
+       * (tune->survival_target - surv) / tune->survival_target
+       * updisc);
+  }
+  if (log_it) {
+    log_base(deep_metric_log_level(),
+             "deep-surv turn=%d player=\"%s\" city=%d p=%.3f wave=%d"
+             " fear=%u",
+             game.info.turn, player_name(city_owner(pcity)), pcity->id,
+             surv, wave, fear);
+  }
+  return fear;
+}
+
+/**********************************************************************//**
   Apply the overseas fear, the en-route credit and the garrison floor
   to every city's freshly assessed danger.
 **************************************************************************/
@@ -581,6 +625,8 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
     city_data->danger += (unsigned int)
       (deep_density_fear(pcity) * updisc);
     city_data->danger += (unsigned int) (deep_barbarian_fear() * updisc);
+    city_data->danger
+      += deep_survival_deficit_fear(&(wld.map), pcity, updisc, TRUE);
     credit = deep_incoming_defence_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
     deep_apply_garrison_floor(pcity, city_data, updisc, menace);
@@ -1040,6 +1086,8 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     city_data->danger += (unsigned int)
       (deep_density_prior(pplayer) * updisc);
     city_data->danger += (unsigned int) (deep_barbarian_fear() * updisc);
+    city_data->danger
+      += deep_survival_deficit_fear(nmap, pcity, updisc, FALSE);
     credit = deep_incoming_defence_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
     deep_apply_garrison_floor(pcity, city_data, updisc,
