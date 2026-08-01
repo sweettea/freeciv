@@ -28,5 +28,9 @@ double deep_city_stack_survival_without(const struct civ_map *nmap,
                                         int *wave_out);
 double deep_take_odds(const struct civ_map *nmap, struct city *acity,
                       struct unit *const *stream, int n_stream);
+double deep_take_odds_at_arrival(const struct civ_map *nmap,
+                                 struct city *acity,
+                                 struct unit *const *stream, int n_stream,
+                                 int eta);
 
 #endif /* FC__DEEPCOMBAT_H */

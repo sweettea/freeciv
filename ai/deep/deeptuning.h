@@ -261,6 +261,10 @@ struct deep_tuning {
    * site score converted into a transport build want in coastal
    * cities, amortized over the boat's build time. <= 0 disables. */
   double colony_lift_weight;
+  /* Naval slice 3: virtual defenders per turn of sail time added to
+   * a target's garrison when pricing an amphibious take -- travel
+   * time is the defender's budget. 0 prices arrival like adjacency. */
+  double invasion_reinforce_rate;
 };
 
 void deep_tuning_init(void);

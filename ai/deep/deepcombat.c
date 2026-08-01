@@ -33,6 +33,7 @@
 #include "advgoto.h"
 
 #include "deepodds.h"
+#include "deeptuning.h"
 
 #include "deepcombat.h"
 
@@ -272,8 +273,29 @@ double deep_city_stack_survival_without(const struct civ_map *nmap,
 double deep_take_odds(const struct civ_map *nmap, struct city *acity,
                       struct unit *const *stream, int n_stream)
 {
+  return deep_take_odds_at_arrival(nmap, acity, stream, n_stream, 0);
+}
+
+/**********************************************************************//**
+  Take odds against the garrison AS IT WILL BE when we arrive: travel
+  time is the defender's budget (naval design, human refinement
+  2026-07-30 -- a 12-turn sail must clear a much higher bar than a
+  2-turn hop, which is exactly why long-range desultory attacks fail
+  while looking winnable on paper). eta turns of sailing add
+  eta x invasion_reinforce_rate virtual copies of the best defender
+  the target could build, placed in the city so walls and terrain
+  count. eta 0 is the plain current-garrison read.
+**************************************************************************/
+double deep_take_odds_at_arrival(const struct civ_map *nmap,
+                                 struct city *acity,
+                                 struct unit *const *stream, int n_stream,
+                                 int eta)
+{
   struct deep_combatant att[DEEP_WAVE_MAX], def[DEEP_STACK_MAX];
-  int n_att = 0, n_def, j;
+  int n_att = 0, n_def, j, reinforce = 0;
+  struct unit *virt[DEEP_STACK_MAX];
+  int n_virt = 0;
+  double survival;
 
   for (j = 0; j < n_stream; j++) {
     deep_combatant_add(att, &n_att, DEEP_WAVE_MAX, stream[j],
@@ -286,5 +308,44 @@ double deep_take_odds(const struct civ_map *nmap, struct city *acity,
 
   n_def = deep_collect_defenders(acity, def, NULL);
 
-  return 1.0 - deep_garrison_vs_stream(nmap, att, n_att, def, n_def);
+  if (eta > 0) {
+    const struct deep_tuning *tune = deep_tuning_get();
+
+    reinforce = (int) (eta * tune->invasion_reinforce_rate + 0.5);
+  }
+  if (reinforce > 0) {
+    struct player *owner = city_owner(acity);
+    const struct unit_type *best = NULL;
+
+    unit_type_iterate(ut) {
+      if (ut->defense_strength > 0
+          && can_city_build_unit_now(nmap, acity, ut, RPT_CERTAIN)
+          && (best == NULL
+              || ut->defense_strength > best->defense_strength)) {
+        best = ut;
+      }
+    } unit_type_iterate_end;
+    while (best != NULL && n_virt < reinforce
+           && n_def + n_virt < DEEP_STACK_MAX
+           && n_virt < DEEP_STACK_MAX) {
+      struct unit *v = unit_virtual_create(owner, acity,
+                                           (struct unit_type *) best, 0);
+
+      unit_tile_set(v, city_tile(acity));
+      virt[n_virt++] = v;
+    }
+    for (j = 0; j < n_virt; j++) {
+      deep_combatant_add(def, &n_def, DEEP_STACK_MAX, virt[j],
+                         adv_unit_def_rating_basic(virt[j]));
+    }
+    qsort(def, n_def, sizeof(def[0]), deep_combatant_cmp);
+  }
+
+  survival = deep_garrison_vs_stream(nmap, att, n_att, def, n_def);
+
+  for (j = 0; j < n_virt; j++) {
+    unit_virtual_destroy(virt[j]);
+  }
+
+  return 1.0 - survival;
 }
