@@ -19,6 +19,8 @@
 /* ai/default */
 #include "daidata.h"
 
+#include "deepops.h"
+
 struct ai_type;
 struct section_file;
 
@@ -33,6 +35,7 @@ struct deep_plr {
   /* Deep-only state below. Everything here must either be saved in
    * dpai_player_save() or be recomputable. */
   int dv_turns_logged;          /* Decision-vector lines emitted */
+  struct deep_operation op;     /* Recomputable: re-forms from wants */
 };
 
 static inline struct deep_plr *deep_plr_data(const struct player *pplayer)

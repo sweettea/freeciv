@@ -243,6 +243,13 @@ struct deep_tuning {
    * when the duel odds clear this floor AND the city still clears
    * survival_target without it. <= 0 disables. */
   double sortie_win_floor;
+  /* Assault operations (E6): form when the free-attacker pool's take
+   * odds against the best met target clear op_take_target (<= 0
+   * disables); muster at the staging city up to op_muster_wait turns
+   * before launching with whoever stands there (at least half the
+   * quorum) or dissolving. */
+  double op_take_target;
+  int op_muster_wait;
 };
 
 void deep_tuning_init(void);

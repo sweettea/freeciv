@@ -323,6 +323,7 @@ else
       'ai/deep/deepexplore.c',
       'ai/deep/deephorizon.c',
       'ai/deep/deepodds.c',
+      'ai/deep/deepops.c',
       'ai/deep/deepsite.c',
       'ai/deep/deepsettler.c',
       'ai/deep/deeptuning.c',
