@@ -239,6 +239,10 @@ struct deep_tuning {
    * takes the best at-war city on this continent), amortized over
    * the march. <= 0 disables. */
   double attack_value_weight;
+  /* Kill sortie (E3): a garrison blade attacks an adjacent besieger
+   * when the duel odds clear this floor AND the city still clears
+   * survival_target without it. <= 0 disables. */
+  double sortie_win_floor;
 };
 
 void deep_tuning_init(void);

@@ -22,6 +22,10 @@ struct civ_map;
 double deep_city_stack_survival(const struct civ_map *nmap,
                                 struct city *pcity, int horizon,
                                 int *wave_out);
+double deep_city_stack_survival_without(const struct civ_map *nmap,
+                                        struct city *pcity, int horizon,
+                                        const struct unit *except,
+                                        int *wave_out);
 double deep_take_odds(const struct civ_map *nmap, struct city *acity,
                       struct unit *const *stream, int n_stream);
 

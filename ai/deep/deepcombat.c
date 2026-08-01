@@ -107,15 +107,19 @@ static int deep_fresh_attack_power(struct unit *att, const struct unit *def)
 
 /**********************************************************************//**
   The city's military garrison as a sorted (best first) defender list.
+  `except` (may be NULL) is left out -- the sortie passes price a
+  city's night without one of its blades this way.
 **************************************************************************/
 static int deep_collect_defenders(struct city *pcity,
-                                  struct deep_combatant *def)
+                                  struct deep_combatant *def,
+                                  const struct unit *except)
 {
   struct player *pplayer = city_owner(pcity);
   int n_def = 0;
 
   unit_list_iterate(city_tile(pcity)->units, punit) {
-    if (unit_owner(punit) == pplayer
+    if (punit != except
+        && unit_owner(punit) == pplayer
         && !unit_has_type_flag(punit, UTYF_CIVILIAN)
         && punit->hp > 0) {
       deep_combatant_add(def, &n_def, DEEP_STACK_MAX, punit,
@@ -184,6 +188,19 @@ double deep_city_stack_survival(const struct civ_map *nmap,
                                 struct city *pcity, int horizon,
                                 int *wave_out)
 {
+  return deep_city_stack_survival_without(nmap, pcity, horizon, NULL,
+                                          wave_out);
+}
+
+/**********************************************************************//**
+  As deep_city_stack_survival(), with one garrison unit left out of
+  the stack -- what the night costs if that blade sorties or is lent.
+**************************************************************************/
+double deep_city_stack_survival_without(const struct civ_map *nmap,
+                                        struct city *pcity, int horizon,
+                                        const struct unit *except,
+                                        int *wave_out)
+{
   struct deep_combatant att[DEEP_WAVE_MAX], def[DEEP_STACK_MAX];
   int n_att = 0, n_def;
   struct player *pplayer = city_owner(pcity);
@@ -231,7 +248,7 @@ double deep_city_stack_survival(const struct civ_map *nmap,
     *wave_out = n_att;
   }
 
-  n_def = deep_collect_defenders(pcity, def);
+  n_def = deep_collect_defenders(pcity, def, except);
   qsort(att, n_att, sizeof(att[0]), deep_combatant_cmp);
 
   return deep_garrison_vs_stream(nmap, att, n_att, def, n_def);
@@ -260,7 +277,7 @@ double deep_take_odds(const struct civ_map *nmap, struct city *acity,
   }
   qsort(att, n_att, sizeof(att[0]), deep_combatant_cmp);
 
-  n_def = deep_collect_defenders(acity, def);
+  n_def = deep_collect_defenders(acity, def, NULL);
 
   return 1.0 - deep_garrison_vs_stream(nmap, att, n_att, def, n_def);
 }

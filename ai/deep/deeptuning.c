@@ -96,6 +96,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .survival_horizon = 3,                /* PLACEHOLDER, untuned */
   .tired_attack_floor = 0.9,            /* PLACEHOLDER, untuned */
   .attack_value_weight = 1.0,           /* PLACEHOLDER, untuned */
+  .sortie_win_floor = 0.85,             /* PLACEHOLDER, untuned */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -201,6 +202,7 @@ void deep_tuning_init(void)
   TUNE_INT(survival_horizon);
   TUNE_DOUBLE(tired_attack_floor);
   TUNE_DOUBLE(attack_value_weight);
+  TUNE_DOUBLE(sortie_win_floor);
 
   secfile_destroy(sf);
 
@@ -208,7 +210,7 @@ void deep_tuning_init(void)
              " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
              " wos=%d wot=%d gb=%d gsm=%f sdw=%f gf=%d gs=%d gt=%d tqs=%f dip=%f tail=%f depth=%f ovl=%f pot=%f"
              " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f hhealth=%f htech=%f"
-             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d dfv=%d dfr=%d dfrt=%d dpv=%d dpt=%d wfw=%f srw=%f chk=%f cml=%d cwr=%d wfr=%d wgr=%d wdd=%f ugw=%f uuw=%f rpr=%f rwant=%d rfin=%f svt=%f svf=%f svh=%d taf=%f avw=%f",
+             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d dfv=%d dfr=%d dfrt=%d dpv=%d dpt=%d wfw=%f srw=%f chk=%f cml=%d cwr=%d wfr=%d wgr=%d wdd=%f ugw=%f uuw=%f rpr=%f rwant=%d rfin=%f svt=%f svf=%f svh=%d taf=%f avw=%f swf=%f",
              path,
              deep_tuning_active.settler_fearfulness_mult,
              deep_tuning_active.incoming_defence_eta_weight,
@@ -276,7 +278,8 @@ void deep_tuning_init(void)
              deep_tuning_active.survival_fear_value,
              deep_tuning_active.survival_horizon,
              deep_tuning_active.tired_attack_floor,
-             deep_tuning_active.attack_value_weight);
+             deep_tuning_active.attack_value_weight,
+             deep_tuning_active.sortie_win_floor);
 }
 
 /**********************************************************************//**

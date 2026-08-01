@@ -892,6 +892,160 @@ static void deep_manage_convoys(struct ai_type *ait,
 }
 
 /**********************************************************************//**
+  Kill sortie (combat E3, human design 2026-07-31): a garrison blade
+  steps out to finish a weak or weakened besieger, even though the
+  city spends the night one defender short. Stock defenders rampage
+  only above BODYGUARD_RAMPAGE_THRESHOLD * 5 in kill_desire currency
+  -- too timid, and the wrong arithmetic. Deep's gate is two
+  probabilities: the best adjacent duel must clear sortie_win_floor,
+  and the city without this unit must still clear survival_target
+  against the observed wave (an attacker erased today is subtracted
+  from every future wave). Tired blades stay home -- a sortie at
+  scaled-down power is the exact mistake the tired-attack pass
+  exists to stop. One sortie per city per turn.
+**************************************************************************/
+static void deep_kill_sorties(struct ai_type *ait, struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+
+  if (tune->sortie_win_floor <= 0.0) {
+    return;
+  }
+
+  city_list_iterate(pplayer->cities, pcity) {
+    struct unit *blade = NULL;
+    const struct unit *victim = NULL;
+    double best = 0.0;
+
+    unit_list_iterate(city_tile(pcity)->units, u) {
+      if (unit_owner(u) != pplayer
+          || unit_has_type_flag(u, UTYF_CIVILIAN)
+          || u->hp <= 0
+          || u->moves_left < SINGLE_MOVE
+          || def_ai_unit_data(u, ait)->done
+          || adv_unit_att_rating(u) <= 0) {
+        continue;
+      }
+      adjc_iterate(nmap, city_tile(pcity), atile) {
+        struct unit *pdef = get_defender(nmap, u, atile, NULL);
+        double chance;
+
+        if (pdef == NULL
+            || !pplayers_at_war(pplayer, unit_owner(pdef))) {
+          continue;
+        }
+        chance = unit_win_chance(nmap, u, pdef, NULL);
+        if (chance > best) {
+          best = chance;
+          blade = u;
+          victim = pdef;
+        }
+      } adjc_iterate_end;
+    } unit_list_iterate_end;
+
+    if (blade == NULL || best < tune->sortie_win_floor) {
+      continue;
+    }
+    if (deep_city_stack_survival_without(nmap, pcity,
+                                         tune->survival_horizon,
+                                         blade, NULL)
+        < tune->survival_target) {
+      continue;
+    }
+    log_base(deep_metric_log_level(),
+             "deep-sortie turn=%d player=\"%s\" city=%d kill=\"%s\""
+             " victim=\"%s\" p=%.3f",
+             game.info.turn, player_name(pplayer), pcity->id,
+             unit_rule_name(blade), unit_rule_name(victim), best);
+    /* Rampage executes the attack(s) with all the action legality
+     * handling; the pair of gates above is what stock never had. */
+    (void) dai_military_rampage(blade, RAMPAGE_ANYTHING,
+                                RAMPAGE_FREE_CITY_OR_BETTER);
+  } city_list_iterate_end;
+}
+
+/**********************************************************************//**
+  Cover sortie (combat E3, human design 2026-07-31): a threatened
+  working civilian whose bodyguard request nobody has answered can
+  borrow a blade from a nearby city's garrison -- the escort arrives
+  from two tiles away this turn instead of from a build queue in
+  five. The lender must still clear survival_target without the
+  blade, the weakest sparable defender goes (its absence hurts the
+  stack least), and a city lends at most one per turn so the joint
+  check stays honest. The guard framework walks the pair from here.
+**************************************************************************/
+static void deep_cover_sorties(struct ai_type *ait, struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+
+  if (tune->worker_guard_radius <= 0 || tune->survival_target <= 0.0) {
+    return;
+  }
+
+  city_list_iterate(pplayer->cities, pcity) {
+    struct unit *charge = NULL, *lend = NULL;
+    int bestd = tune->worker_guard_radius + 1;
+    int lend_rating = 0;
+
+    unit_list_iterate(pplayer->units, w) {
+      int d;
+
+      if (!unit_has_type_flag(w, UTYF_CIVILIAN)
+          || unit_transported(w)
+          || tile_city(unit_tile(w)) != NULL
+          || !aiguard_wanted(ait, w)
+          || tile_continent(unit_tile(w))
+             != tile_continent(city_tile(pcity))) {
+        continue;
+      }
+      d = real_map_distance(city_tile(pcity), unit_tile(w));
+      if (d < bestd) {
+        bestd = d;
+        charge = w;
+      }
+    } unit_list_iterate_end;
+    if (charge == NULL) {
+      continue;
+    }
+
+    unit_list_iterate(city_tile(pcity)->units, g) {
+      int rating = adv_unit_def_rating_basic(g);
+
+      if (unit_owner(g) != pplayer
+          || unit_has_type_flag(g, UTYF_CIVILIAN)
+          || g->hp <= 0
+          || rating <= 0
+          || def_ai_unit_data(g, ait)->done
+          || aiguard_has_charge(ait, g)) {
+        continue;
+      }
+      if (lend != NULL && rating >= lend_rating) {
+        continue;   /* Lend the weakest sparable blade. */
+      }
+      if (deep_city_stack_survival_without(nmap, pcity,
+                                           tune->survival_horizon,
+                                           g, NULL)
+          < tune->survival_target) {
+        continue;
+      }
+      lend = g;
+      lend_rating = rating;
+    } unit_list_iterate_end;
+
+    if (lend != NULL) {
+      log_base(deep_metric_log_level(),
+               "deep-sortie turn=%d player=\"%s\" city=%d cover=\"%s\""
+               " charge=\"%s\" dist=%d",
+               game.info.turn, player_name(pplayer), pcity->id,
+               unit_rule_name(lend), unit_rule_name(charge), bestd);
+      aiguard_assign_guard_unit(ait, charge, lend);
+    }
+  } city_list_iterate_end;
+}
+
+/**********************************************************************//**
   Tired-attack discipline (combat workstream): under
   game.info.tired_attack, striking with moves_left < SINGLE_MOVE
   scales attack power by moves_left/SINGLE_MOVE (combat.c) -- an
@@ -1085,6 +1239,8 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
   deep_manage_convoys(ait, pplayer);
   deep_hold_tired_attackers(ait, pplayer);
   deep_flee_workers(ait, pplayer);
+  deep_kill_sorties(ait, pplayer);
+  deep_cover_sorties(ait, pplayer);
   deep_set_city_manager_params(ait, pplayer);
 
   TIMING_LOG(AIT_UNITS, TIMER_START);
