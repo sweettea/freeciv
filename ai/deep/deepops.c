@@ -575,28 +575,45 @@ static void deep_op_launch(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
-  Turns until the slowest member reaches the target at its own move
-  rate. Raw-distance eta, same currency the formation pricing used.
+  Turns until the STRIKING QUORUM reaches the target: the required-th
+  smallest member arrival, raw-distance at each member's own rate --
+  the same currency the formation pricing used. Not the slowest
+  member: the wave attacks when its quorum arrives, and the enrolled
+  margin straggling behind is a reinforcement, not the strike clock.
+  (B11 ledger: 27 of 47 march aborts re-gated on the launch turn
+  itself with straggler-driven etas of 3-8 -- a full quorum standing
+  at the walls priced as if it waited for its last reserve -- while
+  all four waves that did strike launched at eta 1-2.)
 **************************************************************************/
 static int deep_op_eta(const struct deep_operation *op,
                        const struct city *target)
 {
-  int i, eta = 0;
+  int t[DEEP_OP_MEMBERS];
+  int i, j, n = 0, k;
 
   for (i = 0; i < op->n_members; i++) {
     const struct unit *m = game_unit_by_number(op->members[i]);
-    int rate, t;
+    int rate, ti;
 
     if (m == NULL) {
       continue;
     }
     rate = MAX(unit_type_get(m)->move_rate, 1);
-    t = (real_map_distance(unit_tile(m), city_tile(target))
-         * SINGLE_MOVE + rate - 1) / rate;
-    eta = MAX(eta, t);
+    ti = (real_map_distance(unit_tile(m), city_tile(target))
+          * SINGLE_MOVE + rate - 1) / rate;
+    for (j = n; j > 0 && t[j - 1] > ti; j--) {
+      t[j] = t[j - 1];
+    }
+    t[j] = ti;
+    n++;
   }
 
-  return eta;
+  if (n == 0) {
+    return 0;
+  }
+  k = MIN(MAX(op->required, 1), n);
+
+  return t[k - 1];
 }
 
 /**********************************************************************//**
