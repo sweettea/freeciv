@@ -162,10 +162,20 @@ static unsigned int deep_incoming_defence_credit(struct ai_type *ait,
     struct unit_ai *unit_data = def_ai_unit_data(punit, ait);
     int eta, power;
 
-    if (unit_data->task != AIUNIT_DEFEND_HOME
-        || punit->goto_tile == NULL
-        || tile_city(punit->goto_tile) != pcity
-        || same_pos(punit->goto_tile, unit_tile(punit))) {
+    bool coming;
+
+    /* Two ways help is already on its way: a defender sent home by
+     * stock, and a blade the counter-claim summoned (ESCORT with
+     * this city as its guard charge). Both must count, or the city
+     * requisitions a replacement for relief it has already been
+     * promised -- and buying a defender it does not need is a
+     * granary it never builds. */
+    coming = (unit_data->task == AIUNIT_DEFEND_HOME
+              && punit->goto_tile != NULL
+              && tile_city(punit->goto_tile) == pcity)
+             || (unit_data->task == AIUNIT_ESCORT
+                 && aiguard_charge_city(ait, punit) == pcity);
+    if (!coming || same_pos(unit_tile(punit), city_tile(pcity))) {
       /* Units already in place are counted by assess_defense(). */
       continue;
     }
@@ -174,7 +184,7 @@ static unsigned int deep_incoming_defence_credit(struct ai_type *ait,
     if (power <= 0) {
       continue;
     }
-    eta = real_map_distance(unit_tile(punit), punit->goto_tile)
+    eta = real_map_distance(unit_tile(punit), city_tile(pcity))
           * SINGLE_MOVE / MAX(unit_type_get(punit)->move_rate, 1);
     credit += power
               * pow(tune->incoming_defence_survival, eta)
