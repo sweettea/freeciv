@@ -85,7 +85,12 @@ struct deep_operation {
 void deep_run_operations(struct ai_type *ait, struct player *pplayer);
 
 int deep_op_claiming(const struct player *pplayer, int unit_id);
+bool deep_op_release_member(const struct player *pplayer, int unit_id);
 bool deep_op_holds(const struct player *pplayer, int unit_id);
 void deep_manage_units(struct ai_type *ait, struct player *pplayer);
+struct unit *deep_op_poach_defender(struct ai_type *ait,
+                                    struct player *pplayer,
+                                    struct city *pcity,
+                                    double p_survival);
 
 #endif /* FC__DEEPOPS_H */

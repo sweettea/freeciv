@@ -1317,6 +1317,103 @@ static void deep_flee_workers(struct ai_type *ait, struct player *pplayer)
 }
 
 /**********************************************************************//**
+  Defence counter-claim (findings/defence-counter-claim.md): a city
+  below the survival bar under an observed wave claims ONE defender
+  per turn -- the same one-per-turn discipline as the sorties, so
+  the joint checks stay honest and the credit machinery (W11) can
+  absorb each arrival before the next is summoned. Recruits, nearest
+  first: free land defenders arriving within the survival horizon,
+  then raiders (released from the hunt -- the sit-tight idlers are
+  exactly who this wants), then a mustering op's blade when the
+  city's expected loss outbids the op's expected take. The recruit
+  travels on the stock bodyguard framework (ESCORT + city charge),
+  which self-releases when the danger passes.
+**************************************************************************/
+static void deep_defend_counter_claims(struct ai_type *ait,
+                                       struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+
+  if (tune->survival_target <= 0.0) {
+    return;
+  }
+
+  city_list_iterate(pplayer->cities, pcity) {
+    double p;
+    int wave = 0;
+    struct unit *best = NULL;
+    int best_eta = 0;
+    const char *src = "free";
+
+    p = deep_city_stack_survival(nmap, pcity, tune->survival_horizon,
+                                 &wave);
+    if (wave == 0 || p >= tune->survival_target) {
+      continue;
+    }
+
+    unit_list_iterate(pplayer->units, u) {
+      struct unit_ai *ud = def_ai_unit_data(u, ait);
+      int oi, rate, eta;
+
+      if (u->hp <= 0
+          || unit_has_type_flag(u, UTYF_CIVILIAN)
+          || adv_unit_def_rating_basic(u) <= 0
+          || utype_move_type(unit_type_get(u)) != UMT_LAND
+          || unit_transported(u)
+          || tile_continent(unit_tile(u))
+             != tile_continent(city_tile(pcity))
+          || same_pos(unit_tile(u), city_tile(pcity))
+          || ud->charge > 0
+          || ud->task == AIUNIT_DEFEND_HOME) {
+        continue;
+      }
+      oi = deep_op_claiming(pplayer, u->id);
+      if (oi >= 0
+          && deep_plr_data(pplayer)->ops[oi].kind != DEEP_OPK_RAID) {
+        continue;   /* Assault claims answer through the poach bid. */
+      }
+      rate = MAX(unit_type_get(u)->move_rate, 1);
+      eta = (real_map_distance(unit_tile(u), city_tile(pcity))
+             * SINGLE_MOVE + rate - 1) / rate;
+      if (eta > tune->survival_horizon) {
+        continue;   /* Would arrive after the wave. */
+      }
+      if (best == NULL || eta < best_eta
+          || (eta == best_eta
+              && adv_unit_def_rating_basic(u)
+                 > adv_unit_def_rating_basic(best))) {
+        best = u;
+        best_eta = eta;
+      }
+    } unit_list_iterate_end;
+
+    if (best != NULL && deep_op_claiming(pplayer, best->id) >= 0) {
+      deep_op_release_member(pplayer, best->id);
+      src = "raid";
+    }
+    if (best == NULL) {
+      best = deep_op_poach_defender(ait, pplayer, pcity, p);
+      if (best != NULL) {
+        src = "op";
+        best_eta = 0;
+      }
+    }
+    if (best == NULL) {
+      continue;
+    }
+
+    log_base(deep_metric_log_level(),
+             "deep-defend turn=%d player=\"%s\" city=%d claim=\"%s\""
+             " src=%s p=%.3f wave=%d eta=%d",
+             game.info.turn, player_name(pplayer), pcity->id,
+             unit_rule_name(best), src, p, wave, best_eta);
+    aiguard_assign_guard_city(ait, pcity, best);
+    dai_unit_new_task(ait, best, AIUNIT_ESCORT, city_tile(pcity));
+  } city_list_iterate_end;
+}
+
+/**********************************************************************//**
   Activities before unit movement; derived from
   dai_do_first_activities() with defence bookkeeping added between the
   danger assessment and the unit management that consumes it.
@@ -1334,6 +1431,7 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
   deep_flee_workers(ait, pplayer);
   deep_kill_sorties(ait, pplayer);
   deep_cover_sorties(ait, pplayer);
+  deep_defend_counter_claims(ait, pplayer);
   deep_run_operations(ait, pplayer);
   deep_set_city_manager_params(ait, pplayer);
 

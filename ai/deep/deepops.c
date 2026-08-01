@@ -143,6 +143,34 @@ void deep_manage_units(struct ai_type *ait, struct player *pplayer)
 }
 
 /**********************************************************************//**
+  Release one unit from whatever operation claims it (swap-pop).
+  Returns TRUE if a claim existed. The defence counter-claim uses
+  this to pull a raider out of the hunt; the op machinery already
+  tolerates member loss everywhere (validation prunes, quorums
+  re-check).
+**************************************************************************/
+bool deep_op_release_member(const struct player *pplayer, int unit_id)
+{
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  int oi = deep_op_claiming(pplayer, unit_id);
+  struct deep_operation *op;
+  int i;
+
+  if (oi < 0) {
+    return FALSE;
+  }
+  op = &dp->ops[oi];
+  for (i = 0; i < op->n_members; i++) {
+    if (op->members[i] == unit_id) {
+      op->members[i] = op->members[--op->n_members];
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+/**********************************************************************//**
   Is any live operation already committed against this city? One op
   per target: a second wave at the same city is the reserve's claim
   (E7), not a parallel operation.
@@ -905,6 +933,94 @@ static bool deep_op_retarget(struct ai_type *ait, struct player *pplayer,
   }
 
   return TRUE;
+}
+
+/**********************************************************************//**
+  A sinking city outbids a mustering op for one blade (the defence
+  counter-claim, findings/defence-counter-claim.md). The comparison
+  is expected worth in the one currency both sides already use:
+  the city risks worth_own * (1 - p_survival); the op's expected
+  take is worth_target * odds at its remaining eta. Only MUSTER ops
+  bid -- a launched wave turning around mid-assault is the exact
+  dithering W33 exists to kill. Returns the released blade (best
+  defender arriving within the survival horizon) or NULL.
+**************************************************************************/
+struct unit *deep_op_poach_defender(struct ai_type *ait,
+                                    struct player *pplayer,
+                                    struct city *pcity, double p_survival)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  double city_risk
+    = def_ai_city_data(pcity, ait)->worth * (1.0 - p_survival);
+  int oi, i;
+
+  for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+    struct deep_operation *op = &dp->ops[oi];
+    struct city *target;
+    struct unit *stream[DEEP_OP_MEMBERS];
+    struct unit *blade = NULL;
+    int blade_i = -1, ns = 0, eta;
+    double odds;
+
+    if (op->state != DEEP_OP_MUSTER || op->kind != DEEP_OPK_ASSAULT) {
+      continue;
+    }
+    target = game_city_by_number(op->target_city);
+    if (target == NULL) {
+      continue;
+    }
+    for (i = 0; i < op->n_members; i++) {
+      struct unit *m = game_unit_by_number(op->members[i]);
+
+      if (m != NULL && m->hp > 0) {
+        stream[ns++] = m;
+      }
+    }
+    if (ns == 0) {
+      continue;
+    }
+    eta = deep_op_eta(pplayer, op, target);
+    odds = deep_take_odds_at_arrival(nmap, target, stream, ns, eta);
+    if (city_risk <= def_ai_city_data(target, ait)->worth * odds) {
+      continue;                 /* The op's claim outbids the city. */
+    }
+    for (i = 0; i < op->n_members; i++) {
+      struct unit *m = game_unit_by_number(op->members[i]);
+      int rate, t;
+
+      if (m == NULL || m->hp <= 0
+          || adv_unit_def_rating_basic(m) <= 0
+          || tile_continent(unit_tile(m))
+             != tile_continent(city_tile(pcity))) {
+        continue;
+      }
+      rate = MAX(unit_type_get(m)->move_rate, 1);
+      t = (real_map_distance(unit_tile(m), city_tile(pcity))
+           * SINGLE_MOVE + rate - 1) / rate;
+      if (t > tune->survival_horizon) {
+        continue;               /* Would arrive after the wave. */
+      }
+      if (blade == NULL
+          || adv_unit_def_rating_basic(m)
+             > adv_unit_def_rating_basic(blade)) {
+        blade = m;
+        blade_i = i;
+      }
+    }
+    if (blade != NULL) {
+      log_base(deep_metric_log_level(),
+               "deep-op turn=%d player=\"%s\" op=%d poach unit=\"%s\""
+               " city=%d target=%d odds=%.2f",
+               game.info.turn, player_name(pplayer), oi,
+               unit_rule_name(blade), pcity->id, op->target_city, odds);
+      op->members[blade_i] = op->members[--op->n_members];
+      return blade;
+    }
+  }
+
+  return NULL;
 }
 
 /**********************************************************************//**
