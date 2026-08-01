@@ -115,6 +115,16 @@ static bool deep_civilian_pos_dangerous(const struct tile *ptile,
 {
   const struct deep_settler_risk *risk = param->data;
 
+  if (ptile == param->start_tile) {
+    /* "Never plan to end a turn where enemies could kill us" cannot
+     * apply to the tile we already stand on -- pathing away is the
+     * point, and the flee pass owns the urgency. Also load-bearing:
+     * pf danger maps mishandle a dangerous START (the segment walk
+     * excludes it, and construct_path reads past the empty segment
+     * -- the task #22 assertion; recorded in upstream-bugs.md). */
+    return FALSE;
+  }
+
   return adv_danger_at(risk->punit, (struct tile *) ptile);
 }
 
