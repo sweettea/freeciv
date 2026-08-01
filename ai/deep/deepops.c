@@ -412,6 +412,14 @@ static void deep_op_drive_raid(struct ai_type *ait, struct player *pplayer,
     }
     ud = def_ai_unit_data(m, ait);
     if (ud->task == AIUNIT_ATTACK) {
+      if (deep_raid_victim(pplayer, m, tune->raid_radius) == NULL) {
+        /* The prey is gone -- dead, hidden in a city, out of range
+         * -- and stock "sit tights" a stale ATTACK forever (B13/B14:
+         * ~7000 stalled raider-turns per 10 games, mostly this).
+         * Clear the hunt and release the blade. */
+        dai_unit_new_task(ait, m, AIUNIT_NONE, NULL);
+        continue;
+      }
       op->members[n++] = op->members[i];
       hunting++;
       continue;
