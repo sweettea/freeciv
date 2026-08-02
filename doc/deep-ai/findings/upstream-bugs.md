@@ -157,3 +157,34 @@ exhausted). Not fixed in place per rule 2's spirit for common/.
     costs both arms equally. Recorded rather than fixed per rule 2;
     noted here so a future session does not re-diagnose it after the
     two deep-side assertions around it were cleared (2026-08-01).
+
+31. **No AI ever performs `Join City`** — a capability gap rather than a
+    defect, recorded here because the code makes it look handled.
+    `ACTRES_JOIN_CITY` appears three times across the AI tree
+    (`ai/default/daicity.c:1283`, `ai/default/daidiplomacy.c:2080`,
+    `server/advisors/advdata.c:926`) and every one is a **classification**
+    switch — what the action is worth when somebody else does it, how to
+    bucket it. Nothing anywhere is an actor: no AI unit ever joins a city.
+
+    It is legal and cheap. civ2civ3 Settlers carry the `AddToCity` flag
+    (`units.ruleset`) with `pop_cost = 2`, and the `Join City` enabler
+    (`actions.ruleset:757`) asks only for that flag, a domestic target and
+    one move fragment. So a settler is not a sunk cost — it is two
+    population that can be handed back to any own city.
+
+    This matters most in exactly the state deep gets into on tight land.
+    When site scoring returns nothing above zero — the `lategame-80`
+    failure, and the failure mode `site_rival_pressure` and
+    `site_overlap_weight` produce when their values are extreme — the
+    settler has no site to walk to, and today it idles, wanders or dies
+    (deep's `unitslost` runs high). Joining recovers the whole
+    investment. It is also the natural endgame for a largepox empire:
+    once the map is full, converting settlers into citizens in the big
+    cities is the intended play, not a consolation.
+
+    Deep-side implementation would sit beside the founder want: when the
+    best site's worth is below the join value of the nearest own city
+    that can still grow, join instead of settle. Needs `city_can_grow_to`
+    (W03) so it does not push citizens into a city that will starve or
+    riot, and a tunable for the exchange rate. Not fixed in `ai/default`
+    per rule 2. Human observation, 2026-08-02.
