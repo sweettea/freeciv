@@ -385,18 +385,40 @@ static bool deep_settler_gothere(struct ai_type *ait,
   may END a turn on a dangerous tile, so a target that answers TRUE
   here is one the mover can never reach however long it walks.
 
-  'safe_turns' is filled in only when the risk route fails: the same
-  parameter with the danger veto removed, which separates "the overnight
-  veto has no acceptable stopping places along the way" from "territory
-  or terrain blocks the route regardless of danger".
+  'blocker' names the first constraint whose removal brings the route
+  back, walking a ladder of relaxations from the mover's parameter out
+  to the one goto_is_sane() itself uses:
+
+    danger     the overnight veto (W05) has no acceptable stopping
+               place along the way
+    behaviour  non-allied territory, or a non-allied unit standing in
+               the corridor
+    vision     the route only exists if unknown tiles are assumed
+               passable, which is what goto_is_sane() assumes and an
+               omniscient mover does not
+    attack     it exists only for a parameter willing to fight its way
+               through, which a settler never is
+    none       nothing routes there; goto_is_sane() is wrong for some
+               other reason
 
   Only used for the stall diagnosis below, so it is built on demand:
   it costs one pf map per mission-turn and the caller gates it on the
   metric lines actually being written.
 **************************************************************************/
+static bool deep_settler_route_exists(struct pf_parameter *parameter,
+                                      struct tile *dest)
+{
+  struct pf_map *pfm = pf_map_new(parameter);
+  bool found = (pf_map_move_cost(pfm, dest) != PF_IMPOSSIBLE_MC);
+
+  pf_map_destroy(pfm);
+
+  return found;
+}
+
 static int deep_settler_risk_route(struct unit *punit, struct tile *dest,
                                    struct tile **first_step,
-                                   bool *dest_dangerous, int *safe_turns)
+                                   bool *dest_dangerous, const char **blocker)
 {
   struct pf_parameter parameter;
   struct deep_settler_risk risk;
@@ -407,7 +429,7 @@ static int deep_settler_risk_route(struct unit *punit, struct tile *dest,
 
   *first_step = NULL;
   *dest_dangerous = FALSE;
-  *safe_turns = -1;
+  *blocker = "-";
   if (same_pos(unit_tile(punit), dest)) {
     return 0;
   }
@@ -433,17 +455,50 @@ static int deep_settler_risk_route(struct unit *punit, struct tile *dest,
   pf_map_destroy(pfm);
 
   if (turns < 0) {
+    /* Relax one constraint at a time; the first relaxation that brings
+     * the route back is the one refusing it. */
     parameter.is_pos_dangerous = NULL;
-    pfm = pf_map_new(&parameter);
-    path = pf_map_path(pfm, dest);
-    if (path != NULL) {
-      *safe_turns = pf_path_last_position(path)->turn;
-      pf_path_destroy(path);
+    if (deep_settler_route_exists(&parameter, dest)) {
+      *blocker = "danger";
+      return turns;
     }
-    pf_map_destroy(pfm);
+    parameter.get_TB = NULL;
+    if (deep_settler_route_exists(&parameter, dest)) {
+      *blocker = "behaviour";
+      return turns;
+    }
+    parameter.omniscience = FALSE;
+    if (deep_settler_route_exists(&parameter, dest)) {
+      *blocker = "vision";
+      return turns;
+    }
+    pft_fill_unit_attack_param(&parameter, nmap, punit);
+    *blocker = (deep_settler_route_exists(&parameter, dest)
+                ? "attack" : "none");
   }
 
   return turns;
+}
+
+/**********************************************************************//**
+  Who claims the target tile, as one loggable digit: 0 nobody, 1 us,
+  2 an ally, 3 someone else. Borders move under a walking settler, and
+  deep_settler_tile_behavior() refuses to path into a tile the third
+  case describes, so this says whether a route died because the target
+  itself was claimed while the settler was on its way.
+**************************************************************************/
+static int deep_settler_tile_claim(const struct player *pplayer,
+                                   const struct tile *ptile)
+{
+  const struct player *owner = tile_owner(ptile);
+
+  if (owner == NULL) {
+    return 0;
+  }
+  if (owner == pplayer) {
+    return 1;
+  }
+  return pplayers_allied(owner, pplayer) ? 2 : 3;
 }
 
 /**********************************************************************//**
@@ -749,7 +804,7 @@ BUILD_CITY:
       struct tile *from = unit_tile(punit);
       struct tile *first_step = NULL;
       bool dest_dangerous = FALSE;
-      int safe_turns = -1;
+      const char *blocker = "-";
       int moves_before = punit->moves_left;
       /* The route the mover is about to plan, sampled before it moves.
        * One pf map per mission-turn, so it is skipped entirely when
@@ -757,8 +812,7 @@ BUILD_CITY:
       bool diagnose = log_do_output_for_level(deep_metric_log_level());
       int risk_turns = (diagnose
                         ? deep_settler_risk_route(punit, ptile, &first_step,
-                                                  &dest_dangerous,
-                                                  &safe_turns)
+                                                  &dest_dangerous, &blocker)
                         : 0);
       bool got = deep_settler_gothere(ait, pplayer, punit, ptile);
       bool alive = (NULL != game_unit_by_number(sanity));
@@ -767,7 +821,8 @@ BUILD_CITY:
         log_base(deep_metric_log_level(),
                  "deep-settler turn=%d player=\"%s\" unit=%d at=(%d,%d)"
                  " stall target=(%d,%d) reason=%s sane=%d riskturns=%d"
-                 " dangerdest=%d safeturns=%d moves=%d/%d got=%d",
+                 " dangerdest=%d blocker=%s towner=%d"
+                 " moves=%d/%d got=%d",
                  game.info.turn, player_name(pplayer), sanity,
                  TILE_XY(alive ? unit_tile(punit) : from), TILE_XY(ptile),
                  (alive
@@ -776,7 +831,8 @@ BUILD_CITY:
                                               first_step)
                   : "dead"),
                  sane ? 1 : 0, risk_turns, dest_dangerous ? 1 : 0,
-                 safe_turns, moves_before,
+                 blocker, deep_settler_tile_claim(pplayer, ptile),
+                 moves_before,
                  alive ? punit->moves_left : 0, got ? 1 : 0);
       }
 
