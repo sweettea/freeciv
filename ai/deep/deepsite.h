@@ -25,5 +25,6 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
                                             struct unit *punit,
                                             int boat_cost);
 void deep_contemplate_new_city(struct ai_type *ait, struct city *pcity);
+void deep_site_free(void);
 
 #endif /* FC__DEEPSITE_H */

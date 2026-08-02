@@ -78,6 +78,33 @@ static void deep_tile_data_cache_destroy(struct tile_data_cache *ptdc)
 #define SPECHASH_IDATA_FREE deep_tile_data_cache_destroy
 #include "spechash.h"
 
+/* What an existing city of ours will man, and when: its catchment
+ * tiles ranked best-first, with the turn each one gets a citizen (0 if
+ * it has one already, -1 if the city never reaches it). Cached for one
+ * turn per city, because site evaluation asks about the same
+ * neighbours once per candidate tile per settler. */
+struct deep_claim {
+  int ntiles;
+  int *index;                   /* tile index, best first */
+  int *arrive;                  /* turn that tile gets a citizen */
+};
+
+static void deep_claim_destroy(struct deep_claim *pclaim)
+{
+  free(pclaim->index);
+  free(pclaim->arrive);
+  free(pclaim);
+}
+
+#define SPECHASH_TAG deep_claim
+#define SPECHASH_INT_KEY_TYPE
+#define SPECHASH_IDATA_TYPE struct deep_claim *
+#define SPECHASH_IDATA_FREE deep_claim_destroy
+#include "spechash.h"
+
+static struct deep_claim_hash *deep_claims = NULL;
+static int deep_claims_turn = -1;
+
 /* Site evaluation (W02, W02b). Stock cityresult_fill() values a site as
  * two tiles (city centre + single best other) plus everything else
  * divided by GROWTH_POTENTIAL_DEEMPHASIS, and doubles any tile with
@@ -151,9 +178,12 @@ static bool deep_size_gate_is_liftable(struct city *pcity)
 
 /**********************************************************************//**
   Turn on which each ranked catchment tile starts being worked, filled
-  into arrive[]: 0 for the tiles the founding citizens take at once,
-  the simulated growth turn for the rest, and -1 for a tile this site
-  never mans.
+  into arrive[]: 0 for the tiles the citizens present at the start take
+  at once, the simulated growth turn for the rest, and -1 for a tile
+  the city never mans. Used both for a candidate site (founding size,
+  empty granary) and for an existing city of ours (current size and
+  food stock), which is what makes the two comparable in
+  deep_neighbour_claim_turn().
 
   The city works its `size` best tiles, eats game.info.food_cost per
   citizen, banks the surplus and grows when the bank reaches
@@ -178,12 +208,12 @@ static bool deep_size_gate_is_liftable(struct city *pcity)
 **************************************************************************/
 static void deep_growth_arrivals(struct city *pcity, const int *foods,
                                  int n, int center_food, int size0,
-                                 int *arrive)
+                                 int stock0, int *arrive)
 {
   int gate = (get_city_bonus(pcity, EFT_SIZE_UNLIMIT) > 0
               ? FC_INFINITY : get_city_bonus(pcity, EFT_SIZE_ADJ));
   bool gate_final = FALSE, gate_checked = FALSE;
-  int size, turn = 0, stock = 0, i;
+  int size, turn = 0, stock = stock0, i;
 
   for (i = 0; i < n; i++) {
     arrive[i] = -1;
@@ -213,10 +243,157 @@ static void deep_growth_arrivals(struct city *pcity, const int *foods,
       }
     }
     need = city_granary_size(size) - stock;
-    turn += (need + surplus - 1) / surplus;
+    turn += MAX(0, (need + surplus - 1) / surplus);
     stock = 0;
     arrive[size] = turn;
   }
+}
+
+/**********************************************************************//**
+  Build the schedule of tiles an existing city of ours will man: its
+  catchment ranked by the same weighted output the site evaluator uses,
+  with the arrival turn of each tile from the same growth simulation,
+  seeded from the city's real size and food stock.
+**************************************************************************/
+static struct deep_claim *deep_claim_build(struct city *acity)
+{
+  const struct civ_map *nmap = &(wld.map);
+  struct adv_data *adv = adv_data_get(city_owner(acity), NULL);
+  int radius_sq = city_map_radius_sq_get(acity);
+  int maxtiles = MAX(city_map_tiles(radius_sq), 1);
+  struct deep_claim *pclaim = fc_calloc(1, sizeof(*pclaim));
+  int *foods = fc_malloc(sizeof(*foods) * maxtiles);
+  int *sums = fc_malloc(sizeof(*sums) * maxtiles);
+  int center_food = city_tile_output(acity, city_tile(acity), FALSE, O_FOOD);
+  int n = 0, j;
+
+  pclaim->index = fc_malloc(sizeof(*pclaim->index) * maxtiles);
+  pclaim->arrive = fc_malloc(sizeof(*pclaim->arrive) * maxtiles);
+
+  city_tile_iterate(nmap, radius_sq, city_tile(acity), ptile) {
+    struct city *worker = tile_worked(ptile);
+    int sum, food;
+
+    if (ptile == city_tile(acity)
+        || !city_can_work_tile(acity, ptile)
+        || (worker != NULL && worker != acity)) {
+      /* Not this city's to work -- and a tile another city already
+       * works is nobody's counterfactual, it is simply gone. */
+      continue;
+    }
+    food = city_tile_output(acity, ptile, FALSE, O_FOOD);
+    sum = food * adv->food_priority
+          + city_tile_output(acity, ptile, FALSE, O_TRADE)
+            * adv->science_priority
+          + city_tile_output(acity, ptile, FALSE, O_SHIELD)
+            * adv->shield_priority;
+
+    /* Insert sorted, best first -- the same ranking, in the same
+     * currency, that the candidate site ranks its own catchment by. */
+    for (j = n; j > 0 && sums[j - 1] < sum; j--) {
+      sums[j] = sums[j - 1];
+      foods[j] = foods[j - 1];
+      pclaim->index[j] = pclaim->index[j - 1];
+    }
+    sums[j] = sum;
+    foods[j] = food;
+    pclaim->index[j] = tile_index(ptile);
+    n++;
+  } city_tile_iterate_end;
+
+  pclaim->ntiles = n;
+  deep_growth_arrivals(acity, foods, n, center_food,
+                       city_size_get(acity), acity->food_stock,
+                       pclaim->arrive);
+  free(foods);
+  free(sums);
+
+  return pclaim;
+}
+
+/**********************************************************************//**
+  The cached claim schedule of one of our cities, built on first ask
+  each turn.
+
+  A cache, not a purity violation we are happy about (W26): site
+  evaluation asks about the same handful of neighbours once per
+  candidate tile per settler, so rebuilding per question would put the
+  neighbour's whole catchment inside the site loop. Dropped whenever
+  the turn number changes and at game teardown.
+**************************************************************************/
+static const struct deep_claim *deep_city_claim(struct city *acity)
+{
+  struct deep_claim *pclaim;
+
+  if (deep_claims == NULL) {
+    deep_claims = deep_claim_hash_new();
+  }
+  if (deep_claims_turn != game.info.turn) {
+    deep_claim_hash_clear(deep_claims);
+    deep_claims_turn = game.info.turn;
+  }
+  if (deep_claim_hash_lookup(deep_claims, acity->id, &pclaim)) {
+    return pclaim;
+  }
+  pclaim = deep_claim_build(acity);
+  deep_claim_hash_insert(deep_claims, acity->id, pclaim);
+
+  return pclaim;
+}
+
+/**********************************************************************//**
+  Earliest turn on which a city we already own puts a citizen on this
+  tile, or -1 if none of them ever does.
+
+  This is the counterfactual the old overlap WEIGHT was standing in for.
+  A boolean "some city of ours could reach this tile" is true of nearly
+  every tile on a developed map, says nothing about whether that city
+  has a citizen to spare for it, and -- with an early break -- recorded
+  a tile contested by three of our cities exactly like one shared with
+  one. What matters is whether the neighbour gets there FIRST.
+**************************************************************************/
+static int deep_neighbour_claim_turn(struct player *pplayer,
+                                     struct tile *ptile)
+{
+  int best = -1;
+
+  city_list_iterate(pplayer->cities, acity) {
+    int turn;
+
+    if (sq_map_distance(city_tile(acity), ptile)
+        > city_map_radius_sq_get(acity)) {
+      continue;
+    }
+    {
+      const struct deep_claim *pclaim = deep_city_claim(acity);
+      int i;
+
+      turn = -1;
+      for (i = 0; i < pclaim->ntiles; i++) {
+        if (pclaim->index[i] == tile_index(ptile)) {
+          turn = pclaim->arrive[i];
+          break;
+        }
+      }
+    }
+    if (turn >= 0 && (best < 0 || turn < best)) {
+      best = turn;
+    }
+  } city_list_iterate_end;
+
+  return best;
+}
+
+/**********************************************************************//**
+  Drop the per-turn claim cache. Called at game teardown.
+**************************************************************************/
+void deep_site_free(void)
+{
+  if (deep_claims != NULL) {
+    deep_claim_hash_destroy(deep_claims);
+    deep_claims = NULL;
+  }
+  deep_claims_turn = -1;
 }
 
 /**********************************************************************//**
@@ -257,12 +434,12 @@ static void deep_growth_arrivals(struct city *pcity, const int *foods,
 **************************************************************************/
 static adv_want deep_catchment_stream(struct city *pcity, int *sums,
                                       int *foods, int *potentials,
-                                      bool *overlapped, int n,
+                                      int *claimed, int n,
                                       int center_food, int size0)
 {
   const struct deep_tuning *tune = deep_tuning_get();
-  int i, j;
-  double total = 0, overlap_w;
+  int i, j, kept = 0;
+  double total = 0;
   /* When -- and whether -- a citizen ever reaches each ranked tile. */
   int arrive[MAX(n, 1)];
 
@@ -272,36 +449,46 @@ static adv_want deep_catchment_stream(struct city *pcity, int *sums,
 
   /* Sort by sum, descending (insertion sort; n <= catchment size). */
   for (i = 1; i < n; i++) {
-    int sv = sums[i], fv = foods[i], pv = potentials[i];
-    bool ov = overlapped[i];
+    int sv = sums[i], fv = foods[i], pv = potentials[i], cv = claimed[i];
 
     for (j = i; j > 0 && sums[j - 1] < sv; j--) {
       sums[j] = sums[j - 1];
       foods[j] = foods[j - 1];
       potentials[j] = potentials[j - 1];
-      overlapped[j] = overlapped[j - 1];
+      claimed[j] = claimed[j - 1];
     }
     sums[j] = sv;
     foods[j] = fv;
     potentials[j] = pv;
-    overlapped[j] = ov;
+    claimed[j] = cv;
   }
 
-  deep_growth_arrivals(pcity, foods, n, center_food, size0, arrive);
-
-  /* Tiles a neighbouring own city can work are almost never ours to man
-   * (proximity rule) -- but "almost never" is a statement about how much
-   * unclaimed land is left, not a constant. On a crowded map every
-   * remaining site overlaps something we own, so a flat low weight
-   * scores them all at nearly nothing and stops expansion outright
-   * rather than accepting a closer city. Give part of the weight back
-   * as the map fills; site_overlap_crowding 0 keeps it flat. */
-  overlap_w = tune->site_overlap_weight
-              * (1.0 + tune->site_overlap_crowding * deep_land_pressure());
+  /* Which tiles a neighbour of ours takes first is decided against the
+   * schedule this site would have if it got EVERYTHING, then the site
+   * is re-simulated on what is left. The optimistic first pass is the
+   * conservative choice: it hands the site its earliest possible
+   * arrival turns, so a tile is only conceded when the neighbour beats
+   * even that. */
+  deep_growth_arrivals(pcity, foods, n, center_food, size0, 0, arrive);
 
   for (i = 0; i < n; i++) {
-    double w = overlapped[i] ? overlap_w : 1.0;
+    if (claimed[i] >= 0 && (arrive[i] < 0 || claimed[i] <= arrive[i])) {
+      /* A city we already own puts a citizen here first, so this city
+       * never works the tile: it leaves the stream entirely rather
+       * than entering at a weight. Two cities cannot each earn it. */
+      continue;
+    }
+    sums[kept] = sums[i];
+    foods[kept] = foods[i];
+    potentials[kept] = potentials[i];
+    kept++;
+  }
+  if (kept == 0) {
+    return 0;
+  }
+  deep_growth_arrivals(pcity, foods, kept, center_food, size0, 0, arrive);
 
+  for (i = 0; i < kept; i++) {
     if (arrive[i] < 0) {
       /* No citizen ever works this tile, so it earns nothing. K -- how
        * many tiles a site is worth -- is not a parameter here; it is
@@ -311,8 +498,8 @@ static adv_want deep_catchment_stream(struct city *pcity, int *sums,
     /* A tile is worth what it yields now plus a discounted share of
      * what one standard improvement would add (W02 potential term),
      * from the turn its citizen arrives. */
-    total += amortize(w * (sums[i]
-                           + tune->site_potential_discount * potentials[i]),
+    total += amortize(sums[i]
+                      + tune->site_potential_discount * potentials[i],
                       arrive[i]);
   }
 
@@ -365,7 +552,7 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
   int sums[maxtiles];
   int foods[maxtiles];
   int potentials[maxtiles];
-  bool overlapped[maxtiles];
+  int claimed[maxtiles];
   int nspecials = 0;
   int nclaim = 0;
   bool pressured = FALSE;
@@ -465,16 +652,6 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
       int pot_irr = pterrain->irrigation_food_incr * adv->food_priority;
       int pot_min = pterrain->mining_shield_incr * adv->shield_priority;
 
-      bool near_own = FALSE;
-
-      city_list_iterate(pplayer->cities, acity) {
-        if (sq_map_distance(city_tile(acity), ptile)
-            <= city_map_radius_sq_get(acity)) {
-          near_own = TRUE;
-          break;
-        }
-      } city_list_iterate_end;
-
       sums[ncatch] = ptdc->sum;
       foods[ncatch] = ptdc->food;
       /* Ruleset improvement increments, in the same weighted-output
@@ -489,7 +666,7 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
       if (pressured) {
         potentials[ncatch] *= deep_tuning_get()->site_pressure_factor;
       }
-      overlapped[ncatch] = near_own;
+      claimed[ncatch] = deep_neighbour_claim_turn(pplayer, ptile);
       ncatch++;
 
       if (tile_resource(ptile) != NULL) {
@@ -518,7 +695,7 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
    * retired. */
   {
     adv_want stream
-      = deep_catchment_stream(pcity, sums, foods, potentials, overlapped,
+      = deep_catchment_stream(pcity, sums, foods, potentials, claimed,
                               ncatch, result->city_center.tdc->food,
                               virtual_city ? found_size
                                            : MAX(1, city_size_get(pcity)));

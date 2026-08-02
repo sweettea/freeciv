@@ -68,32 +68,6 @@ struct deep_tuning {
    * simulation stops) and site_depth_weight (there is no separate
    * depth term to weigh: the stream IS the catchment's value). */
   double site_stream_weight;
-  /* Weight for catchment tiles a neighbouring own city can work --
-   * deliberately far below the ordinary tail weight. */
-  double site_overlap_weight;
-  /* How much of that refusal to pack is given back on a crowded map:
-   * the weight becomes site_overlap_weight * (1 + crowding_factor *
-   * deep_land_pressure()). 0 disables and reproduces a flat weight.
-   *
-   * A single overlap weight has to answer two different questions with
-   * one number. "Do not settle on top of yourself" is right at 300
-   * tiles per player and self-defeating at 60, because on tight land
-   * EVERY remaining site overlaps something we own -- so a weight low
-   * enough to give largepox spacing when there is room scores every
-   * available site at nearly zero when there is not, and the empire
-   * simply stops expanding rather than accepting a closer city.
-   * Measured: campaign-a6 drove this to 0.007 and its deep arm fell to
-   * 47 cities against baseline's 57 on lategame-80 (6 players, 40x40),
-   * while campaign-b6 left it at 0.048 and kept more. The dial wanted
-   * is "how much spacing can I afford", which is relative to how much
-   * land is left, and a constant cannot express that -- the same
-   * argument site_travel_crowding already makes for travel time.
-   *
-   * Scaled by deep_land_pressure(), not deep_map_crowding(): the
-   * crowding prior is pinned at 1.0 for every map at or below its
-   * reference density, which includes the one cell this term exists
-   * to fix. */
-  double site_overlap_crowding;
   /* Reference land-per-player for deep_land_pressure(), the scale at
    * which land counts as half scarce: pressure = tiles / (tiles +
    * land-per-player). Deliberately its own knob rather than reusing
@@ -206,8 +180,12 @@ struct deep_tuning {
    * two island cells, where the term contributes exactly zero, and
    * paid for it only in the one crowded cell.
    *
-   * Scaled by deep_land_pressure() for the same reason as
-   * site_overlap_crowding. */
+   * Scaled by deep_land_pressure(), not deep_map_crowding(): the
+   * crowding prior is pinned at 1.0 for every map at or below its
+   * reference density, which includes the crowded cell this term
+   * exists to answer. (site_overlap_crowding scaled the same way and
+   * for the same reason; W02b deleted it along with the overlap
+   * weight it modulated.) */
   double site_rival_crowding;
   /* Trade-route destination policy (findings/trade-routes.md).
    * caravan_discount is the per-turn patience fed to caravan.c's NPV

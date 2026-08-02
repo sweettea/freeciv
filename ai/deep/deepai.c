@@ -58,6 +58,7 @@
 
 #include "deepdefence.h"
 #include "deepsettler.h"
+#include "deepsite.h"
 #include "deeptuning.h"
 
 #include "autoworkers.h"
@@ -101,7 +102,19 @@ static void dpai_module_close(void)
 {
   struct ai_type *deftype = deep_ai_get_self();
 
+  deep_site_free();
   FC_FREE(deftype->private);
+}
+
+/**********************************************************************//**
+  Free per-game caches held by the deep AI. Called from
+  server_game_free(), i.e. at game end and before a reload, so nothing
+  a site evaluation cached about last game's cities survives into the
+  next one.
+**************************************************************************/
+static void dpai_game_free(void)
+{
+  deep_site_free();
 }
 
 /**********************************************************************//**
@@ -932,7 +945,7 @@ bool fc_ai_deep_setup(struct ai_type *ai)
   /* ai->funcs.map_ready = NULL; */
   /* ai->funcs.map_free = NULL; */
   /* ai->funcs.game_start = NULL; */
-  /* ai->funcs.game_free = NULL; */
+  ai->funcs.game_free = dpai_game_free;
 
   ai->funcs.player_alloc = dpai_player_alloc;
   ai->funcs.player_free = dpai_player_free;
