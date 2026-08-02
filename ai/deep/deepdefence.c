@@ -1813,6 +1813,55 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
 }
 
 /**********************************************************************//**
+  Should this city stop thinking about settlers and workers entirely?
+
+  Stock asks dai_on_war_footing(), which is TRUE if ANY player carries a
+  war countdown >= 0 -- a presence flag on a counter stock sets and does
+  not reliably clear. When it sticks, every city with any military want
+  has founder_want AND worker_want forced to zero and skips the
+  contemplation step outright, so the player never builds another
+  settler or worker for the rest of the game.
+
+  Measured in the live Europe game, T125-T126 (findings/europe-T80.md):
+  16 of Deep_Carthago's 18 cities never reached contemplation at all,
+  founder_want pinned at 0 alongside worker_want at 0 -- the pair is the
+  gate's signature -- while the one city that escaped it wanted a
+  settler at 514. Zeroing every city's shield_stock and replaying the
+  turn changed nothing, which rules out the production change penalty
+  and leaves this gate as the cause. Carthage sat on a 624-tile island,
+  alone, with 180 workable unclaimed tiles.
+
+  It is also the FIFTH instance of this project's recurring defect:
+  a presence count used where a probability is available (the four
+  fixed on 2026-08-01 are in STATUS.md). Deep owns a survival model, so
+  ask the question the gate is really for -- is THIS city in danger --
+  rather than "does a stale counter exist anywhere in the world".
+
+  expansion_war_survival <= 0 restores stock's behaviour exactly.
+**************************************************************************/
+static bool deep_expansion_blocked(struct ai_type *ait,
+                                   struct player *pplayer,
+                                   struct city *pcity)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int wave = 0;
+  double surv;
+
+  if (tune->expansion_war_survival <= 0.0) {
+    return dai_on_war_footing(ait, pplayer);
+  }
+  if (!dai_on_war_footing(ait, pplayer)) {
+    return FALSE;
+  }
+  /* On war footing, but only cities that would actually FALL stop
+   * planning for the future. A safe city in a warring empire still
+   * settles and still improves its land. */
+  surv = deep_city_stack_survival(&(wld.map), pcity,
+                                  tune->survival_horizon, &wave);
+  return wave > 0 && surv < tune->expansion_war_survival;
+}
+
+/**********************************************************************//**
   Military build choice for one city. Derived from
   military_advisor_choose_build() in daimilitary.c (every helper is
   called, not copied); the difference is that the en-route defender
@@ -3025,7 +3074,8 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
       adv_free_choice(choice);
       TIMING_LOG(AIT_CITY_MILITARY, TIMER_STOP);
     }
-    if (dai_on_war_footing(ait, pplayer) && city_data->choice.want > 0) {
+    if (deep_expansion_blocked(ait, pplayer, pcity)
+        && city_data->choice.want > 0) {
       city_data->worker_want = 0;
       city_data->founder_want = 0;
       city_data->founder_turn = game.info.turn; /* Do not consider zero we set

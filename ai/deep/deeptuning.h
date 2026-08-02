@@ -168,6 +168,11 @@ struct deep_tuning {
    * 3+ non-war. Stock re-rolls fc_rand(2) between allied and non-war
    * per unit per call, so half the time the best destination on the
    * board is not a candidate at all. */
+  /* Survival probability below which a city on war footing stops
+   * planning settlers and workers. Stock zeroes both for EVERY city
+   * whenever any war countdown exists anywhere, which sticks and
+   * switches expansion off permanently. 0 restores stock exactly. */
+  double expansion_war_survival;
   double caravan_discount;
   int caravan_foreign_trade;
 

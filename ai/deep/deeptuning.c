@@ -52,6 +52,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .site_settler_cost_weight = 1.0,      /* = stock, untuned */
   .site_boat_cost_weight = 0.333333,    /* = stock 1/3, untuned */
   .site_rival_pressure = 10.0,          /* PLACEHOLDER, untuned */
+  .expansion_war_survival = 0.9,        /* PLACEHOLDER, untuned */
   .caravan_discount = 0.95,             /* = stock, untuned */
   .caravan_foreign_trade = 3,           /* PLACEHOLDER, untuned */
   .cm_war_survival = 0.9,               /* PLACEHOLDER, untuned */
@@ -204,6 +205,7 @@ void deep_tuning_init(void)
   TUNE_DOUBLE(site_settler_cost_weight);
   TUNE_DOUBLE(site_boat_cost_weight);
   TUNE_DOUBLE(site_rival_pressure);
+  TUNE_DOUBLE(expansion_war_survival);
   TUNE_DOUBLE(caravan_discount);
   TUNE_INT(caravan_foreign_trade);
   TUNE_DOUBLE(cm_war_survival);
