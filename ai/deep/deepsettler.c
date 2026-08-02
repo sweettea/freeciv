@@ -373,6 +373,120 @@ static bool deep_settler_gothere(struct ai_type *ait,
 }
 
 /**********************************************************************//**
+  Turns the risk pathfinder -- the SAME parameter the site search plans
+  with -- needs to reach dest from where the settler stands right now,
+  or -1 if it cannot reach it at all. The first step of that route is
+  returned in 'first_step' (NULL when there is no route, or when the
+  route's next position is the tile we already occupy, which is pf's
+  way of saying "wait here this turn").
+
+  'dest_dangerous' reports the danger callback's verdict on the target
+  tile itself, evaluated through the very parameter pf uses. No path
+  may END a turn on a dangerous tile, so a target that answers TRUE
+  here is one the mover can never reach however long it walks.
+
+  'safe_turns' is filled in only when the risk route fails: the same
+  parameter with the danger veto removed, which separates "the overnight
+  veto has no acceptable stopping places along the way" from "territory
+  or terrain blocks the route regardless of danger".
+
+  Only used for the stall diagnosis below, so it is built on demand:
+  it costs one pf map per mission-turn and the caller gates it on the
+  metric lines actually being written.
+**************************************************************************/
+static int deep_settler_risk_route(struct unit *punit, struct tile *dest,
+                                   struct tile **first_step,
+                                   bool *dest_dangerous, int *safe_turns)
+{
+  struct pf_parameter parameter;
+  struct deep_settler_risk risk;
+  struct pf_map *pfm;
+  struct pf_path *path;
+  int turns = -1;
+  const struct civ_map *nmap = &(wld.map);
+
+  *first_step = NULL;
+  *dest_dangerous = FALSE;
+  *safe_turns = -1;
+  if (same_pos(unit_tile(punit), dest)) {
+    return 0;
+  }
+
+  pft_fill_unit_parameter(&parameter, nmap, punit);
+  parameter.omniscience = !has_handicap(unit_owner(punit), H_MAP);
+  deep_settler_apply_risk(&parameter, &risk, punit);
+  if (parameter.is_pos_dangerous != NULL) {
+    *dest_dangerous = parameter.is_pos_dangerous(dest, TILE_KNOWN_SEEN,
+                                                 &parameter);
+  }
+
+  pfm = pf_map_new(&parameter);
+  path = pf_map_path(pfm, dest);
+  if (path != NULL) {
+    turns = pf_path_last_position(path)->turn;
+    if (path->length > 1
+        && !same_pos(path->positions[1].tile, unit_tile(punit))) {
+      *first_step = path->positions[1].tile;
+    }
+    pf_path_destroy(path);
+  }
+  pf_map_destroy(pfm);
+
+  if (turns < 0) {
+    parameter.is_pos_dangerous = NULL;
+    pfm = pf_map_new(&parameter);
+    path = pf_map_path(pfm, dest);
+    if (path != NULL) {
+      *safe_turns = pf_path_last_position(path)->turn;
+      pf_path_destroy(path);
+    }
+    pf_map_destroy(pfm);
+  }
+
+  return turns;
+}
+
+/**********************************************************************//**
+  Why a settler holding a city mission did not reach its target this
+  turn.
+
+  The mission-continuation block only ever knew "did not arrive", and
+  half of all mission-turns on a crowded cell are a settler standing on
+  the tile it stood on last turn (findings/settler-missions.md). Search
+  and execution share deep_settler_apply_risk(), so they should agree
+  about what is walkable; that they visibly do not is the RC5 case, and
+  dropping the mission on the strength of a guess cost a benchmark cell
+  (6ab78f8d98, reverted). These names say which side refused.
+**************************************************************************/
+static const char *deep_settler_stall_reason(const struct unit *punit,
+                                             const struct tile *from,
+                                             const struct tile *dest,
+                                             bool sane, int moves_before,
+                                             int risk_turns,
+                                             const struct tile *first_step)
+{
+  if (same_pos(unit_tile(punit), dest)) {
+    return "arrived";
+  }
+  if (!same_pos(unit_tile(punit), from)) {
+    return "moved";               /* Progress, just not there yet. */
+  }
+  if (moves_before <= 0) {
+    return "nomoves";             /* Spent before the mission was run. */
+  }
+  if (!sane) {
+    return "ferry";               /* No land route at all: needs a boat. */
+  }
+  if (risk_turns < 0) {
+    return "nopath";              /* A land route exists; risk vetoes it. */
+  }
+  if (first_step == NULL) {
+    return "wait";                /* pf wants us to hold for movement. */
+  }
+  return "blocked";               /* A step was planned and not taken. */
+}
+
+/**********************************************************************//**
   Find nearest and best city placement for 'punit'.
 
   Derived from find_best_city_placement() in daisettler.c (see the
@@ -612,13 +726,14 @@ BUILD_CITY:
   if (def_ai_unit_data(punit, ait)->task == AIUNIT_BUILD_CITY) {
     struct tile *ptile = punit->goto_tile;
     int sanity = punit->id;
+    bool sane = goto_is_sane(punit, ptile);
 
     log_base(deep_metric_log_level(),
              "deep-settler turn=%d player=\"%s\" unit=%d at=(%d,%d)"
              " mission target=(%d,%d) sane=%d boat=%d",
              game.info.turn, player_name(pplayer), punit->id,
              TILE_XY(unit_tile(punit)), TILE_XY(ptile),
-             goto_is_sane(punit, ptile) ? 1 : 0,
+             sane ? 1 : 0,
              def_ai_unit_data(punit, ait)->ferryboat);
 
     /* Check that the mission is still possible. If the tile has become
@@ -631,9 +746,41 @@ BUILD_CITY:
       return; /* Avoid recursion at all cost */
     } else {
       /* Go there */
-      if ((!deep_settler_gothere(ait, pplayer, punit, ptile)
-           && NULL == game_unit_by_number(sanity))
-          || punit->moves_left <= 0) {
+      struct tile *from = unit_tile(punit);
+      struct tile *first_step = NULL;
+      bool dest_dangerous = FALSE;
+      int safe_turns = -1;
+      int moves_before = punit->moves_left;
+      /* The route the mover is about to plan, sampled before it moves.
+       * One pf map per mission-turn, so it is skipped entirely when
+       * the metric lines are not being written. */
+      bool diagnose = log_do_output_for_level(deep_metric_log_level());
+      int risk_turns = (diagnose
+                        ? deep_settler_risk_route(punit, ptile, &first_step,
+                                                  &dest_dangerous,
+                                                  &safe_turns)
+                        : 0);
+      bool got = deep_settler_gothere(ait, pplayer, punit, ptile);
+      bool alive = (NULL != game_unit_by_number(sanity));
+
+      if (diagnose) {
+        log_base(deep_metric_log_level(),
+                 "deep-settler turn=%d player=\"%s\" unit=%d at=(%d,%d)"
+                 " stall target=(%d,%d) reason=%s sane=%d riskturns=%d"
+                 " dangerdest=%d safeturns=%d moves=%d/%d got=%d",
+                 game.info.turn, player_name(pplayer), sanity,
+                 TILE_XY(alive ? unit_tile(punit) : from), TILE_XY(ptile),
+                 (alive
+                  ? deep_settler_stall_reason(punit, from, ptile, sane,
+                                              moves_before, risk_turns,
+                                              first_step)
+                  : "dead"),
+                 sane ? 1 : 0, risk_turns, dest_dangerous ? 1 : 0,
+                 safe_turns, moves_before,
+                 alive ? punit->moves_left : 0, got ? 1 : 0);
+      }
+
+      if ((!got && !alive) || punit->moves_left <= 0) {
         return;
       }
       if (same_pos(unit_tile(punit), ptile)) {
