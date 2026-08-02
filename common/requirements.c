@@ -45,23 +45,6 @@
 
 #include "requirements.h"
 
-struct thr_req_data
-{
-  fc_thread_id thr_id;
-};
-
-/* get 'struct thr_req_data_list' and related functions: */
-#define SPECLIST_TAG thr_req_data
-#define SPECLIST_TYPE struct thr_req_data
-#include "speclist.h"
-
-#define thr_req_data_list_iterate(trlist, ptrdata) \
-    TYPED_LIST_ITERATE(struct thr_req_data, trlist, ptrdata)
-#define thr_req_data_list_iterate_end  LIST_ITERATE_END
-
-static struct thr_req_data_list *trdatas;
-static fc_mutex trmutex;
-
 /************************************************************************
   Container for req_item_found functions
 ************************************************************************/
@@ -247,31 +230,10 @@ struct req_def {
 };
 
 /**********************************************************************//**
-  Thread exit callback
-**************************************************************************/
-static void thr_exit_cb(void)
-{
-  fc_thread_id self = fc_thread_self();
-
-  fc_mutex_allocate(&trmutex);
-  thr_req_data_list_iterate(trdatas, data) {
-    if (fc_threads_equal(self, data->thr_id)) {
-      thr_req_data_list_remove(trdatas, data);
-      free(data);
-      break;
-    }
-  } thr_req_data_list_iterate_end;
-  fc_mutex_release(&trmutex);
-}
-
-/**********************************************************************//**
   Initialize requirements module
 **************************************************************************/
 void requirements_init(void)
 {
-  trdatas = thr_req_data_list_new();
-  fc_mutex_init(&trmutex);
-  register_at_thread_exit_callback(thr_exit_cb);
 }
 
 /**********************************************************************//**
@@ -279,8 +241,6 @@ void requirements_init(void)
 **************************************************************************/
 void requirements_free(void)
 {
-  fc_mutex_destroy(&trmutex);
-  thr_req_data_list_destroy(trdatas);
 }
 
 /**********************************************************************//**
@@ -6753,22 +6713,6 @@ bool is_req_active(const struct req_context *context,
 {
   const struct civ_map *nmap = &(wld.map);
   enum fc_tristate eval;
-  fc_thread_id self = fc_thread_self();
-  struct thr_req_data *trdata = nullptr;
-
-  fc_mutex_allocate(&trmutex);
-  thr_req_data_list_iterate(trdatas, data) {
-    if (fc_threads_equal(self, data->thr_id)) {
-      trdata = data;
-    }
-  } thr_req_data_list_iterate_end;
-
-  if (trdata == nullptr) {
-    trdata = fc_malloc(sizeof(struct thr_req_data));
-    trdata->thr_id = self;
-    thr_req_data_list_append(trdatas, trdata);
-  }
-  fc_mutex_release(&trmutex);
 
   eval = tri_req_present(nmap, context, other_context, req);
 
