@@ -156,6 +156,20 @@ struct deep_tuning {
    * because a flat shared-continent test discriminates nothing on a
    * map like Europe where one landmass runs Morocco to Siberia. */
   double site_rival_pressure;
+  /* Trade-route destination policy (findings/trade-routes.md).
+   * caravan_discount is the per-turn patience fed to caravan.c's NPV
+   * model; stock's 0.95 is kept as the placeholder, but stock also
+   * SWITCHES IT OFF entirely (ignore_transit_time) for cross-continent
+   * routes, so a 30-turn sea voyage is free while a 15-turn land walk
+   * keeps 46%. Deep always counts transit and expresses patience as
+   * this one number.
+   * caravan_foreign_trade is how far afield to look, as a
+   * foreign_trade_limit: 0 national, 1 allied, 2 peaceful,
+   * 3+ non-war. Stock re-rolls fc_rand(2) between allied and non-war
+   * per unit per call, so half the time the best destination on the
+   * board is not a candidate at all. */
+  double caravan_discount;
+  int caravan_foreign_trade;
 
   /* Defensive-diplomat priority (W01): stock prices it at a
    * self-described 'totally arbitrary' 16000 that outranks even

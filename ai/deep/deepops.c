@@ -47,6 +47,8 @@
 #include "deepcombat.h"
 #include "deeptuning.h"
 
+#include "deeptrade.h"
+
 #include "deepops.h"
 
 /**********************************************************************//**
@@ -132,6 +134,13 @@ void deep_manage_units(struct ai_type *ait, struct player *pplayer)
   } unit_list_iterate_end;
 
   dai_set_defenders(ait, pplayer);
+
+  /* Trade destinations BEFORE the per-unit loop: stock's
+   * dai_manage_caravan() only re-searches when the task is
+   * AIUNIT_NONE, so choosing here pre-empts its two defective
+   * parameter choices while leaving its ferry and goto handling
+   * alone (deeptrade.c). */
+  deep_choose_trade_targets(ait, pplayer);
 
   unit_list_iterate_safe(pplayer->units, punit) {
     if ((!unit_transported(punit)
