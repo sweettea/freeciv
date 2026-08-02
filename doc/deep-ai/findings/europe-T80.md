@@ -109,6 +109,45 @@ build in the `deep-def` tripwire.
 - If it is healthy but loses -> it is an ARBITRATION bug, and
   arbitration is the objective layer, not another credit.
 
+### 5a. THE TEST WAS RUN. It is arbitration, and BUILDINGS win.
+
+`88dfa15597` added `founder=` / `worker=` to the tripwire. 8536
+`deep-def` rows over 3 `primary-120` games (120 turns, 6 players,
+organic expansion from scratch):
+
+    turns    rows  founder_want  raw danger  %Settlers  %military  %other
+     0-19     184       429           0          99%        1%        0%
+    40-59     881       336           0          57%       27%       16%
+    80-99    2338       191           4          18%       28%       53%
+   100-119   3030       163           6          13%       25%       62%
+
+    founder_want <= 0 : 1591/8536 (19%)
+    founder_want > 100: 6257/8536 (73%) -- of those only 39% build Settlers
+
+**`founder_want` is healthy.** Above 100 in 73% of city-turns, still
+averaging 163 at T100-119. The site evaluator finds land and prices it.
+Not a scoring bug.
+
+**And the winner is NOT the military.** Military production holds a
+flat 25-31% for the whole game. What climbs is *other* -- buildings --
+0% -> 62%, tracking the Settlers collapse 99% -> 13% almost exactly.
+
+**So the hypothesis in §5 above was half wrong and is corrected here.**
+The injected defender fears are real and they are documented, but they
+are not what is crowding out expansion in this measurement. **Deep's
+own horizon building credits are.** Five credits now add want to
+buildings; `founder_want` receives one <=2x multiplier and nothing
+else; they share one scale.
+
+That is self-inflicted, and it implicates every credit in the family
+including `c6d39b6081`, committed the same night.
+
+**Ablation to confirm:** all seven `horizon_*` weights to 0.0 vs
+shipped placeholders, same cell, measuring Settlers share and final
+city count. If Settlers recover, the credits are the cause and the fix
+is arbitration -- an objective layer that prices a city site and a
+building on one scale -- not a sixth credit.
+
 ## 6. Two tripwire defects found while reading this game
 
 - **`deep-def` logs PRE-INJECTION danger.** `deep_log_defence()` runs
