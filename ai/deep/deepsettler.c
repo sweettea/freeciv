@@ -218,6 +218,50 @@ static void deep_settler_apply_risk(struct pf_parameter *parameter,
 }
 
 /**********************************************************************//**
+  Whether any route to dest exists under 'parameter'.
+**************************************************************************/
+static bool deep_settler_route_exists(struct pf_parameter *parameter,
+                                      struct tile *dest)
+{
+  struct pf_map *pfm = pf_map_new(parameter);
+  bool found = (pf_map_move_cost(pfm, dest) != PF_IMPOSSIBLE_MC);
+
+  pf_map_destroy(pfm);
+
+  return found;
+}
+
+/**********************************************************************//**
+  Can this settler walk to dest at all?
+
+  goto_is_sane() answers a nearby question with the wrong knowledge: it
+  pathfinds NON-omnisciently, so every unexplored tile counts as
+  passable and a target across unmapped water reports a land route that
+  does not exist. Deep's site search and its mover both pathfind with
+  the player's real handicaps, and this test does too, so all three
+  agree about which trips need a boat.
+
+  Measured cost of the disagreement (findings/settler-missions.md):
+  5656 of 6323 stalled settler mission-turns on lategame-80 were
+  missions the search itself had marked overseas, being walked to.
+**************************************************************************/
+static bool deep_settler_can_walk_there(struct unit *punit,
+                                        struct tile *dest)
+{
+  struct pf_parameter parameter;
+  const struct civ_map *nmap = &(wld.map);
+
+  if (same_pos(unit_tile(punit), dest)) {
+    return TRUE;
+  }
+
+  pft_fill_unit_parameter(&parameter, nmap, punit);
+  parameter.omniscience = !has_handicap(unit_owner(punit), H_MAP);
+
+  return deep_settler_route_exists(&parameter, dest);
+}
+
+/**********************************************************************//**
   Decide whether this settler wants a bodyguard for the trip to
   dest_tile, and request or release one accordingly.
 
@@ -229,7 +273,8 @@ static void deep_settler_apply_risk(struct pf_parameter *parameter,
 **************************************************************************/
 static bool deep_settler_bodyguard_needed(struct ai_type *ait,
                                           struct unit *punit,
-                                          struct tile *dest_tile)
+                                          struct tile *dest_tile,
+                                          bool can_walk)
 {
   struct unit *guard = aiguard_guard_of(ait, punit);
   bool needed = FALSE;
@@ -247,7 +292,7 @@ static bool deep_settler_bodyguard_needed(struct ai_type *ait,
 
   if (adv_danger_at(punit, dest_tile)) {
     needed = TRUE;
-  } else if (goto_is_sane(punit, dest_tile)) {
+  } else if (can_walk) {
     struct pf_parameter parameter;
     struct deep_settler_risk risk;
     struct pf_map *pfm;
@@ -325,6 +370,7 @@ static bool deep_settler_gothere(struct ai_type *ait,
                                  struct tile *dest_tile)
 {
   bool bg_needed;
+  bool can_walk;
 
   CHECK_UNIT(punit);
 
@@ -333,20 +379,23 @@ static bool deep_settler_gothere(struct ai_type *ait,
     return TRUE;
   }
 
-  /* See if we need a bodyguard for the trip */
-  bg_needed = deep_settler_bodyguard_needed(ait, punit, dest_tile);
+  can_walk = deep_settler_can_walk_there(punit, dest_tile);
 
-  if (unit_transported(punit)
-      || !goto_is_sane(punit, dest_tile)) {
+  /* See if we need a bodyguard for the trip */
+  bg_needed = deep_settler_bodyguard_needed(ait, punit, dest_tile, can_walk);
+
+  if (unit_transported(punit) || !can_walk) {
     /* Must go by boat, call an aiferryboat function */
     if (!aiferry_gobyboat(ait, pplayer, punit, dest_tile, bg_needed)) {
       return FALSE;
     }
+    /* Landing changes what is walkable. */
+    can_walk = deep_settler_can_walk_there(punit, dest_tile);
   }
 
   /* Go where we should be going if we can, and are at our destination
    * if we are on a ferry */
-  if (goto_is_sane(punit, dest_tile) && punit->moves_left > 0) {
+  if (can_walk && punit->moves_left > 0) {
     punit->goto_tile = dest_tile;
     UNIT_LOG(LOG_DEBUG, punit, "deep settler walking to (%d,%d)",
              TILE_XY(dest_tile));
@@ -405,17 +454,6 @@ static bool deep_settler_gothere(struct ai_type *ait,
   it costs one pf map per mission-turn and the caller gates it on the
   metric lines actually being written.
 **************************************************************************/
-static bool deep_settler_route_exists(struct pf_parameter *parameter,
-                                      struct tile *dest)
-{
-  struct pf_map *pfm = pf_map_new(parameter);
-  bool found = (pf_map_move_cost(pfm, dest) != PF_IMPOSSIBLE_MC);
-
-  pf_map_destroy(pfm);
-
-  return found;
-}
-
 static int deep_settler_risk_route(struct unit *punit, struct tile *dest,
                                    struct tile **first_step,
                                    bool *dest_dangerous, const char **blocker)
@@ -516,7 +554,7 @@ static int deep_settler_tile_claim(const struct player *pplayer,
 static const char *deep_settler_stall_reason(const struct unit *punit,
                                              const struct tile *from,
                                              const struct tile *dest,
-                                             bool sane, int moves_before,
+                                             bool can_walk, int moves_before,
                                              int risk_turns,
                                              const struct tile *first_step)
 {
@@ -529,7 +567,7 @@ static const char *deep_settler_stall_reason(const struct unit *punit,
   if (moves_before <= 0) {
     return "nomoves";             /* Spent before the mission was run. */
   }
-  if (!sane) {
+  if (!can_walk) {
     return "ferry";               /* No land route at all: needs a boat. */
   }
   if (risk_turns < 0) {
@@ -781,14 +819,14 @@ BUILD_CITY:
   if (def_ai_unit_data(punit, ait)->task == AIUNIT_BUILD_CITY) {
     struct tile *ptile = punit->goto_tile;
     int sanity = punit->id;
-    bool sane = goto_is_sane(punit, ptile);
+    bool walk = deep_settler_can_walk_there(punit, ptile);
 
     log_base(deep_metric_log_level(),
              "deep-settler turn=%d player=\"%s\" unit=%d at=(%d,%d)"
-             " mission target=(%d,%d) sane=%d boat=%d",
+             " mission target=(%d,%d) walk=%d boat=%d",
              game.info.turn, player_name(pplayer), punit->id,
              TILE_XY(unit_tile(punit)), TILE_XY(ptile),
-             sane ? 1 : 0,
+             walk ? 1 : 0,
              def_ai_unit_data(punit, ait)->ferryboat);
 
     /* Check that the mission is still possible. If the tile has become
@@ -820,17 +858,17 @@ BUILD_CITY:
       if (diagnose) {
         log_base(deep_metric_log_level(),
                  "deep-settler turn=%d player=\"%s\" unit=%d at=(%d,%d)"
-                 " stall target=(%d,%d) reason=%s sane=%d riskturns=%d"
+                 " stall target=(%d,%d) reason=%s walk=%d riskturns=%d"
                  " dangerdest=%d blocker=%s towner=%d"
                  " moves=%d/%d got=%d",
                  game.info.turn, player_name(pplayer), sanity,
                  TILE_XY(alive ? unit_tile(punit) : from), TILE_XY(ptile),
                  (alive
-                  ? deep_settler_stall_reason(punit, from, ptile, sane,
+                  ? deep_settler_stall_reason(punit, from, ptile, walk,
                                               moves_before, risk_turns,
                                               first_step)
                   : "dead"),
-                 sane ? 1 : 0, risk_turns, dest_dangerous ? 1 : 0,
+                 walk ? 1 : 0, risk_turns, dest_dangerous ? 1 : 0,
                  blocker, deep_settler_tile_claim(pplayer, ptile),
                  moves_before,
                  alive ? punit->moves_left : 0, got ? 1 : 0);
