@@ -188,3 +188,31 @@ exhausted). Not fixed in place per rule 2's spirit for common/.
     (W03) so it does not push citizens into a city that will starve or
     riot, and a tunable for the exchange rate. Not fixed in `ai/default`
     per rule 2. Human observation, 2026-08-02.
+
+32. **`goto_is_sane()` decides reachability without the caller's
+    knowledge level** — `ai/default/daitools.c:429`. It builds its pf
+    parameter with `pft_fill_unit_attack_param()` and never touches
+    `omniscience`, which `pft_fill_unit_default_parameter()` leaves
+    `FALSE`. Unknown tiles therefore count as passable, so for a player
+    with no `H_MAP` handicap — that is, every difficulty anyone plays —
+    the answer is *more* optimistic than the same player's own
+    pathfinding elsewhere.
+
+    Callers use it as a boat-versus-walk switch. `dai_gothere()`
+    (`daiunit.c`) has the same shape as deep's copy did: "if the goto
+    is not sane, call `aiferry_gobyboat()`". A target across water the
+    player has not explored reports sane, the ferry branch is skipped,
+    the omniscient mover finds no land path, and the unit stands still
+    holding a valid mission. It is self-clearing for a unit that
+    explores, and not self-clearing for a settler, which does not.
+
+    Measured in `ai/deep` before the deep-side fix
+    (`findings/settler-missions.md` §7): on `lategame-80`, 5656 of 6323
+    stalled settler mission-turns over 10 games were overseas missions
+    being walked to. Deep now asks the question at the player's real
+    handicap level (`deep_settler_can_walk_there()`, `0f126c33b7`);
+    `ai/default` keeps the behaviour per rule 2. An upstream fix would
+    be one line — set `parameter.omniscience` from the caller's
+    handicap, as every other AI pf site already does — but it changes
+    unit behaviour, so it is offered separately and nothing here depends
+    on it landing. Measured 2026-08-02.
