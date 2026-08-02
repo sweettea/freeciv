@@ -45,6 +45,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .horizon_bundle_weight = 1.0,         /* PLACEHOLDER, untuned */
   .horizon_health_weight = 1.0,         /* PLACEHOLDER, untuned */
   .horizon_content_weight = 1.0,        /* PLACEHOLDER, untuned */
+  .horizon_multiplier_weight = 1.0,     /* PLACEHOLDER, untuned */
   .cm_war_survival = 0.9,               /* PLACEHOLDER, untuned */
   .horizon_tech_weight = 1.0,           /* PLACEHOLDER, untuned */
   .site_claim_bonus = 8.0,              /* PLACEHOLDER, untuned */
@@ -188,6 +189,7 @@ void deep_tuning_init(void)
   TUNE_DOUBLE(horizon_bundle_weight);
   TUNE_DOUBLE(horizon_health_weight);
   TUNE_DOUBLE(horizon_content_weight);
+  TUNE_DOUBLE(horizon_multiplier_weight);
   TUNE_DOUBLE(cm_war_survival);
   TUNE_DOUBLE(horizon_tech_weight);
   TUNE_DOUBLE(overseas_fear);

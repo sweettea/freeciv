@@ -61,37 +61,59 @@
   Mean weighted-output value of the best currently-unworked workable
   tiles of the city -- what a new citizen would earn, in the same
   currency as the tile sums (W02).
+
+  When `raw` is non-null it is filled with the mean RAW output of those
+  same tiles, per output type, so a caller that needs to know what the
+  arriving citizen produces (rather than only what it is worth) reads
+  the identical tile selection. Tiles yield food, shield and trade only;
+  the other outputs stay zero here and are derived by the caller.
 **************************************************************************/
 static adv_want deep_unworked_tile_value(struct city *pcity,
-                                         struct adv_data *adv, int count)
+                                         struct adv_data *adv, int count,
+                                         int *raw)
 {
   const struct civ_map *nmap = &(wld.map);
   int best[3] = {0, 0, 0};
+  int bestraw[3][O_LAST];
   int n = 0, i;
   adv_want total = 0;
 
   fc_assert_ret_val(count <= 3, 0);
 
+  memset(bestraw, 0, sizeof(bestraw));
+  if (raw != NULL) {
+    memset(raw, 0, O_LAST * sizeof(*raw));
+  }
+
   city_tile_iterate(nmap, city_map_radius_sq_get(pcity),
                     city_tile(pcity), ptile) {
     int sum;
+    int out[O_LAST];
 
     if (tile_worked(ptile) != NULL || ptile == city_tile(pcity)
         || !city_can_work_tile(pcity, ptile)) {
       continue;
     }
-    sum = city_tile_output(pcity, ptile, FALSE, O_FOOD)
-          * adv->food_priority
-          + city_tile_output(pcity, ptile, FALSE, O_TRADE)
-            * adv->science_priority
-          + city_tile_output(pcity, ptile, FALSE, O_SHIELD)
-            * adv->shield_priority;
+    memset(out, 0, sizeof(out));
+    out[O_FOOD] = city_tile_output(pcity, ptile, FALSE, O_FOOD);
+    out[O_TRADE] = city_tile_output(pcity, ptile, FALSE, O_TRADE);
+    out[O_SHIELD] = city_tile_output(pcity, ptile, FALSE, O_SHIELD);
+    sum = out[O_FOOD] * adv->food_priority
+          + out[O_TRADE] * adv->science_priority
+          + out[O_SHIELD] * adv->shield_priority;
     for (i = 0; i < 3; i++) {
       if (sum > best[i]) {
         int t = best[i];
+        int tout[O_LAST];
 
+        /* Carry the displaced tile's outputs down with its score, so
+         * bestraw[] stays the breakdown of exactly the tiles best[]
+         * scored. */
+        memcpy(tout, bestraw[i], sizeof(tout));
         best[i] = sum;
+        memcpy(bestraw[i], out, sizeof(out));
         sum = t;
+        memcpy(out, tout, sizeof(out));
       }
     }
     n++;
@@ -103,6 +125,16 @@ static adv_want deep_unworked_tile_value(struct city *pcity,
   }
   for (i = 0; i < count; i++) {
     total += best[i];
+    if (raw != NULL) {
+      output_type_iterate(o) {
+        raw[o] += bestraw[i][o];
+      } output_type_iterate_end;
+    }
+  }
+  if (raw != NULL) {
+    output_type_iterate(o) {
+      raw[o] /= count;
+    } output_type_iterate_end;
   }
   return total / count;
 }
@@ -132,7 +164,7 @@ static adv_want deep_capacity_credit(struct city *pcity,
   }
 
   steps = MAX(1, MORT / MAX(ttg, 1));
-  per_citizen = deep_unworked_tile_value(pcity, adv, 3);
+  per_citizen = deep_unworked_tile_value(pcity, adv, 3, NULL);
 
   return amortize(per_citizen * steps * tune->horizon_capacity_weight,
                   ttg);
@@ -216,7 +248,7 @@ static adv_want deep_content_credit(struct city *pcity,
     return 0;
   }
 
-  per_citizen = deep_unworked_tile_value(pcity, adv, 3);
+  per_citizen = deep_unworked_tile_value(pcity, adv, 3, NULL);
 
   /* Immediate if the load is already there; otherwise it starts paying
    * when the city next grows. */
@@ -267,9 +299,156 @@ static adv_want deep_growth_credit(struct city *pcity,
    * food the building hands back each time. */
   steps = MAX(1, MORT / ttg);
   extra = (adv_want) steps * pct / 100.0;
-  per_citizen = deep_unworked_tile_value(pcity, adv, 3);
+  per_citizen = deep_unworked_tile_value(pcity, adv, 3, NULL);
 
   return amortize(extra * per_citizen * tune->horizon_growth_weight, ttg);
+}
+
+/**********************************************************************//**
+  Percentage output bonuses pimprove would add to pcity, per output
+  type. Output_Bonus effects carry an OutputType requirement at Local
+  range naming which output they scale, so the answer is a vector and
+  not the scalar get_potential_improvement_bonus() would return -- that
+  one filters on effect type alone and would fold a Marketplace's +50%
+  gold and +50% luxury into a meaningless 100.
+
+  The OutputType requirement is evaluated against the output being
+  computed rather than against a city, so it is read here rather than
+  passed to is_req_active(); every OTHER requirement must be active,
+  which is the same discipline get_potential_improvement_bonus() uses.
+**************************************************************************/
+static void deep_output_bonus_pct(const struct city *pcity,
+                                  const struct impr_type *pimprove,
+                                  int *pct)
+{
+  struct universal source = {.kind = VUT_IMPROVEMENT,
+                             .value = {.building = pimprove}};
+  struct effect_list *plist = get_req_source_effects(&source);
+  const struct req_context context = {
+    .player = city_owner(pcity),
+    .city = pcity,
+    .building = pimprove,
+  };
+
+  memset(pct, 0, O_LAST * sizeof(*pct));
+  if (plist == NULL) {
+    return;
+  }
+
+  effect_list_iterate(plist, peffect) {
+    Output_type_id otype = O_LAST;
+    bool useful = TRUE;
+
+    if (peffect->type != EFT_OUTPUT_BONUS
+        && peffect->type != EFT_OUTPUT_BONUS_2) {
+      continue;
+    }
+    requirement_vector_iterate(&peffect->reqs, preq) {
+      if (preq->source.kind == VUT_OTYPE && preq->present) {
+        otype = preq->source.value.outputtype;
+        continue;
+      }
+      if (preq->source.kind == VUT_IMPROVEMENT
+          && preq->source.value.building == pimprove) {
+        /* The building itself: that is what we are pricing. */
+        if (!preq->present) {
+          useful = FALSE;
+          break;
+        }
+        continue;
+      }
+      if (!is_req_active(&context, nullptr, preq, RPT_CERTAIN)) {
+        useful = FALSE;
+        break;
+      }
+    } requirement_vector_iterate_end;
+
+    if (useful && otype >= 0 && otype < O_LAST) {
+      pct[otype] += peffect->value;
+    }
+  } effect_list_iterate_end;
+}
+
+/**********************************************************************//**
+  Credit for a MULTIPLIER building -- one that scales an output by a
+  percentage (Marketplace, Library, Bank, Factory).
+
+  These are the one column of the ladder stock DOES price: they are
+  ADV_IMPR_CALCULATE, so base_want() runs. But dai_city_want() measures
+  them against `acity->citizen_base` -- the output of the tiles this
+  city works TODAY -- while every other credit in this file is buying
+  the citizens that will work MORE tiles tomorrow. Nothing told the
+  multiplier about the growth being purchased for it, so deep bought
+  the growth and then declined the buildings that would compound it:
+  20 Marketplaces to baseline's 108 on the 250-turn cell, at the same
+  city density and a HIGHER trade per city.
+
+  Priced as the arriving citizens' output, run through the building's
+  own percentage, valued at the advisor's own output priorities. Using
+  adv->*_priority rather than a flat rate matters: trade splits into
+  gold, luxury and science by the current tax rates, and if this
+  empire has no use for gold then the gold half of a Marketplace is
+  correctly worth little without that having to be asserted here.
+**************************************************************************/
+static adv_want deep_multiplier_credit(struct city *pcity,
+                                       const struct impr_type *pimprove,
+                                       struct adv_data *adv)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct player *pplayer = city_owner(pcity);
+  int pct[O_LAST], raw[O_LAST];
+  int ttg, arriving, any = 0;
+  adv_want credit = 0, trade;
+
+  deep_output_bonus_pct(pcity, pimprove, pct);
+  output_type_iterate(o) {
+    any += pct[o];
+  } output_type_iterate_end;
+  if (any <= 0) {
+    return 0;
+  }
+
+  if (!city_can_grow_to(pcity, city_size_get(pcity) + 1)) {
+    /* Capped: no citizens are arriving for the multiplier to act on.
+     * The cap-lifter is what this city needs and it has its own
+     * credit. */
+    return 0;
+  }
+  ttg = city_turns_to_grow(pcity);
+  if (ttg <= 0) {
+    /* No food surplus: nothing arriving. */
+    return 0;
+  }
+  arriving = MORT / ttg;
+  if (arriving <= 0) {
+    return 0;
+  }
+
+  (void) deep_unworked_tile_value(pcity, adv, 3, raw);
+
+  /* A tile yields food, shield and trade; trade becomes gold, luxury
+   * and science at the current rates, which is the same conversion
+   * dai_city_want() performs via add_tax_income(). */
+  trade = (adv_want) arriving * raw[O_TRADE];
+  credit += pct[O_FOOD] / 100.0
+            * arriving * raw[O_FOOD] * adv->food_priority;
+  credit += pct[O_SHIELD] / 100.0
+            * arriving * raw[O_SHIELD] * adv->shield_priority;
+  credit += pct[O_TRADE] / 100.0 * trade * adv->science_priority;
+  credit += pct[O_GOLD] / 100.0
+            * trade * pplayer->economic.tax / 100.0 * adv->gold_priority;
+  credit += pct[O_LUXURY] / 100.0
+            * trade * pplayer->economic.luxury / 100.0
+            * adv->luxury_priority;
+  credit += pct[O_SCIENCE] / 100.0
+            * trade * pplayer->economic.science / 100.0
+            * adv->science_priority;
+
+  if (credit <= 0) {
+    return 0;
+  }
+
+  return amortize(credit * tune->horizon_multiplier_weight, ttg);
 }
 
 /**********************************************************************//**
@@ -431,6 +610,7 @@ void deep_adjust_building_wants(struct ai_type *ait,
       if (!threatened) {
         add += deep_bundle_credit(pcity, pimprove, adv);
         add += deep_content_credit(pcity, pimprove, adv);
+        add += deep_multiplier_credit(pcity, pimprove, adv);
         /* Growth accelerator: peace-time investment like the other two.
          * The structural cap-lifter above keeps its wartime exemption
          * because a size GATE never reopens on its own; a Granary is

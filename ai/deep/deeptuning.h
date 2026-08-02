@@ -94,6 +94,14 @@ struct deep_tuning {
    * which is today's-state pricing of a future-state asset: exactly
    * the defect W03 was built to fix, in the column W03 skipped. */
   double horizon_content_weight;
+  /* Credit for a percentage output building (Marketplace, Library,
+   * Bank, Factory), scaling the output the citizens arriving within
+   * the horizon will produce. This is the one ladder column stock DOES
+   * price -- base_want() runs for it -- but on acity->citizen_base,
+   * the tiles worked TODAY, while every other credit here is buying
+   * the citizens that work more tiles TOMORROW. Nothing told the
+   * multiplier about the growth being bought for it. */
+  double horizon_multiplier_weight;
   /* Survival probability at or above which a city does NOT switch to
    * war weights in the city manager. Deliberately separate from
    * survival_target: that one arbitrates ~20 defence and operations
