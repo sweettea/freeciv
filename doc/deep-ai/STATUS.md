@@ -2189,3 +2189,94 @@ threading — it is a per-turn read-only structure.
   what establish the noise floor and they are cheap.
 - CLAUDE.md's `./build/tests/unit_tests` does not exist; the suite is
   `meson test -C build` (`deepodds`, `baseline-frozen`). Both pass.
+
+## Site scoring cannot express spacing (2026-08-02, day)
+
+**Two hypotheses died with measurements; the third is a design.**
+`workstreams/W02b-catchment-stream.md` is the deliverable.
+
+### Crowding scaling: null (`a79c85642e`, `6f33d8c1c4`)
+
+`site_overlap_weight` and `site_rival_pressure` made crowding-aware
+via a new non-saturating `deep_land_pressure()` (kept separate from
+`deep_map_crowding()`, which four tuned consumers depend on). 2x2 on
+lategame-80, 10 paired seeds, a6 and b6 tunings x crowding off/on:
+
+    a6 ON-OFF  score +10.4 t=0.87 6/10 | cities +0.6 t=0.34 4/10
+    b6 ON-OFF  score  -1.1 t=-.18 4/10 | cities +0.1 t=0.29 3/10
+
+**The mechanism did not move.** Settlers sat at 26.1 / 25.6 / 25.3 /
+25.8 across all four arms against baseline's 40.8 — a quantity
+invariant to two tunings differing 7x on overlap and 3.6x on rival
+pressure, plus a x12.4 intervention. Site scoring is not the
+constraint; **arbitration is** (`europe-T80`).
+
+### Why spacing is not tunable at all
+
+`deep_catchment_average()` returns `vsum/wsum`, a weighted AVERAGE.
+Overlapped tiles are down-weighted in numerator AND denominator, so at
+low weights they drop OUT rather than counting against. Measured on
+largepox-200 (380 land/player, 5 seeds):
+
+    site_overlap_weight  0.05   0.01   0.002
+    tiles/city           16.4   16.4    16.6
+
+25x change, 0.2 tiles. **16.4 is a floor no weight can pass.** Site
+score sees tile quality and is blind to tile quantity.
+
+### Corrections to my own reasoning, recorded
+
+- The largepox-200 probe that prompted "only smallpox is reachable"
+  ran with `site_overlap_crowding=16` active, i.e. MY default making
+  packing 6.5x more attractive. Conclusion retracted.
+- Empire-size unhappiness costs OUTPUT, not score:
+  `total_player_citizens()` sums unhappy and angry too. Going past
+  empire size is usually right, and for deep especially — it runs 33
+  temples per 100 cities against baseline's 11.
+
+### Campaigns harvested; both watchdogs had died
+
+    a6  training +76.1 -> holdout +62.2  (curse -18%)
+    b6  training +94.5 -> holdout +58.8  (curse -38%)
+
+A tie on the blend. Tiebreak by direct measurement on lategame-80, 10
+paired seeds: **a6 0.9897, b6 1.0394** — a6 is BEHIND baseline on the
+crowded cell. `deep-best.ini` rebuilt from b6 (`86cce1a729`), was
+still the a4/b4 blend at 93 params.
+
+**Both auto-shutdown watchdogs were dead** (bare background shells, no
+systemd unit, no crontab). a6 idled 80 minutes after finishing. Both
+holdouts were run by hand. Re-arm as the systemd oneshot AWS.md
+already prescribes before the next campaign.
+
+### The culture problem, now four cells
+
+Deep's score advantage is majority-**culture** in every venue measured:
+
+    isolated-150   62% of gain     lategame-80 (b6)  +2693 raw
+    garden2b       +104 of +73     largepox-200      +76 of +62
+
+Material position is flat or behind in all four (bnp -8.1% on
+largepox-200, mfg -45% on garden2b). Culture is 11% of score; citizens
++ techs are 82%. **Deep is winning the small term.**
+
+### Also landed
+
+- `f7a967a98b`..`1049a5f869` the profiling epic — see the entry above.
+- `86cce1a729` `primary-120-classic`, the RULESET GUARD. All three
+  tuning cells were civ2civ3, so all 96 constants were conditioned on
+  one ruleset. Settlers `pop_cost` is 2 there and 1 in classic.
+- `0fa86752f5` upstream-bugs #31: no AI ever performs Join City,
+  though `deepsite.c:610` already carries the hook comment.
+- `581a124c7e` `mixed_XY` arms, so deep can face ai/default directly.
+- garden2b RETIRED for head-to-head: 10 mirrored pairs, seat-averaged
+  mean -138, sd 710. 6 of 14 games ended with one side holding >5x the
+  other's cities — it is a conquest lottery, not a development race.
+
+### Open, ranked
+
+1. **W02b first epic** — the stream, `ttg(k)`, counterfactual overlap.
+2. **Build arbitration** — settlers pinned at 26; `europe-T80`.
+3. `site_overlap_crowding`/`site_rival_crowding` default 16.0/0.9 in
+   code and measured flat. `deep-best.ini` zeroes them; the code
+   defaults still need a decision.
