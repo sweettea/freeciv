@@ -1276,6 +1276,18 @@ static void deep_op_drive_strike(struct ai_type *ait,
         && city_owner(target) != pplayer) {
       (void) dai_gothere(ait, pplayer, m, ctile);
       m = game_unit_by_number(m_id);
+      /* Same hazard as the launch: dai_gothere() moves the member, and
+       * walking into an emptied city destroys a size-1 one. `ctile`
+       * survives -- tiles are never freed -- but `target` does not, and
+       * the next iteration and the check below both dereference it. */
+      target = game_city_by_number(op->target_city);
+      if (target == NULL) {
+        if (m != NULL) {
+          def_ai_unit_data(m, ait)->done = TRUE;
+        }
+        deep_op_dissolve(op, oi, "target-gone", pplayer);
+        return;
+      }
     }
     if (m != NULL) {
       def_ai_unit_data(m, ait)->done = TRUE;
@@ -1342,6 +1354,18 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
        * leash throughout), while the op re-gates the landing every
        * turn -- the invade gate, finally at the right seam. */
       deep_op_launch(ait, pplayer, op);
+      /* The wave's own success can destroy the target: deep takes an
+       * undefended city by walking into it, and a size-1 city is
+       * removed outright rather than captured. deep_op_launch() already
+       * re-resolves per member and stops when that happens -- but every
+       * use of `target` from here down is the PRE-launch pointer, and
+       * the march block falls through to them on this same call. Read
+       * it again. */
+      target = game_city_by_number(op->target_city);
+      if (target == NULL) {
+        deep_op_dissolve(op, oi, "target-gone", pplayer);
+        return;
+      }
       op->state = DEEP_OP_MARCH;
       op->march_turn = game.info.turn;
       op->march_eta = MAX(deep_op_eta(pplayer, op, target), 1);
