@@ -45,7 +45,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .horizon_health_weight = 1.0,         /* PLACEHOLDER, untuned */
   .horizon_content_weight = 1.0,        /* PLACEHOLDER, untuned */
   .horizon_multiplier_weight = 1.0,     /* PLACEHOLDER, untuned */
-  .site_travel_discount = 3.0,          /* = PERFECTION, untuned */
+  .site_travel_discount = 0.9,          /* human-set 2026-08-02, untuned */
   .site_travel_crowding = 0.0,          /* PLACEHOLDER, 0 = off */
   .site_potential_weight = 1.5,         /* = PERFECTION/2, untuned */
   .site_settler_cost_weight = 1.0,      /* = stock, untuned */

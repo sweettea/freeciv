@@ -121,7 +121,28 @@ struct deep_tuning {
    * scarce, which is what PERFECTION's own comment asks for and a
    * compile-time constant cannot do: on a packed map the frontier is
    * the only land left and the walk is the price of expanding at all.
-   * Placeholders 3.0 / 0.0 reproduce PERFECTION exactly. */
+   *
+   * W02b gives d a MEANING it did not have. Now that the catchment is
+   * a stream of citizen-turns, founding T turns later delays every
+   * citizen arrival by exactly T turns -- which is d = 1. Stock's
+   * PERFECTION 3 claims the delay is three times worse than it is; the
+   * b6 campaign's tuned 0.65 claims it is a third cheaper, and the
+   * cost of that showed up in the tail: 9% of settler missions on an
+   * 80-turn cell ran past 40 turns, the longest running the whole game
+   * (findings/settler-missions.md).
+   *
+   * Human call 2026-08-02: hold it a little BELOW 1, not at 1. d = 1
+   * prices the wrong counterfactual -- by the time the discount is
+   * applied the settler EXISTS, its shields and its pop_cost are
+   * already spent, so the choice is not "a city now versus a city in T
+   * turns" but "a city in T turns versus no city at all", and the
+   * alternatives (auto-worker, Join City) are worth far less than a
+   * city. Charging the full delay over-favours refusing the walk.
+   *
+   * The RANGE carries as much of the decision as the default: [0.75,
+   * 1.0] in tuning-params.ini keeps the tuner from rediscovering
+   * "delay is nearly free" (0.65 is outside it) without keeping it
+   * from the honest 1.0. */
   double site_travel_discount;
   double site_travel_crowding;
   /* Weight on a catchment tile's realistic improvement increment
