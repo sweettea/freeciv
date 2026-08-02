@@ -1068,9 +1068,19 @@ static void deep_op_drive_consolidate(struct ai_type *ait,
   const struct deep_tuning *tune = deep_tuning_get();
   const struct civ_map *nmap = &(wld.map);
   struct city *target = game_city_by_number(op->target_city);
-  struct tile *ctile = city_tile(target);
+  struct tile *ctile;
   bool cleared;
   int i;
+
+  if (target == NULL) {
+    /* deep_run_operations() validates every slot BEFORE driving any of
+     * them, so an earlier op in the drive loop can destroy this one's
+     * target between the two passes. Re-checked here rather than
+     * trusted from ~500 lines away. */
+    deep_op_dissolve(op, oi, "target-gone", pplayer);
+    return;
+  }
+  ctile = city_tile(target);
 
   /* Convert best defenders in the city until the bar clears. */
   for (;;) {
@@ -1170,9 +1180,18 @@ static void deep_op_drive_strike(struct ai_type *ait,
   const struct deep_tuning *tune = deep_tuning_get();
   const struct civ_map *nmap = &(wld.map);
   struct city *target = game_city_by_number(op->target_city);
-  struct tile *ctile = city_tile(target);
+  struct tile *ctile;
   struct unit *stream[DEEP_OP_MEMBERS];
   int i, ns = 0;
+
+  if (target == NULL) {
+    /* See deep_op_drive_consolidate(): validation happens a whole pass
+     * earlier, and the ops ahead of this one in the drive loop run in
+     * between. */
+    deep_op_dissolve(op, oi, "target-gone", pplayer);
+    return;
+  }
+  ctile = city_tile(target);
 
   for (i = 0; i < op->n_members; i++) {
     struct unit *m = game_unit_by_number(op->members[i]);
@@ -1334,6 +1353,24 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
   struct city *target = game_city_by_number(op->target_city);
   struct city *staging = game_city_by_number(op->staging_city);
   int i;
+
+  /* The comment above claims the caller "already validated target and
+   * staging". It did -- in a SEPARATE pass over every slot, before any
+   * op was driven. The ops ahead of this one in the drive loop then
+   * ran, and deep takes an undefended city by walking into it, so an
+   * earlier op's success can raze this one's target in between. Two
+   * core dumps caught it: a freed pointer through
+   * deep_take_odds_at_arrival(), and NULL through deep_op_eta(), both
+   * from the MARCH block below, which reads this hoist. */
+  if (target == NULL) {
+    deep_op_dissolve(op, oi, "target-gone", pplayer);
+    return;
+  }
+  if (op->state == DEEP_OP_MUSTER && staging == NULL) {
+    /* A muster with no staging city has nowhere to gather. */
+    deep_op_dissolve(op, oi, "staging-gone", pplayer);
+    return;
+  }
 
   if (op->state == DEEP_OP_MUSTER) {
     int present = 0;
