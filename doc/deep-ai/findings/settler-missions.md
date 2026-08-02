@@ -93,6 +93,15 @@ One unit's whole trace, unit 395:
 
 ## 3. The mechanism
 
+> **Superseded 2026-08-02 (late). The war-zone reading below was wrong,
+> and §7 has the measurement that replaced it: 90% of stalled
+> mission-turns are settlers trying to WALK to an overseas site,
+> because `goto_is_sane()` pathfinds non-omnisciently and unmapped
+> water reads as passable. Danger accounts for 0.3%. The paragraphs
+> here are kept because the reverted fix `6ab78f8d98` was built on
+> them, and because "the mission-continuation block never asks whether
+> the settler is getting there" is still true.**
+
 `deep_settler_apply_risk()` sets
 `parameter->is_pos_dangerous = deep_civilian_pos_dangerous`
 (`deepsettler.c:217`). That is W05 and it is correct — it cut settler
@@ -200,4 +209,167 @@ founding"), so it cannot be counted from benchmark logs — everything in
 §1 is inferred from an end-of-game snapshot. Promoting that line to
 `deep_metric_log_level()`, and adding one for a mission dropped without
 progress, makes all of this directly countable per turn instead of
-reconstructed.
+reconstructed. — **Partly closed `87ecdc8f55` / `458cf07945`**: every
+mission-turn now logs why the settler did not arrive, which is what §7
+is built on.
+
+---
+
+## 7. What it actually was: walking to islands (2026-08-02, late)
+
+§3's war-zone story was wrong, and the instrumentation that replaced it
+was written first on purpose — the previous session guessed and the
+guess cost a benchmark cell.
+
+Each mission-turn now logs an outcome (`arrived` / `moved` / `ferry` /
+`nopath` / `wait` / `blocked` / `nomoves` / `dead`) and, when the risk
+map has no route, a ladder that relaxes one pf constraint at a time and
+names the first relaxation that brings the route back. `lategame-80`,
+10 train seeds, deep arm, 11215 mission moves:
+
+    reason     count   share        nopath, why    count   share
+    nopath      6323   56.4%        vision          5659   89.5%
+    moved       2810   25.1%        behaviour        647   10.2%
+    arrived     1062    9.5%        danger            17    0.3%
+    ferry       1017    9.1%
+    blocked        3    0.0%
+
+`wait` and `blocked` are ~0, so the mover is not refusing a step on a
+route that exists: **the route does not exist.** And `danger` — the
+W05 veto §3 blamed — accounts for 0.3%.
+
+`vision` means the route reappears only when unknown tiles are assumed
+passable. Joining each stall to the pick that created its mission:
+**5656 of the 5659 are missions the search itself marked
+`overseas=1`.**
+
+### The disagreement, exactly
+
+`deep_settler_gothere()` decided boat-versus-walk by asking
+`goto_is_sane()`. That function pathfinds **non-omnisciently**
+(`pft_fill_unit_default_parameter()` leaves `omniscience = FALSE` and
+`goto_is_sane()` never overrides it), so unexplored tiles count as
+passable and a target across unmapped water reports a good land route.
+Deep's site search and its mover both pathfind at the player's real
+handicap level, which at every difficulty anyone plays is omniscient.
+
+So: the search chose an overseas site and knew it was overseas; the
+mission kept only the tile; execution re-derived "does this need a
+boat" from a more optimistic pathfinder, got "no", skipped
+`aiferry_gobyboat()`, and walked. The risk map found no land path,
+`dai_unit_goto_constrained()` did nothing and returned alive, and the
+settler stood on the beach. Median stalled episode 5 turns, p90 27,
+max 47; only 21% ever moved again.
+
+That is RC5 in one line: **planning and execution disagreed because
+they asked different pathfinders the same question.**
+
+It also disabled the guard built for this: a settler that never reaches
+`aiferry_gobyboat()` is never counted in `plr_data->stats.passengers`,
+so "every boat already has a waiting passenger" never became true and
+overseas picks were never throttled.
+
+### The fix and what it moved
+
+`deep_settler_can_walk_there()` — `goto_is_sane()`'s test at the
+player's real handicap — replaces `goto_is_sane()` in the boat gate,
+the walk gate and the bodyguard gate, computed once per `gothere()`
+(`0f126c33b7`).
+
+Same 10 seeds, pinned binaries either side of the fix:
+
+    lategame-80, deep arm      pre      post      diff        t
+    score                   183.82    189.22     +5.40     2.60
+    cities                    8.27      8.68     +0.42     2.91
+    pop                      45.05     48.87     +3.82     4.83
+    landarea                 95067     99917     +4850     3.37
+    mean_city_size             5.53      5.81     +0.28     3.72
+    live settlers at end       4.47      2.73     -1.73    -3.97
+
+Mission-turns 11527 → 7718, picks 1964 → 1574 (the reverted attempt
+went the other way, 1978 → 7152), `nopath` 6323 → 529 and 99% of what
+is left is the `behaviour` case, not this one.
+
+Where the cities came from, per 10 games:
+
+    picks land      644 -> 655   arrived 460 -> 461   (71% -> 70%)
+    picks overseas 1320 -> 919   arrived  91 -> 114   ( 7% -> 12%)
+
+Land expansion is untouched. Overseas *commitment* fell by a third —
+the throttle works now — and overseas *deliveries* rose by 23 over ten
+games, which is about +2.3 cities per game and matches the +0.42
+cities per player exactly.
+
+### The head-to-head, which is what it was for
+
+deep vs `ai/default` seated in the same game, mirrored `mixed_dc` /
+`mixed_cd`, 10 seeds, both sides of the fix. Score margin by turn:
+
+    turn      pre     post    delta
+    T20     +1.30    +1.70    +0.40
+    T40     +7.67   +10.87    +3.20
+    T60     +9.21   +16.12    +6.91
+    T70     +5.25   +12.75    +7.50
+    T80     -1.49    +9.73   +11.22
+
+The control reproduces the previous session's reference series to
+within rounding (T20 +1.3, T40 +7.7, T60 +8.9, T80 -1.7 recorded), so
+the instrumentation is behaviour-neutral and the comparison is honest.
+
+Difference-in-differences at T80 — the same seeds either side, so the
+noise that dominates the raw margin cancels:
+
+    metric      pre      post     delta      t   up
+    score     -1.49     +9.73    +11.22   2.09  7/10
+    cities    -2.12     -0.50     +1.62   2.87  8/10
+    pop       -3.33     +3.93     +7.27   2.59  9/10
+    bnp       -8.28     +1.83    +10.11   3.69  9/10
+    mfg       -8.97     +0.30     +9.28   2.06  8/10
+
+The delta is ~0 through T30 and grows monotonically from T40 — the
+window where the stall lived. **deep now finishes ahead of
+`ai/default` on `lategame-80`**, the cell it was losing, and the city
+deficit that caused it is 76% closed rather than reversed.
+
+### The pre-registration, scored
+
+Written before the diagnostic batch finished and before any fix
+existed.
+
+- **D1** — `nopath` ≥ 60% of non-arriving, non-moving mission-turns,
+  falsified if `wait` + `blocked` reach 40%. **Held**: 56.4% of all
+  mission moves, `wait` + `blocked` = 3 events.
+- **D2** — "≥ 60% survive with the danger veto off, **so the blocker
+  is the tile behaviour**". The stated criterion held (99.7%) and the
+  **inference was wrong**: territory accounts for 10%, and the real
+  cause was a rung I had not thought to enumerate. The ladder found it
+  only because it was written to relax every constraint rather than
+  the two I suspected. Worth remembering: a pre-registration can pass
+  its own test and still be wrong about the mechanism.
+- **D3** — `nopath` concentrated at T40+ as well as early. **Held**:
+  56% of them at T40+.
+- **F1** — stationary share below 30%. **Held on the narrow
+  definition** (`nopath`+`wait`+`blocked`, 56.4% → 7.2%) and **failed
+  on the honest one**: counting settlers waiting on a lift, a
+  mission-turn with no movement is 65.5% → 39.6%. The remainder is now
+  ferry queueing, which is the next problem and not this one.
+- **F2** — site evaluations must not double. **Held**, and then some:
+  picks 1964 → 1574, against the reverted attempt's 1978 → 7152.
+- **F3** — cities per player up ≥ 0.5. **Narrowly missed**: +0.42
+  (t=2.91).
+- **F4** — the T80 head-to-head margin moves up from -1.7. **Held**:
+  -1.49 → +9.73, t=2.09 paired.
+
+### What this leaves open
+
+- **Overseas delivery is still 12%.** Nine of ten settlers that commit
+  to a boat trip never arrive. That is the ferry pipeline, not the
+  settler, and it is now the largest single loss in this subsystem:
+  2398 of 7390 mission moves are a settler waiting on a lift.
+- **`behaviour` stalls, 523 turns.** Non-allied territory or a unit
+  standing in the corridor, mid-walk, with no re-search. Small, and
+  the honest fix is the one §5.1 wanted — but it should be aimed at
+  this case only, which is a tenth the size it was thought to be.
+- `goto_is_sane()` is used by `ai/default` too, with the same
+  optimism. Not ours to fix (rule 2); it belongs in
+  `findings/upstream-bugs.md`.
