@@ -1666,6 +1666,25 @@ static void end_turn(void)
   } players_iterate_end;
 #endif /* FREECIV_DEBUG */
 
+#ifdef FREECIV_AI_TIMING
+  /* Per-turn AI timing for the scaling profile. The bucket totals on
+   * their own say where the time went; the game-size terms say what to
+   * fit them against, since the costs under investigation are quadratic
+   * in city and unit count rather than in turn number. */
+  {
+    int scale_cities = 0, scale_units = 0;
+
+    players_iterate(pplayer) {
+      scale_cities += city_list_size(pplayer->cities);
+      scale_units += unit_list_size(pplayer->units);
+    } players_iterate_end;
+
+    log_test("AISCALE T%d cities:%d units:%d",
+             game.info.turn, scale_cities, scale_units);
+  }
+  TIMING_RESULTS();
+#endif /* FREECIV_AI_TIMING */
+
   log_debug("Season of native unrests");
   summon_barbarians(); /* Wild guess really, no idea where to put it, but
                         * I want to give them chance to move their units */
