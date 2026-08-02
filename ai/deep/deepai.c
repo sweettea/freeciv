@@ -41,6 +41,8 @@
 
 /* ai/default */
 #include "daicity.h"
+#include "notify.h"
+
 #include "daidata.h"
 #include "daidiplomacy.h"
 #include "daidomestic.h"
@@ -734,8 +736,47 @@ static void dpai_restart_phase(struct player *pplayer)
 static void dpai_diplomacy_actions(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  struct deep_plr *dp = deep_plr_data(pplayer);
 
   dai_diplomacy_actions(deftype, pplayer);
+
+  /* Retract a war countdown that quietly lapsed.
+   *
+   * war_countdown() (daidiplomacy.c) broadcasts "we will declare war on
+   * X in N turns" to every ally, and NOTHING ever takes it back. The
+   * countdown can run out, or the reason can evaporate, and the last
+   * thing the alliance was told remains a war that never came. Deep
+   * watches the same counter stock is decrementing and says so when it
+   * stops -- without a declaration having happened.
+   *
+   * Purely social, like deep_brief_allies(): no want reads this and no
+   * state changes. It closes a loop stock opens and abandons. */
+  players_iterate_alive(aplayer) {
+    struct ai_dip_intel *adip;
+    int slot = player_index(aplayer);
+    int was, now;
+
+    if (aplayer == pplayer || slot < 0 || slot >= MAX_NUM_PLAYER_SLOTS) {
+      continue;
+    }
+    adip = dai_diplomacy_get(deftype, pplayer, aplayer);
+    now = (adip != NULL) ? adip->countdown : -1;
+    was = dp->war_countdown_seen[slot];
+    dp->war_countdown_seen[slot] = now;
+
+    if (was > 0 && now <= 0 && !pplayers_at_war(pplayer, aplayer)) {
+      /* The countdown ended and no war followed. */
+      players_iterate_alive(ally) {
+        if (ally == pplayer || !pplayers_allied(pplayer, ally)) {
+          continue;
+        }
+        notify_player(ally, NULL, E_DIPLOMACY, ftc_chat_private,
+                      _("*%s (AI)* We are no longer preparing war against"
+                        " %s. Disregard our earlier call to arms."),
+                      player_name(pplayer), player_name(aplayer));
+      } players_iterate_alive_end;
+    }
+  } players_iterate_alive_end;
 }
 
 /**********************************************************************//**

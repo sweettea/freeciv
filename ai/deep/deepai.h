@@ -50,6 +50,12 @@ struct deep_plr {
    * the reserve answers whichever strike was most recent. */
   int last_strike_city;
   int last_strike_turn;
+  /* Last turn's war countdown toward each player, so a countdown that
+   * LAPSES can be retracted out loud (deeptrade.c has the trade
+   * equivalent; this is the diplomacy one). Not saved: after a reload
+   * the worst case is one missed retraction, which is strictly better
+   * than the current behaviour of never retracting at all. */
+  int war_countdown_seen[MAX_NUM_PLAYER_SLOTS];
   /* Colony lift demand (task #20): the best overseas site score a
    * lift-limited settler evaluation recorded, and when. Recomputable
    * -- refreshed every turn the settler pipeline runs. */

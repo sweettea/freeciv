@@ -47,6 +47,9 @@
 #include "deepcombat.h"
 #include "deeptuning.h"
 
+/* server */
+#include "notify.h"
+
 #include "deeptrade.h"
 
 #include "deepops.h"
@@ -296,6 +299,50 @@ static int deep_op_collect_pool(struct ai_type *ait,
   Release every member back to ordinary management (survivors are
   banked, never wasted -- the deliberate-abort rule).
 **************************************************************************/
+/**********************************************************************//**
+  Tell our allies what we are about to do, and what we have called off.
+
+  PURELY SOCIAL. No want reads this, no decision branches on it, and
+  nothing here changes a single game state -- it is one chat packet to
+  players who are already our allies. It exists because fighting
+  alongside an ally who tells you where they are going is a different
+  experience from fighting near one who does not.
+
+  Deep is the first version of this AI that CAN say it. Stock's
+  war_countdown() (daidiplomacy.c) broadcasts a WAR -- a diplomatic
+  state change -- because a war is the only "plan" it has to announce.
+  An operation is an actual intention with a target and an ETA, and it
+  exists as an announceable object only because W33 made the plan one.
+
+  Deliberately sparse: launches and genuine cancellations only. A
+  successful capture is not announced (the ally can see the city change
+  hands), and neither is a raid, which has no fixed target to name.
+**************************************************************************/
+static void deep_brief_allies(const struct player *pplayer,
+                              const struct city *target,
+                              bool launching, int eta)
+{
+  if (target == NULL) {
+    return;
+  }
+  players_iterate_alive(ally) {
+    if (ally == pplayer || !pplayers_allied(pplayer, ally)) {
+      continue;
+    }
+    if (launching) {
+      notify_player(ally, city_tile(target), E_DIPLOMACY, ftc_chat_private,
+                    _("*%s (AI)* We are moving against %s. Our forces should"
+                      " be in position in about %d turn(s)."),
+                    player_name(pplayer), city_name_get(target),
+                    MAX(eta, 1));
+    } else {
+      notify_player(ally, city_tile(target), E_DIPLOMACY, ftc_chat_private,
+                    _("*%s (AI)* We have called off our advance on %s."),
+                    player_name(pplayer), city_name_get(target));
+    }
+  } players_iterate_alive_end;
+}
+
 static void deep_op_dissolve(struct deep_operation *op, int oi,
                              const char *why, struct player *pplayer)
 {
@@ -303,6 +350,13 @@ static void deep_op_dissolve(struct deep_operation *op, int oi,
            "deep-op turn=%d player=\"%s\" op=%d %s target=%d members=%d",
            game.info.turn, player_name(pplayer), oi, why, op->target_city,
            op->n_members);
+  /* Cancellations only: "held" is a capture and "raid-done" has no
+   * named target, so neither is news an ally needs. */
+  if (op->kind != DEEP_OPK_RAID
+      && (0 == strncmp(why, "abort", 5) || 0 == strcmp(why, "target-gone"))) {
+    deep_brief_allies(pplayer, game_city_by_number(op->target_city),
+                      FALSE, 0);
+  }
   op->state = DEEP_OP_NONE;
   op->n_members = 0;
 }
@@ -1415,6 +1469,7 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
       op->state = DEEP_OP_MARCH;
       op->march_turn = game.info.turn;
       op->march_eta = MAX(deep_op_eta(pplayer, op, target), 1);
+      deep_brief_allies(pplayer, target, TRUE, op->march_eta);
       log_base(deep_metric_log_level(),
                "deep-op turn=%d player=\"%s\" op=%d march target=%d"
                " present=%d required=%d waited=%d eta=%d",
