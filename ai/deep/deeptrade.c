@@ -229,7 +229,13 @@ void deep_choose_trade_targets(struct ai_type *ait, struct player *pplayer)
                         result.help_wonder ? AIUNIT_WONDER : AIUNIT_TRADE,
                         result.dest->tile);
       chosen++;
-      if (!result.help_wonder) {
+      /* Only routes that LEAVE our own territory are anybody else's
+       * business. A caravan walking from one of our cities to another
+       * of our cities is domestic housekeeping; announcing it to an
+       * ally is noise, and it was: Europe T122 briefed a human ally
+       * about a Carthaginian caravan going from Carthaginian city 528
+       * to Carthaginian city 1088. */
+      if (!result.help_wonder && city_owner(result.dest) != pplayer) {
         ntrade++;
         maxeta = MAX(maxeta, result.arrival_time);
         if (ndest < DEEP_TRADE_BRIEF_MAX) {

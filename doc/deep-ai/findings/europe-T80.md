@@ -21,33 +21,61 @@ contests, and has built zero settlers for eight consecutive turns.**
 Settlers pinned at zero throughout. Five Musketeers built. The one city
 gained was captured, not founded.
 
-## 2. The land is there
+## 2. The land is there -- but far less of it than first reported
 
-Measured as a BFS from every tile Carthage owns, expanding ONLY through
-unowned land -- i.e. land it can walk a settler into without crossing
-anybody's border:
+**CORRECTED.** Every earlier figure in this section was wrong. The
+Europe map sets `topology=""` and `wrap=""` -- it does NOT wrap in x --
+and the analysis scripts computed neighbours as `(x + dx) % xsize`,
+gluing the west edge to the east edge and merging Africa into Eurasia.
 
-    within  5 tiles     70 tiles   (~7 cities)
-    within 10 tiles    131         (~13 cities)
-    within 15 tiles    182         (~18 cities)
-    within 50 tiles    468         (~46 cities)
-    total reachable   6709
+The real island, flood-filled without wrapping:
 
-**Four wrong measurements preceded that one, and the pattern is worth
-more than the number.** Each was internally correct and answered a
-question nobody asked:
+    Carthage's landmass          624 land tiles
+      other players on it          0        <- Carthage is ALONE
+      owned by Carthage          204  (33%)
+      unowned                    420  (67%)
+        workable (plains, hills) 180
+        desert / mountain        240
 
-1. bounding box of its cities +/- 6 tiles -> **45 tiles**. Window too
-   tight; the free land begins at distance 5-14.
-2. continent flood fill -> **7844 tiles**. Counted land across other
-   players' territory that Carthage cannot reach.
-3. rendered map crop at `x40` on a **177**-wide map -> **~60 tiles**.
-   Cut off the entire western region.
-4. BFS from its own borders through no-man's-land -> **6709**. The
-   question actually being asked.
+So the expansion room is roughly **9 cities' worth of workable land on
+a mostly-desert island**, not the "~18 cities within 15 tiles, 6709
+tiles reachable" this file previously claimed.
 
-**Lesson: when measuring "can it expand", the unit is land reachable
-without crossing a border, not area, not continent, not neighbourhood.**
+**FIVE wrong measurements preceded the right one**, and the pattern is
+worth more than the number:
+
+1. bounding box of its cities +/- 6 tiles -> 45 tiles. Window too tight.
+2. continent flood fill (wrapped) -> 7844. Counted land across other
+   players' territory, and merged two continents.
+3. rendered map crop at `x40` on a 177-wide map -> ~60. Cut off the west.
+4. BFS through no-man's-land (wrapped) -> 6709. Right question, wrong
+   topology.
+5. Flood fill WITHOUT wrapping -> 624-tile island, Carthage alone on it.
+
+**Lessons, in order of how much they cost:**
+
+- **Read the map's topology before computing on it.** Four of the five
+  errors survived because `%xsize` looks like defensive coding. It is
+  an assumption, and this map does not hold it.
+- The unit for "can it expand" is land reachable without crossing a
+  border -- but only after the adjacency model is right.
+- `ai/deep` itself was AUDITED for this and is clean: no hand-rolled
+  coordinate arithmetic, every distance through `real_map_distance` /
+  `sq_map_distance` / `map_distance`, continent membership from
+  freeciv's own `assign_continent_numbers()`. **The defect was in the
+  analysis, never in the AI.**
+
+### 2a. What this does NOT explain
+
+`site_rival_pressure` (added 2026-08-01) filters on
+`tile_continent(acity) == here`. Carthage's continent holds no
+non-allied city at all, so that term contributes exactly **0** and is
+NOT the cause of anything observed here. An earlier draft blamed it on
+the strength of the wrapped flood fill; that is retracted.
+
+**`founder_want = 0` in all 18 Carthaginian cities at T122 remains
+unexplained.** Not rival pressure, not a full island: 180 workable
+unowned tiles, no competitor for them. That is the open question.
 
 ## 3. Aggregate: both AIs under-expand, but deep is worse
 

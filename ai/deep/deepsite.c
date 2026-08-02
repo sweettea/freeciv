@@ -437,10 +437,25 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
           continue;
         }
         city_list_iterate(aplayer->cities, acity) {
-          if (tile_continent(city_tile(acity)) == here) {
-            contest += 1.0 / (1.0 + real_map_distance(city_tile(acity),
-                                                      result->tile));
+          if (tile_continent(city_tile(acity)) != here) {
+            continue;
           }
+          /* Bounded to the SAME neighbourhood the `pressured` test
+           * above already treats as contested. Without a bound this
+           * sums every non-allied city on the landmass, which on a map
+           * like Europe -- one continent from Morocco to Siberia,
+           * ~200 cities -- is a large and nearly IDENTICAL offset for
+           * every candidate site. That does not rank sites, it just
+           * pushes them all below zero, and a site scoring <= 0 is
+           * discarded outright: Europe T122 showed Deep_Carthago with
+           * founder_want = 0 in all 18 cities, i.e. expansion switched
+           * off entirely rather than merely discouraged. */
+          if (sq_map_distance(city_tile(acity), result->tile)
+              > 4 * result->city_radius_sq) {
+            continue;
+          }
+          contest += 1.0 / (1.0 + real_map_distance(city_tile(acity),
+                                                    result->tile));
         } city_list_iterate_end;
       } players_iterate_alive_end;
 
