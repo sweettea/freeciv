@@ -114,9 +114,19 @@ sequentially, two independent pairs:
 Same-binary repeat spread was 0.3% and 1.0%, so the effect is about ten times
 the noise. Wall clock moved with it, 6:03 → 5:24.
 
-**State was bit-identical**: city and unit counts matched on all 60 turns of both
-pairs. That is the acceptance criterion for a `common/` change — it has to be
-provably behaviour-neutral, and here it is checkable rather than argued.
+**State is identical, checked against the complete savegame.** City and unit
+counts matched on all 60 turns of both pairs, and the final savegames agree on
+all **53,033 lines** of game state. The only differences are `phase_seconds`,
+`last_turn_change_time`, and the `E_AI_DEBUG` event rows carrying the measured
+timings themselves — i.e. exactly the wall-clock quantities the change is
+supposed to alter, and nothing else. That is the acceptance criterion for a
+`common/` change: provably behaviour-neutral, checkable rather than argued.
+
+One consequence of the instrumentation worth knowing: `notify_conn()` puts the
+per-turn timing report into the server's event log, which is **saved into the
+savegame**. Profiling-build saves therefore carry ~30 extra event rows per turn
+and are not byte-comparable with ordinary saves. Filter `E_AI_DEBUG` before
+diffing them.
 
 The per-bucket breakdown is the part worth keeping, because it is an independent
 check on the attribution rather than a restatement of the headline:

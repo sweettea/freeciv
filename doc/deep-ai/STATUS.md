@@ -2095,3 +2095,97 @@ Start files: `econ-priors-a5.ini` (a4 harvest + 9 new),
   `FREECIV_DATA_PATH`, and `set timeout -1` or the server idles forever.
 - `Monitor` runs sandboxed with no network; ssh watchers must be
   background Bash with the sandbox disabled.
+
+## The AI profile at scale — assess_danger is 80% of it (2026-08-02, night 3)
+
+**The assigned epic was W20 threading. It is not threading, and this
+says why.** `findings/scaling-profile.md` is the deliverable.
+
+W20 was checked before anything else and is blocked. `00-context.md` §7
+requires W26 first, and W26 is genuinely unstarted — no STATUS mention,
+no workstream file, and all four blockers Part 22 names present verbatim
+(`cm.c:915` comparator statics, `citymap.c:53` shared array,
+`rand.c:85` global RNG, the requirements mutex). It is not procedural:
+`ai/deep` delegates its building-want and danger paths to `ai/default`
+(`deepai.c:330`, `deepdefence.c:1789`), so the impure functions are
+exactly the ones threading would need to run concurrently. W20 has no
+surface to attack. `workstreams/W20-threading.md` (`915d32ec87`) now
+records this so it does not get re-derived.
+
+`scaling.md` §1 also forbids threading before the algorithmic collapse.
+So the epic became `threading-obstacles.md` §7 steps 1 and 2 — delete
+the dead mutex, then profile — which is what those documents ask for
+and what everything downstream is chosen by.
+
+### −9.5% of all AI CPU for deleting dead code (`d678b53718`)
+
+`is_req_active()` took a global mutex and a linear list scan on every
+requirement evaluation to build a `trdata` it never reads. Part 22 §1
+hedged that its cost was a hypothesis. Measured, `scale-20p-s6` seed 1,
+one binary apart, each game run ALONE and sequentially:
+
+    pair 1   mutex 280.5s   no mutex 254.8s   -9.2%
+    pair 2   mutex 279.6s   no mutex 252.2s   -9.8%
+    same-binary repeat spread 0.3% and 1.0%
+
+Behaviour-neutral and checked, not argued: the final savegames agree on
+all **53,033 lines** of state; only `phase_seconds`, the turn-change
+time, and the timing rows themselves differ. Per bucket the saving lands
+exactly where requirement evaluation lives — Tech −55%, Citizen arrange
+−51%, Government −50%, Buildings −33% — while `AIT_DANGER`, which
+dominates runtime but is geometry, moves −1.2%.
+
+### The profile, and what it reverses
+
+`scale-20p`, 20 players, 140x90, T120. AI CPU is ~88% of wall.
+
+    turn  cities units  AI s/turn  DANGER   share  BUILDINGS
+     20    226    367     5.50      3.05     55%     0.074
+     60    243    937    13.53     10.64     79%     0.049
+    120    256   1352    22.44     17.90     80%     0.057
+
+`assess_danger` (`daimilitary.c:709`, not `:827` — tree has moved) is
+**75–80% of all AI CPU, slope 2.49** against city count. Cities +13%
+across the run while units 3.7x and danger cost 5.9x: `O(own_cities ×
+all_units)` with the city term pinned.
+
+`base_want` is **not a measurable cost at any cell tried** — 0.5% at
+20 players, 2.0% at 4 players (~19 cities/player), every slope ≈1 not
+≈2. `AIT_BUILDINGS` does cover it (`building_advisor()` runs inside it).
+**Caveat stated plainly: no cell reached the 100 cities/player Part 17
+argues from; the most any player owned was 19.** So this does not
+disprove the analysis — but a quadratic does not hide by being small.
+
+**Next epic is the spatial threat index, NOT the base_want collapse.**
+The collapse is a modelling improvement (separating "is this wonder
+worth building" from "where") and belongs to W01/W03 on merit; it is not
+a performance workstream. Note the threat index needs neither purity nor
+threading — it is a per-turn read-only structure.
+
+### Harness added
+
+- `-Daitiming=true` (`f7a967a98b`): AI timing buckets at full
+  optimisation, without FREECIV_DEBUG's `-O0`. **Both build dirs in this
+  tree were `optimization=0` — no performance number this project has
+  taken was measured on an optimised build.**
+- Per-turn bucket + empire-size dump (`ef150343ce`); `benchmark/profile.py`
+  reports per-bucket share and log-log slope vs city count.
+- `scale-20p`, `-s3`, `-s6` (`f1b4f0cd39`) and `scale-4p` (`668307296e`).
+  Not scoring cells — nothing paired.
+
+### Method lessons that cost real time
+
+- **Never run profiling games concurrently.** Four at once inflated each
+  other's CPU time +60% and inverted the mutex A/B. Everything here is
+  sequential and exclusive.
+- **`startunits` is capped at 21 chars.** Longer is rejected with one log
+  line and the setting stays at the ruleset default `cwsx` — ONE settler.
+  A 24-settler cell ran to completion looking healthy and gave 31 cities
+  across four players. Check city counts, not exit status.
+- **`LOG_TIMERS` is defined unconditionally in `utility/timing.h`.**
+  Gating on it gates on nothing; a per-turn dump there would have changed
+  the logs every existing benchmark reads.
+- One run per arm cannot resolve a 9% effect. The same-binary repeats are
+  what establish the noise floor and they are cheap.
+- CLAUDE.md's `./build/tests/unit_tests` does not exist; the suite is
+  `meson test -C build` (`deepodds`, `baseline-frozen`). Both pass.
