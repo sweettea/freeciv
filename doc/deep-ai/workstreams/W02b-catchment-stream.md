@@ -152,21 +152,33 @@ whose only free parameters are the ones already governing buildings.
 ## Commits
 
 ```
-ai/deep: count how many own cities share a catchment tile, not whether any do
-ai/deep: simulate city growth to a horizon instead of a target-size cutoff
-ai/deep: value a site as discounted citizen-turns, replacing the catchment average
-ai/deep: exclude tiles a neighbouring city will actually work
-ai/deep: scale improvement potential by available worker throughput
-ai/deep: credit settler production from growth-blocked cities
-ai/deep: join a city when no site beats the population it would return
-ai/deep: price the empire-size step as output lost, read from effects
-test: assert site value responds to catchment size at equal tile quality
-test: assert spacing differs between largepox-200 and lategame-80
+[x] ai/deep: simulate city growth to a horizon instead of a target-size cutoff
+[x] ai/deep: value a site as discounted citizen-turns, replacing the catchment average
+[x] ai/deep: exclude tiles a neighbouring city will actually work
+[ ] ai/deep: scale improvement potential by available worker throughput
+[ ] ai/deep: credit settler production from growth-blocked cities
+[ ] ai/deep: join a city when no site beats the population it would return
+[ ] ai/deep: price the empire-size step as output lost, read from effects
+[ ] test: assert site value responds to catchment size at equal tile quality
+[ ] test: assert spacing differs between largepox-200 and lategame-80
 ```
 
-First epic is the middle three: the stream, `ttg(k)`, and the counterfactual
-overlap. They are the pair that finally makes spacing expressible, and they are
-testable in one session with the sweep harness already built.
+The first epic was the first three, landed 2026-08-02 (`ee03cc4840`,
+`2a5f8bc438`, `e9de4f704f`); see STATUS for the measurement.
+
+"count how many own cities share a catchment tile, not whether any do" is
+**dropped, not deferred**. It was a step toward a better overlap WEIGHT, and
+the counterfactual exclusion removes the weight entirely: a tile a neighbour
+reaches first leaves the stream, so how many neighbours could reach it stops
+being a quantity anything needs.
+
+Two notes for whoever takes the rest:
+
+- `deep_growth_arrivals()` is not L0-testable as written (it reads
+  `get_city_bonus`, `city_granary_size` and `game.info`). Splitting its
+  arithmetic from those lookups is what makes the two test commits cheap.
+- The settler-cost and Join City commits are the two halves of the same term
+  and should land together, as the workstream says above.
 
 ## Dependencies
 
