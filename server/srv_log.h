@@ -118,12 +118,12 @@ void timing_log_free(void);
 void timing_log_real(enum ai_timer timer, enum ai_timer_activity activity);
 void timing_results_real(void);
 
-#ifdef FREECIV_DEBUG
+#if defined(FREECIV_DEBUG) || defined(FREECIV_AI_TIMING)
 #define TIMING_LOG(timer, activity) timing_log_real(timer, activity)
 #define TIMING_RESULTS() timing_results_real()
-#else  /* FREECIV_DEBUG */
+#else  /* FREECIV_DEBUG || FREECIV_AI_TIMING */
 #define TIMING_LOG(timer, activity)
 #define TIMING_RESULTS()
-#endif /* FREECIV_DEBUG */
+#endif /* FREECIV_DEBUG || FREECIV_AI_TIMING */
 
 #endif  /* FC__SRV_LOG_H */

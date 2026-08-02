@@ -84,6 +84,11 @@ option('dynaimod',
        value: false,
        description: 'Support dynamically loadable AI modules')
 
+option('aitiming',
+       type: 'boolean',
+       value: false,
+       description: 'Compile in the AI timing buckets (TIMING_LOG) and log their totals, independently of a full debug build')
+
 option('appimage',
        type: 'boolean',
        value: false,

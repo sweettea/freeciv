@@ -190,6 +190,17 @@ if get_option('buildtype') == 'release'
   pub_conf_data.set('FREECIV_NDEBUG', 1)
 endif
 
+# The AI timing buckets (TIMING_LOG / AIT_*) are instrumented throughout
+# ai/ but compiled out unless FREECIV_DEBUG is set, which also turns on
+# -O0 assertions and shadow warnings. Profiling wants the buckets at full
+# optimisation instead, so allow them to be requested on their own.
+# The reporting path needs nothing extra: LOG_TIMERS is unconditionally
+# defined in utility/timing.h, so timing_results_real() already writes
+# through log_test() and its totals reach the server log.
+if get_option('aitiming')
+  priv_conf_data.set('FREECIV_AI_TIMING', 1)
+endif
+
 if host_system == 'windows'
   def_storage_dir = '~\\\\.freeciv'
 else

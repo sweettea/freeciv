@@ -73,6 +73,9 @@
 /* Produce debug version */
 #mesondefine FREECIV_DEBUG
 
+/* Compile in the AI timing buckets without a full debug build */
+#mesondefine FREECIV_AI_TIMING
+
 /* Enable audio */
 #mesondefine AUDIO_SDL
 
