@@ -78,17 +78,18 @@ static void deep_tile_data_cache_destroy(struct tile_data_cache *ptdc)
 #define SPECHASH_IDATA_FREE deep_tile_data_cache_destroy
 #include "spechash.h"
 
-/* Site evaluation (W02). Stock cityresult_fill() values a site as two
- * tiles (city centre + single best other) plus everything else divided
- * by GROWTH_POTENTIAL_DEEMPHASIS, and doubles any tile with food >= 2
- * -- a grassland-seeking missile that builds out instead of up. Deep
- * scores the whole catchment, weighted by the probability the city
- * ever works each tile (1.0 inside the food-supportable target size,
- * a tuned tail weight beyond it), and expresses the total on the same
- * two-tile scale as stock (centre + probability-weighted average
- * tile), so RESULT_IS_ENOUGH, the amortize discount and the founder
- * want scale stay calibrated -- the founder-scale conversion itself
- * stays gated on W03 per the W01 conversion-gating map. */
+/* Site evaluation (W02, W02b). Stock cityresult_fill() values a site as
+ * two tiles (city centre + single best other) plus everything else
+ * divided by GROWTH_POTENTIAL_DEEMPHASIS, and doubles any tile with
+ * food >= 2 -- a grassland-seeking missile that builds out instead of
+ * up. Deep values the whole catchment as a stream: it simulates the
+ * city's growth, so each tile enters on the turn a citizen arrives to
+ * work it, and sums the tiles discounted by amortize() for that wait.
+ * Centre + stream, in the currency W03 already uses for buildings.
+ *
+ * The predecessor of the stream was a probability-weighted AVERAGE of
+ * the catchment, which could express tile quality but structurally
+ * could not express tile quantity -- see deep_catchment_stream(). */
 
 /**********************************************************************//**
   Local isthmus test: among the candidate's eight neighbours, land
@@ -219,20 +220,49 @@ static void deep_growth_arrivals(struct city *pcity, const int *foods,
 }
 
 /**********************************************************************//**
-  Probability-weighted average of the workable catchment (excluding
-  the city centre), where a tile weighs 1.0 if the simulated growth
-  above ever puts a citizen on it and the tail weight if it does not.
-  Arrays are gathered by the fill loop; sorts in place. Returns 0 when
-  nothing is workable.
+  Value of the workable catchment (excluding the city centre) as a
+  stream of discounted citizen-turns: every tile earns its yield from
+  the turn the citizen who works it arrives, and is discounted by
+  amortize() for the wait. Arrays are gathered by the fill loop; sorts
+  in place. Returns 0 when nothing is workable.
+
+  This REPLACES a weighted average, and the difference is the whole
+  point of W02b. `vsum / wsum` down-weighted an overlapped or
+  out-of-reach tile in the numerator AND the denominator, so as its
+  weight fell it did not count against the site, it DROPPED OUT of the
+  calculation: a site with 20 free tiles and one with 2 free tiles of
+  equal quality scored identically. Measured on largepox-200, a 25-fold
+  sweep of site_overlap_weight moved tiles per city by 0.2 -- spacing
+  was not tunable, and no weight added to an average could make it so,
+  because an average is a statement about tile QUALITY and carries no
+  information about tile QUANTITY at all.
+
+  A sum does. Twenty reachable tiles are worth more than two, by
+  exactly the discounted yield of the eighteen, and a tile a
+  neighbouring city takes is worth zero rather than invisible.
+
+  The currency is the one W03 already uses for buildings:
+  deep_capacity_credit() is amortize(per_citizen * steps * weight, ttg),
+  and a city is the same object -- a stream of citizens arriving over
+  time, each earning tile output. That puts founder_want and building
+  want in one currency for the first time.
+
+  Scale note: for the founding citizens arrive[] is 0, so their tiles
+  enter undiscounted and the stream is >= stock's centre + best-other
+  anchor by construction, plus the discounted tail. The first W02
+  landing REPLACED that anchor with an average, deflated every founder
+  want and cost 12% of score; a sum cannot repeat that mistake in that
+  direction, but it does move the founder_want scale upward, which the
+  known-open build-arbitration question (europe-T80) is sensitive to.
 **************************************************************************/
-static adv_want deep_catchment_average(struct city *pcity, int *sums,
-                                       int *foods, int *potentials,
-                                       bool *overlapped, int n,
-                                       int center_food, int size0)
+static adv_want deep_catchment_stream(struct city *pcity, int *sums,
+                                      int *foods, int *potentials,
+                                      bool *overlapped, int n,
+                                      int center_food, int size0)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   int i, j;
-  double wsum = 0, vsum = 0, overlap_w;
+  double total = 0, overlap_w;
   /* When -- and whether -- a citizen ever reaches each ranked tile. */
   int arrive[MAX(n, 1)];
 
@@ -270,36 +300,23 @@ static adv_want deep_catchment_average(struct city *pcity, int *sums,
               * (1.0 + tune->site_overlap_crowding * deep_land_pressure());
 
   for (i = 0; i < n; i++) {
-    double w = overlapped[i] ? overlap_w
-               : (arrive[i] >= 0) ? 1.0 : tune->site_tail_weight;
+    double w = overlapped[i] ? overlap_w : 1.0;
 
-    wsum += w;
+    if (arrive[i] < 0) {
+      /* No citizen ever works this tile, so it earns nothing. K -- how
+       * many tiles a site is worth -- is not a parameter here; it is
+       * where the simulation stops. */
+      continue;
+    }
     /* A tile is worth what it yields now plus a discounted share of
-     * what one standard improvement would add (W02 potential term). */
-    vsum += w * (sums[i]
-                 + tune->site_potential_discount * potentials[i]);
+     * what one standard improvement would add (W02 potential term),
+     * from the turn its citizen arrives. */
+    total += amortize(w * (sums[i]
+                           + tune->site_potential_discount * potentials[i]),
+                      arrive[i]);
   }
 
-  if (wsum <= 0.0) {
-    /* Every catchment tile drew a zero weight, so there is no weighted
-     * average to take. This is reachable from legal tuning: a site whose
-     * tiles are all overlapped or all in the tail, with
-     * site_overlap_weight and site_tail_weight both at 0 -- values the
-     * tuner explores, since both ranges start at 0.
-     *
-     * 0.0/0.0 is NaN, and NaN is not merely wrong here, it is invisible:
-     * MAX(0, NaN) returns NaN rather than clamping it, so the NaN
-     * reached deep_city_desirability()'s `cr->total >= 0` assertion,
-     * which failed, returned NULL and leaked the cityresult. The site
-     * was then silently dropped -- 148 times in one campaign-a
-     * generation. Candidates with small tail/overlap weights were
-     * therefore scored on FEWER surviving sites than candidates with
-     * large ones, which biases the tuning run rather than just adding
-     * noise to it. */
-    return 0;
-  }
-
-  return vsum / wsum;
+  return total;
 }
 
 /**********************************************************************//**
@@ -496,16 +513,15 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
     return NULL;
   }
 
-  /* The whole catchment speaks, weighted by the chance it is ever
-   * worked; expressed on stock's two-tile scale. remaining stays 0 --
-   * GROWTH_POTENTIAL_DEEMPHASIS is retired. */
+  /* The whole catchment speaks, as the discounted citizen-turns it
+   * will earn. remaining stays 0 -- GROWTH_POTENTIAL_DEEMPHASIS is
+   * retired. */
   {
-    adv_want avg
-      = deep_catchment_average(pcity, sums, foods, potentials, overlapped,
-                               ncatch, result->city_center.tdc->food,
-                               virtual_city ? found_size
-                                            : MAX(1, city_size_get(pcity)));
-    adv_want depth;
+    adv_want stream
+      = deep_catchment_stream(pcity, sums, foods, potentials, overlapped,
+                              ncatch, result->city_center.tdc->food,
+                              virtual_city ? found_size
+                                           : MAX(1, city_size_get(pcity)));
 
     /* Explicit specials term: resources already speak through their
      * yields, but a catchment holding several is worth more than the
@@ -580,21 +596,19 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
                    * deep_map_crowding();
     }
 
-    /* Catchment depth: the probability-weighted average tile value,
-     * as an ADDITIVE term replacing stock's remaining/8 -- the first
-     * W02 landing replaced the best-other anchor with this average
-     * and deflated every founder want (score 0.879, t=-4.75); the
-     * stock two-tile anchor stays untouched and the depth term adds
-     * catchment discrimination on top. */
-    depth = avg * deep_tuning_get()->site_depth_weight;
+    /* The stream SUBSUMES stock's best-other anchor rather than
+     * sitting beside it: the best catchment tile is the stream's first
+     * term, worked from turn zero by a founding citizen, so adding
+     * best_other.tdc->sum here as well would pay for that tile twice.
+     * The city centre is not in the stream (no citizen works it) and
+     * is added as its own undiscounted term, which is what
+     * amortize(centre, 0) means. */
+    stream *= deep_tuning_get()->site_stream_weight;
 
     if (virtual_city) {
-      result->total = result->city_center.tdc->sum
-                      + (result->best_other.tdc != NULL
-                         ? result->best_other.tdc->sum : 0)
-                      + depth + wspecials;
+      result->total = result->city_center.tdc->sum + stream + wspecials;
     } else if (result->best_other.tdc != NULL) {
-      result->total = result->best_other.tdc->sum + depth + wspecials;
+      result->total = stream + wspecials;
     } else {
       result->total = 0;
       pplayer->government = curr_govt;

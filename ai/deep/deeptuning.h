@@ -56,14 +56,18 @@ struct deep_tuning {
   double incoming_defence_eta_weight;
   double incoming_defence_survival;
 
-  /* Weight of catchment tiles beyond the food-supportable target
-   * size in site evaluation (W02); tiles inside it weigh 1.0. */
-  double site_tail_weight;
-
-  /* Share of a tile's post-improvement yield increment counted at
-   * settle time, and the explicit resource-special bonuses, all in
-   * the tile-sum currency (W02). */
-  double site_depth_weight;
+  /* Scale of the catchment stream -- the discounted citizen-turns a
+   * site will earn (W02b) -- against the city-centre tile it is added
+   * to. 1.0 is the model as designed; the knob exists because the
+   * stream replaced a weighted average and moved the founder_want
+   * scale, and because founder want is arbitrated against building
+   * want, whose own scale is set elsewhere (W01).
+   *
+   * This is the ONE free parameter of the catchment valuation. It
+   * replaces site_tail_weight (the tail is now where the growth
+   * simulation stops) and site_depth_weight (there is no separate
+   * depth term to weigh: the stream IS the catchment's value). */
+  double site_stream_weight;
   /* Weight for catchment tiles a neighbouring own city can work --
    * deliberately far below the ordinary tail weight. */
   double site_overlap_weight;

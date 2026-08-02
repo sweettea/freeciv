@@ -34,8 +34,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .committed_fear_mult = 1.0,           /* PLACEHOLDER = no effect */
   .incoming_defence_eta_weight = 0.5,   /* PLACEHOLDER, untuned */
   .incoming_defence_survival = 0.9,     /* PLACEHOLDER, untuned */
-  .site_tail_weight = 0.15,             /* PLACEHOLDER, untuned */
-  .site_depth_weight = 0.5,             /* PLACEHOLDER, untuned */
+  .site_stream_weight = 1.0,            /* PLACEHOLDER, untuned */
   .site_overlap_weight = 0.05,          /* PLACEHOLDER, untuned */
   .site_overlap_crowding = 16.0,        /* human-set 2026-08-02, untuned */
   .land_pressure_tiles = 200,           /* PLACEHOLDER, untuned */
@@ -188,8 +187,7 @@ void deep_tuning_init(void)
   TUNE_INT(cm_grow_trade);
   TUNE_DOUBLE(cm_trade_quality_slope);
   TUNE_DOUBLE(diplomat_defence_value);
-  TUNE_DOUBLE(site_tail_weight);
-  TUNE_DOUBLE(site_depth_weight);
+  TUNE_DOUBLE(site_stream_weight);
   TUNE_DOUBLE(site_overlap_weight);
   TUNE_DOUBLE(site_overlap_crowding);
   TUNE_INT(land_pressure_tiles);
@@ -264,7 +262,7 @@ void deep_tuning_init(void)
 
   log_normal("deep-tuning file=\"%s\" fear=%f srt=%f cfm=%f eta=%f surv=%f emb=%f hut=%f"
              " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
-             " wos=%d wot=%d gb=%d gsm=%f sdw=%f gf=%d gs=%d gt=%d tqs=%f dip=%f tail=%f depth=%f ovl=%f pot=%f"
+             " wos=%d wot=%d gb=%d gsm=%f sdw=%f gf=%d gs=%d gt=%d tqs=%f dip=%f stream=%f ovl=%f pot=%f"
              " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f hhealth=%f hcont=%f cmws=%f htech=%f"
              " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d dfv=%d dfr=%d dfrt=%d dpv=%d dpt=%d wfw=%f srw=%f chk=%f cml=%d cwr=%d wfr=%d wgr=%d wdd=%f ugw=%f uuw=%f rpr=%f rwant=%d rfin=%f svt=%f svf=%f svh=%d taf=%f avw=%f swf=%f ott=%f omw=%d sfd=%f clw=%f irr=%f oww=%d rrad=%d hrr=%d hrd=%f oaf=%f brr=%f",
              path,
@@ -293,8 +291,7 @@ void deep_tuning_init(void)
              deep_tuning_active.cm_grow_trade,
              deep_tuning_active.cm_trade_quality_slope,
              deep_tuning_active.diplomat_defence_value,
-             deep_tuning_active.site_tail_weight,
-             deep_tuning_active.site_depth_weight,
+             deep_tuning_active.site_stream_weight,
              deep_tuning_active.site_overlap_weight,
              deep_tuning_active.site_potential_discount,
              deep_tuning_active.site_special_bonus,
