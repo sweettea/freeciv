@@ -142,11 +142,47 @@ else; they share one scale.
 That is self-inflicted, and it implicates every credit in the family
 including `c6d39b6081`, committed the same night.
 
-**Ablation to confirm:** all seven `horizon_*` weights to 0.0 vs
-shipped placeholders, same cell, measuring Settlers share and final
-city count. If Settlers recover, the credits are the cause and the fix
-is arbitration -- an objective layer that prices a city site and a
-building on one scale -- not a sixth credit.
+### 5b. THE ABLATION RAN. Mechanism yes, SCORE NO.
+
+All seven `horizon_*` weights at 0.0 vs the shipped placeholders,
+primary-120, **10 paired seeds, both mirrored arms** (40 games),
+51,379 tripwire rows:
+
+    arm          %Settlers  %military  %other  cities/plr  score/plr
+    credits ON        29%       30%      40%      16.3        136
+    credits OFF       42%       33%      26%      18.8        135
+
+    Settlers by band  0-19  40-59  60-79  80-99  100-119
+    ON                 93%    60%    36%    19%     13%
+    OFF                93%    63%    50%    41%     26%
+
+    ON  pooled ratio 1.1383   deep 8141  base 7152  cities  979
+    OFF pooled ratio 1.1186   deep 8121  base 7260  cities 1128
+    mean delta -0.0252 (sd 0.1495, SE 0.0473)   4/10 seeds
+
+**The mechanism is confirmed and the score is not.** Turning the credits
+off moves the build queue hard -- Settlers 29% -> 42%, buildings 40% ->
+26%, city count +15% -- and moves the outcome by nothing: deep 8141 vs
+8121, t ~ -0.5.
+
+**A 4-seed version of this same ablation read +0.13 ratio and +9% deep
+absolute score, and it did not replicate.** That number was reported
+before the 10-seed run existed and is retracted here. The lesson is the
+one already in `multiplier-column.md` and the CM-war-gate note: on this
+project, four or five seeds can manufacture an effect of exactly the
+size we are hunting.
+
+**So the credits are not "misbalanced early game" either.** They are
+SCORE-INERT while visibly reshaping what gets built. Five commits'
+worth of credit machinery reliably moves the mechanism and never moves
+the outcome -- the same pattern as content, granary and multiplier
+individually, now shown for the family as a whole.
+
+That reframes the open question. It is not "what weight should these
+have"; it is **why a 15% swing in city count does not show up in
+score at 120 turns**, which is either a scoring-horizon artifact of the
+cell or evidence that city count is not what is limiting deep. Neither
+is answered here, and a sixth credit answers neither.
 
 ## 6. Two tripwire defects found while reading this game
 
