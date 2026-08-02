@@ -23,8 +23,10 @@
 
 /* common */
 #include "city.h"
+#include "effects.h"
 #include "game.h"
 #include "government.h"
+#include "improvement.h"
 #include "map.h"
 #include "movement.h"
 #include "player.h"
@@ -121,19 +123,118 @@ static bool deep_site_is_choke(const struct civ_map *nmap,
 }
 
 /**********************************************************************//**
-  Probability-weighted average of the workable catchment (excluding
-  the city centre), where the target size -- how many tiles the site
-  can ever man -- comes from cumulative food against the ruleset's
-  per-citizen food cost. Arrays are gathered by the fill loop; sorts
-  in place. Returns 0 when nothing is workable.
+  Can the ruleset's size gate be lifted at this site by a building the
+  city would be allowed to build later (the aqueduct family)? A gate
+  that CAN be lifted is not a property of the site -- W03's capacity
+  credit exists precisely to make sure it gets lifted, and every
+  ruleset we run puts a lifter one early tech away -- while a gate with
+  no lifter in the ruleset or the tech tree is final and really does
+  bound how many tiles the site will ever man.
+
+  Evaluated lazily, only if the simulation actually reaches the gate,
+  because scanning the improvement list is not cheap and sites stall on
+  food long before size 8 in both rulesets we measure.
 **************************************************************************/
-static adv_want deep_catchment_average(int *sums, int *foods,
-                                       int *potentials, bool *overlapped,
-                                       int n, int center_food)
+static bool deep_size_gate_is_liftable(struct city *pcity)
+{
+  improvement_iterate(pimprove) {
+    if ((building_has_effect(pimprove, EFT_SIZE_ADJ)
+         || building_has_effect(pimprove, EFT_SIZE_UNLIMIT))
+        && can_city_build_improvement_later(pcity, pimprove)) {
+      return TRUE;
+    }
+  } improvement_iterate_end;
+
+  return FALSE;
+}
+
+/**********************************************************************//**
+  Turn on which each ranked catchment tile starts being worked, filled
+  into arrive[]: 0 for the tiles the founding citizens take at once,
+  the simulated growth turn for the rest, and -1 for a tile this site
+  never mans.
+
+  The city works its `size` best tiles, eats game.info.food_cost per
+  citizen, banks the surplus and grows when the bank reaches
+  city_granary_size() -- the server's own foodbox, so a ruleset that
+  scales the box with size (both of ours do) is answered rather than
+  assumed. Growth stops for good when the marginal tile no longer feeds
+  the citizen working it, which is the site property that a cumulative
+  food total could not express: it depends on the ORDER of the tiles,
+  not their sum.
+
+  This replaces a target size computed as "the largest k whose first k
+  tiles cumulatively out-feed k citizens". That cutoff ignored the
+  foodbox entirely (so a site reached its target at the same k whether
+  growth took 20 turns or 200), ignored the ruleset size gate, and had
+  no notion of WHEN a tile starts earning -- which is the quantity the
+  stream that follows is built on.
+
+  Turns are not bounded by a horizon constant: amortize() is a discount
+  rate, so a tile arriving on turn 300 prices itself out (0.9583^300 is
+  3e-6) without anyone choosing a deadline. Deliberate -- our cells end
+  at 80/120/200 turns and the AI must not be told that.
+**************************************************************************/
+static void deep_growth_arrivals(struct city *pcity, const int *foods,
+                                 int n, int center_food, int size0,
+                                 int *arrive)
+{
+  int gate = (get_city_bonus(pcity, EFT_SIZE_UNLIMIT) > 0
+              ? FC_INFINITY : get_city_bonus(pcity, EFT_SIZE_ADJ));
+  bool gate_final = FALSE, gate_checked = FALSE;
+  int size, turn = 0, stock = 0, i;
+
+  for (i = 0; i < n; i++) {
+    arrive[i] = -1;
+  }
+  /* Citizens the city is founded with work its best tiles from turn 0. */
+  for (i = 0; i < size0 && i < n; i++) {
+    arrive[i] = 0;
+  }
+
+  for (size = MAX(size0, 0); size < n; size++) {
+    int surplus = center_food, need;
+
+    for (i = 0; i < size; i++) {
+      surplus += foods[i];
+    }
+    surplus -= game.info.food_cost * size;
+    if (surplus <= 0) {
+      return;
+    }
+    if (size + 1 > gate) {
+      if (!gate_checked) {
+        gate_final = !deep_size_gate_is_liftable(pcity);
+        gate_checked = TRUE;
+      }
+      if (gate_final) {
+        return;
+      }
+    }
+    need = city_granary_size(size) - stock;
+    turn += (need + surplus - 1) / surplus;
+    stock = 0;
+    arrive[size] = turn;
+  }
+}
+
+/**********************************************************************//**
+  Probability-weighted average of the workable catchment (excluding
+  the city centre), where a tile weighs 1.0 if the simulated growth
+  above ever puts a citizen on it and the tail weight if it does not.
+  Arrays are gathered by the fill loop; sorts in place. Returns 0 when
+  nothing is workable.
+**************************************************************************/
+static adv_want deep_catchment_average(struct city *pcity, int *sums,
+                                       int *foods, int *potentials,
+                                       bool *overlapped, int n,
+                                       int center_food, int size0)
 {
   const struct deep_tuning *tune = deep_tuning_get();
-  int i, j, target, cumfood;
+  int i, j;
   double wsum = 0, vsum = 0, overlap_w;
+  /* When -- and whether -- a citizen ever reaches each ranked tile. */
+  int arrive[MAX(n, 1)];
 
   if (n == 0) {
     return 0;
@@ -156,16 +257,7 @@ static adv_want deep_catchment_average(int *sums, int *foods,
     overlapped[j] = ov;
   }
 
-  /* Largest size the site's own food can sustain: citizens eat
-   * game.info.food_cost each and work the best tiles first. */
-  cumfood = center_food;
-  target = 0;
-  for (i = 0; i < n; i++) {
-    cumfood += foods[i];
-    if (cumfood >= game.info.food_cost * (i + 1)) {
-      target = i + 1;
-    }
-  }
+  deep_growth_arrivals(pcity, foods, n, center_food, size0, arrive);
 
   /* Tiles a neighbouring own city can work are almost never ours to man
    * (proximity rule) -- but "almost never" is a statement about how much
@@ -179,7 +271,7 @@ static adv_want deep_catchment_average(int *sums, int *foods,
 
   for (i = 0; i < n; i++) {
     double w = overlapped[i] ? overlap_w
-               : (i < target) ? 1.0 : tune->site_tail_weight;
+               : (arrive[i] >= 0) ? 1.0 : tune->site_tail_weight;
 
     wsum += w;
     /* A tile is worth what it yields now plus a discounted share of
@@ -219,7 +311,8 @@ static adv_want deep_catchment_average(int *sums, int *foods,
 **************************************************************************/
 static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
                                                struct player *pplayer,
-                                               struct tile *center)
+                                               struct tile *center,
+                                               int found_size)
 {
   struct city *pcity = tile_city(center);
   struct government *curr_govt = government_of_player(pplayer);
@@ -408,8 +501,10 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
    * GROWTH_POTENTIAL_DEEMPHASIS is retired. */
   {
     adv_want avg
-      = deep_catchment_average(sums, foods, potentials, overlapped,
-                               ncatch, result->city_center.tdc->food);
+      = deep_catchment_average(pcity, sums, foods, potentials, overlapped,
+                               ncatch, result->city_center.tdc->food,
+                               virtual_city ? found_size
+                                            : MAX(1, city_size_get(pcity)));
     adv_want depth;
 
     /* Explicit specials term: resources already speak through their
@@ -612,7 +707,13 @@ static struct cityresult *deep_city_desirability(struct ai_type *ait,
     return NULL;
   }
 
-  cr = deep_cityresult_fill(ait, pplayer, ptile); /* Burn CPU, burn! */
+  /* The size the city is founded at is the settler's, not a constant:
+   * a ruleset can hand out founders that plant a size-2 or size-3 city
+   * (and civ2civ3 charges pop_cost 2 for exactly that reason), which
+   * changes how many tiles are worked from turn one. */
+  cr = deep_cityresult_fill(ait, pplayer, ptile,
+                            MAX(1, unit_type_get(punit)->city_size));
+  /* Burn CPU, burn! */
   if (!cr) {
     /* Failed to find a good spot */
     return NULL;
