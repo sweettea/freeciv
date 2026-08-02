@@ -21,6 +21,34 @@ overseas.** That is the whole reason caravans are interesting: they are
 one of the few investments whose payoff rises with the distance you are
 willing to walk.
 
+### 1a. The WINDFALL is the headline, not the per-turn route
+
+The one-shot bonus for establishing the route is the big play, and it
+is multiplicative in exactly the two things that make a route hard to
+reach (`common/traderoutes.c:478`, `CBS_CLASSIC`):
+
+    tb = weighted_distance + 10;
+    tb = (tb * (pc1->surplus[O_TRADE] + pc2->surplus[O_TRADE])) / 24;
+
+    /* caravan.c:275 */
+    if (TBONUS_BOTH == ...) { bonus *= 2; }   /* science AND gold */
+
+**distance x (combined trade surplus of BOTH endpoints)**, doubled when
+the bonus pays into science and gold together. Two large cities far
+apart is the highest-value one-shot action in the game -- a whole tech
+plus a treasury, immediately, from a unit that costs a fraction of a
+wonder.
+
+`caravan.c` models this correctly (`consider_windfall`, on by default).
+
+**Which makes the transit defect in §3 worse, not incidental.** The
+largest windfalls are by construction the most distant ones, so
+`0.95^turns` bites hardest exactly where the prize is biggest -- unless
+the route happens to cross a continent boundary, where transit is
+ignored outright and the discount disappears. The valuation is right
+and the patience policy is incoherent, and the incoherence is aimed
+straight at the best plays.
+
 ## 2. What stock already gets RIGHT
 
 `caravan_parameter_init_default()` (`caravan.c:35`):
