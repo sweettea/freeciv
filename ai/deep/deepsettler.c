@@ -594,6 +594,10 @@ void deep_auto_settler_run(struct ai_type *ait, const struct civ_map *nmap,
   bool land_only = FALSE; /* Set when a boat-dependent mission was just
                            * dropped: this turn's re-search must not
                            * pick another undeliverable overseas site. */
+  bool stuck_dropped = FALSE; /* Set when a mission the settler could not
+                               * advance was dropped: at most one
+                               * re-search per turn, so a target that is
+                               * also unreachable cannot loop. */
   enum unit_activity best_act;
   struct extra_type *best_target;
   struct tile *best_tile = NULL;
@@ -630,6 +634,8 @@ BUILD_CITY:
 
       return; /* Avoid recursion at all cost */
     } else {
+      const struct tile *before = unit_tile(punit);
+
       /* Go there */
       if ((!deep_settler_gothere(ait, pplayer, punit, ptile)
            && NULL == game_unit_by_number(sanity))
@@ -674,6 +680,38 @@ BUILD_CITY:
                    TILE_XY(ptile));
           dai_unit_new_task(ait, punit, AIUNIT_NONE, NULL);
           land_only = TRUE;
+          goto FIND_WORK;
+        }
+        if (!stuck_dropped
+            && unit_tile(punit) == before
+            && punit->moves_left > 0
+            && !unit_transported(punit)
+            && def_ai_unit_data(punit, ait)->ferryboat <= 0) {
+          /* The settler still has moves and did not spend one: the
+           * risk-aware pathfinder refused every step toward the target
+           * (deep sets is_pos_dangerous, which goto_is_sane() knows
+           * nothing about, so the mission still looks healthy). Nothing
+           * used to test for this, so a settler in a war zone held its
+           * mission indefinitely: measured over the pre-W02b reference
+           * runs, 52% of ALL mission-turns on lategame-80 and 21% on
+           * primary-120 were a unit standing on the tile it stood on
+           * last turn, and the player at war with three neighbours ran
+           * 73% against 3-6% for its peaceful neighbours
+           * (findings/settler-missions.md).
+           *
+           * Drop it and re-search this same turn, exactly as the
+           * boat-dependent case above does. The unit is excluded from
+           * the boat branch (transported, or holding a ferry) so a
+           * settler waiting on a lift is not mistaken for a blocked
+           * one, and stuck_dropped bounds this to one re-search per
+           * turn so a second unreachable pick cannot loop. */
+          log_base(deep_metric_log_level(),
+                   "deep-settler turn=%d player=\"%s\" unit=%d at=(%d,%d)"
+                   " drop-stuck target=(%d,%d)",
+                   game.info.turn, player_name(pplayer), punit->id,
+                   TILE_XY(unit_tile(punit)), TILE_XY(ptile));
+          dai_unit_new_task(ait, punit, AIUNIT_NONE, NULL);
+          stuck_dropped = TRUE;
           goto FIND_WORK;
         }
         return;
