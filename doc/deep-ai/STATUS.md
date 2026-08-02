@@ -1998,3 +1998,100 @@ as NULL (18:55). Same function, same block. Entry guard still needed.
 `campaign-a4` / `campaign-b4` bumped 22 → 30 jobs at a generation
 boundary; both resumed bit-exact (A replayed +21.6/+18.9, B replayed
 −2.8/+10.2 from cache). Training-seed objectives only — not results.
+
+## Expansion was switched off by a stale counter (2026-08-01, night 2)
+
+**The session's real result, and it was not the assigned epic.**
+
+`b2c8952693` — stock gates settler AND worker planning on
+`dai_on_war_footing()`, TRUE if ANY player carries a war countdown >= 0.
+That counter is set by `war_countdown()` and not reliably cleared. While
+it holds, every city with any military want has `founder_want` and
+`worker_want` forced to zero and SKIPS contemplation entirely.
+
+Measured live (Europe T125-126, instrumented build): **16 of
+Deep_Carthago's 18 cities never reached contemplation**, alone on a
+624-tile island with 180 workable unclaimed tiles. After the fix,
+`founder_want > 0` in **17 of 18** (411-733). The one still blocked is
+danger 1083 / survival 0.598 — correct.
+
+Two hypotheses were killed by experiment first, both the human's:
+- **production change penalty** — zeroing `shield_stock` in all 218
+  cities of the save and replaying the turn changed NOTHING.
+- **`site_rival_pressure`** — contributes exactly 0 there; Carthage's
+  continent has no non-allied city.
+
+FIFTH instance of *presence count where a probability exists*. The gate
+now asks whether THIS city is in danger. `expansion_war_survival`
+PLACEHOLDER 0.9; 0 restores stock.
+
+**The `dai_sanity_check` assertion recorded as harmless in
+`upstream-bugs.md` #30 is the visible symptom of this same state.** It
+was dismissed as unrelated earlier in the session; it was not.
+
+### The horizon credits are SCORE-INERT (10 paired seeds)
+
+All seven `horizon_*` weights at 0 vs shipped, primary-120, 20 games per
+arm, 51,379 tripwire rows:
+
+    arm          %Settlers  %other  cities/plr  pooled ratio  deep score
+    credits ON      29%       40%      16.3        1.1383        8141
+    credits OFF     42%       26%      18.8        1.1186        8121
+    mean delta -0.0252 (SE 0.0473), 4/10 seeds
+
+Build queue swings hard, score does not. **A 4-seed version read +0.13
+and +9% and did NOT replicate — retracted.** Five commits of credit
+machinery that reliably move mechanism and never move outcome.
+
+### Also landed
+
+- `c6d39b6081` multiplier credit (the assigned epic). Column closed
+  10.7 -> 23.3 per 100 cities, ALL of it Library/University; Marketplace
+  bit-identical. No score claim: 5/9 seeds, and literacy +235% with
+  techs +0.9% failed the pre-registered falsification test.
+- `d5ce7cecfb` + `8ccbc7ba34` third use-after-free, `deep_op_drive`'s
+  MARCH block. Verified: the game that segfaulted at T156 now completes.
+- `2674ac74b4` PERFECTION split into named tunables. It is documented as
+  a SEARCH-EFFORT bound and was also a x3 travel discount and (via
+  integer `PERFECTION/2`) a x1.5 yield multiplier. 3-seed sweep: d=1.0
+  gave cities/player 18.3 -> 27.9. NOT a result at 3 seeds.
+- `ecb5acc20a` trade-route destinations on merit — stock switched
+  transit-time policy on a continent test and re-rolled `fc_rand(2)` per
+  unit to decide whether foreign cities were candidates at all.
+- `c1ebc4607d` ally briefings: op launches/cancellations, caravan
+  departures (aggregated, one line per turn), war-countdown retraction.
+- `88dfa15597` explore want no longer pays to reveal a map deep already
+  plans through omnisciently (`huts_vis=0, unknown=6461` in the wild).
+
+### FIRST HELD-OUT NUMBER
+
+campaign-a4 best: **holdout mean paired diff +16.8 over 8 seeds**, three
+cells, seeds 101-108. Training objective was +39.4 — the winner's curse
+took ~57% and the sign survived. Quote +16.8, never +39.4.
+
+### Campaigns
+
+`campaign-a6` (ECON x3) and `campaign-b6` (ALL,ECON,MIL x2), both at
+`b2c8952693`, 93 params, 30 jobs, auto-shutdown armed: each waits for
+its tuner to exit, runs `--report-holdout` unattended, then stops the
+instance. Shutdown behaviour verified `stop`, so EBS survives —
+**never terminate these, DeleteOnTermination=True.**
+
+Start files: `econ-priors-a5.ini` (a4 harvest + 9 new),
+`europe-priors-b5.ini` (average of a4 and b4 harvests + 9 new).
+`deep-best.ini` refreshed to 93 params for playing.
+
+### Method lessons that cost real time
+
+- **Read the map topology before computing on it.** Europe sets
+  `wrap=""`. Five successive land measurements were wrong because the
+  analysis scripts used `(x+dx) % xsize`. `ai/deep` was audited and is
+  clean — no hand-rolled coordinates anywhere.
+- **4-5 seeds manufacture effects the size we hunt.** Two separate
+  4-seed results this session failed to replicate at 10.
+- **Every benchmark gets a pinned binary via `--server`.** Rebuilding
+  into a live run happened TWICE despite the rule being written down.
+- Debug worktrees need `-Daimodules=classic,tex,baseline,deep`,
+  `FREECIV_DATA_PATH`, and `set timeout -1` or the server idles forever.
+- `Monitor` runs sandboxed with no network; ssh watchers must be
+  background Bash with the sandbox disabled.
