@@ -83,14 +83,30 @@ OUT=$(readlink -f "$OUT")
   [ -n "$EXTRA_SERV" ] && printf '%s\n' "$EXTRA_SERV"
   echo "set aifill $PLAYERS"
   # Ordinary arms put every player on that AI module. The mixed arms
-  # seat both modules in the SAME game (head-to-head): mixed_db puts
-  # deep on odd seats, mixed_bd is the mirror image -- run both per
-  # seed and every seat sees each module once, cancelling seat bias.
+  # seat two modules in the SAME game (head-to-head): mixed_XY puts
+  # module X on odd seats and Y on even, where each letter is the first
+  # letter of an aitype -- d=deep, b=baseline, c=classic (ai/default).
+  # mixed_db and its mirror mixed_bd are the long-standing pair; the
+  # form generalises so deep can also be seated against ai/default
+  # directly. ALWAYS run a mirrored pair (mixed_XY and mixed_YX) per
+  # seed, so every seat sees each module once and seat bias cancels --
+  # which matters most at PLAYERS=2, where one seat is one island.
+  mixed_mod() { # letter -> aitype
+    case "$1" in
+      d) echo deep;; b) echo baseline;; c) echo classic;;
+      *) echo "unknown mixed arm letter: $1" >&2; exit 1;;
+    esac
+  }
   for i in $(seq 1 "$PLAYERS"); do
     case "$ARM" in
-      mixed_db) [ $((i % 2)) -eq 1 ] && mod=deep || mod=baseline;;
-      mixed_bd) [ $((i % 2)) -eq 1 ] && mod=baseline || mod=deep;;
-      *)        mod=$ARM;;
+      mixed_??)
+        letters=${ARM#mixed_}
+        if [ $((i % 2)) -eq 1 ]; then
+          mod=$(mixed_mod "${letters%?}")
+        else
+          mod=$(mixed_mod "${letters#?}")
+        fi;;
+      *) mod=$ARM;;
     esac
     echo "create P$i $mod"
   done
