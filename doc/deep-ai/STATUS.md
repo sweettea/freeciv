@@ -2280,3 +2280,136 @@ largepox-200, mfg -45% on garden2b). Culture is 11% of score; citizens
 3. `site_overlap_crowding`/`site_rival_crowding` default 16.0/0.9 in
    code and measured flat. `deep-best.ini` zeroes them; the code
    defaults still need a decision.
+
+## W02b landed and was falsified; spacing is citymindist (2026-08-02, evening)
+
+**The epic's central claim is wrong, the falsification was
+pre-registered, and the head-to-head found something bigger.**
+
+### The stream landed and moved nothing
+
+`deep_catchment_average()` (a weighted average) is replaced by
+`deep_catchment_stream()`: each catchment tile enters at
+`amortize(yield, arrival turn)`, arrival turns from a real growth
+simulation (`city_granary_size()` foodbox, ruleset size gate, no
+horizon constant -- `amortize` is the discount). Tiles a neighbouring
+own city reaches FIRST are excluded outright rather than weighted.
+
+    ee03cc4840  growth simulation replaces the target-size cutoff
+    2a5f8bc438  the stream replaces the average
+    e9de4f704f  counterfactual overlap exclusion
+    84df35bf28  travel discount 0.9, range [0.75, 1.0], human-set
+    c977682d44  play file: deleted keys removed, travel raised
+    cab01f2614  REVERT of the drop-stuck fix (see below)
+
+Four tuned constants deleted (`site_tail_weight`, `site_depth_weight`,
+`site_overlap_weight`, `site_overlap_crowding`), one added
+(`site_stream_weight`, placeholder 1.0). tune-audit CLEAN 93/93/93/93.
+
+**Result: nothing.** deep pre vs post, 10 paired seeds, pinned binaries:
+
+    cell            land/plr   land/city pre -> post   score diff (t)
+    lategame-80           80     11.47 -> 11.54        -1.6  (-0.43)
+    largepox-200         380     11.54 -> 11.61       -14.0  (-0.73)
+    primary-120          400     13.89 -> 13.90        +2.2  (+0.32)
+
+Pre-registered **F1 fires**: the spread between the crowded and roomy
+cell was 0.07 tiles before and 0.07 after. P1 predicted >= 2.0.
+
+### Why: spacing is set by the ruleset, not by the objective
+
+Nearest own-city distance, SELF-FOUNDED cities only (captured excluded):
+
+    pre-largepox-200    n=572   29.4% exactly at citymindist   86.7% <= 4   median 3
+    post3-largepox-200  n=646   27.4% exactly at citymindist   84.5% <= 4   median 3
+    pre-lategame-80     n=200   25.5% exactly at citymindist   80.0% <= 4   median 3
+
+`citymindist` is 3 and forbids founding within chebyshev 2. **The
+median founded city sits exactly on the floor**, at 80 land/player and
+at 380 alike. Site scoring can only speak for the minority of cities
+not on the constraint, which is why a 25x sweep of the old overlap
+weight moved spacing 0.2 tiles and replacing the whole valuation moved
+it 0.07.
+
+### The drop-stuck fix was landed and reverted on measurement
+
+52% of settler mission-turns on lategame-80 are a unit standing on the
+tile it stood on last turn while holding a city mission (21% on
+primary-120; 73% for the player at war with three neighbours, 3-6% for
+its peaceful neighbours). Cause: deep sets `is_pos_dangerous` on the
+settler pathfinder while `goto_is_sane()` knows nothing about danger,
+so a mission whose every route is vetoed still looks healthy and
+nothing calls it off (`findings/settler-missions.md`).
+
+The fix -- drop it and re-search, mirroring `drop-boatless` -- FAILED:
+
+                       mission-turns  stationary   drop-stuck   picks
+    pre  (no fix)             10170   5275 (52%)            0    1978
+    post (with fix)           14757   9145 (62%)         5070    7152
+
+3958 of 4940 re-picks (80%) chose the tile just dropped, because the
+search applies the SAME risk parameter as the mover. Reverted.
+
+### The head-to-head, and why deep loses the crowded map
+
+deep vs ai/default seated in the SAME game, mirrored seats, 10 seeds:
+
+                   lategame-80 (80 land)   primary-120 (400 land)
+    cities            -2.3  t=-3.89           +3.5  t= 2.00
+    citizens          -4.4  t=-1.56          +17.6  t= 3.25
+    bnp               -9.0  t=-2.52          +15.9  t= 2.99
+    mfg              -11.3  t=-3.13          +11.0  t= 2.46
+    culture/50        +6.4  t= 4.89           +9.9  t= 6.63
+    score             -2.9  t=-0.78          +34.4  t= 4.53
+
+Score margin by turn tells the real story:
+
+    lategame-80   T20 +1.3  T40 +7.7  T60 +8.9  T80 -1.7
+    primary-120   T20 +0.0  T40 +1.9  T60 +9.2  T80 +23.1  T120 +37.7
+
+**Deep out-develops early and then STOPS EXPANDING.** Cities by turn on
+lategame-80, deep/default: T60 7.7/8.6, T70 7.8/9.3, T80 7.8/9.9. Deep
+adds 0.1 cities in the last 20 turns while default adds 1.3. It is not
+being conquered -- city count never falls and unitslost is comparable
+(17.9 vs 16.8). It simply stops founding, and each city default adds is
+citizens and techs.
+
+That is europe-T80's "17 cities, room for 18 more, zero settlers for
+eight turns" reproduced under measurement, and the frozen settlers
+above are its mechanism. **The stall, not site scoring, is what loses
+the crowded map.**
+
+### Corrections to my own claims, recorded
+
+- "Deep wins the scoreboard but loses the map" was true of lategame-80
+  and WRONG as a general claim: on primary-120 deep beats ai/default
+  head-to-head on every material term. Culture is 9.9 of a +34.4
+  margin there, not the whole of it. The culture puzzle is a
+  crowded-cell artefact, not a project-wide one.
+- Separate-game score and head-to-head AGREE in direction on both
+  cells, so the primary metric is not obviously broken. The earlier
+  suspicion that 93 constants were tuned against the wrong objective is
+  not supported by these two cells.
+
+### Also this session
+
+- `findings/settler-missions.md`: the freeze, the 40-turn tail, and
+  deep building 102 dedicated worker units where baseline builds 677
+  (repurposed founders satisfy the worker demand test at pop_cost 2).
+- Both campaign boxes STOPPED (verified idle, load 0.00, no freeciv
+  processes, up 25h). Not terminated; EBS caches preserved.
+
+### Open, ranked
+
+1. **The expansion stall on contested maps.** Instrument why
+   `gothere()` fails when search and mover share a veto function, then
+   make the SEARCH stop proposing targets the mover refuses (RC5).
+   This is the one that loses games.
+2. **Is lategame-80 a good tuning cell?** 12 starting settlers,
+   techlevel 50, 80 turns, 80 land/player. Three of the four campaign
+   cells are crowded, and deep's stall is worst exactly there.
+3. `site_stream_weight` is untuned at 1.0 and the site block of
+   deep-best.ini is no longer tuned at all.
+4. W02b's remaining commits (settler cost from blocked cities, Join
+   City) are unaffected by the falsification -- they are about settler
+   SUPPLY, not site ranking.
