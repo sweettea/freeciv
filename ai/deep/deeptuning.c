@@ -37,6 +37,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .site_tail_weight = 0.15,             /* PLACEHOLDER, untuned */
   .site_depth_weight = 0.5,             /* PLACEHOLDER, untuned */
   .site_overlap_weight = 0.05,          /* PLACEHOLDER, untuned */
+  .site_overlap_crowding = 0.0,         /* PLACEHOLDER, 0 = off */
   .site_potential_discount = 0.5,       /* PLACEHOLDER, untuned */
   .site_special_bonus = 10.0,           /* PLACEHOLDER, untuned */
   .site_special_cluster = 10.0,         /* PLACEHOLDER, untuned */
@@ -52,6 +53,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .site_settler_cost_weight = 1.0,      /* = stock, untuned */
   .site_boat_cost_weight = 0.333333,    /* = stock 1/3, untuned */
   .site_rival_pressure = 10.0,          /* PLACEHOLDER, untuned */
+  .site_rival_crowding = 0.0,           /* PLACEHOLDER, 0 = off */
   .expansion_war_survival = 0.9,        /* PLACEHOLDER, untuned */
   .caravan_discount = 0.95,             /* = stock, untuned */
   .caravan_foreign_trade = 3,           /* PLACEHOLDER, untuned */
@@ -188,6 +190,7 @@ void deep_tuning_init(void)
   TUNE_DOUBLE(site_tail_weight);
   TUNE_DOUBLE(site_depth_weight);
   TUNE_DOUBLE(site_overlap_weight);
+  TUNE_DOUBLE(site_overlap_crowding);
   TUNE_DOUBLE(site_potential_discount);
   TUNE_DOUBLE(site_special_bonus);
   TUNE_DOUBLE(site_special_cluster);
@@ -205,6 +208,7 @@ void deep_tuning_init(void)
   TUNE_DOUBLE(site_settler_cost_weight);
   TUNE_DOUBLE(site_boat_cost_weight);
   TUNE_DOUBLE(site_rival_pressure);
+  TUNE_DOUBLE(site_rival_crowding);
   TUNE_DOUBLE(expansion_war_survival);
   TUNE_DOUBLE(caravan_discount);
   TUNE_INT(caravan_foreign_trade);

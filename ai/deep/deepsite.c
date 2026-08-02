@@ -133,7 +133,7 @@ static adv_want deep_catchment_average(int *sums, int *foods,
 {
   const struct deep_tuning *tune = deep_tuning_get();
   int i, j, target, cumfood;
-  double wsum = 0, vsum = 0;
+  double wsum = 0, vsum = 0, overlap_w;
 
   if (n == 0) {
     return 0;
@@ -167,10 +167,18 @@ static adv_want deep_catchment_average(int *sums, int *foods,
     }
   }
 
+  /* Tiles a neighbouring own city can work are almost never ours to man
+   * (proximity rule) -- but "almost never" is a statement about how much
+   * unclaimed land is left, not a constant. On a crowded map every
+   * remaining site overlaps something we own, so a flat low weight
+   * scores them all at nearly nothing and stops expansion outright
+   * rather than accepting a closer city. Give part of the weight back
+   * as the map fills; site_overlap_crowding 0 keeps it flat. */
+  overlap_w = tune->site_overlap_weight
+              * (1.0 + tune->site_overlap_crowding * deep_map_crowding());
+
   for (i = 0; i < n; i++) {
-    /* Tiles a neighbouring own city can work are almost never ours
-     * to man, whatever their rank (proximity rule). */
-    double w = overlapped[i] ? tune->site_overlap_weight
+    double w = overlapped[i] ? overlap_w
                : (i < target) ? 1.0 : tune->site_tail_weight;
 
     wsum += w;
@@ -459,7 +467,16 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
         } city_list_iterate_end;
       } players_iterate_alive_end;
 
-      wspecials -= contest * deep_tuning_get()->site_rival_pressure;
+      /* Being near a rival is a choice on a roomy map and unavoidable
+       * on a crowded one. Where the whole board shares a landmass the
+       * penalty applies to every candidate alike, so it stops ranking
+       * sites and only decides whether to expand at all -- the same
+       * failure the neighbourhood bound above contains, arriving by
+       * density instead of by distance. Forgive it as the map fills;
+       * site_rival_crowding 0 keeps the penalty flat. */
+      wspecials -= contest * deep_tuning_get()->site_rival_pressure
+                   * MAX(0.0, 1.0 - deep_tuning_get()->site_rival_crowding
+                                    * deep_map_crowding());
     }
     if (deep_tuning_get()->site_choke_bonus > 0.0
         && deep_site_is_choke(&(wld.map), result->tile)) {

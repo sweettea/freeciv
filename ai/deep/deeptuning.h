@@ -67,6 +67,24 @@ struct deep_tuning {
   /* Weight for catchment tiles a neighbouring own city can work --
    * deliberately far below the ordinary tail weight. */
   double site_overlap_weight;
+  /* How much of that refusal to pack is given back on a crowded map:
+   * the weight becomes site_overlap_weight * (1 + crowding_factor *
+   * deep_map_crowding()). 0 disables and reproduces a flat weight.
+   *
+   * A single overlap weight has to answer two different questions with
+   * one number. "Do not settle on top of yourself" is right at 300
+   * tiles per player and self-defeating at 60, because on tight land
+   * EVERY remaining site overlaps something we own -- so a weight low
+   * enough to give largepox spacing when there is room scores every
+   * available site at nearly zero when there is not, and the empire
+   * simply stops expanding rather than accepting a closer city.
+   * Measured: campaign-a6 drove this to 0.007 and its deep arm fell to
+   * 47 cities against baseline's 57 on lategame-80 (6 players, 40x40),
+   * while campaign-b6 left it at 0.048 and kept more. The dial wanted
+   * is "how much spacing can I afford", which is relative to how much
+   * land is left, and a constant cannot express that -- the same
+   * argument site_travel_crowding already makes for travel time. */
+  double site_overlap_crowding;
   double site_potential_discount;
   double site_special_bonus;
   double site_special_cluster;
@@ -156,6 +174,23 @@ struct deep_tuning {
    * because a flat shared-continent test discriminates nothing on a
    * map like Europe where one landmass runs Morocco to Siberia. */
   double site_rival_pressure;
+  /* How much of the contested-continent penalty is forgiven as the map
+   * fills: the penalty becomes site_rival_pressure * MAX(0, 1 -
+   * crowding_factor * deep_map_crowding()). 0 disables and leaves the
+   * penalty flat.
+   *
+   * Sharing a continent is a CHOICE on a roomy map and a fact of life
+   * on a tight one. Where every player is packed onto one landmass,
+   * every candidate site has non-allied cities near it, so the term
+   * stops ranking sites and becomes a uniform tax that only decides
+   * whether to expand at all -- the failure the neighbourhood bound in
+   * deepsite.c was already added to contain, and did not fully. The
+   * bound answers "how far away do rivals stop counting"; this answers
+   * "is being near a rival even avoidable here". Measured:
+   * campaign-a6 raised site_rival_pressure to 35.9 at no cost in its
+   * two island cells, where the term contributes exactly zero, and
+   * paid for it only in the one crowded cell. */
+  double site_rival_crowding;
   /* Trade-route destination policy (findings/trade-routes.md).
    * caravan_discount is the per-turn patience fed to caravan.c's NPV
    * model; stock's 0.95 is kept as the placeholder, but stock also
