@@ -460,6 +460,41 @@ double deep_map_crowding(void)
 }
 
 /**********************************************************************//**
+  Land pressure: how scarce settleable land is, on the same evidence as
+  deep_map_crowding() and in the same direction, but without its ceiling.
+
+  The crowding prior is a BELIEF -- "early contact is coming" -- so
+  clamping it at 1.0 is right: no amount of extra tightness makes a
+  certainty more certain. Site scoring asks a different question, "how
+  much spacing can we still afford", and that keeps getting worse after
+  the belief has saturated. Measured land per player is 80 on
+  lategame-80 against a 200-tile reference, so min(1, ref/land) reads
+  1.00 there and also reads 1.00 for a map two and a half times roomier;
+  the one cell where deep is behind is the one the prior cannot see into.
+
+  ref/(ref + land) is monotone in the same direction, never saturates,
+  and stays in (0,1) so weights keep a bounded meaning:
+
+      land/player     80    235    300    400
+      min(1,r/land) 1.00   0.85   0.67   0.50
+      r/(r+land)    0.71   0.46   0.40   0.33
+
+  Kept separate from deep_map_crowding() rather than replacing it: that
+  one has four other consumers whose weights were tuned against its
+  shape across two 16-hour campaigns, and redefining it under them would
+  silently rescale all of it.
+**************************************************************************/
+double deep_land_pressure(void)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int land_per_player = MAP_INDEX_SIZE * wld.map.server.landpercent
+                        / 100 / MAX(player_count(), 1);
+
+  return (double) tune->land_pressure_tiles
+         / (tune->land_pressure_tiles + MAX(land_per_player, 1));
+}
+
+/**********************************************************************//**
   Ramp factor for ANTICIPATORY fear (density, prior): scales from 0
   toward 1 over the first density_fear_ramp_turns turns of the game.
   A neighbour's mere existence is not a capability -- deep paid T5

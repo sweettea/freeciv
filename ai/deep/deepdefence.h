@@ -24,4 +24,10 @@ void deep_do_last_activities(struct ai_type *ait, struct player *pplayer);
  * and the chokepoint site bonus. */
 double deep_map_crowding(void);
 
+/* Land pressure: land_pressure_tiles / (land_pressure_tiles +
+ * land-per-player). Same evidence as deep_map_crowding() and the same
+ * direction, but it never saturates, so it keeps discriminating below
+ * the reference where the crowding prior is pinned at 1.0. */
+double deep_land_pressure(void);
+
 #endif /* FC__DEEPDEFENCE_H */

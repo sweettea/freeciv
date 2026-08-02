@@ -69,7 +69,7 @@ struct deep_tuning {
   double site_overlap_weight;
   /* How much of that refusal to pack is given back on a crowded map:
    * the weight becomes site_overlap_weight * (1 + crowding_factor *
-   * deep_map_crowding()). 0 disables and reproduces a flat weight.
+   * deep_land_pressure()). 0 disables and reproduces a flat weight.
    *
    * A single overlap weight has to answer two different questions with
    * one number. "Do not settle on top of yourself" is right at 300
@@ -83,8 +83,19 @@ struct deep_tuning {
    * while campaign-b6 left it at 0.048 and kept more. The dial wanted
    * is "how much spacing can I afford", which is relative to how much
    * land is left, and a constant cannot express that -- the same
-   * argument site_travel_crowding already makes for travel time. */
+   * argument site_travel_crowding already makes for travel time.
+   *
+   * Scaled by deep_land_pressure(), not deep_map_crowding(): the
+   * crowding prior is pinned at 1.0 for every map at or below its
+   * reference density, which includes the one cell this term exists
+   * to fix. */
   double site_overlap_crowding;
+  /* Reference land-per-player for deep_land_pressure(), the scale at
+   * which land counts as half scarce: pressure = tiles / (tiles +
+   * land-per-player). Deliberately its own knob rather than reusing
+   * density_prior_tiles, so the tuner cannot move site spacing while
+   * it is really adjusting a fear prior. */
+  int land_pressure_tiles;
   double site_potential_discount;
   double site_special_bonus;
   double site_special_cluster;
@@ -189,7 +200,10 @@ struct deep_tuning {
    * "is being near a rival even avoidable here". Measured:
    * campaign-a6 raised site_rival_pressure to 35.9 at no cost in its
    * two island cells, where the term contributes exactly zero, and
-   * paid for it only in the one crowded cell. */
+   * paid for it only in the one crowded cell.
+   *
+   * Scaled by deep_land_pressure() for the same reason as
+   * site_overlap_crowding. */
   double site_rival_crowding;
   /* Trade-route destination policy (findings/trade-routes.md).
    * caravan_discount is the per-turn patience fed to caravan.c's NPV

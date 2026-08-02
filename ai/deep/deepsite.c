@@ -175,7 +175,7 @@ static adv_want deep_catchment_average(int *sums, int *foods,
    * rather than accepting a closer city. Give part of the weight back
    * as the map fills; site_overlap_crowding 0 keeps it flat. */
   overlap_w = tune->site_overlap_weight
-              * (1.0 + tune->site_overlap_crowding * deep_map_crowding());
+              * (1.0 + tune->site_overlap_crowding * deep_land_pressure());
 
   for (i = 0; i < n; i++) {
     double w = overlapped[i] ? overlap_w
@@ -476,7 +476,7 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
        * site_rival_crowding 0 keeps the penalty flat. */
       wspecials -= contest * deep_tuning_get()->site_rival_pressure
                    * MAX(0.0, 1.0 - deep_tuning_get()->site_rival_crowding
-                                    * deep_map_crowding());
+                                    * deep_land_pressure());
     }
     if (deep_tuning_get()->site_choke_bonus > 0.0
         && deep_site_is_choke(&(wld.map), result->tile)) {
