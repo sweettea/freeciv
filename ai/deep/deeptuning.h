@@ -102,6 +102,30 @@ struct deep_tuning {
    * the citizens that work more tiles TOMORROW. Nothing told the
    * multiplier about the growth being bought for it. */
   double horizon_multiplier_weight;
+  /* Settler site evaluation. These replace three incompatible uses of
+   * stock's PERFECTION constant (daisettler.h:56), which is DOCUMENTED
+   * as a search-effort bound -- "how long to search for optimal
+   * solutions" -- and is then also used as a travel-discount exponent
+   * and, via integer PERFECTION/2, as a yield multiplier.
+   *
+   * site_travel_discount multiplies the travel time before amortize(),
+   * so with MORT=24 the retained value is (23/24)^(d*turns).
+   * site_travel_crowding then REDUCES that discount as good sites get
+   * scarce, which is what PERFECTION's own comment asks for and a
+   * compile-time constant cannot do: on a packed map the frontier is
+   * the only land left and the walk is the price of expanding at all.
+   * Placeholders 3.0 / 0.0 reproduce PERFECTION exactly. */
+  double site_travel_discount;
+  double site_travel_crowding;
+  /* Weight on a catchment tile's realistic improvement increment
+   * (irrigation or mine). Placeholder 1.5 is stock's effective
+   * PERFECTION/2 with integer truncation. */
+  double site_potential_weight;
+  /* What the settler itself costs, charged against the site's worth.
+   * Dimensionally awkward -- shields subtracted from weighted tile
+   * yield -- which is exactly why it should be tunable rather than 1. */
+  double site_settler_cost_weight;
+  double site_boat_cost_weight;
   /* Survival probability at or above which a city does NOT switch to
    * war weights in the city manager. Deliberately separate from
    * survival_target: that one arbitrates ~20 defence and operations
@@ -123,6 +147,15 @@ struct deep_tuning {
    * sits within contest range of the site. */
   double site_claim_bonus;
   double site_pressure_factor;
+  /* Contested-continent penalty: non-allied cities on the SITE'S OWN
+   * landmass, weighted 1/(1+distance), subtracted from the site's
+   * worth. Counterweight to site_claim_bonus, which is the only
+   * rival-proximity term today and is a BONUS -- nothing priced the
+   * risk of founding against a border. Same-continent only (a rival
+   * across water is the boat-shadow problem) and distance-weighted,
+   * because a flat shared-continent test discriminates nothing on a
+   * map like Europe where one landmass runs Morocco to Siberia. */
+  double site_rival_pressure;
 
   /* Defensive-diplomat priority (W01): stock prices it at a
    * self-described 'totally arbitrary' 16000 that outranks even

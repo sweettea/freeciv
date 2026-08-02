@@ -46,6 +46,12 @@ static const struct deep_tuning deep_tuning_defaults = {
   .horizon_health_weight = 1.0,         /* PLACEHOLDER, untuned */
   .horizon_content_weight = 1.0,        /* PLACEHOLDER, untuned */
   .horizon_multiplier_weight = 1.0,     /* PLACEHOLDER, untuned */
+  .site_travel_discount = 3.0,          /* = PERFECTION, untuned */
+  .site_travel_crowding = 0.0,          /* PLACEHOLDER, 0 = off */
+  .site_potential_weight = 1.5,         /* = PERFECTION/2, untuned */
+  .site_settler_cost_weight = 1.0,      /* = stock, untuned */
+  .site_boat_cost_weight = 0.333333,    /* = stock 1/3, untuned */
+  .site_rival_pressure = 10.0,          /* PLACEHOLDER, untuned */
   .cm_war_survival = 0.9,               /* PLACEHOLDER, untuned */
   .horizon_tech_weight = 1.0,           /* PLACEHOLDER, untuned */
   .site_claim_bonus = 8.0,              /* PLACEHOLDER, untuned */
@@ -190,6 +196,12 @@ void deep_tuning_init(void)
   TUNE_DOUBLE(horizon_health_weight);
   TUNE_DOUBLE(horizon_content_weight);
   TUNE_DOUBLE(horizon_multiplier_weight);
+  TUNE_DOUBLE(site_travel_discount);
+  TUNE_DOUBLE(site_travel_crowding);
+  TUNE_DOUBLE(site_potential_weight);
+  TUNE_DOUBLE(site_settler_cost_weight);
+  TUNE_DOUBLE(site_boat_cost_weight);
+  TUNE_DOUBLE(site_rival_pressure);
   TUNE_DOUBLE(cm_war_survival);
   TUNE_DOUBLE(horizon_tech_weight);
   TUNE_DOUBLE(overseas_fear);

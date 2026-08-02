@@ -305,10 +305,15 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
         ptdc->sum = ptdc->food * adv->food_priority
                     + ptdc->trade * adv->science_priority
                     + ptdc->shield * adv->shield_priority;
-        /* Balance perfection. Stock also doubles any tile with
-         * food >= 2 here; the probability weighting replaces that
-         * blunt growth emphasis. */
-        ptdc->sum *= PERFECTION / 2;
+        /* Stock writes `ptdc->sum *= PERFECTION / 2;` here. PERFECTION
+         * is 3 and this is integer division, so the expression is
+         * `sum *= 1` -- a NO-OP that has never done anything. Removed
+         * rather than preserved: keeping a dead multiply as a tunable
+         * would add a knob that provably cannot matter. (Stock also
+         * doubles any tile with food >= 2 here; the probability
+         * weighting replaces that blunt growth emphasis.) The same
+         * dead expression is at daisettler.c:276 and is recorded in
+         * findings/upstream-bugs.md; it is not fixed there. */
 
         if (!city_center && virtual_city) {
           tdc_plr_set(ait, pplayer, tindex, tile_data_cache_copy(ptdc));
@@ -357,7 +362,12 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
       /* Ruleset improvement increments, in the same weighted-output
        * currency as the sums (a tile realistically gets one of the
        * two improvements). */
-      potentials[ncatch] = MAX(pot_irr, pot_min) * PERFECTION / 2;
+      /* NB this is `(x * 3) / 2`, i.e. x1.5 -- NOT the same as the
+       * `PERFECTION / 2` above, which is x1. The same expression means
+       * two different things depending on where the parentheses fall.
+       * The placeholder preserves the 1.5. */
+      potentials[ncatch] = MAX(pot_irr, pot_min)
+                           * deep_tuning_get()->site_potential_weight;
       if (pressured) {
         potentials[ncatch] *= deep_tuning_get()->site_pressure_factor;
       }
@@ -401,6 +411,41 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
                 + MAX(0, nspecials - 1)
                   * deep_tuning_get()->site_special_cluster
                 + nclaim * deep_tuning_get()->site_claim_bonus;
+
+    if (deep_tuning_get()->site_rival_pressure > 0.0) {
+      /* Contested-continent penalty. Rival proximity is otherwise
+       * only ever a BONUS here: nclaim * site_claim_bonus rewards
+       * founding into a rival's catchment on the theory that it
+       * denies them the space. Nothing priced the other side -- a
+       * city planted against a border fights for its tiles from the
+       * day it is founded, invites the war it cannot yet win, and is
+       * the first one lost when that war arrives.
+       *
+       * Counted over the site's OWN landmass only, because a rival
+       * across water is a different problem (that is the boat shadow
+       * and overseas terms in deepdefence.c), and weighted 1/(1+d) so
+       * it is genuinely "near someone else" rather than a flat tax on
+       * every shared continent -- the Europe map is one connected
+       * landmass from Morocco to Siberia, so an unweighted continent
+       * test would penalise every site on the board equally and
+       * discriminate nothing (findings/europe-T80.md §2). */
+      Continent_id here = tile_continent(result->tile);
+      double contest = 0.0;
+
+      players_iterate_alive(aplayer) {
+        if (aplayer == pplayer || pplayers_allied(pplayer, aplayer)) {
+          continue;
+        }
+        city_list_iterate(aplayer->cities, acity) {
+          if (tile_continent(city_tile(acity)) == here) {
+            contest += 1.0 / (1.0 + real_map_distance(city_tile(acity),
+                                                      result->tile));
+          }
+        } city_list_iterate_end;
+      } players_iterate_alive_end;
+
+      wspecials -= contest * deep_tuning_get()->site_rival_pressure;
+    }
     if (deep_tuning_get()->site_choke_bonus > 0.0
         && deep_site_is_choke(&(wld.map), result->tile)) {
       /* A gate city closes a continent; worth most when crowded. */
@@ -605,12 +650,48 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
       continue;
     }
 
-    /* This algorithm punishes long treks */
+    /* This algorithm punishes long treks. HOW HARD it punishes them
+     * should depend on how hard good sites are to find: on a packed
+     * map the frontier is the only land left and the walk is the price
+     * of expanding at all, while on an empty one there is always
+     * something closer. That is exactly what stock's PERFECTION
+     * constant is documented to mean -- "Decrease for maps where good
+     * city placements are hard to find" -- but it is a compile-time 3
+     * that cannot vary, and it is the same symbol stock also uses as a
+     * search-effort bound and (through integer PERFECTION/2) as a
+     * yield multiplier.
+     *
+     * With MORT=24 the retained value is (23/24)^(d*turns), so at the
+     * stock d=3 a site 10 turns out keeps 28% of its worth and one 20
+     * turns out keeps 8%. Europe T87 measured what that costs:
+     * Deep_Carthago held 17 cities and zero settlers with room for ~18
+     * more starting 5 tiles away (findings/europe-T80.md).
+     *
+     * `turns` is real terrain-aware travel time (pathfinder move cost
+     * over the unit's move rate), not tile distance, so the multiplier
+     * is not standing in for a distance/time confusion. Placeholders
+     * 3.0 / 0.0 reproduce PERFECTION exactly. */
     turns = move_cost / parameter->move_rate;
-    cr->result = amortize(cr->total, PERFECTION * turns);
+    {
+      /* Clamped at zero on purpose. amortize() is benefit * q^delay
+       * with q < 1, so a NEGATIVE delay returns MORE than the benefit
+       * -- a crowding response strong enough to overshoot would stop
+       * discounting distance and start rewarding it, valuing a site
+       * more the further away it is. Zero means "distance is free",
+       * which is the intended limit. */
+      double relief = 1.0 - deep_tuning_get()->site_travel_crowding
+                            * deep_map_crowding();
+      double d = deep_tuning_get()->site_travel_discount * MAX(relief, 0.0);
 
-    /* Reduce want by settler cost; also penalise for using a boat. */
-    cr->result -= cost + boat_cost / 3;
+      cr->result = amortize(cr->total, (int) (d * turns));
+    }
+
+    /* Reduce want by settler cost; also penalise for using a boat.
+     * Both weights were stock's implicit 1 and 1/3; they subtract
+     * SHIELDS from a weighted tile-yield sum, which is dimensionally
+     * awkward enough to deserve the tuner rather than a literal. */
+    cr->result -= cost * deep_tuning_get()->site_settler_cost_weight
+                  + boat_cost * deep_tuning_get()->site_boat_cost_weight;
 
     /* Find best spot */
     if ((!best && cr->result > 0)
