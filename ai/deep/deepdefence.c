@@ -129,13 +129,26 @@ static void deep_log_defence(struct ai_type *ait, struct player *pplayer)
     log_base(deep_metric_log_level(),
              "deep-def turn=%d player=\"%s\" city=%d danger=%u"
              " urgency=%u defense=%d ndef=%d prod=\"%s\""
-             " shield=%d food=%d menace=%.2f",
+             " shield=%d food=%d menace=%.2f"
+             " founder=%d worker=%d",
              game.info.turn, player_name(pplayer), pcity->id,
              city_data->danger, city_data->urgency,
              assess_defense(ait, pcity), ndef,
              universal_rule_name(&pcity->production),
              pcity->surplus[O_SHIELD], pcity->surplus[O_FOOD],
-             menace);
+             menace,
+             /* Expansion's side of the scale. `danger` above is the
+              * RAW stock figure -- deep's injected fears land after
+              * this line -- so pairing it with founder_want is the
+              * only way to see what settlers were actually weighed
+              * against. Both wants are cached across
+              * AI_CITY_RECALC_SPEED turns, which is what the build
+              * choice reads too.
+              *
+              * city_data->choice is deliberately NOT logged here: this
+              * pass runs before the choice is made, so it still holds
+              * want=-1 and would read as "expansion lost to nothing". */
+             city_data->founder_want, city_data->worker_want);
   } city_list_iterate_end;
 }
 

@@ -31,6 +31,9 @@
 /* server */
 #include "maphand.h"
 
+/* ai */
+#include "handicaps.h"
+
 #include "deeptuning.h"
 
 #include "deepexplore.h"
@@ -146,6 +149,36 @@ adv_want deep_explore_want(struct player *pplayer, int queued)
       explorers++;
     }
   } unit_list_iterate_end;
+  /* Explorers already ON THE WAY count too. `queued` only covers claims
+   * made in the SAME management pass, and a unit under construction is
+   * not yet in pplayer->units, so a city building one was invisible to
+   * both -- and a city with no shield surplus stays invisible for
+   * dozens of turns while the want re-orders around it. Europe T94:
+   * four Carthaginian cities on Explorer at once, three of them with
+   * shield surplus 0. */
+  city_list_iterate(pplayer->cities, pcity) {
+    if (VUT_UTYPE == pcity->production.kind
+        && utype_has_role(pcity->production.value.utype, L_EXPLORER)) {
+      explorers++;
+    }
+  } city_list_iterate_end;
+
+  /* Discovery pays only for a player that cannot already see through
+   * the fog. At every level a human actually plays, H_MAP is unset
+   * (ai/difficulty.c:127 -- hard has "no actual handicaps"), so deep's
+   * own settler routing runs parameter.omniscience = TRUE
+   * (deepsettler.c:258,305,412,456,535) and its site evaluator scores
+   * terrain the explorer would be "revealing". Paying to uncover a map
+   * the planner already reads is RC6 billing itself twice.
+   *
+   * Europe T94 measured the cost exactly: want=31 from unknown=6461
+   * with huts_vis=0 -- an entire explorer programme, in four cities at
+   * once, buying information deep was already acting on. This does not
+   * touch the hut term, which is a real prize either way, and the
+   * discovery term returns in full the moment W04 makes deep honest. */
+  if (!has_handicap(pplayer, H_MAP)) {
+    unknown = 0;
+  }
 
   /* queued = explorer builds already claimed by other cities in this
    * same management pass, so one global want cannot order a fleet
