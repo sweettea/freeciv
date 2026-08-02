@@ -1925,3 +1925,76 @@ progress. Both headers state plainly that these are the best of TEN
 RANDOM DRAWS in ONE generation, subject to winner's curse, and are not
 to be cited. `fold-tuning.py` was deliberately NOT used — it stamps
 defaults "tuned <date>", which would put a false claim in the source.
+
+## The multiplier column, and three credits that do not score (2026-08-01, third session)
+
+`c6d39b6081` — the last uncredited ladder column. Marketplace/Library/
+Bank/Factory are `ADV_IMPR_CALCULATE` so `base_want()` runs, but
+`dai_city_want()` prices them on `acity->citizen_base` — today's tiles —
+while every other credit in `deephorizon.c` buys tomorrow's citizens.
+
+**The cell had to change first.** `lategame-80`, where every ladder
+decision of the day was made, gives baseline ONE Marketplace across 52
+cities: the column is invisible there by construction. `long` (250
+turns) gives it 114. `benchmark/ladder.py` (`3a0fa3b2d4`) does the
+census by `ai_type` because `buildmix.py` only matches P1/P2 naming.
+
+MEASURED, 20 paired `long` games per arm, train seeds 1-10, one binary
+and two tuning files (verified an exact no-op at weight 0). Seed 3's
+`mixed_db` segfaulted → 9 paired seeds:
+
+    pooled ratio    OFF 0.8638   ON 0.9213   delta +0.0575
+    mean per-seed +0.0727 (sd 0.1958)   seeds improved 5/9
+    deep score  10858 -> 11014  +1.4%    base score 12570 -> 11955  -4.9%
+    deep techs   1440 ->  1453  +0.9%    deep literacy 7035 -> 23595 +235%
+
+    per 100 cities, deep    OFF     ON
+    MULTIPLIER             10.7   23.3
+      Library               4.2   16.0
+      Marketplace           5.1    5.1   unchanged
+      Bank                  0.8    0.8   unchanged
+
+**No score claim.** 5/9 is a coin flip, t≈1.11 (p≈0.30), and the ratio
+moved mostly because baseline FELL. The pre-registered falsification
+test failed: literacy tripled, techs moved 0.9%. Landed on the defect,
+as `fc7073184a` was.
+
+The column closed entirely on the SCIENCE side — the `adv->*_priority`
+routing declining to buy gold multipliers for an empire with no use for
+gold. Marketplace is bit-identical between arms (26 buildings both).
+
+**THE PATTERN IS NOW THE RESULT: three credits in a row (content,
+granary, multiplier) whose mechanism lands decisively and whose score
+does not.** Full argument in `findings/multiplier-column.md` §5 —
+including a retracted claim that the per-column architecture is wrong
+(it used baseline's build mix as the reference, which RC1 says is
+exactly the broken thing).
+
+### The T80 forensic: deep does not expand
+
+`findings/europe-T80.md`. Deep_Carthago: 17 cities, room for ~18 more
+within 15 tiles on uncontested land, **zero settlers for 8 straight
+turns**, 5 Musketeers built in the same span. Every recent epic has
+inflated what settlers compete against (defenders get +30 flat
+`barbarian_fear` alone; buildings now have five credits) while settlers
+gained one ≤2x multiplier. Cheap test specified: log `founder_want`
+beside the chosen build — near-zero means a site-scoring bug, healthy
+but losing means arbitration.
+
+Also found there: `deep-def` logs PRE-injection danger (misleading for
+diagnosis), and `rotation_power_ratio < 1.0` makes the rotation gate
+trivially true — the registry range starts at 0.0 and campaign-a4 has
+sampled 0.54–0.96.
+
+### Crash: `deepops.c` MARCH block still unguarded
+
+`d5ce7cecfb` fixed the post-launch target re-resolve and **overclaims**
+— two core dumps show `deep_op_drive()`'s MARCH block dereferencing the
+entry hoist, once as a freed pointer (17:41, pre-fix binary) and once
+as NULL (18:55). Same function, same block. Entry guard still needed.
+
+### Campaigns
+
+`campaign-a4` / `campaign-b4` bumped 22 → 30 jobs at a generation
+boundary; both resumed bit-exact (A replayed +21.6/+18.9, B replayed
+−2.8/+10.2 from cache). Training-seed objectives only — not results.

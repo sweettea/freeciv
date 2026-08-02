@@ -135,14 +135,15 @@ pass before any claim.**
 
 ## 6. What is NOT established
 
-- **The multiplier column.** Deep builds 0 Courthouses/Granaries against
-  baseline's 3/1. Those counts are far too small to support a claim, and
-  no fix is proposed here. The *mechanism* is different from the
-  happiness one and worth stating: Marketplace/Library/Courthouse are
-  `ADV_IMPR_CALCULATE`, so `base_want()` does run for them — but on
-  `acity->citizen_base`, today's tile arrangement. Deep is buying
-  tomorrow's arrangement with its capacity credits and never tells the
-  multiplier about it. To settle it, census multiplier counts on a cell
-  large enough that baseline builds them in double digits.
+- ~~**The multiplier column.**~~ **SETTLED — see
+  `multiplier-column.md`.** The prediction here was right, and the
+  reason it could not be tested here was the cell: `lategame-80` gives
+  baseline ONE Marketplace across 52 cities. On `long` (250 turns)
+  baseline builds 114 and deep 26, at identical city density and a
+  higher trade per city. The mechanism named below is confirmed and
+  credited.
 - Whether the content credit helps at all cells. Only lategame-80 was
-  measured.
+  measured for SCORE. For the CENSUS, `long` has since been measured
+  and the content credit overshoots there: deep 124.6 per 100 cities
+  against baseline's 98.9, having been 47.9 against 71.8 before it
+  landed. The placeholder 1.0 looks hot on that cell too.
