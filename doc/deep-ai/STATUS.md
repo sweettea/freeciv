@@ -2738,3 +2738,48 @@ current tree.**
    its settler targets are overseas, and it surfaced all three of this
    session's bugs. The guard is to report per-cell tuned values and
    treat sharp disagreement as overfit evidence, not to drop the cell.
+
+## Addendum: the two ferry fixes work as a PAIR (2026-08-03, late)
+
+Human call: keep both refused ferry fixes, they are important. Correct,
+and the reason is one I should have seen while measuring them.
+
+**Each was measured in the absence of the other, and they are
+complementary halves of one loop:**
+
+- `drop-boatless == FERRY_NONE` alone keeps the settler flagged, but
+  Transports never reach `findcargo` (the dispatch bug), so nobody
+  comes. The settler waits in a queue nothing serves: score -1.50.
+- The dispatch routing alone sends boats to the ferry manager, but
+  `stats.passengers` is ~0 because settlers un-flag themselves every
+  turn via the bug the *other* fix repairs. `findcargo` early-outs and
+  the boat parks: delivery 12% -> 11%.
+
+That is not two failures. It is **one broken loop measured twice, from
+each end, with the other end still broken.**
+
+Both cherry-picked (`3050c59e6d`, `f88fa88a78`). Together, 10 paired
+seeds:
+
+    lategame-80                        without ->    with     diff      t
+      score                            185.92 ->  190.28    +4.37   1.84
+      pop                               47.48 ->   49.93    +2.45   2.30 *
+      mfg                               55.27 ->   58.72    +3.45   1.58
+      cities                             8.47 ->    8.70    +0.23   0.99
+      landarea                          97367 ->   99533    +2167   0.98
+
+    primary-120: score +0.30 (t=0.23), everything else inside noise
+
+Every term positive on the island cell, `pop` significant. Also landed:
+`site_enough_result` and `settler_guard_tolerance` (`190d47afc9`), both
+inert placeholders reproducing stock.
+
+**Method note worth carrying:** when two fixes repair opposite ends of
+one broken protocol, measuring them separately measures neither. Both
+were nearly discarded on individually-honest numbers.
+
+### The head-to-head is now SIX behaviour changes stale
+
+`+9.73` was taken on `0f126c33b7`. Since then: the idle-worker
+fallback, Join City, the founder pool (twice), and both ferry fixes.
+Re-running it is the first thing the next session should do.
