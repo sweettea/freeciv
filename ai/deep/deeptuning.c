@@ -31,7 +31,7 @@
 static const struct deep_tuning deep_tuning_defaults = {
   .settler_fearfulness_mult = 2.0,      /* PLACEHOLDER, untuned */
   .settler_risk_tolerance = 1.0,        /* PLACEHOLDER = stock bar */
-  .founder_pool_per_city = 0.31,        /* PLACEHOLDER = pre-join pool */
+  .founder_pool_per_site = 0.06,        /* PLACEHOLDER, see deeptuning.h */
   .committed_fear_mult = 1.0,           /* PLACEHOLDER = no effect */
   .incoming_defence_eta_weight = 0.5,   /* PLACEHOLDER, untuned */
   .incoming_defence_survival = 0.9,     /* PLACEHOLDER, untuned */
@@ -163,7 +163,7 @@ void deep_tuning_init(void)
 
   TUNE_DOUBLE(settler_fearfulness_mult);
   TUNE_DOUBLE(settler_risk_tolerance);
-  TUNE_DOUBLE(founder_pool_per_city);
+  TUNE_DOUBLE(founder_pool_per_site);
   TUNE_DOUBLE(committed_fear_mult);
   TUNE_DOUBLE(incoming_defence_eta_weight);
   TUNE_DOUBLE(incoming_defence_survival);

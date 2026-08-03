@@ -69,6 +69,8 @@ struct deep_plr {
    * refreshed at most once per turn per player. */
   int free_land_permille;
   int free_land_turn;
+  int free_land_tiles;          /* Unowned known land, absolute */
+  int own_land_tiles;           /* Land we own, absolute */
 };
 
 static inline struct deep_plr *deep_plr_data(const struct player *pplayer)

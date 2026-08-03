@@ -50,17 +50,29 @@ struct deep_tuning {
    * v4 owns the number. */
   double settler_risk_tolerance;
 
-  /* Founders to keep alive per own city before Join City is allowed to
-   * dissolve one. A founder pool must be nonzero -- a settler in hand
-   * is the only way to take a site the moment it opens -- but never
-   * big, because every one is two citizens and a shield bill standing
-   * on the map (human call 2026-08-03). PLACEHOLDER: 0.31 reproduces
-   * the 2.73 founders per player the tree carried before Join City
-   * existed, at the 8.68 cities per player it had; that state is the
-   * one whose land area the join regression is measured against, so it
-   * is the honest starting point rather than a guess. Wants a tuning
-   * pass. */
-  double founder_pool_per_city;
+  /* Founders to keep alive per SITE the unclaimed land could still
+   * hold (deep_remaining_sites()) before Join City may dissolve one. A
+   * founder pool must be nonzero -- a settler in hand is the only way
+   * to take a site the moment it opens -- but never big, because every
+   * one is two citizens and a shield bill standing on the map (human
+   * call 2026-08-03).
+   *
+   * Per SITE, not per city: keying off city count inverts on a roomy
+   * map, where many cities drove the target DOWN while settlers were
+   * still usefully expanding (findings/idle-workers.md).
+   *
+   * PLACEHOLDER 0.06, and the derivation is worth keeping because the
+   * two cells disagree by 3.5x. Sites remaining measures ~13 on
+   * lategame-80 and ~175 on primary-120. Reproducing each cell's
+   * observed pre-join pool would want 2.73/13.2 = 0.207 there and
+   * 10.42/174.7 = 0.060 here. 0.060 calibrates on primary-120 BECAUSE
+   * its pool is the one demonstrably doing work -- 10.4 live founders
+   * against only 429 idle unit-turns in ten games, i.e. expanders, not
+   * strays -- and it then puts lategame-80's target near 0.8, which
+   * banks that cell's idle founders, which is the whole objective
+   * there. The 3.5x spread is exactly what a per-cell tuning pass is
+   * for; do not average it away silently. */
+  double founder_pool_per_site;
 
   /* How steeply an en-route defender's contribution to its target
    * city's effective danger reduction decays per turn of distance

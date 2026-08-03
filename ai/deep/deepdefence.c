@@ -466,6 +466,8 @@ double deep_free_land_share(const struct player *pplayer)
     return dp->free_land_permille / 1000.0;
   }
 
+  int own_land = 0;
+
   whole_map_iterate(&(wld.map), ptile) {
     if (!omniscient && tile_get_known(ptile, pplayer) == TILE_UNKNOWN) {
       continue;
@@ -476,13 +478,51 @@ double deep_free_land_share(const struct player *pplayer)
     land++;
     if (tile_owner(ptile) == NULL) {
       free_land++;
+    } else if (tile_owner(ptile) == pplayer) {
+      own_land++;
     }
   } whole_map_iterate_end;
 
   dp->free_land_permille = (land > 0 ? 1000 * free_land / land : 0);
+  dp->free_land_tiles = free_land;
+  dp->own_land_tiles = own_land;
   dp->free_land_turn = game.info.turn;
 
   return dp->free_land_permille / 1000.0;
+}
+
+/**********************************************************************//**
+  How many more cities the unclaimed land could still hold, as this
+  player packs cities.
+
+  The pool of settlers worth keeping is an inventory of options on
+  SITES, so it should be sized by sites remaining, not by cities
+  already owned -- a large empire on a full map wants no settlers, and
+  a small one on an empty map wants several. Keying off city count got
+  that backwards on the roomy cell, where 23 cities drove the target
+  down while ~10 settlers were still usefully expanding.
+
+  Density comes from our own empire (own land tiles per own city)
+  rather than from citymindist, so it is self-calibrating: it already
+  contains whatever spacing the ruleset, the terrain and our own
+  objective actually produce. Before we have a city there is nothing to
+  calibrate from, so the answer is 0 and the caller falls back to its
+  own floor.
+**************************************************************************/
+double deep_remaining_sites(const struct player *pplayer)
+{
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  int cities = city_list_size(pplayer->cities);
+  double per_city;
+
+  (void) deep_free_land_share(pplayer);     /* Refreshes the cache. */
+
+  if (cities <= 0 || dp->own_land_tiles <= 0) {
+    return 0.0;
+  }
+  per_city = (double) dp->own_land_tiles / cities;
+
+  return dp->free_land_tiles / MAX(per_city, 1.0);
 }
 
 /**********************************************************************//**

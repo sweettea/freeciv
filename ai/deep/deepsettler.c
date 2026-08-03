@@ -1137,16 +1137,29 @@ static bool deep_settler_join_city(struct ai_type *ait,
       }
     } unit_list_iterate_end;
 
-    /* Scale the pool by how much of the world is still unclaimed
-     * (human call 2026-08-03). A settler in hand is an option on a
-     * site, and an option is worth what remains to be taken: on an
-     * empty map hold several, on a full one hold none and take the two
-     * citizens back. deep_free_land_share() is the live figure --
-     * deep_map_crowding() answers from lobby settings and never moves,
-     * so it cannot express "the world has filled up since". */
-    if (founders <= (int) (deep_tuning_get()->founder_pool_per_city
-                           * deep_free_land_share(pplayer)
-                           * city_list_size(pplayer->cities))) {
+    /* Size the pool by SITES REMAINING (human call 2026-08-03). A
+     * settler in hand is an option on a site, so the inventory worth
+     * holding is set by how many sites are left, not by how many
+     * cities we already have.
+     *
+     * Keying off city count got this backwards on the roomy cell:
+     * 23 cities drove the target to ~3.6 while ~10 settlers were still
+     * usefully expanding into 400 land/player, so the gate never held
+     * and joining dissolved working expanders. deep_remaining_sites()
+     * is free land divided by our own land-per-city, so it is large on
+     * an empty map and goes to zero as the world fills. */
+    log_base(deep_metric_log_level(),
+             "deep-pool turn=%d player=\"%s\" founders=%d homed=%d"
+             " cities=%d freeshare=%.3f sites=%.1f target=%.1f",
+             game.info.turn, player_name(pplayer), founders, homed,
+             city_list_size(pplayer->cities),
+             deep_free_land_share(pplayer),
+             deep_remaining_sites(pplayer),
+             deep_tuning_get()->founder_pool_per_site
+             * deep_remaining_sites(pplayer));
+
+    if (founders <= (int) (deep_tuning_get()->founder_pool_per_site
+                           * deep_remaining_sites(pplayer))) {
       return FALSE;                 /* Pool is at or under target. */
     }
     if (punit->homecity == 0 && homed > 0

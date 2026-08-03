@@ -28,6 +28,10 @@ double deep_map_crowding(void);
  * the two lobby-setting priors below; cached per player per turn. */
 double deep_free_land_share(const struct player *pplayer);
 
+/* How many more cities the unclaimed land could hold at this player's
+ * own packing density. Sites remaining, not cities owned. */
+double deep_remaining_sites(const struct player *pplayer);
+
 /* Land pressure: land_pressure_tiles / (land_pressure_tiles +
  * land-per-player). Same evidence as deep_map_crowding() and the same
  * direction, but it never saturates, so it keeps discriminating below

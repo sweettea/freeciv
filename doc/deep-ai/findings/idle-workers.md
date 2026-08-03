@@ -268,3 +268,54 @@ pass.
 3. The re-evaluation cost is real: full search per idle unit per turn
    to conclude nothing. Worth a cheap negative cache if 2 does not
    already fix it.
+
+### Sized by sites remaining, not by cities owned (2026-08-03, later)
+
+`pool-scaled` above still keyed off city count, and on the roomy cell
+that inverts: 23 cities drove the target to ~3.6 while the land could
+still hold ~175 more, so the gate never held and joining dissolved
+settlers that were expanding rather than idling. Replaced by
+`deep_remaining_sites()` -- unclaimed land divided by our OWN land per
+city, so it is self-calibrating on whatever spacing the ruleset,
+terrain and objective actually produce.
+
+The scale the old formula was hiding:
+
+    sites remaining     lategame-80        primary-120
+      median                   13.2              174.7
+      range             10.5 - 30.2       131.8 - 266.5
+
+`primary-120`, 10 paired seeds, against no-join:
+
+    metric        no-join | join-all    t | pool-cities  t | pool-sites   t
+    score          159.13 |    +0.30 0.11 |     +0.15 0.05 |    +0.98  0.57
+    cities          23.00 |    -0.50-0.83 |     -0.60-0.76 |    -0.05 -0.47
+    landarea       312500 |    -4483-0.62 |     -8083-0.84 |     +533  0.26
+    pop             76.63 |    +0.35 0.20 |     -0.07-0.03 |    +1.98  4.14
+    mfg             73.77 |    -2.05-1.18 |     -2.02-0.81 |    +3.05  2.11
+    settlers        10.42 |    -2.32-3.80 |     -2.32-3.60 |    -2.45 -4.27
+    joins               0 |      164      |       164      |      125
+
+A mildly negative change becomes a mildly positive one, with **pop
++1.98 (t=4.14) and mfg +3.05 (t=2.11) significant**, land area back
+above zero, and the objective still met.
+
+`lategame-80` moves the other way, all inside noise:
+
+    metric           base | pool-cities  t | pool-sites   t
+    score          189.22 |     -0.28-0.10 |    -3.30 -1.27
+    pop             48.87 |     +0.30 0.35 |    -1.38 -1.12
+    mfg             56.45 |     +2.03 0.85 |    -1.18 -0.38
+    settlers         2.73 |     -2.42-9.10 |    -2.30 -8.22
+    joins               0 |       384      |      314
+
+**This is the 3.5x spread in the placeholder's own comment, showing up
+in behaviour.** 0.06 was calibrated on `primary-120` because that cell's
+pool is the one demonstrably doing work; `lategame-80` calibrates to
+0.207 on its own numbers, and it is the cell that got slightly worse.
+Nothing there is significant, and the formula is the part that is now
+right -- the constant is what a per-cell tuning pass is for. Do not
+average the spread away.
+
+Landed with `founder_pool_per_site` (renamed from `_per_city`, which
+would now be lying about what it measures).
