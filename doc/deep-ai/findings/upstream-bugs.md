@@ -216,3 +216,34 @@ exhausted). Not fixed in place per rule 2's spirit for common/.
     handicap, as every other AI pf site already does — but it changes
     unit behaviour, so it is offered separately and nothing here depends
     on it landing. Measured 2026-08-02.
+
+33. **A ferry that also carries the `Workers` flag never reaches the
+    ferry code** — `ai/default/daiunit.c:2742`, `dai_manage_unit()`.
+    Its dispatch tests `ptype->adv.worker || unit_is_cityfounder(punit)`
+    **before** it tests `is_ferry`, and the worker branch is
+    `dai_manage_settler()`, which sets `SSA_AUTOWORKER` and `done` and
+    returns. So such a boat is never offered to
+    `dai_manage_ferryboat()`, never calls `aiferry_findcargo()`, and
+    never collects a waiting passenger — for its whole life.
+
+    civ2civ3's **Transport** is exactly that unit: `roles =
+    "Ferryboat", "FerryStartUnit"`, `transport_cap = 8` — the
+    colonisation boat — and `flags = "Workers", ...`. Galleons
+    (capacity 4, no `Workers` flag) take the ferry branch normally; the
+    bigger boat never does.
+
+    Measured in `ai/deep` on `lategame-80`, 10 games
+    (`findings/settler-missions.md` §8): of the idle boat-turns where a
+    settler was flagged `FERRY_WANTED` *and* the boat's own cargo-search
+    map could reach it, **every one was a Transport**. Reproducing
+    `aiferry_findcargo()`'s scan exactly — same parameter, same
+    `no_fights`, same iteration, same match condition — found the
+    waiting settler every time, which is how the branch was identified:
+    the scan is fine, it is never run.
+
+    An upstream fix is a dispatch reorder (test `is_ferry` before the
+    worker branch, or exclude units whose role is `L_FERRYBOAT` from
+    it). **Deep does not route around it**: doing so was measured and
+    made things worse (§8), because the stock ferry manager parks an
+    empty boat rather than fetching anyone. Recorded rather than fixed
+    per rule 2. Measured 2026-08-02.

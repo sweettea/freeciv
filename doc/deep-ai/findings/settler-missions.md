@@ -373,3 +373,110 @@ existed.
 - `goto_is_sane()` is used by `ai/default` too, with the same
   optimism. Not ours to fix (rule 2); it belongs in
   `findings/upstream-bugs.md`.
+
+---
+
+## 8. The lift does not arrive, and the obvious repair does not help
+    (2026-08-02, night)
+
+§7 left overseas delivery at 12% and named the ferry pipeline as the
+largest remaining loss. This section is the measurement of that, and a
+fix that was built, measured and refused.
+
+Both halves of the protocol were instrumented at once (`fae8a0f778`),
+because the pipeline is two independent searches — the passenger raises
+`FERRY_WANTED` and sets `done`, the boat looks for flagged passengers —
+and neither half is evidence on its own. All read-only; `ai/default`
+untouched.
+
+### It is not a boat-supply problem
+
+`lategame-80`, 10 train seeds, 2398 settler waiting-turns. "Willing" is
+stock's own `is_boat_free()`, asked about that settler:
+
+    willing boat 2-5 tiles away     1110   46%
+    willing boat 6+ tiles away      1110   46%
+    no willing boat anywhere         127    5%
+    willing boat on the same tile     49    2%
+    willing boat adjacent              2    0%
+
+**95% of the time a boat exists that would carry it.** More boats, or a
+bigger colony-lift want, fixes nothing.
+
+The settler cannot go to it: `aiferry_find_boat_nearby()` is a
+`square_iterate(..., 1, ...)`, one tile. In 92% of these turns the boat
+is outside that radius by design — the boat is supposed to come. On the
+settler side, 90% of waiting turns are spent flagged `FERRY_WANTED` and
+only 0.4% ever reach "holds a boat". 61.7% of waiting turns are still
+waiting when the game ends.
+
+### The boat side, and the branch that swallows it
+
+8463 boat-turns, 6076 of them idle with no passenger and no cargo:
+
+    nobody flagged anywhere         4694   77%
+    flagged passenger, REACHABLE     778   13%
+    flagged passenger, unreachable   416    7%
+
+The 778 are the defect: a boat with full moves, marked available,
+usually sitting in a city, with a flagged settler it can provably path
+to, doing nothing.
+
+`aiferry_findcargo()` was reproduced exactly from the deep side — same
+overlap parameter, same `omniscience`, same public `no_fights`
+callback, same `pf_map_tiles_iterate(..., TRUE)`, same match condition
+— and **it found the waiting settler every time**. So the scan is not
+the problem; it is never run. A bitmask of every predicate on the way
+to it identified the branch, and one type accounted for all of it:
+
+    Galleon    gate=0   220 boat-turns
+    Transport  gate=4    84 boat-turns      (bit 4 = worker/cityfounder)
+
+`dai_manage_unit()` dispatches on `ptype->adv.worker ||
+unit_is_cityfounder()` **before** it dispatches on ferry, and civ2civ3's
+Transport carries the `Workers` flag (`roles = "Ferryboat",
+"FerryStartUnit"`, `transport_cap = 8`). The colonisation boat is handed
+to `dai_manage_settler()`, parked on `SSA_AUTOWORKER`, marked `done`,
+and never reaches the ferry code in its life. Recorded as
+`upstream-bugs.md` #33.
+
+### The repair was built and refused
+
+Routing ferries with waiting demand straight to
+`dai_manage_ferryboat()` — skipping the dispatch that swallows them —
+is a three-line deep-side change that touches no `ai/default` code. It
+was measured on the same 10 seeds against the §7 binary:
+
+    metric                     pre      post      diff        t
+    score                   189.22    190.42     +1.20     0.59
+    cities                    8.68      8.68     +0.00     0.00
+    mean_city_size            5.81      5.67     -0.14    -2.03
+    settlers alive at end     2.73      2.15     -0.58    -2.82
+
+    Transport boat-turns carrying    488  ->  196
+    overseas picks -> arrivals    12%  ->  11%
+    settler turns reaching "aboard"   86  ->   60
+    settler turns "holding a boat"    10  ->    0
+
+**The mechanism went backwards.** Freed from auto-worker duty, the
+Transport runs stock's ferry manager, which makes it available, fails
+to select a passenger-in-charge, and parks it — where before it at
+least drifted around under `SSA_AUTOWORKER` and was boarded
+opportunistically. Not shipped (`75664db56e` keeps only the metric
+line and records the result in the code).
+
+### What this establishes
+
+The dispatch bug is real and it is not the binding constraint. Boats
+exist, are willing, are reachable, and the stock manager still does not
+put settlers on them. That is RC2 with a number on it — the ferry
+system's own docs call it "statistical mechanics rather than logic" —
+and it says the deep-side answer is to **own the lift** rather than to
+route units into stock's manager: a named boat, a named passenger, a
+named beachhead, held against re-tasking, with an abort condition. The
+operations layer in `deepops.c` already has that machinery, including
+holds that survive `dai_manage_units()` clearing `done`.
+
+Not attempted here. It is an epic, not a commit, and this one had
+already spent its budget establishing that the cheap repair does not
+work.
