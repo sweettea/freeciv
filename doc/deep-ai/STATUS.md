@@ -2783,3 +2783,62 @@ were nearly discarded on individually-honest numbers.
 `+9.73` was taken on `0f126c33b7`. Since then: the idle-worker
 fallback, Join City, the founder pool (twice), and both ferry fixes.
 Re-running it is the first thing the next session should do.
+
+## The stale head-to-head, re-taken: the stack is flat (2026-08-03, evening)
+
+**First action of the session, before any new code, per the standing
+instruction. The margin has NOT fallen -- and it has not grown either.**
+
+Two pinned binaries on the same 10 train seeds, `lategame-80`, mirrored
+`mixed_dc`/`mixed_cd`:
+
+- **pre** = `0f126c33b7` (the commit the `+9.73` was measured on),
+  rebuilt in `.worktrees/bench`
+- **post** = `da57ed6206`, the epic branch tip: idle-worker fallback,
+  Join City, the founder pool (twice), and both ferry fixes
+
+`deep-best.ini` is byte-identical at both commits, so both arms ran the
+same tuning file.
+
+### By-turn score margin, deep - ai/default
+
+    turn      pre     post    delta   t(DiD)     up
+      20     1.70     2.27    +0.57     0.96   4/10
+      40    10.87    11.85    +0.98     0.43   5/10
+      60    16.12    14.88    -1.23    -0.47   5/10
+      70    12.75    12.98    +0.23     0.09   7/10
+      80     9.73     9.05    -0.68    -0.23   5/10
+
+**The pre column reproduces the previous session's series exactly** at
+every checkpoint, which is the control this run was for: the pin, the
+seating and the analysis all agree with the measurement being compared
+against.
+
+### T80 difference-in-differences, paired over seeds
+
+    metric        pre       post      diff        t     up
+    score        9.73       9.05     -0.68    -0.23   5/10
+    cities      -0.50      -0.35     +0.15     0.56   6/10
+    pop          3.93       4.85     +0.92     0.54   6/10
+    bnp          1.83       3.82     +1.98     1.10   6/10
+    mfg          0.30       1.03     +0.73     0.17   6/10
+    landarea   100.00     383.33   +283.33     0.07   7/10
+
+### What this means
+
+**No regression, and no demonstrated gain.** Score is flat to within a
+quarter of a standard error; the other five terms are all mildly
+positive and none is significant. The stack of individually-
+insignificant changes did not accumulate into a regression, which was
+the specific risk that made this run the first thing to do -- and it
+did not accumulate into a win either.
+
+Note this does not contradict the ferry pair's `+4.37` (t=1.84): that
+was deep's absolute score in the deep arm, pre vs post, and this is
+deep's MARGIN over `ai/default` seated in the same game. A change that
+lifts both seats moves the first and not the second. It was not
+significant on either measure.
+
+**deep still finishes ahead of `ai/default` on `lategame-80` by ~9
+score at T80, and the reason is still `0f126c33b7`.** Nothing since has
+been shown to add to it.
