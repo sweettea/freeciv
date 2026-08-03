@@ -50,6 +50,27 @@ struct deep_tuning {
    * v4 owns the number. */
   double settler_risk_tolerance;
 
+  /* The same danger bar, but for asking for an ESCORT rather than for
+   * refusing to move. deep_settler_bodyguard_needed() sampled the
+   * planned route with a bare adv_danger_at(), so the same trip was
+   * judged by a parameterised bar for movement and an unparameterised
+   * one for protection. Lower than settler_risk_tolerance means "ask
+   * for help before you would refuse to go", which is the sensible
+   * ordering. PLACEHOLDER 1.0 = the stock bar = exactly the previous
+   * behaviour, so this starts inert and wants a tuning pass. */
+  double settler_guard_tolerance;
+
+  /* Site score above which the on-continent search stops and never
+   * considers going overseas at all (deepsettler.c phase 1). Stock
+   * hard-codes RESULT_IS_ENOUGH = 250 in daisettler.h -- a
+   * compile-time constant that decides whether colonisation is even
+   * evaluated, which makes it one of the highest-leverage numbers in
+   * the expansion pipeline and the kind of inherited magic the project
+   * exists to question. PLACEHOLDER 250.0 reproduces stock exactly.
+   * Raising it makes the AI look overseas even when it has a decent
+   * site at home; lowering it makes it settle for less, faster. */
+  double site_enough_result;
+
   /* Founders to keep alive per SITE the unclaimed land could still
    * hold (deep_remaining_sites()) before Join City may dissolve one. A
    * founder pool must be nonzero -- a settler in hand is the only way

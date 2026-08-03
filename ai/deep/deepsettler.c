@@ -311,7 +311,12 @@ static bool deep_settler_bodyguard_needed(struct ai_type *ait,
       int i;
 
       for (i = 1; i < ppath->length; i++) {
-        if (adv_danger_at(punit, ppath->positions[i].tile)) {
+        /* Same bar the mover uses, at its own tolerance: asking for an
+         * escort and refusing to walk are the same judgement about the
+         * same tiles, and one of them used to be unparameterised. */
+        if (deep_settler_overnight_veto(punit, ppath->positions[i].tile,
+                                        deep_tuning_get()
+                                        ->settler_guard_tolerance)) {
           needed = TRUE;
           break;
         }
@@ -699,7 +704,10 @@ struct cityresult *deep_find_best_city_placement(struct ai_type *ait,
   deep_settler_apply_risk(&parameter, &risk, punit);
   cr1 = deep_settler_map_iterate(ait, &parameter, punit, 0);
 
-  if (cr1 && cr1->result > RESULT_IS_ENOUGH) {
+  /* Stock's RESULT_IS_ENOUGH is a compile-time 250 that decides
+   * whether colonisation is evaluated at all: above it, phase 2 never
+   * runs and no overseas site is ever seen. Tunable here. */
+  if (cr1 && cr1->result > deep_tuning_get()->site_enough_result) {
     /* Skip further searches */
     return cr1;
   }
