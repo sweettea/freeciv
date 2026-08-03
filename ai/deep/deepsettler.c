@@ -885,6 +885,20 @@ struct cityresult *deep_find_best_city_placement(struct ai_type *ait,
   separates them by asking only "could a road / an irrigation / a mine
   still be added here", with no value judgement at all.
 
+  There is a THIRD cause, and this census could not see it until now:
+  the work is real, and it is on another landmass. Both
+  worker_evaluate_improvements() and the idle fallback build a plain
+  land pf map, so a tile across water is enumerated and then silently
+  discarded as unreachable (findings/idle-workers.md section 9). The
+  counts are therefore split by continent: `open` is work this unit
+  could walk to, `xopen` is work it could only reach by boat, and the
+  gap between them is the size of what a worker cannot currently see.
+
+  Continent number is the proxy for "needs a boat", not a pf run: it is
+  what assign_continent_numbers() maintains, and it is free. It counts
+  a same-continent tile that is blocked by terrain as reachable, which
+  makes `xopen` a LOWER bound on unreachable work.
+
   Read-only; no pathfinding. Called only for a unit that has just
   concluded it has nothing to do, and only when the metric lines are
   being written.
@@ -893,12 +907,21 @@ static void deep_idle_work_census(const struct civ_map *nmap,
                                   struct player *pplayer,
                                   struct unit *punit,
                                   int *tiles, int *road, int *irrig,
-                                  int *mine, int *open)
+                                  int *mine, int *open,
+                                  int *xtiles, int *xopen, int *xcities)
 {
+  Continent_id here = tile_continent(unit_tile(punit));
+
   *tiles = *road = *irrig = *mine = *open = 0;
+  *xtiles = *xopen = *xcities = 0;
 
   city_list_iterate(pplayer->cities, pcity) {
     struct tile *pcenter = city_tile(pcity);
+    bool overseas = (tile_continent(pcenter) != here);
+
+    if (overseas) {
+      (*xcities)++;
+    }
 
     city_tile_iterate_index(nmap, city_map_radius_sq_get(pcity), pcenter,
                             ptile, cindex) {
@@ -907,23 +930,37 @@ static void deep_idle_work_census(const struct civ_map *nmap,
       if (!city_can_work_tile(pcity, ptile)) {
         continue;
       }
-      (*tiles)++;
+      if (overseas) {
+        (*xtiles)++;
+      } else {
+        (*tiles)++;
+      }
 
       if (next_extra_for_tile(ptile, EC_ROAD, pplayer, punit) != NULL) {
-        (*road)++;
+        if (!overseas) {
+          (*road)++;
+        }
         any = TRUE;
       }
       if (next_extra_for_tile(ptile, EC_IRRIGATION, pplayer,
                               punit) != NULL) {
-        (*irrig)++;
+        if (!overseas) {
+          (*irrig)++;
+        }
         any = TRUE;
       }
       if (next_extra_for_tile(ptile, EC_MINE, pplayer, punit) != NULL) {
-        (*mine)++;
+        if (!overseas) {
+          (*mine)++;
+        }
         any = TRUE;
       }
       if (any) {
-        (*open)++;
+        if (overseas) {
+          (*xopen)++;
+        } else {
+          (*open)++;
+        }
       }
     } city_tile_iterate_index_end;
   } city_list_iterate_end;
@@ -1543,19 +1580,22 @@ CLEANUP:
 
   if (best_tile == NULL
       && log_do_output_for_level(deep_metric_log_level())) {
-    int tiles, road, irrig, mine, open;
+    int tiles, road, irrig, mine, open, xtiles, xopen, xcities;
+    const struct ai_plr *plr_data = def_ai_player_data(pplayer, ait);
 
     deep_idle_work_census(nmap, pplayer, punit, &tiles, &road, &irrig,
-                          &mine, &open);
+                          &mine, &open, &xtiles, &xopen, &xcities);
     log_base(deep_metric_log_level(),
              "deep-idle turn=%d player=\"%s\" unit=%d type=\"%s\""
              " at=(%d,%d) founder=%d impr=%d cities=%d workable=%d"
-             " open=%d road=%d irrig=%d mine=%d",
+             " open=%d road=%d irrig=%d mine=%d"
+             " xcities=%d xworkable=%d xopen=%d boats=%d avail=%d",
              game.info.turn, player_name(pplayer), punit->id,
              unit_rule_name(punit), TILE_XY(unit_tile(punit)),
              unit_is_cityfounder(punit) ? 1 : 0, (int) best_impr,
              city_list_size(pplayer->cities), tiles, open, road, irrig,
-             mine);
+             mine, xcities, xtiles, xopen,
+             plr_data->stats.boats, plr_data->stats.available_boats);
   }
 
   if (NULL != path) {
