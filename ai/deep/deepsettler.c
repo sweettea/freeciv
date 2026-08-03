@@ -1076,6 +1076,104 @@ static bool deep_idle_fallback_work(struct ai_type *ait,
 }
 
 /**********************************************************************//**
+  Hand a founder back to a city as population.
+
+  A settler that is not going to found is worth more as the two
+  citizens it cost than as a free worker: civ2civ3 Settlers carry
+  AddToCity with pop_cost 2, and the Join City enabler asks only for a
+  domestic target and one move fragment. No AI in the tree ever
+  performs the action -- ACTRES_JOIN_CITY appears three times across
+  ai/ and every one is a classification switch, never an actor
+  (upstream-bugs.md #31).
+
+  Measured motivation: 13.4 founders per game stand IDLE at the end of
+  a lategame-80 game, 80% of all surviving founders, and giving them
+  terrain work instead moved no output at all
+  (findings/idle-workers.md). Human call 2026-08-03: a settler doing
+  worker duty should join a city instead.
+
+  Targets are own cities that can still grow by this unit's pop value
+  -- city_can_grow_to() keeps us from pushing citizens into a city the
+  ruleset will not let grow -- ranked by soonest arrival, which is an
+  ordering rather than a threshold, so no constant is invented.
+
+  Returns TRUE if the unit joined, or is under way to do so.
+**************************************************************************/
+static bool deep_settler_join_city(struct ai_type *ait,
+                                   const struct civ_map *nmap,
+                                   struct player *pplayer,
+                                   struct unit *punit)
+{
+  struct pf_parameter parameter;
+  struct deep_settler_risk risk;
+  struct pf_map *pfm;
+  struct pf_position pos;
+  struct city *best = NULL;
+  int best_turns = FC_INFINITY;
+  int pop = unit_pop_value(punit);
+
+  if (!unit_is_cityfounder(punit) || pop <= 0) {
+    return FALSE;
+  }
+
+  pft_fill_unit_parameter(&parameter, nmap, punit);
+  parameter.omniscience = !has_handicap(pplayer, H_MAP);
+  deep_settler_apply_risk(&parameter, &risk, punit);
+  pfm = pf_map_new(&parameter);
+
+  city_list_iterate(pplayer->cities, pcity) {
+    if (!city_can_grow_to(pcity, city_size_get(pcity) + pop)) {
+      continue;
+    }
+    if (pf_map_position(pfm, city_tile(pcity), &pos)
+        && pos.turn < best_turns) {
+      best_turns = pos.turn;
+      best = pcity;
+    }
+  } city_list_iterate_end;
+
+  pf_map_destroy(pfm);
+
+  if (best == NULL) {
+    return FALSE;
+  }
+
+  if (same_pos(unit_tile(punit), city_tile(best))) {
+    bool joined = FALSE;
+
+    action_by_result_iterate(paction, ACTRES_JOIN_CITY) {
+      if (action_prob_possible(action_prob_vs_city(nmap, punit,
+                                                   action_id(paction),
+                                                   best))) {
+        if (unit_perform_action(pplayer, punit->id, best->id, 0, "",
+                                action_id(paction), ACT_REQ_PLAYER)) {
+          joined = TRUE;
+          break;
+        }
+      }
+    } action_by_result_iterate_end;
+
+    log_base(deep_metric_log_level(),
+             "deep-join turn=%d player=\"%s\" unit=%d city=%d size=%d"
+             " pop=%d done=%d",
+             game.info.turn, player_name(pplayer), punit->id, best->id,
+             city_size_get(best), pop, joined ? 1 : 0);
+
+    return joined;
+  }
+
+  log_base(deep_metric_log_level(),
+           "deep-join turn=%d player=\"%s\" unit=%d city=%d size=%d"
+           " pop=%d turns=%d walking=1",
+           game.info.turn, player_name(pplayer), punit->id, best->id,
+           city_size_get(best), pop, best_turns);
+
+  punit->goto_tile = city_tile(best);
+
+  return deep_settler_goto(ait, punit, city_tile(best));
+}
+
+/**********************************************************************//**
   Auto settler that can also build cities. Derived from
   dai_auto_settler_run() in daisettler.c; the differences are that city
   placements come from the risk-aware search above and that the debug
@@ -1308,24 +1406,39 @@ FIND_WORK:
       }
       path = NULL;
       goto BUILD_CITY;
-    } else if (best_impr > 0) {
-      UNIT_LOG(LOG_DEBUG, punit, "improves terrain instead of founding");
-      /* Terrain improvements follows the old model, and is recalculated
-       * each turn. */
-      if (result) {
-        /* We had a city result, just worse than best impr */
-        cityresult_destroy(result);
-      }
-      adv_unit_new_task(punit, AUT_AUTO_WORKER, best_tile);
     } else {
-      UNIT_LOG(LOG_DEBUG, punit, "cannot find work");
-      fc_assert(result == NULL);
-      dai_unit_new_task(ait, punit, AIUNIT_NONE, NULL);
-      /* Nothing scored and nothing was worth founding: rather than
-       * stand here, build the soonest legal improvement in our own
-       * radii. */
-      (void) deep_idle_fallback_work(ait, nmap, pplayer, punit, state);
-      goto CLEANUP;
+      /* Not founding this turn. A founder is two citizens carrying a
+       * shovel: hand it back to a city rather than let it do a
+       * pop_cost 0 unit's job or stand still (human call 2026-08-03).
+       * Terrain work stays as the fallback for when no city can take
+       * it. */
+      /* Join only when the search found NO site at all, not merely a
+       * site that scored under this turn's terrain work. Joining is
+       * irreversible, and a settler that is briefly outbid still
+       * founds later once borders or the map move: the first cut
+       * joined on "not founding this turn" and cost 0.22 cities and
+       * 2800 land area per player over 10 seeds (t=-2.35) to buy an
+       * idle-founder count of 0.3. No constant: the condition is the
+       * search returning nothing. */
+      if (result == NULL) {
+        dai_unit_new_task(ait, punit, AIUNIT_NONE, NULL);
+        if (deep_settler_join_city(ait, nmap, pplayer, punit)) {
+          return;
+        }
+      } else {
+        /* A foundable site exists but is worth less than working the
+         * land right now; keep the unit and the option. */
+        cityresult_destroy(result);
+        dai_unit_new_task(ait, punit, AIUNIT_NONE, NULL);
+      }
+      if (best_impr > 0) {
+        UNIT_LOG(LOG_DEBUG, punit, "improves terrain instead of founding");
+        adv_unit_new_task(punit, AUT_AUTO_WORKER, best_tile);
+      } else {
+        UNIT_LOG(LOG_DEBUG, punit, "cannot find work");
+        (void) deep_idle_fallback_work(ait, nmap, pplayer, punit, state);
+        goto CLEANUP;
+      }
     }
   } else {
     /* We are a worker or engineer */
