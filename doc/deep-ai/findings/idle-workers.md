@@ -461,3 +461,32 @@ Three remain open, with human design calls attached:
   four, if value is discounted by `amortize(value, turns)` the way the
   site search already does, with route risk from the shared
   `deep_settler_overnight_veto()`.
+
+## 11. Sizing section 9: what an idle worker cannot see (2026-08-03)
+
+The idle census now splits by continent (`aa42dc099c`), so the metric
+line says whether a worker reporting "nothing to do" had nothing to do
+or merely nothing it could walk to. `lategame-80`, 10 train seeds, deep
+arm, 6890 idle worker-turns:
+
+    mean per idle unit-turn      own continent   across water
+      cities                             5.55           2.36
+      workable tiles                    50.64          40.71
+      OPEN work (road/irrig/mine)       17.55          12.69
+
+    idle turns with no local open work at all   2397   34.8%
+    ... and open work across the water          1043   15.1%
+    ... and a boat available for it             1002   14.5%
+    idle turns with any boat at all             3851   55.9%
+
+**42% of the open terrain work an idle worker's empire is holding is on
+a landmass it cannot reach**, and in one idle turn in seven the unit had
+literally nothing to do at home, real work waiting overseas, and a boat
+free to carry it.
+
+`xopen` is a lower bound: the split is by continent number, so
+same-continent work blocked by terrain still counts as reachable.
+
+That is the size of the section 9 defect, and it also bounds the repair:
+the fallback can only act on the 15%, not on the whole 42%, because the
+rest of the time the worker has local work it would do first.
