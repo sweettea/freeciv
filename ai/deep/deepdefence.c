@@ -440,6 +440,52 @@ static unsigned int deep_boat_shadow_fear(const struct civ_map *nmap,
 }
 
 /**********************************************************************//**
+  Share of the world's land that nobody has claimed, 0.0 to 1.0, as
+  the player can see it.
+
+  deep_map_crowding() and deep_land_pressure() answer from the lobby
+  settings and never move for the whole game, so neither can say
+  whether there is still anywhere to go. This does: it counts land
+  tiles with no owner against all known land. Cached per player per
+  turn -- one whole-map pass on a 40x40 is nothing, but it is not
+  nothing once per idle settler per turn.
+
+  Honest about vision: a non-omniscient player counts only tiles it
+  knows, so unexplored world reads as absent rather than as free. That
+  is the conservative direction -- it shrinks the estimate rather than
+  inventing room -- and at the difficulties anyone plays the AI is
+  omniscient anyway (RC6).
+**************************************************************************/
+double deep_free_land_share(const struct player *pplayer)
+{
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  bool omniscient = !has_handicap(pplayer, H_MAP);
+  int land = 0, free_land = 0;
+
+  if (dp->free_land_turn == game.info.turn) {
+    return dp->free_land_permille / 1000.0;
+  }
+
+  whole_map_iterate(&(wld.map), ptile) {
+    if (!omniscient && tile_get_known(ptile, pplayer) == TILE_UNKNOWN) {
+      continue;
+    }
+    if (is_ocean_tile(ptile)) {
+      continue;
+    }
+    land++;
+    if (tile_owner(ptile) == NULL) {
+      free_land++;
+    }
+  } whole_map_iterate_end;
+
+  dp->free_land_permille = (land > 0 ? 1000 * free_land / land : 0);
+  dp->free_land_turn = game.info.turn;
+
+  return dp->free_land_permille / 1000.0;
+}
+
+/**********************************************************************//**
   Pre-contact density prior (human refinement 2026-07-30): the lobby
   settings are observable evidence at turn zero. A shared-continent
   startpos (ALL / 2or3 / VARIABLE, including FRACTAL's DEFAULT->ALL

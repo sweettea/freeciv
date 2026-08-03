@@ -61,6 +61,14 @@ struct deep_plr {
    * -- refreshed every turn the settler pipeline runs. */
   int colony_want;
   int colony_turn;
+  /* Share of the world's land that nobody has claimed yet, 0..1000
+   * (per mille, so the cache is an int). deep_map_crowding() and
+   * deep_land_pressure() both answer from lobby settings and never
+   * move; this is the live figure, and it is what says whether holding
+   * a settler is holding an option or holding inventory. Recomputable:
+   * refreshed at most once per turn per player. */
+  int free_land_permille;
+  int free_land_turn;
 };
 
 static inline struct deep_plr *deep_plr_data(const struct player *pplayer)

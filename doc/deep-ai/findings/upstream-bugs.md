@@ -232,6 +232,14 @@ exhausted). Not fixed in place per rule 2's spirit for common/.
     (capacity 4, no `Workers` flag) take the ferry branch normally; the
     bigger boat never does.
 
+    **Ruleset-dependent.** A sweep of the shipped rulesets finds this
+    unit only in civ2civ3; `classic` has no ferry carrying the
+    `Workers` flag, so the bug is latent there. That does not make it a
+    civ2civ3 problem — the dispatch order is wrong for any ruleset that
+    ever ships such a unit, and rulesets are user-authored — but it
+    does mean the `-classic` benchmark cells cannot reproduce it, and
+    any measurement of it has to say which ruleset it was taken on.
+
     Measured in `ai/deep` on `lategame-80`, 10 games
     (`findings/settler-missions.md` §8): of the idle boat-turns where a
     settler was flagged `FERRY_WANTED` *and* the boat's own cargo-search

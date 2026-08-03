@@ -50,6 +50,18 @@ struct deep_tuning {
    * v4 owns the number. */
   double settler_risk_tolerance;
 
+  /* Founders to keep alive per own city before Join City is allowed to
+   * dissolve one. A founder pool must be nonzero -- a settler in hand
+   * is the only way to take a site the moment it opens -- but never
+   * big, because every one is two citizens and a shield bill standing
+   * on the map (human call 2026-08-03). PLACEHOLDER: 0.31 reproduces
+   * the 2.73 founders per player the tree carried before Join City
+   * existed, at the 8.68 cities per player it had; that state is the
+   * one whose land area the join regression is measured against, so it
+   * is the honest starting point rather than a guess. Wants a tuning
+   * pass. */
+  double founder_pool_per_city;
+
   /* How steeply an en-route defender's contribution to its target
    * city's effective danger reduction decays per turn of distance
    * (W11): credit = power * survival^eta / (1 + eta_weight * eta). */

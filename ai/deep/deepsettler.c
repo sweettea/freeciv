@@ -59,6 +59,7 @@
 #include "daitools.h"
 #include "daiunit.h"
 
+#include "deepdefence.h"
 #include "deepsite.h"
 #include "deeptuning.h"
 
@@ -1114,6 +1115,53 @@ static bool deep_settler_join_city(struct ai_type *ait,
 
   if (!unit_is_cityfounder(punit) || pop <= 0) {
     return FALSE;
+  }
+
+  /* Keep a pool. A founder in hand is the only way to take a site the
+   * moment one opens, and joining is irreversible: the first cut of
+   * this dissolved settlers down to 0.32 per player and cost 2800 land
+   * area at t=-2.35 (findings/idle-workers.md 7). So dissolve only
+   * what is ABOVE the target pool, and prefer to spend a founder that
+   * a city is paying upkeep on -- a homeless one is free to keep and
+   * free to settle with, which is the bias the human asked for
+   * (2026-08-03). */
+  {
+    int founders = 0, homed = 0;
+
+    unit_list_iterate(pplayer->units, aunit) {
+      if (unit_is_cityfounder(aunit)) {
+        founders++;
+        if (aunit->homecity != 0) {
+          homed++;
+        }
+      }
+    } unit_list_iterate_end;
+
+    /* Scale the pool by how much of the world is still unclaimed
+     * (human call 2026-08-03). A settler in hand is an option on a
+     * site, and an option is worth what remains to be taken: on an
+     * empty map hold several, on a full one hold none and take the two
+     * citizens back. deep_free_land_share() is the live figure --
+     * deep_map_crowding() answers from lobby settings and never moves,
+     * so it cannot express "the world has filled up since". */
+    if (founders <= (int) (deep_tuning_get()->founder_pool_per_city
+                           * deep_free_land_share(pplayer)
+                           * city_list_size(pplayer->cities))) {
+      return FALSE;                 /* Pool is at or under target. */
+    }
+    if (punit->homecity == 0 && homed > 0
+        && game.server.killunhomed <= 0) {
+      /* Somebody else is costing a city upkeep; spend that one first
+       * and leave this one free to settle.
+       *
+       * Only when the ruleset/settings let a homeless unit live:
+       * killunhomed > 0 takes that percentage of a homeless unit's
+       * hitpoints every turn until it dies (unittools.c:501), which
+       * turns "free to keep" into "dying slowly". Under that setting
+       * the homeless founder is the one to spend FIRST, so the bias
+       * simply switches off rather than inverting on a guess. */
+      return FALSE;
+    }
   }
 
   pft_fill_unit_parameter(&parameter, nmap, punit);

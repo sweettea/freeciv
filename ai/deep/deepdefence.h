@@ -24,6 +24,10 @@ void deep_do_last_activities(struct ai_type *ait, struct player *pplayer);
  * and the chokepoint site bonus. */
 double deep_map_crowding(void);
 
+/* Share of known land that nobody owns, 0..1. The LIVE figure, unlike
+ * the two lobby-setting priors below; cached per player per turn. */
+double deep_free_land_share(const struct player *pplayer);
+
 /* Land pressure: land_pressure_tiles / (land_pressure_tiles +
  * land-per-player). Same evidence as deep_map_crowding() and the same
  * direction, but it never saturates, so it keeps discriminating below
