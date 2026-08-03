@@ -350,3 +350,114 @@ rather than one regime at two scales. And mean city size is flat
 bigger cities: ~2.4 joins per player over a whole game is ~5 population
 against ~50, spread over 8-23 cities. Join City was never going to show
 in city size; it shows in upkeep not paid and units not lost.
+
+---
+
+## 9. Workers cannot cross water at all (2026-08-03)
+
+Human observation: *AI cities on a different continent never get
+workers.* Confirmed, and it is structural rather than a valuation
+failure.
+
+`worker_evaluate_improvements()` builds its map with
+`pft_fill_unit_parameter()` -- a plain land parameter. An overseas
+city IS enumerated (it is in `pplayer->cities`), and then every tile in
+its radius is silently discarded at
+`if (pf_map_position(pfm, ptile, &pos))` because a land unit cannot
+path there.
+
+And **there is no ferry leg anywhere in the worker path.** Every
+`aiferry_*` call in `deepsettler.c` sits on the BUILD_CITY mission
+branch -- `deep_settler_gothere()` -> `aiferry_gobyboat()`. The
+FIND_WORK branch ends at `auto_worker_setup_work()`, which walks a land
+path and nothing else. Settlers can board boats; workers never can.
+
+A colony founded overseas is therefore improved only by whatever
+founders happen to land there and get repurposed, and by nothing else
+for the rest of the game.
+
+    lategame-80 final saves, distance from each city to the nearest
+    worker-capable unit of its owner:
+
+      cities 522   median 2.2   p75 5.0   p90 8.5   max 24.4
+      cities with NO worker-capable unit within 8 tiles: 65 (12%)
+
+The mainland is well served and a minority of cities are simply
+abandoned.
+
+**This closes a loop with section 8.** Overseas expansion measured as
+barely worth having -- ~11 cities a game, and joining settlers cost
+land. Part of the reason is that overseas cities never receive terrain
+work, so they stay low-value. The colonisation pipeline and the worker
+pipeline are failing each other, and fixing either alone understates
+both.
+
+### The fix, specified
+
+The machinery exists: `pft_fill_amphibious_parameter()` and
+`pft_amphibious` already carry settlers via
+`aiferry_goto_amphibious()`. The worker side needs the same two
+things:
+
+1. **See it.** When the land search finds nothing, re-run the
+   enumeration with an amphibious parameter so tiles on other landmasses
+   become reachable-with-a-boat rather than invisible.
+2. **Reach it.** Route the assignment through `aiferry_gobyboat()`
+   instead of a bare walk.
+
+Plus `worker_cross_continent_discount` (new tunable, placeholder + a
+tuning pass) applied to the cross-water candidates, so this stays
+backup behaviour and workers do not queue for boats ahead of settlers.
+
+It is also the change that would finally make
+`deep_idle_fallback_work()` non-inert: "nothing to do here" and "a
+whole unimproved colony over there" is exactly the case it currently
+cannot see.
+
+## 10. The settler/boat tuning surface, audited (2026-08-03)
+
+Human request: check we have all the tuning params that make sense
+around boats and settlers.
+
+**Not one settler or boat parameter has ever been tuned.** All fifteen
+are placeholders or inherited stock values:
+
+    settler_fearfulness_mult  2.0   PLACEHOLDER   overseas_fear       0.5  PLACEHOLDER
+    settler_risk_tolerance    1.0   stock bar     overseas_decay      0.2  PLACEHOLDER
+    founder_pool_per_site     0.06  PLACEHOLDER   boat_shadow_fear     25  PLACEHOLDER
+    site_stream_weight        1.0   PLACEHOLDER   colony_lift_weight  0.5  PLACEHOLDER
+    site_travel_discount      0.9   human-set     settler_rush_weight 1.0  PLACEHOLDER
+    site_travel_crowding      0.0   OFF           site_settler_cost_weight  stock
+    site_boat_cost_weight     1/3   stock
+
+Five decisions had no lever at all. Two are now fixed (`190d47afc9`):
+
+- **`site_enough_result`** replaces stock's compile-time
+  `RESULT_IS_ENOUGH = 250`. Above it the on-continent search returns
+  immediately and phase 2 never runs, so one inherited constant decides
+  whether colonisation is EVALUATED at all. PLACEHOLDER 250.0 = stock.
+- **`settler_guard_tolerance`**. The same trip was judged by a
+  parameterised danger bar for movement and a bare `adv_danger_at()`
+  for protection. Both now use `deep_settler_overnight_veto()` at their
+  own tolerance, so "ask for an escort before you would refuse to go"
+  is expressible. PLACEHOLDER 1.0 = stock bar = previous behaviour.
+
+Three remain open, with human design calls attached:
+
+- **The ferry cap `passengers >= boats`** (`deepsettler.c`). Human call:
+  **keep 1:1**. A settler occupies a boat for a round trip, so one
+  waiting settler per boat is honest, and a capacity multiplier would
+  queue eight settlers behind one Transport and recreate the
+  dock-parking bug the guard was added for. The exception is a
+  **settlement party** -- several settlers on ONE boat making ONE trip
+  to a low-risk destination -- which is "the cap counts trips, not
+  settlers", and needs the lift-as-an-operation work to exist first.
+- **The idle fallback has no gate** and cannot see other continents:
+  section 9.
+- **Join City ranks targets by arrival time only.** Human call: it
+  should also weigh **granary presence** (a stocked granary carries the
+  food forward instead of evaporating) and **the citizens' value to
+  that city** against **travel time and route risk**. One weight, not
+  four, if value is discounted by `amortize(value, turns)` the way the
+  site search already does, with route risk from the shared
+  `deep_settler_overnight_veto()`.
