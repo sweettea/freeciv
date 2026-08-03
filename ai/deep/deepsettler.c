@@ -995,36 +995,41 @@ static void deep_idle_work_census(const struct civ_map *nmap,
 
   Returns TRUE if work was assigned.
 **************************************************************************/
-static bool deep_idle_fallback_work(struct ai_type *ait,
-                                    const struct civ_map *nmap,
-                                    struct player *pplayer,
-                                    struct unit *punit,
-                                    struct workermap *state)
+/* One candidate improvement: where, what, and how soon it would be
+ * finished counting travel. */
+struct deep_idle_pick {
+  struct tile *tile;
+  struct extra_type *target;
+  enum unit_activity act;
+  int turns;
+};
+
+/**********************************************************************//**
+  Score every improvable tile reachable on 'pfm' and keep the soonest,
+  writing into 'best' only when a candidate beats what is already there.
+
+  Shared by the fallback's two passes. 'overseas' selects which cities
+  are considered: FALSE for those on the unit's own continent, TRUE for
+  the ones it could only reach by boat. 'extra_turns' is added to every
+  candidate (the wait for a lift) and 'price' multiplies the total (the
+  cross-continent discount), so a boat trip competes with work at home
+  on one comparable number.
+**************************************************************************/
+static void deep_idle_scan(const struct civ_map *nmap,
+                           struct player *pplayer, struct unit *punit,
+                           struct pf_map *pfm, bool omniscience,
+                           Continent_id home, bool overseas,
+                           int extra_turns, double price,
+                           struct deep_idle_pick *best)
 {
-  struct pf_parameter parameter;
-  struct pf_map *pfm;
   struct pf_position pos;
-  struct tile *best_tile = NULL;
-  struct extra_type *best_target = NULL;
-  enum unit_activity best_act = ACTIVITY_IDLE;
-  int best_turns = FC_INFINITY;
-  struct pf_path *path = NULL;
-  bool assigned = FALSE;
-
-  if (!unit_has_type_flag(punit, UTYF_WORKERS)) {
-    return FALSE;
-  }
-
-  pft_fill_unit_parameter(&parameter, nmap, punit);
-  parameter.omniscience = !has_handicap(pplayer, H_MAP);
-  /* autoworker_tile_behavior() is static in the advisors; deep's own
-   * settler behaviour is the same worker rule plus a refusal to path
-   * onto non-allied units, which is what we want here anyway. */
-  parameter.get_TB = deep_settler_tile_behavior;
-  pfm = pf_map_new(&parameter);
 
   city_list_iterate(pplayer->cities, pcity) {
     struct tile *pcenter = city_tile(pcity);
+
+    if ((tile_continent(pcenter) != home) != overseas) {
+      continue;
+    }
 
     city_tile_iterate_index(nmap, city_map_radius_sq_get(pcity), pcenter,
                             ptile, cindex) {
@@ -1077,7 +1082,7 @@ static bool deep_idle_fallback_work(struct ai_type *ait,
         if (!action_prob_possible(
               action_speculate_unit_on_tile(nmap, act, punit,
                                             unit_home(punit), ptile,
-                                            parameter.omniscience,
+                                            omniscience,
                                             ptile, target))) {
           continue;
         }
@@ -1087,15 +1092,186 @@ static bool deep_idle_fallback_work(struct ai_type *ait,
         if (pos.moves_left == 0) {
           turns++;
         }
-        if (turns < best_turns) {
-          best_turns = turns;
-          best_tile = ptile;
-          best_target = target;
-          best_act = activity;
+        turns = (int) ((turns + extra_turns) * price);
+        if (turns < best->turns) {
+          best->turns = turns;
+          best->tile = ptile;
+          best->target = target;
+          best->act = activity;
         }
       } aw_extra_action_iterate_end;
     } city_tile_iterate_index_end;
   } city_list_iterate_end;
+}
+
+/**********************************************************************//**
+  Second pass of the fallback: work on another landmass, reached by
+  boat.
+
+  Workers cannot cross water at all today. The land pf map enumerates an
+  overseas city's radius and then discards every tile of it as
+  unreachable, and there is no ferry leg anywhere on the worker path --
+  every aiferry_* call in this file sits on the BUILD_CITY branch. A
+  colony is therefore improved only by whatever founders happen to land
+  there (findings/idle-workers.md section 9): on lategame-80, 12% of
+  cities have no worker-capable unit within 8 tiles and the tail runs
+  to 24.
+
+  Seeing it uses the machinery the site search already uses for exactly
+  this question -- a real ferry's overlap map, which prices the sea leg
+  and lets the last step fall on a beach. Reaching it uses the settler's
+  own ferry-enabled goto.
+
+  This stays BACKUP behaviour by two separate guards, because a worker
+  that takes a boat a settler wanted trades a colony for a road:
+
+  - the 1:1 ferry cap the site search enforces (a waiting passenger per
+    boat) is checked here too, so workers only bid on genuinely spare
+    lift; and
+  - the trip is priced by worker_cross_continent_discount on top of its
+    real travel turns, so it must beat the best walkable candidate by
+    that factor to win.
+
+  Returns TRUE if the pick in 'best' is now a cross-water one.
+**************************************************************************/
+static bool deep_idle_cross_water(struct ai_type *ait,
+                                  const struct civ_map *nmap,
+                                  struct player *pplayer,
+                                  struct unit *punit, Continent_id home,
+                                  struct deep_idle_pick *best)
+{
+  const struct ai_plr *plr_data = def_ai_player_data(pplayer, ait);
+  struct pf_parameter parameter;
+  struct pf_path *ferry_path = NULL;
+  struct pf_map *pfm;
+  struct unit *ferry;
+  struct tile *was = best->tile;
+  int ferry_wait = 0;
+
+#define CROSS_DECLINE(reason)                                           \
+  do {                                                                  \
+    log_base(deep_metric_log_level(),                                   \
+             "deep-cross turn=%d player=\"%s\" unit=%d at=(%d,%d)"       \
+             " why=%s land=%d boats=%d avail=%d psng=%d",                \
+             game.info.turn, player_name(pplayer), punit->id,            \
+             TILE_XY(unit_tile(punit)), (reason),                        \
+             best->turns, plr_data->stats.boats,                         \
+             plr_data->stats.available_boats,                            \
+             plr_data->stats.passengers);                                \
+    return FALSE;                                                       \
+  } while (FALSE)
+
+  if (plr_data->stats.passengers >= plr_data->stats.boats) {
+    /* Every boat already has somebody waiting for it. The settler
+     * pipeline owns that queue; a worker must not join it. */
+    CROSS_DECLINE("cap");
+  }
+
+  /* A real boat only. The virtual-boat trick exists so the site search
+   * can express DEMAND for a ferry that does not exist yet; a worker
+   * asking for one would bid shields away from colonisation, which is
+   * the opposite of backup behaviour. */
+  ferry = game_unit_by_number(aiferry_find_boat(ait, punit, 1,
+                                                &ferry_path));
+  if (ferry_path != NULL) {
+    /* Real turns to the rendezvous, not an estimate -- the same figure
+     * the site search discounts an overseas site by. */
+    ferry_wait = pf_path_last_position(ferry_path)->turn;
+    pf_path_destroy(ferry_path);
+  }
+  if (ferry == NULL) {
+    CROSS_DECLINE("noboat");
+  }
+
+  pft_fill_unit_overlap_param(&parameter, nmap, ferry);
+  parameter.omniscience = !has_handicap(pplayer, H_MAP);
+  parameter.get_TB = no_fights_or_unknown;
+  pfm = pf_map_new(&parameter);
+
+  deep_idle_scan(nmap, pplayer, punit, pfm, parameter.omniscience, home,
+                 TRUE, ferry_wait,
+                 1.0 + deep_tuning_get()->worker_cross_continent_discount,
+                 best);
+
+  pf_map_destroy(pfm);
+
+  if (best->tile == was) {
+    /* Told apart because they mean opposite things: "nocand" is an
+     * empire with no reachable overseas work to do, "outbid" is work
+     * that exists and lost to something walkable. Only the second is
+     * the discount's doing. */
+    CROSS_DECLINE(was == NULL ? "nocand" : "outbid");
+  }
+
+  return TRUE;
+#undef CROSS_DECLINE
+}
+
+/**********************************************************************//**
+  Last resort for a worker that found nothing worth doing.
+**************************************************************************/
+static bool deep_idle_fallback_work(struct ai_type *ait,
+                                    const struct civ_map *nmap,
+                                    struct player *pplayer,
+                                    struct unit *punit,
+                                    struct workermap *state)
+{
+  struct pf_parameter parameter;
+  struct pf_map *pfm;
+  struct deep_idle_pick best = { NULL, NULL, ACTIVITY_IDLE, FC_INFINITY };
+  Continent_id home = tile_continent(unit_tile(punit));
+  struct tile *best_tile;
+  struct extra_type *best_target;
+  enum unit_activity best_act;
+  int best_turns;
+  struct pf_path *path = NULL;
+  bool cross;
+  bool assigned = FALSE;
+
+  if (!unit_has_type_flag(punit, UTYF_WORKERS)) {
+    return FALSE;
+  }
+
+  pft_fill_unit_parameter(&parameter, nmap, punit);
+  parameter.omniscience = !has_handicap(pplayer, H_MAP);
+  /* autoworker_tile_behavior() is static in the advisors; deep's own
+   * settler behaviour is the same worker rule plus a refusal to path
+   * onto non-allied units, which is what we want here anyway. */
+  parameter.get_TB = deep_settler_tile_behavior;
+  pfm = pf_map_new(&parameter);
+
+  deep_idle_scan(nmap, pplayer, punit, pfm, parameter.omniscience, home,
+                 FALSE, 0, 1.0, &best);
+
+  /* Only now, against whatever walking would achieve. */
+  cross = deep_idle_cross_water(ait, nmap, pplayer, punit, home, &best);
+
+  best_tile = best.tile;
+  best_target = best.target;
+  best_act = best.act;
+  best_turns = best.turns;
+
+  if (cross) {
+    log_base(deep_metric_log_level(),
+             "deep-idlework turn=%d player=\"%s\" unit=%d type=\"%s\""
+             " at=(%d,%d) act=%d target=\"%s\" tile=(%d,%d) turns=%d"
+             " cross=1",
+             game.info.turn, player_name(pplayer), punit->id,
+             unit_rule_name(punit), TILE_XY(unit_tile(punit)),
+             (int) best_act, extra_rule_name(best_target),
+             TILE_XY(best_tile), best_turns);
+
+    adv_unit_new_task(punit, AUT_AUTO_WORKER, best_tile);
+    punit->goto_tile = best_tile;
+    /* The settler's ferry-enabled goto: it books the lift, waits for it
+     * where waiting is right, and walks the far side after landing.
+     * Whether it arrives this turn or in ten, the unit now has a
+     * mission, which is the thing it did not have before. */
+    (void) deep_settler_gothere(ait, pplayer, punit, best_tile);
+    pf_map_destroy(pfm);
+
+    return TRUE;
+  }
 
   if (best_tile != NULL) {
     log_base(deep_metric_log_level(),
@@ -1553,16 +1729,29 @@ FIND_WORK:
         UNIT_LOG(LOG_DEBUG, punit, "improves terrain instead of founding");
         adv_unit_new_task(punit, AUT_AUTO_WORKER, best_tile);
       } else {
+        int sanity = punit->id;
+
         UNIT_LOG(LOG_DEBUG, punit, "cannot find work");
         (void) deep_idle_fallback_work(ait, nmap, pplayer, punit, state);
+        if (game_unit_by_number(sanity) == NULL) {
+          /* The fallback can now put a worker on a boat, and a boat can
+           * be sunk. Nothing below may touch the unit. */
+          return;
+        }
         goto CLEANUP;
       }
     }
   } else {
     /* We are a worker or engineer */
-    if (best_tile == NULL
-        && deep_idle_fallback_work(ait, nmap, pplayer, punit, state)) {
-      goto CLEANUP;
+    if (best_tile == NULL) {
+      int sanity = punit->id;
+
+      if (deep_idle_fallback_work(ait, nmap, pplayer, punit, state)) {
+        if (game_unit_by_number(sanity) == NULL) {
+          return;
+        }
+        goto CLEANUP;
+      }
     }
     adv_unit_new_task(punit, AUT_AUTO_WORKER, best_tile);
   }
