@@ -319,3 +319,34 @@ average the spread away.
 
 Landed with `founder_pool_per_site` (renamed from `_per_city`, which
 would now be lying about what it measures).
+
+### City density did not move, and was never going to
+
+Checked because it is the obvious way a settler-supply change could do
+damage invisibly. Nearest own-city distance, self-founded cities only,
+final saves:
+
+    run                        n    median   mean    p90   at floor
+    lategame-80 base         444      3.16   5.37  11.18       43%
+    lategame-80 pool-site    421      3.16   5.02  11.18       46%
+    primary-120 no-join     1284      3.00   3.92   5.39       53%
+    primary-120 pool-site   1270      3.00   3.88   5.39       54%
+
+    land per city   lategame-80  11507 -> 11500     (base -> pool-site)
+                    primary-120  13587 -> 13640
+
+Median and p90 identical to two decimals on both cells; land per city
+moves ~1%. **W02b holds**: the median founded city sits on
+`citymindist` and about half of them are jammed against it, so spacing
+is set by the ruleset and nothing in the settler-supply work could move
+it. Recorded as a negative control rather than a result.
+
+Two asides worth keeping. `primary-120` is DENSER than `lategame-80`
+(median 3.00 vs 3.16, p90 5.4 vs 11.2) despite four times the land per
+player -- the island cell's long tail is water forcing cities apart,
+not choice, which is more evidence the two cells are different regimes
+rather than one regime at two scales. And mean city size is flat
+(5.81 -> 5.77, 3.44 -> 3.54), so the joined citizens do not show up as
+bigger cities: ~2.4 joins per player over a whole game is ~5 population
+against ~50, spread over 8-23 cities. Join City was never going to show
+in city size; it shows in upkeep not paid and units not lost.
