@@ -1365,16 +1365,28 @@ BUILD_CITY:
         }
       } else {
         UNIT_LOG(LOG_DEBUG, punit, "could not go to target");
-        if (!goto_is_sane(punit, ptile) && !unit_transported(punit)
-            && def_ai_unit_data(punit, ait)->ferryboat <= 0
+        if (!deep_settler_can_walk_there(punit, ptile)
+            && !unit_transported(punit)
+            && def_ai_unit_data(punit, ait)->ferryboat == 0
             && !land_only) {
-          /* Boat-dependent mission and no boat was assigned this
-           * turn: release the mission and re-search LAND-ONLY this
-           * same turn, so the settler founds something instead of
-           * idling into an identical overseas pick tomorrow (the
-           * first drop-only fix produced a 1200-event pick-drop
-           * loop). Land-blocked missions (temporary ZoC jams) keep
-           * stock's retry behaviour. */
+          /* Boat-dependent mission and the settler is not in the ferry
+           * queue at all: release it and re-search LAND-ONLY this same
+           * turn, so it founds something instead of idling into an
+           * identical overseas pick tomorrow (the first drop-only fix
+           * produced a 1200-event pick-drop loop). Land-blocked
+           * missions (temporary ZoC jams) keep stock's retry
+           * behaviour.
+           *
+           * The test is == FERRY_NONE, not <= 0. FERRY_WANTED is -1,
+           * so the old <= 0 dropped the mission of a settler that had
+           * just successfully ASKED for a boat -- and
+           * dai_unit_new_task() calls aiferry_clear_boat(), which
+           * takes the flag straight back off and decrements
+           * stats.passengers. The request never survived to the turn's
+           * boat pass: 77% of idle boat-turns saw "nobody flagged
+           * anywhere" while settlers stood on the coast, and 66% of
+           * overseas missions were abandoned with "waiting for a lift"
+           * as their last state. */
           log_base(deep_metric_log_level(),
                    "deep-settler turn=%d player=\"%s\" unit=%d"
                    " drop-boatless target=(%d,%d)",
