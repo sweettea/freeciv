@@ -18,6 +18,10 @@
 /* utility */
 #include "log.h"
 
+/* common/aicore */
+#include "path_finding.h"
+#include "pf_tools.h"
+
 /* common */
 #include "city.h"
 #include "game.h"
@@ -30,6 +34,7 @@
 #include "unittype.h"
 
 /* server */
+#include "handicaps.h"
 #include "maphand.h"
 #include "srv_log.h"
 
@@ -39,6 +44,7 @@
 /* ai/default */
 #include "daicity.h"
 #include "daidata.h"
+#include "daiferry.h"
 #include "daiplayer.h"
 #include "daitools.h"
 #include "daiunit.h"
@@ -149,7 +155,70 @@ void deep_manage_units(struct ai_type *ait, struct player *pplayer)
     if ((!unit_transported(punit)
          || unit_owner(unit_transport_get(punit)) != pplayer)
         && !def_ai_unit_data(punit, ait)->done) {
+      /* Ferries get one metric line either side of stock management:
+       * settlers wait on lifts that never arrive, and the boat half of
+       * that protocol is not otherwise observable from ai/deep
+       * (findings/settler-missions.md section 7). Cheap -- no
+       * pathfinding, and only for boats. */
+      bool ferry = (log_do_output_for_level(deep_metric_log_level())
+                    && dai_is_ferry(punit, ait));
+      int psngr0 = ferry ? def_ai_unit_data(punit, ait)->passenger : 0;
+      int wantdist = -1, wantreach = -1;
+
+      if (ferry && def_ai_unit_data(punit, ait)->passenger < 0) {
+        /* Nearest own unit flying the FERRY_WANTED flag, and whether
+         * the boat's own cargo-search map can actually reach it.
+         * aiferry_findcargo() says in a comment that its passenger
+         * count can be a "false positive"; this is how often. */
+        struct unit *nearest = NULL;
+
+        unit_list_iterate(pplayer->units, cargo) {
+          if (def_ai_unit_data(cargo, ait)->ferryboat < 0) {
+            int d = real_map_distance(unit_tile(punit), unit_tile(cargo));
+
+            if (wantdist < 0 || d < wantdist) {
+              wantdist = d;
+              nearest = cargo;
+            }
+          }
+        } unit_list_iterate_end;
+
+        if (nearest != NULL) {
+          struct pf_parameter parameter;
+          struct pf_map *pfm;
+
+          pft_fill_unit_overlap_param(&parameter, &(wld.map), punit);
+          parameter.omniscience = !has_handicap(pplayer, H_MAP);
+          pfm = pf_map_new(&parameter);
+          wantreach = (pf_map_move_cost(pfm, unit_tile(nearest))
+                       != PF_IMPOSSIBLE_MC) ? 1 : 0;
+          pf_map_destroy(pfm);
+        }
+      }
+      int id = punit->id;
+      struct tile *from = unit_tile(punit);
+      int moves0 = punit->moves_left;
+
       dai_manage_unit(ait, pplayer, punit);
+
+      if (ferry && game_unit_by_number(id) != NULL) {
+        log_base(deep_metric_log_level(),
+                 "deep-ferry turn=%d player=\"%s\" unit=%d type=\"%s\" at=(%d,%d)"
+                 " incity=%d hurt=%d psngr=%d/%d cargo=%d moved=%d moves=%d/%d"
+                 " wantdist=%d wantreach=%d"
+                 " boats=%d avail=%d psng=%d",
+                 game.info.turn, player_name(pplayer), id,
+                 unit_rule_name(punit), TILE_XY(unit_tile(punit)),
+                 tile_city(unit_tile(punit)) != NULL ? 1 : 0,
+                 punit->hp < unit_type_get(punit)->hp ? 1 : 0, psngr0,
+                 def_ai_unit_data(punit, ait)->passenger,
+                 get_transporter_occupancy(punit),
+                 same_pos(from, unit_tile(punit)) ? 0 : 1,
+                 moves0, punit->moves_left, wantdist, wantreach,
+                 def_ai_player_data(pplayer, ait)->stats.boats,
+                 def_ai_player_data(pplayer, ait)->stats.available_boats,
+                 def_ai_player_data(pplayer, ait)->stats.passengers);
+      }
     }
   } unit_list_iterate_safe_end;
 }

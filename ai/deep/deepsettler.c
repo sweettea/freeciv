@@ -519,6 +519,83 @@ static int deep_settler_risk_route(struct unit *punit, struct tile *dest,
 }
 
 /**********************************************************************//**
+  Where a settler stands in the ferry protocol, as one loggable digit:
+
+    0  not on a boat and holding none
+    1  not on a boat, asked for one (unit_ai.ferryboat == FERRY_WANTED)
+    2  not on a boat, holding a specific one
+    3  aboard, but another passenger commands the boat
+    4  aboard and in charge of the boat
+
+  The pipeline is two independent searches -- the passenger raises a
+  flag and sets done, the boat looks for flagged passengers -- so the
+  states it can sit in are the only evidence of which half is losing
+  the settler. FERRY_WANTED is private to daiferry.c but it is the
+  documented "unit ids or special indicator values (<= 0)" convention
+  of unit_ai, and only the sign is read here.
+**************************************************************************/
+static int deep_settler_lift_state(struct ai_type *ait, struct unit *punit)
+{
+  int boat = def_ai_unit_data(punit, ait)->ferryboat;
+
+  if (unit_transported(punit)) {
+    return is_boss_of_boat(ait, punit) ? 4 : 3;
+  }
+  if (boat > 0) {
+    return 2;
+  }
+
+  return boat < 0 ? 1 : 0;
+}
+
+/**********************************************************************//**
+  Distance to the nearest of our own boats that would take this settler
+  (is_boat_free()), and to the nearest of our own boats at all.
+  aiferry_find_boat_nearby() only looks one tile out, so a settler that
+  reports a free boat five tiles away is one the boat half of the
+  protocol was supposed to come and collect.
+**************************************************************************/
+static void deep_settler_nearest_boats(struct ai_type *ait,
+                                       struct unit *punit,
+                                       int *any, int *free_one)
+{
+  struct player *pplayer = unit_owner(punit);
+
+  *any = -1;
+  *free_one = -1;
+  unit_list_iterate(pplayer->units, pferry) {
+    if (dai_is_ferry(pferry, ait)) {
+      int d = real_map_distance(unit_tile(punit), unit_tile(pferry));
+
+      if (*any < 0 || d < *any) {
+        *any = d;
+      }
+      if (is_boat_free(ait, pferry, punit, 1)
+          && (*free_one < 0 || d < *free_one)) {
+        *free_one = d;
+      }
+    }
+  } unit_list_iterate_end;
+}
+
+/**********************************************************************//**
+  Distance from the settler to the boat it holds, or -1 if it holds
+  none or the boat has died. A boat that never closes this distance is
+  a different defect from one that was never assigned.
+**************************************************************************/
+static int deep_settler_boat_distance(struct ai_type *ait, struct unit *punit)
+{
+  int boat = def_ai_unit_data(punit, ait)->ferryboat;
+  struct unit *pferry = (boat > 0 ? game_unit_by_number(boat) : NULL);
+
+  if (pferry == NULL) {
+    return -1;
+  }
+
+  return real_map_distance(unit_tile(punit), unit_tile(pferry));
+}
+
+/**********************************************************************//**
   Who claims the target tile, as one loggable digit: 0 nobody, 1 us,
   2 an ally, 3 someone else. Borders move under a walking settler, and
   deep_settler_tile_behavior() refuses to path into a tile the third
@@ -843,6 +920,9 @@ BUILD_CITY:
       struct tile *first_step = NULL;
       bool dest_dangerous = FALSE;
       const char *blocker = "-";
+      int lift_before = deep_settler_lift_state(ait, punit);
+      int near_any = -1, near_free = -1;
+      int psng_before = def_ai_player_data(pplayer, ait)->stats.passengers;
       int moves_before = punit->moves_left;
       /* The route the mover is about to plan, sampled before it moves.
        * One pf map per mission-turn, so it is skipped entirely when
@@ -852,7 +932,12 @@ BUILD_CITY:
                         ? deep_settler_risk_route(punit, ptile, &first_step,
                                                   &dest_dangerous, &blocker)
                         : 0);
-      bool got = deep_settler_gothere(ait, pplayer, punit, ptile);
+      bool got;
+
+      if (diagnose) {
+        deep_settler_nearest_boats(ait, punit, &near_any, &near_free);
+      }
+      got = deep_settler_gothere(ait, pplayer, punit, ptile);
       bool alive = (NULL != game_unit_by_number(sanity));
 
       if (diagnose) {
@@ -860,7 +945,8 @@ BUILD_CITY:
                  "deep-settler turn=%d player=\"%s\" unit=%d at=(%d,%d)"
                  " stall target=(%d,%d) reason=%s walk=%d riskturns=%d"
                  " dangerdest=%d blocker=%s towner=%d"
-                 " moves=%d/%d got=%d",
+                 " lift=%d/%d psng0=%d boatdist=%d nearboat=%d nearfree=%d coast=%d"
+                 " boats=%d avail=%d psng=%d moves=%d/%d got=%d",
                  game.info.turn, player_name(pplayer), sanity,
                  TILE_XY(alive ? unit_tile(punit) : from), TILE_XY(ptile),
                  (alive
@@ -870,6 +956,17 @@ BUILD_CITY:
                   : "dead"),
                  walk ? 1 : 0, risk_turns, dest_dangerous ? 1 : 0,
                  blocker, deep_settler_tile_claim(pplayer, ptile),
+                 lift_before,
+                 alive ? deep_settler_lift_state(ait, punit) : 0,
+                 psng_before,
+                 alive ? deep_settler_boat_distance(ait, punit) : -1,
+                 near_any, near_free,
+                 (alive
+                  && is_terrain_class_near_tile(nmap, unit_tile(punit),
+                                                TC_OCEAN)) ? 1 : 0,
+                 def_ai_player_data(pplayer, ait)->stats.boats,
+                 def_ai_player_data(pplayer, ait)->stats.available_boats,
+                 def_ai_player_data(pplayer, ait)->stats.passengers,
                  moves_before,
                  alive ? punit->moves_left : 0, got ? 1 : 0);
       }
