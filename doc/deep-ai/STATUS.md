@@ -2939,3 +2939,18 @@ next epic and now has **two** consumers waiting on it rather than one.
 ever reached the comparison it governs, and only 230 of those were
 decided by it. It should be tuned after the lift operation lands, not
 before.
+
+### Cross-cell check: `primary-120`, 10 paired seeds
+
+    metric                pre       post       diff       t     up
+    score              160.42     161.27      +0.85    1.00   1/10
+    cities              22.68      22.83      +0.15    1.00   1/10
+    landarea           312633     314050    +1416.67   1.00   1/10
+
+**Nine of the ten seeds are identical.** The pass fired twice, both in
+one game: 302 of 339 attempts declined on the ferry cap. The roomy
+continental cell has almost no overseas cities to serve, which is the
+expected shape, and the change costs nothing there.
+
+No cross-cell regression. The fix is correct, guarded, and waiting on
+lift supply on both cells.
