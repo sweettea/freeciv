@@ -41,6 +41,7 @@
 #include "handicaps.h"
 #include "maphand.h"
 #include "srv_log.h"
+#include "unithand.h"
 #include "unittools.h"
 
 /* server/advisors */
@@ -865,6 +866,216 @@ struct cityresult *deep_find_best_city_placement(struct ai_type *ait,
 }
 
 /**********************************************************************//**
+  Count what is still buildable inside our own city work radii -- the
+  only ground worker_evaluate_improvements() ever enumerates.
+
+  A worker goes idle when every enumerated tile scores a delta of zero,
+  and that has two very different causes: the radii really are improved
+  out, or there is legal work left that is declined because
+  city_tile_value() prices it at today's city size (RC1). This
+  separates them by asking only "could a road / an irrigation / a mine
+  still be added here", with no value judgement at all.
+
+  Read-only; no pathfinding. Called only for a unit that has just
+  concluded it has nothing to do, and only when the metric lines are
+  being written.
+**************************************************************************/
+static void deep_idle_work_census(const struct civ_map *nmap,
+                                  struct player *pplayer,
+                                  struct unit *punit,
+                                  int *tiles, int *road, int *irrig,
+                                  int *mine, int *open)
+{
+  *tiles = *road = *irrig = *mine = *open = 0;
+
+  city_list_iterate(pplayer->cities, pcity) {
+    struct tile *pcenter = city_tile(pcity);
+
+    city_tile_iterate_index(nmap, city_map_radius_sq_get(pcity), pcenter,
+                            ptile, cindex) {
+      bool any = FALSE;
+
+      if (!city_can_work_tile(pcity, ptile)) {
+        continue;
+      }
+      (*tiles)++;
+
+      if (next_extra_for_tile(ptile, EC_ROAD, pplayer, punit) != NULL) {
+        (*road)++;
+        any = TRUE;
+      }
+      if (next_extra_for_tile(ptile, EC_IRRIGATION, pplayer,
+                              punit) != NULL) {
+        (*irrig)++;
+        any = TRUE;
+      }
+      if (next_extra_for_tile(ptile, EC_MINE, pplayer, punit) != NULL) {
+        (*mine)++;
+        any = TRUE;
+      }
+      if (any) {
+        (*open)++;
+      }
+    } city_tile_iterate_index_end;
+  } city_list_iterate_end;
+}
+
+/**********************************************************************//**
+  Last resort for a worker that found nothing worth doing: build the
+  soonest-finished legal improvement inside our own city radii.
+
+  worker_evaluate_improvements() scores a tile by how much the
+  improvement raises its value TO THAT CITY AT TODAY'S SIZE
+  (city_tile_value(pcity, ptile, 0, 0)), floored at zero. A tile a
+  size-12 city would work is worth nothing to the size-5 city that owns
+  it, so the delta is zero and no work is ordered -- RC1 at the worker
+  layer. The unit then does nothing at all, because
+  auto_workers_player() sends AI players to the settler_run hook rather
+  than to auto_worker_findwork(), and so never reaches the
+  adv_seek_shelter() a human auto-worker would get.
+
+  Measured on lategame-80, 10 games, 12273 unit-turns that concluded
+  "nothing to do": their own radii held 99.4 workable tiles of which
+  34.9 still admitted a road, an irrigation or a mine, and only 11% of
+  those unit-turns had nothing improvable anywhere
+  (findings/idle-workers.md).
+
+  This does not re-price anything and cannot outrank a real want: it
+  runs ONLY where the unit was about to stand still. Candidates are
+  ranked by soonest completion -- travel turns plus work turns -- which
+  is an ordering, not a threshold, so there is no constant to invent
+  (rule 7). Tiles another worker occupies or is already travelling to
+  are skipped, and adv_worker_safe_tile() is respected.
+
+  Returns TRUE if work was assigned.
+**************************************************************************/
+static bool deep_idle_fallback_work(struct ai_type *ait,
+                                    const struct civ_map *nmap,
+                                    struct player *pplayer,
+                                    struct unit *punit,
+                                    struct workermap *state)
+{
+  struct pf_parameter parameter;
+  struct pf_map *pfm;
+  struct pf_position pos;
+  struct tile *best_tile = NULL;
+  struct extra_type *best_target = NULL;
+  enum unit_activity best_act = ACTIVITY_IDLE;
+  int best_turns = FC_INFINITY;
+  struct pf_path *path = NULL;
+  bool assigned = FALSE;
+
+  if (!unit_has_type_flag(punit, UTYF_WORKERS)) {
+    return FALSE;
+  }
+
+  pft_fill_unit_parameter(&parameter, nmap, punit);
+  parameter.omniscience = !has_handicap(pplayer, H_MAP);
+  /* autoworker_tile_behavior() is static in the advisors; deep's own
+   * settler behaviour is the same worker rule plus a refusal to path
+   * onto non-allied units, which is what we want here anyway. */
+  parameter.get_TB = deep_settler_tile_behavior;
+  pfm = pf_map_new(&parameter);
+
+  city_list_iterate(pplayer->cities, pcity) {
+    struct tile *pcenter = city_tile(pcity);
+
+    city_tile_iterate_index(nmap, city_map_radius_sq_get(pcity), pcenter,
+                            ptile, cindex) {
+      bool taken = FALSE;
+
+      if (!city_can_work_tile(pcity, ptile)
+          || !adv_worker_safe_tile(nmap, pplayer, punit, ptile)) {
+        continue;
+      }
+
+      /* Do not pile onto a tile another of our workers already holds or
+       * is walking to; the idle pool is large and would converge. */
+      unit_list_iterate(ptile->units, aunit) {
+        if (unit_owner(aunit) == pplayer && aunit->id != punit->id
+            && unit_has_type_flag(aunit, UTYF_WORKERS)) {
+          taken = TRUE;
+          break;
+        }
+      } unit_list_iterate_end;
+      if (taken) {
+        /* struct workermap is opaque outside the advisors, so the
+         * enroute reservation cannot be read here; the on-tile check
+         * plus auto_worker_setup_work()'s own displacement handling is
+         * what keeps the idle pool from converging on one tile. */
+        continue;
+      }
+
+      if (!pf_map_position(pfm, ptile, &pos)) {
+        continue;
+      }
+
+      aw_extra_action_iterate(act) {
+        enum unit_activity activity = action_id_get_activity(act);
+        enum extra_cause cause = activity_to_extra_cause(activity);
+        struct extra_type *target;
+        int turns;
+
+        /* Roads, irrigation and mines only. aw_extra_action_iterate()
+         * also offers bases, and an idle pool this large would carpet
+         * the map with fortresses; the point here is the terrain
+         * economy, not fortification. */
+        if (cause != EC_ROAD && cause != EC_IRRIGATION
+            && cause != EC_MINE) {
+          continue;
+        }
+        target = next_extra_for_tile(ptile, cause, pplayer, punit);
+        if (target == NULL) {
+          continue;
+        }
+        if (!action_prob_possible(
+              action_speculate_unit_on_tile(nmap, act, punit,
+                                            unit_home(punit), ptile,
+                                            parameter.omniscience,
+                                            ptile, target))) {
+          continue;
+        }
+
+        turns = pos.turn + get_turns_for_activity_at(punit, activity,
+                                                     ptile, target);
+        if (pos.moves_left == 0) {
+          turns++;
+        }
+        if (turns < best_turns) {
+          best_turns = turns;
+          best_tile = ptile;
+          best_target = target;
+          best_act = activity;
+        }
+      } aw_extra_action_iterate_end;
+    } city_tile_iterate_index_end;
+  } city_list_iterate_end;
+
+  if (best_tile != NULL) {
+    log_base(deep_metric_log_level(),
+             "deep-idlework turn=%d player=\"%s\" unit=%d type=\"%s\""
+             " at=(%d,%d) act=%d target=\"%s\" tile=(%d,%d) turns=%d",
+             game.info.turn, player_name(pplayer), punit->id,
+             unit_rule_name(punit), TILE_XY(unit_tile(punit)),
+             (int) best_act, extra_rule_name(best_target),
+             TILE_XY(best_tile), best_turns);
+
+    path = pf_map_path(pfm, best_tile);
+    adv_unit_new_task(punit, AUT_AUTO_WORKER, best_tile);
+    assigned = auto_worker_setup_work(nmap, pplayer, punit, state, 0,
+                                      &path, best_tile, best_act,
+                                      &best_target, best_turns);
+    if (path != NULL) {
+      pf_path_destroy(path);
+    }
+  }
+
+  pf_map_destroy(pfm);
+
+  return assigned;
+}
+
+/**********************************************************************//**
   Auto settler that can also build cities. Derived from
   dai_auto_settler_run() in daisettler.c; the differences are that city
   placements come from the risk-aware search above and that the debug
@@ -1110,10 +1321,18 @@ FIND_WORK:
       UNIT_LOG(LOG_DEBUG, punit, "cannot find work");
       fc_assert(result == NULL);
       dai_unit_new_task(ait, punit, AIUNIT_NONE, NULL);
+      /* Nothing scored and nothing was worth founding: rather than
+       * stand here, build the soonest legal improvement in our own
+       * radii. */
+      (void) deep_idle_fallback_work(ait, nmap, pplayer, punit, state);
       goto CLEANUP;
     }
   } else {
     /* We are a worker or engineer */
+    if (best_tile == NULL
+        && deep_idle_fallback_work(ait, nmap, pplayer, punit, state)) {
+      goto CLEANUP;
+    }
     adv_unit_new_task(punit, AUT_AUTO_WORKER, best_tile);
   }
 
@@ -1127,6 +1346,23 @@ FIND_WORK:
   }
 
 CLEANUP:
+
+  if (best_tile == NULL
+      && log_do_output_for_level(deep_metric_log_level())) {
+    int tiles, road, irrig, mine, open;
+
+    deep_idle_work_census(nmap, pplayer, punit, &tiles, &road, &irrig,
+                          &mine, &open);
+    log_base(deep_metric_log_level(),
+             "deep-idle turn=%d player=\"%s\" unit=%d type=\"%s\""
+             " at=(%d,%d) founder=%d impr=%d cities=%d workable=%d"
+             " open=%d road=%d irrig=%d mine=%d",
+             game.info.turn, player_name(pplayer), punit->id,
+             unit_rule_name(punit), TILE_XY(unit_tile(punit)),
+             unit_is_cityfounder(punit) ? 1 : 0, (int) best_impr,
+             city_list_size(pplayer->cities), tiles, open, road, irrig,
+             mine);
+  }
 
   if (NULL != path) {
     pf_path_destroy(path);
