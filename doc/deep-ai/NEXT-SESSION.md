@@ -1,130 +1,102 @@
 Continue the Freeciv deep-AI work. Read CLAUDE.md, doc/deep-ai/00-context.md,
-then doc/deep-ai/STATUS.md (start at "W02b landed and was falsified" — that's
-last session). Branch epic/w03-horizon-content at 2e6030be17.
+then doc/deep-ai/STATUS.md (start at "The expansion stall was settlers walking
+to islands" — that's last session). Branch epic/w03-horizon-content.
 
-Your epic: **make deep keep expanding on contested maps.** Not site
-scoring. Read doc/deep-ai/findings/settler-missions.md in full first;
-it has the measurements and one failed attempt already recorded.
+Your epic: **make the ferry pipeline actually deliver settlers.** Read
+doc/deep-ai/findings/settler-missions.md §7 in full first — it has the
+measurements, the fix that landed, and the number below.
 
 THE ONE NUMBER THAT MATTERS
 
-Head-to-head, deep vs ai/default seated in the SAME game, mirrored
-seats, 10 seeds, score margin by turn:
+    lategame-80, deep arm, per 10 games
+      picks land      655  ->  arrived 461   70%
+      picks overseas  919  ->  arrived 114   12%
 
-    lategame-80   T20 +1.3  T40 +7.7  T60 +8.9  T80 -1.7
-    primary-120   T20 +0.0  T40 +1.9  T60 +9.2  T80 +23.1  T120 +37.7
+Nine of every ten settlers that commit to a boat trip never arrive.
+2398 of 7390 mission moves are a settler waiting on a lift — a third of
+all the settler-time in the game. Land expansion is fine; sea expansion
+is a queue that does not drain.
 
-Deep out-develops ai/default early on BOTH cells and then stops
-expanding on the crowded one. Cities by turn, deep/default,
-lategame-80: T60 7.7/8.6, T70 7.8/9.3, T80 7.8/9.9 — deep adds 0.1
-cities in twenty turns while default adds 1.3, and gets passed. It is
-not being conquered: city count never falls, unitslost is 17.9 vs 16.8.
+That number was 7% before last session's fix, so the fix helped and did
+not solve it. Every stalled overseas settler now correctly reports
+`reason=ferry` in the `deep-settler ... stall` metric line, so this is
+measurable per turn from the benchmark logs without new instrumentation.
 
-That is europe-T80's "17 cities, room for 18 more, zero settlers for
-eight turns" reproduced under measurement. Fix the stall and deep beats
-ai/default on both cells instead of one.
+WHAT LAST SESSION SETTLED, SO YOU DON'T RE-DERIVE IT
 
-WHAT THE STALL IS, AND THE ATTEMPT THAT FAILED
+`goto_is_sane()` pathfinds NON-omnisciently and was being used as the
+boat-versus-walk switch, so unmapped water read as passable and settlers
+walked into coastlines: 5656 of 6323 stalled mission-turns on
+lategame-80. `deep_settler_can_walk_there()` (0f126c33b7) asks the
+question at the player's real handicap level, which is what the site
+search and the mover already do. Head-to-head vs ai/default, T80 score
+margin -1.49 -> +9.73 (t=2.09 paired, up 7/10). **deep now finishes
+ahead of ai/default on lategame-80**, the cell it was losing.
 
-52% of settler mission-turns on lategame-80 are a unit standing on the
-tile it stood on last turn while holding a city mission (73% for the
-player at war with three neighbours, 3-6% for its peaceful ones). Deep
-sets `is_pos_dangerous` on the settler pathfinder (W05, correct, it cut
-losses); `goto_is_sane()` knows nothing about danger, so a mission whose
-every route is vetoed still reports sane=1 and the continuation block —
-which only tests whether the TARGET is still buildable — never calls it
-off.
+Do NOT re-open the "settlers freeze in war zones" theory. The danger
+veto accounts for 0.3% of stalls. That reading is marked superseded in
+findings §3 and the fix built on it is reverted (cab01f2614).
 
-**Do not repeat the obvious fix.** Dropping the mission and re-searching
-(mirroring `drop-boatless`) was landed as 6ab78f8d98 and REVERTED as
-cab01f2614: it fired 5070 times, tripled site evaluation, and 3958 of
-4940 re-picks chose the tile just dropped, because
-`deep_find_best_city_placement()` applies the SAME risk parameter as the
-mover. Stationarity went UP, 52% to 62%.
+WHERE TO START LOOKING
 
-START WITH INSTRUMENTATION, NOT A FIX. Search and execution share
-`deep_settler_apply_risk()` and should agree; that they don't is
-unexplained, and guessing cost a benchmark cell. There is no log line
-saying why `deep_settler_gothere()` failed. Add one, run one cell, and
-let it tell you whether the mover is refusing a step the search thought
-was safe, waiting on a ferry, or something else. THEN fix.
+`aiferry_gobyboat()` / `aiferry_find_boat()` in ai/default/daiferry.c —
+the system whose own docs call it "statistical mechanics rather than
+logic" (RC2). Deep does not own it; it calls it. Decide early whether
+this epic is a deep-side ferry planner or a narrower fix, and say which
+in the first commit message.
 
-The fix, when you know: make the SEARCH stop proposing targets the mover
-will not walk to (RC5). Not another retry loop.
+The throttle now works — `plr_data->stats.passengers >= boats` caps
+overseas picks, and overseas commitment fell 1320 -> 919 because of it.
+So the question is not "stop wanting islands", it is "deliver the ones
+we commit to". Consider: does the settler wait at the wrong tile, does
+the boat get retasked, is there a boat at all? Count before fixing.
 
-WHAT W02b SETTLED, SO YOU DON'T RE-DERIVE IT
+SMALLER, ADJACENT, NOT THIS EPIC
 
-Spacing is pinned by `citymindist`, not by the objective. Over
-self-founded cities, the MEDIAN founded city sits exactly at the
-ruleset minimum on every cell, 80 land/player and 380 alike (29.4% /
-27.4% / 25.5% exactly on the floor; 80-87% within 4 tiles). That is why
-a 25x sweep of `site_overlap_weight` moved spacing 0.2 tiles and why
-replacing the entire catchment valuation with a citizen-turn stream
-moved it 0.07. Site scoring can only speak for the minority of cities
-off the constraint. The stream landed anyway (score flat on all three
-cells, four tuned constants deleted); it is not the lever for spacing
-and nothing further should be spent trying to make it one.
+- `behaviour` stalls: 523 turns on lategame-80, a settler whose corridor
+  closed mid-walk with no re-search. This is what findings §5.1 wanted,
+  aimed at a case a tenth the size it was thought to be. It is the third
+  attempt at that shape — the first two were reverted — so it needs its
+  own falsification, not a bolt-on.
+- W02b's remaining commits: settler cost from growth-blocked cities, and
+  Join City (upstream-bugs #31).
 
-W02b's REMAINING commits are unaffected — settler cost from
-growth-blocked cities and Join City are about settler SUPPLY, not site
-ranking, and Join City is the natural partner to the stall work
-(upstream-bugs #31; 637 of 647 surviving founders end on worker duty).
+MEASUREMENT
 
-MEASUREMENT — the head-to-head is now the honest test
+`--arms mixed_dc,mixed_cd` on lategame-80, 10 seeds, mirrored. Analysis
+scripts from last session are worth rewriting rather than hunting for;
+the pattern is: pair by SEAT, average the mirror, paired t over seeds,
+and report the score margin BY TURN. Then take the
+difference-in-differences against a pinned control on the same seeds —
+that is what turned a t=1.55 raw margin into a t=2.09 result last
+session, and it costs one extra 20-game batch.
 
-`--arms mixed_dc,mixed_cd` seats deep against ai/default in one game,
-mirrored so each module plays every seat. Ten seeds per cell. Analysis
-script: scratchpad `h2h.py` pattern — pair by SEAT, average the mirror,
-paired t over seeds. Separate-game score ratio and head-to-head agreed
-in direction on both cells this session, so the primary metric is not
-broken — but the head-to-head is what answers "would it win".
+Pre-register a falsification before running anything. Last session's D2
+passed its own stated criterion and was still wrong about the mechanism;
+write the ladder so it can name a cause you have not thought of.
 
-Report the score-margin-BY-TURN series, not just the endpoint. The
-endpoint hid the entire story on lategame-80: deep led at T60 and the
-final number said it lost.
+BENCHMARK DISCIPLINE — all of these cost real time
 
-Pre-register a falsification before running anything. F1 fired on W02b
-and that was the session's most useful half-hour.
-
-BENCHMARK DISCIPLINE — all of these cost real time this session
-
-- PIN the binary (copy freeciv-server + libfreeciv.so to a scratch dir,
-  RUNPATH is $ORIGIN) and pass run.sh --server.
+- PIN the binary (copy freeciv-server + libfreeciv.so + the tuning file
+  to a scratch dir, RUNPATH is $ORIGIN) and pass run.sh --server. Pin a
+  NEW directory per binary; never overwrite one a batch is using.
+- Long batches must run under the harness's own background mechanism.
+  A `nohup ... &` inside a tool call is reaped and the batch dies
+  silently at whatever turn it had reached.
 - NEVER edit deep-best.ini or a config while a batch is in flight.
-  run.sh hashes the tuning file at batch START but every game re-reads
-  it; a mid-batch edit silently changes the arm. This cost a discarded
-  batch this session.
-- NEVER `pkill -f freeciv-server` unscoped. Scope it to the pinned path.
-- Filter non-benchmark players (barbarian nations appear in some games
-  and not others) before averaging — they moved baseline's city count.
+- Filter non-benchmark players (barbarian nations show up in some games
+  and not others — primary-120 wrote 64 rows for 60 seats).
 - `meson test -C build` is the suite. `python3 benchmark/tune-audit.py`
   must print CLEAN (93/93/93/93 now).
 
 STATE
 
-- deep-best.ini: the site block is NO LONGER TUNED. site_stream_weight
-  sits at placeholder 1.0, four weights were deleted, and
-  site_travel_discount is the human-set 0.9 (range [0.75, 1.0]).
+- deep-best.ini: the site block is NOT TUNED. `site_stream_weight` sits
+  at placeholder 1.0, `site_travel_discount` is the human-set 0.9.
 - Both campaign boxes are STOPPED, not terminated (a6 us-east-1
   i-0e9a257ef3b781349, b6 us-east-2 i-05162168cf393cb20 — DIFFERENT
   REGIONS, a combined describe-instances reports both as nonexistent).
   EBS caches preserved. NEVER terminate: DeleteOnTermination=True.
-- largepox-200.conf is now committed, with its falsified premise
-  rewritten in the header.
-
-KNOWN-OPEN, NOT YOURS UNLESS YOU CHOOSE IT
-
-- Is `lategame-80` a good tuning cell? Twelve starting settlers,
-  techlevel 50, 80 turns, 80 land/player — and deep's stall is worst
-  exactly there. Three of four campaign cells are crowded.
-- Deep builds 102 dedicated worker units where baseline builds 677;
-  repurposed founders satisfy the worker demand test at pop_cost 2.
-- `deep-op-stall`: 53% of events are MARCH (units released to the stock
-  attack path that then don't move), 41% of signatures persist >= 5
-  turns. Same shape as the settler freeze, in the operations layer. The
-  log line records unit TYPE but not unit ID, so individuals can't be
-  tracked — one line to fix. FREECIV_DEEP_QUIET=1 silences metric lines
-  in a live game.
-- `deep_growth_arrivals()` is not L0-testable as written (reads
-  get_city_bonus, city_granary_size, game.info). Splitting the
-  arithmetic from the lookups makes W02b's two test commits cheap.
+- Spacing is pinned by `citymindist`, not by the site objective (W02b,
+  falsified and recorded). Do not spend another epic on site scoring
+  hoping to move spacing.

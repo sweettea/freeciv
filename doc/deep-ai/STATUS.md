@@ -2413,3 +2413,126 @@ the crowded map.**
 4. W02b's remaining commits (settler cost from blocked cities, Join
    City) are unaffected by the falsification -- they are about settler
    SUPPLY, not site ranking.
+
+## The expansion stall was settlers walking to islands (2026-08-02, night)
+
+**Instrumented first, then fixed. deep now beats `ai/default`
+head-to-head on `lategame-80`, the cell it was losing.**
+
+    87ecdc8f55  log why a stalled settler mission made no progress
+    458cf07945  name the constraint that refuses the route
+    0f126c33b7  decide a settler's boat leg with the mover's own knowledge
+    405b78a596  upstream-bugs #32
+    ca27cab372  findings/settler-missions.md section 7
+
+### What it was
+
+Every mission-turn now logs an outcome and, when the risk map has no
+route, a ladder that relaxes one pf constraint at a time and names the
+first relaxation that brings the route back. `lategame-80`, 10 train
+seeds, deep arm, 11215 mission moves:
+
+    reason     count   share        nopath, why    count   share
+    nopath      6323   56.4%        vision          5659   89.5%
+    moved       2810   25.1%        behaviour        647   10.2%
+    arrived     1062    9.5%        danger            17    0.3%
+    ferry       1017    9.1%
+    blocked        3    0.0%
+
+`wait` and `blocked` are ~0, so the mover was never refusing a step on
+a route that existed -- the route did not exist. Joining each stall to
+the pick that made the mission: **5656 of the 5659 `vision` cases are
+missions the search itself marked `overseas=1`.**
+
+`deep_settler_gothere()` asked `goto_is_sane()` whether the trip needed
+a boat. That function pathfinds NON-omnisciently, so unexplored water
+reads as passable and an island target reports a good land route. The
+ferry branch was skipped, the omniscient risk map found no land path,
+and the settler stood on the beach for the rest of the game holding a
+valid mission. RC5 exactly: planning and execution asked different
+pathfinders the same question. It also disabled the throttle built for
+this -- a settler that never reaches `aiferry_gobyboat()` is never
+counted as a passenger, so overseas picks were never capped.
+
+The war-zone reading in `findings/settler-missions.md` §3 -- the one
+the reverted `6ab78f8d98` was built on -- was wrong. Danger is 0.3%.
+
+### What the fix moved
+
+`deep_settler_can_walk_there()` is `goto_is_sane()`'s test at the
+player's real handicap level, computed once per `gothere()` and used
+for the boat gate, the walk gate and the bodyguard gate.
+
+deep arm, same 10 seeds, pinned binaries either side:
+
+    lategame-80             pre      post      diff        t
+    score                183.82    189.22     +5.40     2.60
+    cities                 8.27      8.68     +0.42     2.91
+    pop                   45.05     48.87     +3.82     4.83
+    landarea              95067     99917     +4850     3.37
+    live settlers at end   4.47      2.73     -1.73    -3.97
+
+    mission-turns 11527 -> 7718   picks 1964 -> 1574   nopath 6323 -> 529
+
+    picks land      644 -> 655   arrived 460 -> 461   (71% -> 70%)
+    picks overseas 1320 -> 919   arrived  91 -> 114   ( 7% -> 12%)
+
+Land expansion is untouched; the cities come from overseas settlers
+finally being delivered. The reverted attempt went the other way on
+picks (1978 -> 7152).
+
+### Head-to-head, mirrored `mixed_dc`/`mixed_cd`, 10 seeds
+
+    turn      pre     post    delta        difference-in-differences
+    T20     +1.30    +1.70    +0.40        at T80, paired over seeds:
+    T40     +7.67   +10.87    +3.20        score  +11.22  t=2.09  7/10
+    T60     +9.21   +16.12    +6.91        cities  +1.62  t=2.87  8/10
+    T70     +5.25   +12.75    +7.50        pop     +7.27  t=2.59  9/10
+    T80     -1.49    +9.73   +11.22        bnp    +10.11  t=3.69  9/10
+
+The control reproduces last session's reference series to within
+rounding, so the instrumentation is behaviour-neutral. The delta is ~0
+through T30 and grows monotonically from T40 -- the window where the
+stall lived.
+
+### Cross-cell check: `primary-120`, deep arm, 10 paired seeds
+
+    metric                pre       post      diff       t
+    score              157.47     158.33     +0.87    0.29
+    cities              21.70      22.65     +0.95    1.36
+    landarea           299367     310150    +10783    1.26
+    live settlers        12.55      10.33     -2.22   -2.06
+
+    nopath 25.9% -> 7.1% of mission moves; same mechanism (vision 74.9%)
+
+The roomy cell has the same defect at half the rate and gets the same
+repair, with score flat rather than up. Directionally positive on every
+expansion term, significant on none of them at 10 seeds -- so the fix
+is worth its keep on the crowded cell and costs nothing on the roomy
+one. **No cross-cell regression, which is what this run was for.**
+
+### Pre-registration, scored
+
+D1 held. **D2 passed its own criterion and was wrong about the
+mechanism** -- it blamed territory, which is 10%; the ladder found the
+cause only because it relaxed every constraint rather than the two I
+suspected. D3 held. F1 held on the narrow stationary definition (56.4%
+-> 7.2%) and **failed on the honest one**: counting settlers waiting on
+a lift, no-movement mission-turns are 65.5% -> 39.6%. F2 held. F3
+narrowly missed (+0.42 cities against a predicted +0.5). F4 held.
+
+### Open, ranked
+
+1. **Overseas delivery is 12%.** Nine of ten settlers that commit to a
+   boat trip still never arrive, and 2398 of 7390 mission moves are a
+   settler waiting on a lift. That is the ferry pipeline, and it is now
+   the largest single loss in this subsystem.
+2. **`behaviour` stalls, 523 turns** -- territory or a unit closing the
+   corridor mid-walk, with no re-search. This is what §5.1 of the
+   findings wanted, aimed at a case a tenth the size it was thought to
+   be.
+3. `largepox-200` and the head-to-head on `primary-120` are unmeasured
+   for this fix. The two cells that were measured agree.
+4. Unchanged from last session: is `lategame-80` a good tuning cell;
+   `site_stream_weight` untuned at 1.0; W02b's remaining commits
+   (settler cost from blocked cities, Join City).
