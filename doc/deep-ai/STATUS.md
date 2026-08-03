@@ -2671,3 +2671,70 @@ and a settler with no site today sometimes has one later.
 **Open, and the next thing to do here:** join only after N consecutive
 site-less turns. N is a tunable -- `struct tuning` with a placeholder
 and a tuning pass, not a guess.
+
+## Session close: one win, three refusals, and an unmeasured stack (2026-08-03)
+
+### What actually improved the AI
+
+**Settlers were walking to islands.** `goto_is_sane()` pathfinds
+non-omnisciently, so unmapped water read as passable and the ferry
+branch was skipped: 5656 of 6323 stalled settler mission-turns were
+overseas missions being walked to. Fixed at `0f126c33b7`.
+
+    lategame-80 head-to-head vs ai/default, T80 score margin
+      -1.49 -> +9.73   difference-in-differences t=2.09, up 7/10
+      cities +1.62 t=2.87, pop +7.27 t=2.59, bnp +10.11 t=3.69
+
+That is the session's one real win and it is the reason deep now
+finishes ahead of `ai/default` on `lategame-80`.
+
+### What was built, measured and refused
+
+- Routing ferries past the worker/cityfounder dispatch (upstream #33):
+  Transport turns carrying 488 -> 196, delivery 12% -> 11%.
+- Correcting `drop-boatless`'s `ferryboat <= 0` to `== FERRY_NONE`:
+  overseas delivery 12% -> 28% but arrivals 114 -> 115, and score
+  -1.50. The 12% was a denominator artefact -- two thirds of "failed"
+  overseas missions were the same settlers re-picking.
+- A founder pool sized per CITY: worse than joining freely on every
+  count (`unitslost` +1.50, t=+2.30).
+
+### What landed neutral-to-mildly-positive
+
+- Idle worker fallback (`df9309d5ad`): inert on both cells, landed as
+  doctrine on the human call.
+- Join City (`5933c431d0`) plus a pool sized by SITES REMAINING
+  (`182760afda`). On `primary-120`: pop +1.98 (t=4.14), mfg +3.05
+  (t=2.11), land area back above zero, idle settlers still cleared
+  (-2.45, t=-4.27). On `lategame-80` it moves the other way, all inside
+  noise -- the 3.5x per-cell spread in the placeholder.
+- Negative control: city density did not move on either cell. W02b
+  holds; spacing is `citymindist`.
+
+### The thing that is NOT known
+
+**Every one of those landed after the last head-to-head.** The +9.73
+margin was measured on `0f126c33b7`, before the fallback, Join City and
+the pool. Their individual deltas are noise-to-mildly-positive, and
+noise accumulates. **Nobody has measured deep vs `ai/default` on the
+current tree.**
+
+### Open, ranked
+
+1. **Re-run the head-to-head.** Two 20-game batches. It is the metric
+   the project is judged on, four behaviour changes have landed since
+   it was last taken, and a stack of individually-insignificant changes
+   is exactly how a regression hides. Do this before building anything.
+2. **Tune `founder_pool_per_site`.** The only knowingly-guessed
+   constant here, with a measured range (0.06 on `primary-120`, 0.207
+   on `lategame-80`) and a documented reason to expect the cells to
+   disagree. Report per-cell values; do not average the spread.
+3. **The colony lift as an operation** (`deepops.c`). Biggest remaining
+   mechanical loss, ~11 overseas cities/game, and an epic not a commit.
+   `findings/settler-missions.md` section 8 has the full diagnosis and
+   the two dead ends.
+4. `lategame-80` as a tuning venue. Human call 2026-08-03: KEEP it --
+   it is an island, tech-saturated regime no other cell tests, 60% of
+   its settler targets are overseas, and it surfaced all three of this
+   session's bugs. The guard is to report per-cell tuned values and
+   treat sharp disagreement as overfit evidence, not to drop the cell.
