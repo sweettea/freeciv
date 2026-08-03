@@ -351,6 +351,17 @@ struct deep_tuning {
    * (unowned ground or at-war unit within worker_guard_radius):
    * value /= (1 + discount). 0 disables. */
   double worker_danger_discount;
+  /* Workers cannot cross water at all today: the land pf map discards
+   * every tile of an overseas city's radius as unreachable, so a colony
+   * is improved only by founders that happen to land there
+   * (findings/idle-workers.md section 9). When the idle fallback finds
+   * nothing walkable it may instead take a candidate across the water,
+   * ranked by completion time like every other candidate -- inflated by
+   * this factor so the trip stays BACKUP behaviour rather than
+   * competing with work at home: turns *= (1 + discount). The same
+   * 1 + d shape as worker_danger_discount, inverted because lower turns
+   * win. 0 makes a boat trip cost exactly its real turns. */
+  double worker_cross_continent_discount;
 
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).
