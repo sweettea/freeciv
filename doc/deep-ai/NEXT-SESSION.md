@@ -39,16 +39,33 @@ THEN, IN ORDER
    Home is `deepops.c` — a named boat, a named settler, a named
    beachhead, held against re-tasking, with an abort condition.
 
-WHAT NOT TO REBUILD
+WHAT NOT TO REBUILD — THE CODE ALREADY EXISTS
 
-- Routing ferries past the worker/cityfounder dispatch. Measured:
-  Transport turns carrying 488 -> 196, delivery 12% -> 11%. Stock's
-  ferry manager parks an empty boat rather than fetching anyone.
-- The `drop-boatless` `== FERRY_NONE` correction ON ITS OWN. It is a
-  prerequisite for the lift, not an improvement: score -1.50, and the
-  churn it removes was functioning as an escape hatch.
-- A founder pool sized per city. Worse than joining freely on every
-  count (`unitslost` +1.50, t=+2.30).
+Do not re-derive these from prose. Branch **`shelf/refused-2026-08-03`**
+carries both as real commits on top of this branch's tip:
+
+    07c48d84ed  SHELF: stop deep destroying its own boat request
+    302f185f58  SHELF: route a ferry past the worker dispatch
+
+    git show 07c48d84ed        # read it
+    git cherry-pick 07c48d84ed # take it
+
+- **`drop-boatless` `<= 0` -> `== FERRY_NONE`** (`07c48d84ed`). A
+  correct bug fix -- FERRY_WANTED is -1, so the old test dropped the
+  mission of a settler that had just asked for a boat, and the drop
+  cleared the flag. Measured ALONE it is score -1.50, because the churn
+  it removes was a crude escape hatch. **It is a prerequisite for the
+  lift epic and should land WITH it**, when the queue it makes honest
+  is finally served.
+- **Ferry dispatch routing** (`302f185f58`). Measured: Transport turns
+  carrying 488 -> 196, delivery 12% -> 11%. Goes backwards, because
+  stock's ferry manager parks an empty boat rather than fetching
+  anyone. Kept as the reference workaround for upstream #33 if the
+  dispatch is ever reordered, or if a deep-side lift replaces stock's
+  manager.
+- A founder pool sized per city: superseded, and in history at
+  `5d422d0b44`. Worse than joining freely on every count
+  (`unitslost` +1.50, t=+2.30).
 - Site scoring to change city spacing. W02b falsified it and the
   negative control this session confirmed it: median founded city sits
   on `citymindist`, ~half are on the floor, and nothing the AI decides

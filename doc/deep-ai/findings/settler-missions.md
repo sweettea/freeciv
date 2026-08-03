@@ -525,3 +525,23 @@ schedule against, and on its own it only removes an escape hatch.
 Not attempted here. It is an epic, not a commit, and this one spent its
 budget establishing that neither cheap repair works and that the real
 overseas yield is ~11 cities per game either way.
+
+### The refused fixes are shelved, not lost (2026-08-03)
+
+Both are real commits on branch `shelf/refused-2026-08-03`, taken from
+the epic branch tip, so the next session cherry-picks rather than
+re-derives:
+
+    07c48d84ed  drop-boatless <= 0 -> == FERRY_NONE
+    302f185f58  route a ferry with waiting demand past the worker dispatch
+
+`07c48d84ed` is the one that matters. It is a **correct bug fix** --
+`FERRY_WANTED` is -1, so the old `ferryboat <= 0` dropped the mission
+of a settler that had just successfully asked for a boat, and the drop
+itself cleared the flag through `aiferry_clear_boat()`. It measures
+negative alone (score -1.50) only because the churn it removes was
+acting as an escape hatch from a lift that never arrives. **It is a
+prerequisite for the lift work and belongs in the same epic.**
+
+The per-city founder pool is in history at `5d422d0b44`, superseded by
+the per-site formula.
