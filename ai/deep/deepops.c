@@ -155,66 +155,34 @@ void deep_manage_units(struct ai_type *ait, struct player *pplayer)
     if ((!unit_transported(punit)
          || unit_owner(unit_transport_get(punit)) != pplayer)
         && !def_ai_unit_data(punit, ait)->done) {
-      /* Ferries get one metric line either side of stock management:
-       * settlers wait on lifts that never arrive, and the boat half of
-       * that protocol is not otherwise observable from ai/deep
-       * (findings/settler-missions.md section 7). Cheap -- no
-       * pathfinding, and only for boats. */
-      bool ferry = (log_do_output_for_level(deep_metric_log_level())
-                    && dai_is_ferry(punit, ait));
-      int psngr0 = ferry ? def_ai_unit_data(punit, ait)->passenger : 0;
-      int wantdist = -1, wantreach = -1;
-
-      if (ferry && def_ai_unit_data(punit, ait)->passenger < 0) {
-        /* Nearest own unit flying the FERRY_WANTED flag, and whether
-         * the boat's own cargo-search map can actually reach it.
-         * aiferry_findcargo() says in a comment that its passenger
-         * count can be a "false positive"; this is how often. */
-        struct unit *nearest = NULL;
-
-        unit_list_iterate(pplayer->units, cargo) {
-          if (def_ai_unit_data(cargo, ait)->ferryboat < 0) {
-            int d = real_map_distance(unit_tile(punit), unit_tile(cargo));
-
-            if (wantdist < 0 || d < wantdist) {
-              wantdist = d;
-              nearest = cargo;
-            }
-          }
-        } unit_list_iterate_end;
-
-        if (nearest != NULL) {
-          struct pf_parameter parameter;
-          struct pf_map *pfm;
-
-          pft_fill_unit_overlap_param(&parameter, &(wld.map), punit);
-          parameter.omniscience = !has_handicap(pplayer, H_MAP);
-          pfm = pf_map_new(&parameter);
-          wantreach = (pf_map_move_cost(pfm, unit_tile(nearest))
-                       != PF_IMPOSSIBLE_MC) ? 1 : 0;
-          pf_map_destroy(pfm);
-        }
-      }
+      bool is_ferry = dai_is_ferry(punit, ait);
+      int psngr0 = is_ferry ? def_ai_unit_data(punit, ait)->passenger : 0;
       int id = punit->id;
       struct tile *from = unit_tile(punit);
       int moves0 = punit->moves_left;
 
+      /* Ferries stay on the stock dispatch. Sending the ones with
+       * waiting demand to dai_manage_ferryboat() directly -- which is
+       * where upstream-bugs #33 says they never arrive -- was measured
+       * and did NOT pay: Transport turns spent carrying fell 488 to
+       * 196 and overseas delivery 12% to 11%, because the stock ferry
+       * manager parks an empty boat rather than fetching anyone. The
+       * dispatch bug is real; routing around it is not the repair. */
       dai_manage_unit(ait, pplayer, punit);
 
-      if (ferry && game_unit_by_number(id) != NULL) {
+      if (is_ferry && log_do_output_for_level(deep_metric_log_level())
+          && game_unit_by_number(id) != NULL) {
         log_base(deep_metric_log_level(),
-                 "deep-ferry turn=%d player=\"%s\" unit=%d type=\"%s\" at=(%d,%d)"
-                 " incity=%d hurt=%d psngr=%d/%d cargo=%d moved=%d moves=%d/%d"
-                 " wantdist=%d wantreach=%d"
-                 " boats=%d avail=%d psng=%d",
+                 "deep-ferry turn=%d player=\"%s\" unit=%d type=\"%s\""
+                 " at=(%d,%d) psngr=%d/%d cargo=%d moved=%d"
+                 " moves=%d/%d boats=%d avail=%d psng=%d",
                  game.info.turn, player_name(pplayer), id,
                  unit_rule_name(punit), TILE_XY(unit_tile(punit)),
-                 tile_city(unit_tile(punit)) != NULL ? 1 : 0,
-                 punit->hp < unit_type_get(punit)->hp ? 1 : 0, psngr0,
+                 psngr0,
                  def_ai_unit_data(punit, ait)->passenger,
                  get_transporter_occupancy(punit),
                  same_pos(from, unit_tile(punit)) ? 0 : 1,
-                 moves0, punit->moves_left, wantdist, wantreach,
+                 moves0, punit->moves_left,
                  def_ai_player_data(pplayer, ait)->stats.boats,
                  def_ai_player_data(pplayer, ait)->stats.available_boats,
                  def_ai_player_data(pplayer, ait)->stats.passengers);
