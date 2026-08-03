@@ -1,102 +1,98 @@
 Continue the Freeciv deep-AI work. Read CLAUDE.md, doc/deep-ai/00-context.md,
 then doc/deep-ai/STATUS.md (start at "The expansion stall was settlers walking
-to islands" — that's last session). Branch epic/w03-horizon-content.
+to islands", then "The ferry lift" — both are last session). Branch
+epic/w03-horizon-content.
 
-Your epic: **make the ferry pipeline actually deliver settlers.** Read
-doc/deep-ai/findings/settler-missions.md §7 in full first — it has the
-measurements, the fix that landed, and the number below.
+Your epic: **make the colony lift an operation.** Read
+doc/deep-ai/findings/settler-missions.md §8 in full first. It has the
+measurements and TWO fixes that were built, measured and refused.
 
-THE ONE NUMBER THAT MATTERS
+SIZE IT BEFORE YOU BUILD IT
 
-    lategame-80, deep arm, per 10 games
-      picks land      655  ->  arrived 461   70%
-      picks overseas  919  ->  arrived 114   12%
+deep founds ~11 overseas cities per game on lategame-80. A perfect lift
+is worth some fraction of the ~1.3 cities/player still missing in the
+head-to-head — not all of it. If the sizing says the epic cannot pay,
+say so and pick something else; that is a good outcome.
 
-Nine of every ten settlers that commit to a boat trip never arrive.
-2398 of 7390 mission moves are a settler waiting on a lift — a third of
-all the settler-time in the game. Land expansion is fine; sea expansion
-is a queue that does not drain.
+Do NOT quote "12% of overseas settlers arrive, so recover the other
+88%". That ratio was measured and then corrected: two thirds of its
+denominator was the same settlers re-picking. The honest number is the
+absolute one, ~11 cities/game, and it barely moved when the churn was
+removed.
 
-That number was 7% before last session's fix, so the fix helped and did
-not solve it. Every stalled overseas settler now correctly reports
-`reason=ferry` in the `deep-settler ... stall` metric line, so this is
-measurable per turn from the benchmark logs without new instrumentation.
+WHAT IS ESTABLISHED, SO YOU DON'T RE-DERIVE IT
 
-WHAT LAST SESSION SETTLED, SO YOU DON'T RE-DERIVE IT
+- Not boat supply: 95% of settler waiting-turns had a boat that stock's
+  own is_boat_free() says would carry that settler.
+- Not the settler: it flags FERRY_WANTED at the coast with full moves.
+  Its own search radius is one tile (aiferry_find_boat_nearby), so it
+  cannot go to a boat 2-8 tiles away. The boat is meant to come.
+- The boat does not come. aiferry_findcargo()'s scan was reproduced
+  exactly and finds the waiting settler every time — it is never run
+  for civ2civ3 Transports, because dai_manage_unit() dispatches on
+  worker/cityfounder before ferry (upstream-bugs #33).
+- Routing those boats to dai_manage_ferryboat() anyway makes it WORSE
+  (Transport turns carrying 488 -> 196). Stock's ferry manager parks an
+  empty boat rather than fetching anyone. Do not repeat this.
+- deep's own drop-boatless test is `ferryboat <= 0` and FERRY_WANTED is
+  -1, so it drops the mission of a settler that just asked for a boat,
+  and the drop clears the flag. Correcting it to `== FERRY_NONE` is a
+  PREREQUISITE for any lift work — land it WITH the operation, not
+  before: on its own it was measured at score -1.50 (t=-0.99), because
+  the churn was a crude escape hatch and an honest queue that nothing
+  serves is worse than giving up.
 
-`goto_is_sane()` pathfinds NON-omnisciently and was being used as the
-boat-versus-walk switch, so unmapped water read as passable and settlers
-walked into coastlines: 5656 of 6323 stalled mission-turns on
-lategame-80. `deep_settler_can_walk_there()` (0f126c33b7) asks the
-question at the player's real handicap level, which is what the site
-search and the mover already do. Head-to-head vs ai/default, T80 score
-margin -1.49 -> +9.73 (t=2.09 paired, up 7/10). **deep now finishes
-ahead of ai/default on lategame-80**, the cell it was losing.
+WHERE IT BELONGS
 
-Do NOT re-open the "settlers freeze in war zones" theory. The danger
-veto accounts for 0.3% of stalls. That reading is marked superseded in
-findings §3 and the fix built on it is reverted (cab01f2614).
+`deepops.c`. The operations layer already has what a lift needs: slots,
+state machine, member claims, and holds that survive dai_manage_units()
+clearing `done`. A lift is a named boat + a named settler + a named
+beachhead + an abort condition. That replaces two parties hoping to
+bump into each other with a commitment, which is what RC2 is about.
 
-WHERE TO START LOOKING
-
-`aiferry_gobyboat()` / `aiferry_find_boat()` in ai/default/daiferry.c —
-the system whose own docs call it "statistical mechanics rather than
-logic" (RC2). Deep does not own it; it calls it. Decide early whether
-this epic is a deep-side ferry planner or a narrower fix, and say which
-in the first commit message.
-
-The throttle now works — `plr_data->stats.passengers >= boats` caps
-overseas picks, and overseas commitment fell 1320 -> 919 because of it.
-So the question is not "stop wanting islands", it is "deliver the ones
-we commit to". Consider: does the settler wait at the wrong tile, does
-the boat get retasked, is there a boat at all? Count before fixing.
-
-SMALLER, ADJACENT, NOT THIS EPIC
-
-- `behaviour` stalls: 523 turns on lategame-80, a settler whose corridor
-  closed mid-walk with no re-search. This is what findings §5.1 wanted,
-  aimed at a case a tenth the size it was thought to be. It is the third
-  attempt at that shape — the first two were reverted — so it needs its
-  own falsification, not a bolt-on.
-- W02b's remaining commits: settler cost from growth-blocked cities, and
-  Join City (upstream-bugs #31).
+Watch for: the boat must not be re-tasked mid-lift (that is what the
+op hold is for); the beachhead must be a tile the settler can actually
+found on AFTER landing (§7's lesson — ask the question with the mover's
+own knowledge, deep_settler_can_walk_there()); and the op needs an
+abort so a lift to a site that stops being worth it releases both units.
 
 MEASUREMENT
 
-`--arms mixed_dc,mixed_cd` on lategame-80, 10 seeds, mirrored. Analysis
-scripts from last session are worth rewriting rather than hunting for;
-the pattern is: pair by SEAT, average the mirror, paired t over seeds,
-and report the score margin BY TURN. Then take the
-difference-in-differences against a pinned control on the same seeds —
-that is what turned a t=1.55 raw margin into a t=2.09 result last
-session, and it costs one extra 20-game batch.
+`--arms mixed_dc,mixed_cd` on lategame-80, 10 seeds, mirrored, plus a
+pinned control on the same seeds so you can take the
+difference-in-differences — that is what turned a t=1.55 raw margin into
+a t=2.09 result two sessions ago. Report the score margin BY TURN.
 
-Pre-register a falsification before running anything. Last session's D2
-passed its own stated criterion and was still wrong about the mechanism;
-write the ladder so it can name a cause you have not thought of.
+Pre-register a falsification. Last session's D2 passed its own stated
+criterion and was still wrong about the mechanism, and the "12%" framing
+survived two rounds of analysis before the denominator was checked.
+Write the instrumentation so it can name a cause you have not thought
+of, and check your denominators.
 
 BENCHMARK DISCIPLINE — all of these cost real time
 
-- PIN the binary (copy freeciv-server + libfreeciv.so + the tuning file
-  to a scratch dir, RUNPATH is $ORIGIN) and pass run.sh --server. Pin a
-  NEW directory per binary; never overwrite one a batch is using.
-- Long batches must run under the harness's own background mechanism.
-  A `nohup ... &` inside a tool call is reaped and the batch dies
-  silently at whatever turn it had reached.
+- PIN the binary (freeciv-server + libfreeciv.so + tuning file to a
+  scratch dir, RUNPATH is $ORIGIN) and pass run.sh --server. New pin
+  directory per binary; never overwrite one a batch is using.
+- /tmp is tmpfs on this box and it WILL be wiped between sessions.
+  Anything you want to keep goes in a commit, not in the scratchpad.
+- Long batches must run under the harness's own background mechanism; a
+  `nohup ... &` inside a tool call is reaped and dies silently mid-run.
 - NEVER edit deep-best.ini or a config while a batch is in flight.
-- Filter non-benchmark players (barbarian nations show up in some games
-  and not others — primary-120 wrote 64 rows for 60 seats).
+- Filter non-benchmark players (barbarians make some games write 61 or
+  64 rows for 60 seats).
 - `meson test -C build` is the suite. `python3 benchmark/tune-audit.py`
   must print CLEAN (93/93/93/93 now).
 
 STATE
 
-- deep-best.ini: the site block is NOT TUNED. `site_stream_weight` sits
-  at placeholder 1.0, `site_travel_discount` is the human-set 0.9.
+- deep-best.ini: the site block is NOT TUNED. `site_stream_weight` is at
+  placeholder 1.0, `site_travel_discount` is the human-set 0.9.
+- deep beats ai/default head-to-head on lategame-80 as of §7: T80 score
+  margin -1.49 -> +9.73, difference-in-differences t=2.09, up 7/10.
+  primary-120 cross-check flat, no regression.
 - Both campaign boxes are STOPPED, not terminated (a6 us-east-1
   i-0e9a257ef3b781349, b6 us-east-2 i-05162168cf393cb20 — DIFFERENT
-  REGIONS, a combined describe-instances reports both as nonexistent).
-  EBS caches preserved. NEVER terminate: DeleteOnTermination=True.
+  REGIONS). EBS caches preserved. NEVER terminate.
 - Spacing is pinned by `citymindist`, not by the site objective (W02b,
-  falsified and recorded). Do not spend another epic on site scoring
-  hoping to move spacing.
+  falsified). Do not spend an epic on site scoring hoping to move it.
