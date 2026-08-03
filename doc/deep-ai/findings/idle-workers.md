@@ -139,7 +139,71 @@ how many tiles acquire a positive delta.
   ~11 parked founders per game are 22 citizens that could be handed
   back, but it does nothing for the 34 parked workers.
 
-## 7. Open
+## 7. Both remedies built and measured (2026-08-03)
+
+Human calls: *worker-workers should always do some work rather than
+stand around*, and *settlers doing worker duty should join cities*.
+Both landed; the numbers are mixed and are recorded as they came out.
+
+### The worker fallback is inert
+
+`deep_idle_fallback_work()` (`df9309d5ad`) takes the soonest-finished
+legal road, irrigation or mine inside our own radii, but only where the
+unit was about to stand still. Ranked by travel plus work turns, so no
+constant.
+
+    lategame-80   2267 assignments   bnp -0.02   mfg +0.00
+                  score -2.20 (t=-1.04)   idle unit-turns 12273 -> 9810
+    primary-120     20 assignments   score +0.80 (t=0.99), all noise
+
+**The improvements really are worth nothing where they were declined.**
+`lategame-80` cities average size 5.8 and never grow to work the outer
+tiles, so `city_tile_value()` at today's size was right and §3's charge
+of RC1-style myopia does not hold in this regime. Landed as doctrine,
+recorded as neutral.
+
+### The idle pool is largely one cell's artefact
+
+    cell           idle unit-turns/10g   cities/plr   idle per city-turn
+    lategame-80              12273           8.68          0.2946
+    primary-120                429          22.65          0.0026
+
+**113x.** `lategame-80` gives 8.7 cities `techlevel 50`, so every
+improvement is available at turn one and the radii are improved out
+almost immediately; `primary-120` has 22.65 cities and a normal tech
+curve, and its workers are never short of jobs. §1's "74% of
+worker-capable units are idle" is true and is mostly a statement about
+that cell -- more evidence for the standing question of whether
+`lategame-80` is a good tuning cell.
+
+### Join City works and costs land
+
+`deep_settler_join_city()` (`5933c431d0`), fired when the site search
+returns nothing at all:
+
+    settlers alive at end   2.73 ->  0.32   -2.42   t=-8.87
+    joins completed                   397   (~40 per game)
+    cities                  8.68 ->  8.47   -0.22   t=-1.57
+    landarea               99917 -> 97117   -2800   t=-2.35
+    score                 189.22 -> 187.77   -1.45   t=-0.60
+
+The objective is met decisively; `landarea` is the only significant
+term in the table and it is negative. The mechanism is honest rather
+than a bug: joining is irreversible, and a settler with no site today
+sometimes has one in five turns once borders move.
+
+Tightening the trigger from "not founding this turn" to "no site at
+all" was built and measured on a separate binary and came out
+**byte-identical over the same ten seeds** -- the looser case never
+occurs -- so the land cost is intrinsic to joining, not to an eager
+trigger.
+
+**The remedy that remains is a wait**: join only after N consecutive
+site-less turns, so a temporarily outbid settler survives. N is a
+tunable and belongs in `struct tuning` with a placeholder and a tuning
+pass, not a guess (rule 7). Not attempted here.
+
+## 8. Open
 
 1. Measure whether work exists outside the radii before building
    anything to find it. One extra ring of enumeration, counted, not

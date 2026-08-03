@@ -2620,3 +2620,54 @@ settler that waits honestly sits in a queue nothing serves.
    the head-to-head, not all of it.
 3. Unchanged: `behaviour` stalls (523 turns), is `lategame-80` a good
    tuning cell, `site_stream_weight` untuned, W02b's remaining commits.
+
+## Idle units: both human calls built, one inert, one costs land (2026-08-03)
+
+    eba2b77b04  74% of worker-capable units are parked, and no fallback
+    df9309d5ad  give an idle worker the soonest legal improvement
+    5933c431d0  hand a settler back to a city when there is nowhere to found
+
+### What was found first
+
+Human question: *do workers do anything if it isn't demanded?* No.
+`worker_evaluate_improvements()` enumerates only the union of city work
+radii; the want is a delta in tile value at today's city size floored
+at zero; and when nothing scores, an AI player gets no fallback at all
+-- humans reach `adv_seek_shelter()`, but `auto_workers_player()`
+branches on `is_ai()` and calls the `settler_run` hook instead. Final
+save census, `lategame-80`, 10 games: **475 of 645 worker-capable units
+idle**, and 100% of idle dedicated workers had no goto destination, so
+they were parked and not in transit.
+
+### The worker fallback: shipped, inert
+
+2267 assignments on `lategame-80` and `bnp -0.02`, `mfg +0.00`; 20
+assignments on `primary-120` and everything inside noise. The declined
+improvements really are worthless there -- cities average size 5.8 and
+never work the outer tiles. Landed as doctrine on the human call,
+recorded as neutral.
+
+### The idle pool is mostly a `lategame-80` artefact
+
+    cell           idle unit-turns/10g   cities/plr   idle per city-turn
+    lategame-80              12273           8.68          0.2946
+    primary-120                429          22.65          0.0026
+
+113x. Third independent reason to question `lategame-80` as a tuning
+cell, after twelve starting settlers and the stall being worst there.
+
+### Join City: objective met, land lost
+
+    settlers alive at end   2.73 ->  0.32   t=-8.87   joins 397
+    cities                  8.68 ->  8.47   t=-1.57
+    landarea               99917 -> 97117   t=-2.35
+    score                 189.22 -> 187.77  t=-0.60
+
+`landarea` is the only significant term and it is negative. Tightening
+the trigger to "no site at all" was measured on a separate binary and
+is byte-identical, so the cost is intrinsic: joining is irreversible
+and a settler with no site today sometimes has one later.
+
+**Open, and the next thing to do here:** join only after N consecutive
+site-less turns. N is a tunable -- `struct tuning` with a placeholder
+and a tuning pass, not a guess.
