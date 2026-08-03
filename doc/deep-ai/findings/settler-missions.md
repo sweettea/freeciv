@@ -465,9 +465,49 @@ least drifted around under `SSA_AUTOWORKER` and was boarded
 opportunistically. Not shipped (`75664db56e` keeps only the metric
 line and records the result in the code).
 
+### The 12% was partly an artefact, and the churn was an escape hatch
+
+Tracing every mission from its pick to its terminal event changed the
+denominator. Overseas missions, 10 games:
+
+    abandoned, another target picked      602   66%
+    held to game end or died              203   22%
+    arrived and founded                   114   12%
+
+    last state of the ones that never arrived:  ferry=728  moved=61
+
+Two thirds of "failed" overseas missions were the SAME settlers
+re-picking. The cause is deep's own `drop-boatless` condition:
+`unit_ai.ferryboat <= 0` treats `FERRY_WANTED` (-1) -- *I have asked
+for a boat and I am queued* -- as *no boat was assigned*, so the
+mission is dropped every turn the settler waits, and the
+`dai_unit_new_task()` that drops it calls `aiferry_clear_boat()`, which
+takes the flag back off and decrements `stats.passengers`. **The
+request never survived to the turn's boat pass.** That is why 77% of
+idle boat-turns saw nobody flagged while settlers stood on the coast.
+
+Correcting the test to `== FERRY_NONE` was built and measured:
+
+    metric                     pre      post      diff        t
+    score                   189.22    187.72     -1.50    -0.99
+    cities                    8.68      8.55     -0.13    -0.77
+    settlers alive at end     2.73      2.15     -0.58    -2.00
+
+    overseas picks           919 ->  406    abandoned  602 -> 130
+    overseas arrivals        114 ->  115    delivery   12% ->  28%
+    ferry-wait turns        2398 -> 3312
+
+The churn stops and the delivery *rate* more than doubles -- but the
+**absolute number of overseas cities does not move at all**, 114 to
+115. The 88% loss was mostly double-counting. And the change is
+slightly negative across the board, because the churn was a crude
+escape hatch: a settler that gave up went back to land work, and one
+that waits honestly sits in a queue nothing serves. Not shipped.
+
 ### What this establishes
 
-The dispatch bug is real and it is not the binding constraint. Boats
+Two cheap repairs were built and both were refused on measurement. The
+dispatch bug is real and it is not the binding constraint. Boats
 exist, are willing, are reachable, and the stock manager still does not
 put settlers on them. That is RC2 with a number on it — the ferry
 system's own docs call it "statistical mechanics rather than logic" —
@@ -477,6 +517,11 @@ named beachhead, held against re-tasking, with an abort condition. The
 operations layer in `deepops.c` already has that machinery, including
 holds that survive `dai_manage_units()` clearing `done`.
 
-Not attempted here. It is an epic, not a commit, and this one had
-already spent its budget establishing that the cheap repair does not
-work.
+Two things must land together when it is. The lift operation itself,
+and the `== FERRY_NONE` correction above -- which is a prerequisite,
+not an improvement: an honest ferry queue is what an operation would
+schedule against, and on its own it only removes an escape hatch.
+
+Not attempted here. It is an epic, not a commit, and this one spent its
+budget establishing that neither cheap repair works and that the real
+overseas yield is ~11 cities per game either way.
