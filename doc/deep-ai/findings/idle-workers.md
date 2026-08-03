@@ -198,10 +198,64 @@ all" was built and measured on a separate binary and came out
 occurs -- so the land cost is intrinsic to joining, not to an eager
 trigger.
 
-**The remedy that remains is a wait**: join only after N consecutive
-site-less turns, so a temporarily outbid settler survives. N is a
-tunable and belongs in `struct tuning` with a placeholder and a tuning
-pass, not a guess (rule 7). Not attempted here.
+### The remedy was a pool sized by the land still unclaimed
+
+Human calls: keep a founder pool rather than dissolving every settler,
+and **scale it by how much free space the world still has**. Both were
+built and measured; the second is what mattered.
+
+`lategame-80`, 10 paired seeds, every variant against the same base:
+
+    metric        base |  join-all    t | pool-flat    t | pool-scaled   t
+    score       189.22 |     -1.45 -0.60|    -0.65 -0.22 |     -0.28 -0.10
+    cities        8.68 |     -0.22 -1.57|    -0.42 -2.05 |     -0.08 -0.41
+    landarea     99917 |     -2800 -2.35|    -3750 -2.47 |     -2167 -1.41
+    settlers      2.73 |     -2.42 -8.87|    -1.68 -5.68 |     -2.42 -9.10
+    unitslost    15.58 |     -1.45 -1.72|    +1.50 +2.30 |     -1.13 -1.86
+    joins            0 |       397      |      213       |       384
+
+Read the columns in order, because each one corrects the last:
+
+- **join-all** meets the objective and costs land: `landarea` -2800 at
+  t=-2.35, the only significant term.
+- **pool-flat** — hold `founder_pool_per_city * cities` — is *worse on
+  every count*. The founders it keeps are exactly the ones the search
+  found no site for, so retaining them buys wandering units that die:
+  `unitslost` flips to **+1.50 at t=+2.30**. Holding inventory, not an
+  option.
+- **pool-scaled** — multiply that target by `deep_free_land_share()` —
+  meets the objective in full (`settlers` -2.42, t=-9.10, the same as
+  joining everything) and **has no significant negative term left**.
+  `landarea` t=-2.35 → -1.41, `cities` t=-1.57 → -0.41, `unitslost`
+  back below zero. Score dead flat at -0.28 (t=-0.10).
+
+The mechanism is the whole point: free land *shrinks over a game*.
+Early, the pool is held and those settlers found the cities that
+`join-all` was throwing away; late, the target falls toward zero and
+the settlers that would have wandered and died are banked as citizens
+instead. A pool sized by a **static** prior cannot do that, which is
+why `pool-flat` failed — and why `deep_map_crowding()` and
+`deep_land_pressure()`, both computed once from lobby settings, were
+the wrong instruments.
+
+Landed at `5d422d0b44`. It is **not a score improvement** — it is the
+objective met at no measurable cost, which is what "free" looks like.
+`founder_pool_per_city` stays a PLACEHOLDER at 0.31 pending a tuning
+pass.
+
+### Ruleset sensitivity, recorded because the right answer moves
+
+- The homeless bias switches **off** when `game.server.killunhomed > 0`:
+  there a homeless unit loses hitpoints every turn until it dies
+  (`unittools.c:501`), so "free to keep" becomes "dying slowly" and
+  preferring to keep them would be backwards. Inverting is probably
+  right, but it is unmeasured, so it switches off rather than guessing.
+- Join City is queried through `action_prob_vs_city()`, so a ruleset
+  with no enabler simply never joins. civ2civ3 (Settlers, Migrants,
+  Fanatics) and classic (Settlers) both carry `AddToCity`.
+- `upstream-bugs.md` #33 is civ2civ3-only: it is the sole shipped
+  ruleset with a ferry carrying the `Workers` flag, so the `-classic`
+  cells cannot reproduce it.
 
 ## 8. Open
 
