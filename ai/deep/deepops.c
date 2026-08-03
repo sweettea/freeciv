@@ -161,14 +161,28 @@ void deep_manage_units(struct ai_type *ait, struct player *pplayer)
       struct tile *from = unit_tile(punit);
       int moves0 = punit->moves_left;
 
-      /* Ferries stay on the stock dispatch. Sending the ones with
-       * waiting demand to dai_manage_ferryboat() directly -- which is
-       * where upstream-bugs #33 says they never arrive -- was measured
-       * and did NOT pay: Transport turns spent carrying fell 488 to
-       * 196 and overseas delivery 12% to 11%, because the stock ferry
-       * manager parks an empty boat rather than fetching anyone. The
-       * dispatch bug is real; routing around it is not the repair. */
-      dai_manage_unit(ait, pplayer, punit);
+      /* dai_manage_unit() dispatches on worker/cityfounder BEFORE it
+       * dispatches on ferry, so a boat that also carries the Workers
+       * flag never reaches the ferry code at all: it is handed to
+       * dai_manage_settler(), parked on SSA_AUTOWORKER and marked
+       * done. civ2civ3's Transport is exactly that -- role Ferryboat,
+       * capacity 8, the colonisation boat -- and it was 100% of the
+       * idle-boat turns that had a reachable settler waiting
+       * (upstream-bugs #33).
+       *
+       * Only divert a boat that has cargo aboard or that somebody is
+       * waiting for. With no demand the stock dispatch stands, so a
+       * Transport keeps its ocean worker duty when no lift is wanted,
+       * and this costs nothing on rulesets whose ferries carry no
+       * Workers flag. */
+      if (is_ferry
+          && def_ai_unit_data(punit, ait)->task != AIUNIT_HUNTER
+          && (get_transporter_occupancy(punit) > 0
+              || def_ai_player_data(pplayer, ait)->stats.passengers > 0)) {
+        dai_manage_ferryboat(ait, pplayer, punit);
+      } else {
+        dai_manage_unit(ait, pplayer, punit);
+      }
 
       if (is_ferry && log_do_output_for_level(deep_metric_log_level())
           && game_unit_by_number(id) != NULL) {
