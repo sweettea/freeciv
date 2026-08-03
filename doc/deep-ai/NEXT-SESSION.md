@@ -1,129 +1,119 @@
 Continue the Freeciv deep-AI work. Read CLAUDE.md, doc/deep-ai/00-context.md,
-then doc/deep-ai/STATUS.md — start at "The expansion stall was settlers walking
-to islands" and read forward through the final addendum. Branch
-epic/w03-horizon-content.
+then doc/deep-ai/STATUS.md — start at "The stale head-to-head, re-taken"
+and read forward to the end. Branch epic/w03-horizon-content.
 
-## 0. FIRST, AND BEFORE ANY NEW CODE: re-run the head-to-head
+## 0. The head-to-head is CURRENT. Do not re-take it.
 
-**Six behaviour changes have landed since it was last taken.** The
-+9.73 T80 margin is from `0f126c33b7`; since then: the idle-worker
-fallback, Join City, the founder pool (twice), and both ferry fixes.
-Individually they range from inert to +4.37 (t=1.84). Nobody has
-measured the stack against `ai/default`.
+Taken 2026-08-03 evening on `da57ed6206` against a pinned control at
+`0f126c33b7`, 10 train seeds, `lategame-80`, mirrored `mixed_dc`/`mixed_cd`:
 
-    ./benchmark/run.sh --quick --config benchmark/configs/lategame-80.conf \
-      --arms mixed_dc,mixed_cd --jobs 8 --out RESULTS --server PINNED
+    turn      pre     post    delta   t(DiD)
+      40    10.87    11.85    +0.98     0.43
+      60    16.12    14.88    -1.23    -0.47
+      80     9.73     9.05    -0.68    -0.23
 
-Take it against a pinned control on the same seeds and report the
-**difference-in-differences**, not the raw margin — that is what turned
-a t=1.55 raw result into t=2.09. Report the score margin **by turn**;
-the endpoint hid the whole story on this cell once already.
+The control reproduced the previous session's series exactly. The
+six-change stack neither regressed nor improved it. Only two behaviour
+changes have landed since (`3647d0fea4` and the census split), and both
+measured neutral, so the next head-to-head is worth taking after the
+lift operation, not before it.
 
-If it has fallen, bisect: every change is its own commit.
+## 1. THE EPIC: the colony lift as an operation, and the cap counts TRIPS
 
-## 1. THE EPIC: let workers cross water
+This was already the specified next epic. This session made it the
+bottleneck for a **second** consumer and sharpened its design.
 
-`findings/idle-workers.md` §9 has the full diagnosis. Short version:
-**workers cannot cross water at all.**
-`worker_evaluate_improvements()` uses a plain land pf parameter, so an
-overseas city's radius is enumerated and then every tile silently
-discarded as unreachable; and the FIND_WORK branch has no ferry leg —
-every `aiferry_*` call in `deepsettler.c` is on the BUILD_CITY mission
-path. A colony is improved only by founders that happen to land there.
+Workers can now cross water (`3647d0fea4`) — the machinery works and it
+is measured neutral, because of this:
 
-    lategame-80: 12% of cities have NO worker-capable unit within 8
-    tiles; the tail runs to 24.
+    lategame-80, 10 games, 6834 cross-water attempts, 70 fired
 
-This is the biggest specified gap left, and it closes a loop: overseas
-expansion measured as barely worth having partly *because* overseas
-cities never get terrain work. Colonisation and the worker pipeline are
-failing each other.
+      why=cap      3460   50.6%   a settler is already queued for every boat
+      why=noboat   2988   43.7%   no free boat anywhere
+      why=outbid    230    3.4%   overseas work existed, lost to land work
+      why=nocand     86    1.3%   no reachable overseas work
+      fired          70    1.0%
 
-Three pieces, and the machinery already exists
-(`pft_fill_amphibious_parameter`, `pft_amphibious`, and
-`aiferry_goto_amphibious()` already carry settlers):
+**94% die on lift supply.** Boat supply — not site scoring, not worker
+valuation, not the discount — is what both the settler pipeline and the
+worker pipeline are now starved by. The ferry fixes made it tighter, not
+looser: settlers stay correctly flagged now, so `passengers >= boats` is
+almost always true.
 
-1. **See it** — when the land search finds nothing, re-run the
-   enumeration amphibiously so other landmasses become
-   reachable-with-a-boat rather than invisible.
-2. **Reach it** — route the assignment through `aiferry_gobyboat()`
-   instead of a bare walk.
-3. **Discount it** — `worker_cross_continent_discount`, new tunable
-   with a placeholder and a tuning pass, so this stays *backup*
-   behaviour (human call: "a little bit, significantly
-   down-prioritized") and workers do not queue for boats ahead of
-   settlers.
+The design call is already made and is now better evidenced:
 
-It is also the only thing identified that would make
-`deep_idle_fallback_work()` non-inert: "nothing to do here" versus "a
-whole unimproved colony over there" is exactly what it cannot currently
-see.
+- **Keep 1:1 for ordinary settlers.** A settler occupies a boat for a
+  round trip. A capacity multiplier queues eight behind one Transport and
+  recreates the dock-parking bug.
+- **The cap should count TRIPS, not settlers.** civ2civ3's Transport has
+  capacity 8 and carries one passenger. A worker — or a second settler —
+  riding a boat that is *already crossing* costs nothing. That needs a
+  manifest, which needs the lift to be an operation.
+
+Home is `deepops.c`, which already has holds that survive
+`dai_manage_units()` clearing `done`. `findings/settler-missions.md` §8
+has the diagnosis and the two dead ends. A named boat, a named
+passenger list, a named beachhead, held against re-tasking, with an
+abort condition.
+
+Size it first: ~11 overseas cities per game today, and the remaining
+head-to-head gap is ~1.3 cities/player. A perfect lift is worth some
+fraction of that, not all of it.
 
 ## 2. Join City target quality
 
-Currently ranked by soonest arrival only. Human call — it should weigh:
-
-- **granary presence** (a stocked granary carries the food forward
-  rather than evaporating),
-- **the citizens' value to that city** (a small city gains more per
-  citizen than a large one),
-- against **travel time and route risk**.
-
-One weight, not four, if value is discounted by `amortize(value, turns)`
-the way the site search already does, with route risk from the shared
+Unchanged from last session; still specified, still not built. Currently
+ranked by soonest arrival only. Human call — it should weigh **granary
+presence**, and **the citizens' value to that city** (a small city gains
+more per citizen), against **travel time and route risk**. One weight,
+not four, if value is discounted by `amortize(value, turns)` the way the
+site search already does, with route risk from the shared
 `deep_settler_overnight_veto()`.
 
-## 3. Tune the settler/boat block
+## 3. Tune the settler/boat block — but check the denominator first
 
-**Not one of the seventeen parameters there has ever been tuned** —
-all placeholders or inherited stock values (`findings/idle-workers.md`
-§10). Highest-leverage first:
+Still true that **not one of the eighteen parameters there has ever been
+tuned**. Highest-leverage first: `site_enough_result` (250.0, decides
+whether colonisation is evaluated at all), `founder_pool_per_site`
+(0.06; measured per-cell calibrations disagree 3.5x — **report per-cell
+values, do not average the spread**), `settler_guard_tolerance` (1.0),
+then `colony_lift_weight`, `overseas_fear`, `overseas_decay`,
+`site_travel_discount`, `site_stream_weight`.
 
-- `site_enough_result` (new, placeholder 250.0 = stock's compile-time
-  `RESULT_IS_ENOUGH`). Above it phase 2 never runs, so this single
-  number decides whether colonisation is evaluated at all.
-- `founder_pool_per_site` (placeholder 0.06). Measured per-cell
-  calibrations disagree 3.5x: 0.06 on `primary-120`, 0.207 on
-  `lategame-80`. **Report per-cell values; do not average the spread.**
-- `settler_guard_tolerance` (new, placeholder 1.0 = stock bar).
-- `colony_lift_weight`, `overseas_fear`, `overseas_decay`,
-  `site_travel_discount`, `site_stream_weight`.
-
-## 4. The colony lift as an operation
-
-`findings/settler-missions.md` §8. Home is `deepops.c`. Also where the
-**settlement party** belongs — human call: keep the ferry cap at 1:1
-for ordinary settlers, because a settler occupies a boat for a round
-trip and a capacity multiplier would queue eight behind one Transport
-and recreate the dock-parking bug. The exception is several settlers on
-ONE boat making ONE low-risk trip, i.e. *the cap counts trips, not
-settlers* — which needs the operation to exist.
+**Do NOT tune `worker_cross_continent_discount` yet.** Only 316 of 6834
+attempts ever reached the comparison it governs and only 230 were
+decided by it; tuning it now measures noise. It comes after the lift.
 
 ## WHAT NOT TO REBUILD
 
-- **Site scoring to change city spacing.** W02b falsified it and this
-  session's negative control confirmed it: median founded city sits on
-  `citymindist`, ~half are on the floor, land per city moved <1% across
-  every variant.
-- **A founder pool sized per city.** Superseded; in history at
-  `5d422d0b44`. Worse than joining freely on every count.
-- **A ferry capacity multiplier on the 1:1 cap.** See §4.
-- Branch `shelf/refused-2026-08-03` holds the two ferry fixes as
-  standalone commits; both are now cherry-picked onto the epic branch,
-  so the shelf is history rather than a to-do.
+- **Site scoring to change city spacing.** W02b falsified it; the
+  negative control confirmed it. Median founded city sits on
+  `citymindist`.
+- **A founder pool sized per city.** Superseded; history at `5d422d0b44`.
+- **A ferry capacity multiplier on the 1:1 cap.** See §1 — trips, not a
+  multiplier.
+- **Loosening the worker's ferry cap so workers bid against settlers.**
+  That trades a colony for a road. The 94% is an argument for more
+  trips, not for a weaker guard.
+- **The head-to-head.** §0.
 
 ## METHOD NOTES THAT EARNED THEIR PLACE
 
 - **Two fixes repairing opposite ends of one broken protocol cannot be
   measured separately.** Both ferry fixes measured negative alone and
-  +4.37 (t=1.84) together; each one's failure mode was the other one's
-  absence. They were nearly discarded on individually-honest numbers.
+  +4.37 (t=1.84) together.
 - **Instrument before fixing, and build the diagnostic as a LADDER**
-  that relaxes every candidate constraint, not the two you suspect. The
-  settler stall's cause was a rung nobody had enumerated.
-- **Check your denominators.** "12% of overseas settlers arrive"
-  survived two rounds of analysis before two thirds of the denominator
-  turned out to be the same settlers re-picking.
+  that relaxes every candidate constraint, not the two you suspect.
+- **Instrument the fix's own refusals, not just its firings.** The
+  cross-water pass shipped with a one-line reason log on every decline,
+  and that log — not the score table — is what identified the real
+  bottleneck. A neutral result with no refusal breakdown would have been
+  uninterpretable.
+- **Check your denominators.** "12% of overseas settlers arrive" survived
+  two rounds before two thirds of the denominator turned out to be the
+  same settlers re-picking. Likewise "14.5% of idle turns had a boat
+  available" used `available_boats`; the cap asks the stricter
+  `passengers < boats`, and that is where the population went.
 - **A pre-registration can pass its own stated criterion and still be
   wrong about the mechanism.** D2 did exactly that.
 
@@ -131,7 +121,8 @@ settlers* — which needs the operation to exist.
 
 - PIN the binary (freeciv-server + libfreeciv.so + tuning file to a
   scratch dir; RUNPATH is `$ORIGIN`) and pass `--server`. New pin
-  directory per binary; never overwrite one a batch is using.
+  directory per binary. With every batch pinned, rebuilding the main
+  tree mid-run is safe — but only then.
 - **/tmp is tmpfs here and IS wiped between sessions.** Anything worth
   keeping goes in a commit, not the scratchpad.
 - Long batches must use the harness's background mechanism; a
@@ -140,19 +131,18 @@ settlers* — which needs the operation to exist.
 - Filter non-benchmark players — barbarians make some games write 61 or
   64 rows for 60 seats.
 - `meson test -C build` is the suite; `python3 benchmark/tune-audit.py`
-  must print CLEAN (96/96/96/96 now).
+  must print CLEAN (97/97/97/97 now).
 
 ## STATE
 
 - deep-best.ini: the site block is NOT TUNED. `site_stream_weight` 1.0,
   `site_travel_discount` 0.9 (human-set), `founder_pool_per_site` 0.06,
-  `site_enough_result` 250.0, `settler_guard_tolerance` 1.0 — all
-  placeholders.
-- `lategame-80` STAYS in the campaign (human call 2026-08-03). It is an
-  island, tech-saturated regime no other cell tests — 60% of its
-  settler targets are overseas — and it surfaced every bug this session
-  found. The guard is to report per-cell tuned values and treat sharp
-  disagreement as overfit evidence, not to drop the cell.
+  `site_enough_result` 250.0, `settler_guard_tolerance` 1.0,
+  `worker_cross_continent_discount` 1.0 — all placeholders.
+- `lategame-80` STAYS in the campaign (human call 2026-08-03). Island,
+  tech-saturated, 60% of settler targets overseas; it surfaced every bug
+  the last two sessions found. The guard is to report per-cell tuned
+  values and treat sharp disagreement as overfit evidence.
 - Both campaign boxes are STOPPED, not terminated (a6 us-east-1
   i-0e9a257ef3b781349, b6 us-east-2 i-05162168cf393cb20 — DIFFERENT
   REGIONS). EBS caches preserved. NEVER terminate.
