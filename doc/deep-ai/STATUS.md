@@ -2842,3 +2842,100 @@ significant on either measure.
 **deep still finishes ahead of `ai/default` on `lategame-80` by ~9
 score at T80, and the reason is still `0f126c33b7`.** Nothing since has
 been shown to add to it.
+
+## Workers can cross water now, and it barely matters (2026-08-03, evening)
+
+    aa42dc099c  split the idle-work census by continent
+    3e53b19a5a  findings/idle-workers.md section 11 -- the size of it
+    d6dd6ce922  worker_cross_continent_discount, a tunable price
+    3647d0fea4  let an idle worker take a boat to an unimproved colony
+
+**The defect was real and is fixed. The fix is inert on the cell that
+has the defect, and the reason is worth more than the fix.**
+
+### What was measured first
+
+The idle census now splits by continent, so a worker reporting "nothing
+to do" says whether it had nothing to do or nothing it could WALK to.
+`lategame-80`, 10 train seeds, 6890 idle worker-turns:
+
+    mean per idle unit-turn      own continent   across water
+      cities                             5.55           2.36
+      OPEN work (road/irrig/mine)       17.55          12.69
+
+    idle turns with no local open work    2397   34.8%
+    ... and open work across the water    1043   15.1%
+    ... and a boat available for it       1002   14.5%
+
+**42% of the open terrain work these empires hold is on a landmass the
+worker cannot reach.**
+
+### The repair
+
+The fallback's candidate scan is now shared by two passes: the land one,
+and a second over cities on other continents, enumerated through a real
+ferry's overlap map -- the machinery the site search already uses to see
+an overseas site. The winner goes through `deep_settler_gothere()`, so
+the worker books a lift, waits for it, and walks the far side.
+
+Two guards keep it BACKUP behaviour: the site search's 1:1 ferry cap is
+checked here too, and the trip pays `worker_cross_continent_discount`
+(PLACEHOLDER 1.0) on its real travel turns.
+
+### The result: neutral
+
+deep arm, 10 paired seeds, pinned binaries either side:
+
+    lategame-80              pre       post      diff       t
+      score               190.28     190.18     -0.10   -0.10
+      cities                8.70       8.68     -0.02   -0.36
+      pop                  49.93      50.28     +0.35    0.68
+      mfg                  58.72      59.07     +0.35    0.26
+      landarea              99533      99833      +300    0.77
+      mean_city_size         5.87       5.96     +0.08    1.34
+
+Nothing moves. Not a regression, and not a win.
+
+### Why -- and this is the finding
+
+Over 10 games the cross-water pass was attempted 6834 times and fired
+**70**:
+
+    why=cap      3460   50.6%   a settler is already queued for every boat
+    why=noboat   2988   43.7%   no free boat anywhere
+    why=outbid    230    3.4%   overseas work existed and lost to land work
+    why=nocand     86    1.3%   no reachable overseas work
+    fired          70    1.0%
+
+**94% of attempts die on lift supply, before the discount is ever
+consulted.** The worker pipeline was not the binding constraint; the
+boat supply is, and it is the SAME constraint the settler pipeline is
+already starved by. The ferry fixes made it tighter, not looser: settlers
+now stay correctly flagged, so `passengers >= boats` is almost always
+true.
+
+The 14.5% of idle turns that had "a boat available" used
+`stats.available_boats`; the cap asks the stricter `passengers < boats`,
+and that is where the population went.
+
+### What NOT to do about it
+
+Loosening the cap so workers bid against settlers for lift. That trades
+a colony for a road, and the human call of 2026-08-03 already ruled on
+it: keep 1:1, because a settler occupies a boat for a round trip.
+
+The right answer is the one already specified and deferred: **the cap
+should count TRIPS, not settlers.** A worker riding a boat that is
+already crossing with a settler aboard costs nothing -- civ2civ3's
+Transport has capacity 8 and carries one passenger. That needs the lift
+to be an operation with a named boat, a named beachhead and a manifest
+(`deepops.c`, `findings/settler-missions.md` section 8), which is the
+next epic and now has **two** consumers waiting on it rather than one.
+
+### Status of the epic's third piece
+
+`worker_cross_continent_discount` is untuned at PLACEHOLDER 1.0 and
+**tuning it now would be measuring noise**: only 316 of 6834 attempts
+ever reached the comparison it governs, and only 230 of those were
+decided by it. It should be tuned after the lift operation lands, not
+before.
