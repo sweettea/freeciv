@@ -2536,3 +2536,87 @@ narrowly missed (+0.42 cities against a predicted +0.5). F4 held.
 4. Unchanged from last session: is `lategame-80` a good tuning cell;
    `site_stream_weight` untuned at 1.0; W02b's remaining commits
    (settler cost from blocked cities, Join City).
+
+## The ferry lift: diagnosed, two repairs refused (2026-08-02, late night)
+
+**Continuation of the same session at the human's direction. Nothing
+shipped but instrumentation and the measurements; both candidate fixes
+were built, measured and reverted.**
+
+    fae8a0f778  instrument the ferry rendezvous from both sides
+    75664db56e  trim the probes to the line worth keeping
+    e2171af6d2  findings section 8 + upstream-bugs #33
+    16acdd9712  the 12% was mostly double-counting
+
+### It is not boat supply, and it is not the settler
+
+`lategame-80`, 10 train seeds. Of 2398 settler waiting-turns, **95% had
+a boat that stock's own `is_boat_free()` says would carry that
+settler**, and 92% of those were 2-8 tiles away -- outside the one-tile
+radius `aiferry_find_boat_nearby()` searches, because the boat is meant
+to come. Only 5% were "no boat anywhere".
+
+### Why the boat does not come
+
+Of 6076 idle boat-turns, 778 had a flagged passenger the boat's own
+cargo-search map could reach. `aiferry_findcargo()`'s scan was
+reproduced exactly from the deep side and **found the waiting settler
+every time** -- so the scan is fine and is never run. A predicate
+bitmask named the branch: `dai_manage_unit()` dispatches on
+worker/cityfounder BEFORE ferry, and civ2civ3's **Transport** (role
+Ferryboat, capacity 8, the colonisation boat) carries the `Workers`
+flag, so it is handed to `dai_manage_settler()`, parked on
+`SSA_AUTOWORKER` and never reaches the ferry code in its life.
+Galleons are unaffected. `upstream-bugs.md` #33.
+
+### Repair 1, refused: route those boats to the ferry code
+
+    Transport boat-turns carrying   488 -> 196
+    overseas delivery                12% ->  11%
+    score  +1.20 (t=0.59)   cities  +0.00 (t=0.00)
+
+Freed from auto-worker duty the Transport runs stock's ferry manager,
+which makes it available, fails to pick a passenger-in-charge and parks
+it -- where before it at least drifted and was boarded opportunistically.
+
+### Repair 2, refused: stop deep destroying its own boat request
+
+Tracing every mission pick to its terminal event: **66% of "failed"
+overseas missions are the same settlers re-picking.** deep's
+`drop-boatless` test is `unit_ai.ferryboat <= 0`, and `FERRY_WANTED` is
+-1, so a settler that had just successfully asked for a boat had its
+mission dropped that same turn -- and `dai_unit_new_task()` called
+`aiferry_clear_boat()`, taking the flag off and decrementing
+`stats.passengers`. The request never survived to the boat pass, which
+is exactly why 77% of idle boat-turns saw nobody flagged.
+
+    overseas picks   919 -> 406   arrivals 114 -> 115   (12% -> 28%)
+    ferry-wait turns       2398 -> 3312
+    score  -1.50 (t=-0.99)   cities  -0.13 (t=-0.77)
+
+The delivery *rate* doubles because the denominator was inflated. The
+**absolute overseas city count does not move**, 114 to 115. And it is
+slightly negative overall: the churn was a crude escape hatch, and a
+settler that waits honestly sits in a queue nothing serves.
+
+### Corrections to my own earlier claims
+
+- "12% of overseas settlers arrive, recover the other 88%" was wrong as
+  a size estimate. Two thirds of the denominator was double-counted
+  re-picks. The real overseas yield is ~11 cities per game and the
+  headroom is smaller than the ratio suggested.
+- The §7 epic's numbers are unaffected -- they were measured on cities
+  and score, not on this ratio.
+
+### Open, ranked
+
+1. **The lift as an operation.** A named boat, a named settler, a named
+   beachhead, held against re-tasking, with an abort condition, in
+   `deepops.c` -- which already has holds that survive
+   `dai_manage_units()` clearing `done`. Repair 2 is a prerequisite to
+   land WITH it, not before it.
+2. Size it first. ~11 overseas cities per game today; a perfect lift is
+   worth some fraction of the ~1.3 cities/player gap that remains in
+   the head-to-head, not all of it.
+3. Unchanged: `behaviour` stalls (523 turns), is `lategame-80` a good
+   tuning cell, `site_stream_weight` untuned, W02b's remaining commits.
