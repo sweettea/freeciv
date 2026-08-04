@@ -3007,3 +3007,87 @@ a flagged, reachable settler, idle).
 **This overrides an explicit human design call (2026-08-03), so it is
 flagged rather than acted on.** Nothing was built on the falsified
 premise.
+
+## The lift owns the crossing now, and the score does not move
+   (2026-08-03, night)
+
+    41ea411542  ai/deep: declare the lift operation kind and its tunables
+    28325fb6b9  ai/deep: own the colony lift -- boat, manifest, beachhead
+    (+ the delivered/strayed metric split)
+
+**The rendezvous defect is fixed and the fix is neutral on score.** Same
+shape as the cross-water worker: the mechanism works, and the cell does
+not reward it yet.
+
+### What was built
+
+A lift operation claims a named boat and a named manifest, remembers a
+named beachhead (the passenger's own `goto_tile` -- the op does not
+second-guess the settler's chosen site) and holds both ends against
+re-tasking. MUSTER is the rendezvous the stock protocol never completes:
+the boat goes to the manifest. MARCH is the crossing. The manifest is
+released beside the beachhead, where the stock settler path disembarks
+correctly on its own.
+
+Passengers are ANY unit that must cross -- settler, worker, or a
+defensive unit being redeployed overseas. Moving troops is not attacking
+with them; ASSAULT remains the amphibious battle. Human call
+2026-08-03: a garrison move must not masquerade as an attack to get a
+hull.
+
+### Mechanism: it works
+
+`lategame-80`, 10 train seeds, mirrored, 20 games, lift ON:
+
+    formed   165        sailed   110        arrived/delivered  92
+
+    lift-landed(delivered)  77    lift-gather-timeout  31
+    lift-nobody             24    lift-arrived         15
+    lift-noboat              7    lift-unreachable      4
+    lift-cross-timeout       2
+
+Against a negative control of `lift_form_radius = 0` on the SAME pinned
+binary, which logs **zero** lift events. Before this, the census found
+0.6% of waiting unit-turns ever stood on a boat's tile; now 110
+crossings happen per 20 games.
+
+### Score: flat
+
+Paired over 10 seeds, deep's margin over `ai/default`, ON minus OFF:
+
+    metric            OFF       ON     diff       t     up
+    score            8.37     7.02    -1.35   -0.36   8/20
+    cities          -0.37    -0.43    -0.07   -0.16  11/20
+    pop              4.77     4.35    -0.42   -0.19  11/20
+    bnp              2.93     4.05    +1.12    0.35  11/20
+    mfg             -0.12    -1.12    -1.00   -0.24   7/20
+    landarea        33.33  3433.33 +3400.00    0.75  11/20
+    mean_city_size   0.82     0.74    -0.08   -0.55   9/20
+
+**Not a regression and not a win.** Nothing clears a standard error.
+More units cross the water and the same number of cities exist at T80.
+
+### What this rules out and what it leaves
+
+Ruled out: that the rendezvous was the thing standing between deep and
+more overseas cities. It was a real defect, it is fixed, and the cities
+did not follow. Delivery was never the binding constraint on the
+*count* -- section 8 already found the absolute overseas yield was ~11
+cities either way while the delivery RATE tripled.
+
+Left open, in order:
+
+1. **The three tunables are placeholders and have never been tuned**
+   (`lift_form_radius` 8, `lift_gather_turns` 8, `lift_cross_turns`
+   20). 31 gather-timeouts and 24 hollowed ops out of 165 is a lot of
+   waste, and gather_turns is the parameter that governs it.
+2. **Hitch-a-ride** (human design 2026-08-03). Now that crossings
+   actually happen, a unit wanting passage should inspect boats already
+   servicing someone bound for that continent and join if the detour
+   costs **less than one extra turn of boat waiting**. The census that
+   killed the original trip-counting design measured a world with no
+   trips in it (11.1% of boat-turns carried anything); this changes
+   that denominator, which is why the order matters. `members[]` is
+   already a manifest and the beachhead is already named.
+3. Whether the colony that lands is worth founding at all -- site
+   quality, not delivery.
