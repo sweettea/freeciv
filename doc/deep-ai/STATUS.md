@@ -3677,3 +3677,36 @@ been tuned, and unlike `lift_gather_turns` it now has a real job.
 Measure before assuming: a crossing that times out may be a boat that
 cannot path to its beachhead at all, which is a routing bug rather than
 a budget that is too small.
+
+### The 40-seed verdict on the rendezvous fix (2026-08-04)
+
+The 10-seed +29.90 (t=1.66, 8/10) does NOT survive. 40 paired seeds,
+`isolated-150`, control = original lift, fixed = rendezvous protocol:
+
+    variant   seeds    mean      se       t
+    control     40    128.25   17.94    7.15
+    fixed       40    139.53   17.09    8.17
+    diff              +11.28   12.78    0.88   up 25/40
+
+**+11.28, t=0.88. Not a score win.** The point estimate stays positive
+and 62% of seeds are up, which is worth something as a prior, but
+nothing here clears a standard error and it must not be reported as an
+improvement.
+
+The mechanism over the same 80 games is not in doubt:
+
+    gather-timeout   545 -> 28
+    delivered        427 -> 558   (+31%)
+    unreachable       11 -> 0
+    cross-timeout     98 -> 167   (the failures moved downstream)
+
+Fifth instance of the project's recurring shape: transport mechanisms
+improve dramatically and the aggregate does not follow. 00-context
+section 8 anticipated exactly this, and the human's call stands -- the
+mechanism is the deliverable, the flat score is not a defect.
+
+**Method note that cost nothing and saved a false claim:** the 10-seed
+estimate was inflated by 2.6x. The control arm's OWN margin also moved
+86.3 -> 111.5 -> 128.25 as seeds went 10 -> 23 -> 40, which is the same
+magnitude as the effect under test. On this cell, ten seeds cannot see
+an effect of this size at all.
