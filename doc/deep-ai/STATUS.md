@@ -3710,3 +3710,34 @@ estimate was inflated by 2.6x. The control arm's OWN margin also moved
 86.3 -> 111.5 -> 128.25 as seeds went 10 -> 23 -> 40, which is the same
 magnitude as the effect under test. On this cell, ten seeds cannot see
 an effect of this size at all.
+
+### The four switches, isolated on one binary (2026-08-04)
+
+10 paired seeds each, `isolated-150`, `pin-hold`, one tuning switch per
+arm. **All underpowered** -- the 40-seed run above showed 10 seeds
+cannot resolve effects of this size -- so these are directions, not
+results:
+
+    arm                              mean    vs base      t     up
+    base                            111.80      --
+    hitch  (manifest 3 + patience)   94.90    -16.90    -0.87   4/10
+    slots  (lift_op_slots = 4)      134.10    +22.30    +1.05   5/10
+    damp   (boat_idle_damping 0.5)   91.80    -20.00    -1.17   3/10
+
+**`damp` trending NEGATIVE is the one to take seriously**, because it
+contradicts the "Too Many Boats" reading. If suppressing boat building
+when hulls are idle costs score, the surplus is doing something the
+idle count does not capture -- reserve capacity for bursts, or hulls
+already positioned on the right ocean when demand appears. The
+73%-idle figure was an upper bound anyway (it counted exploring and
+op-claimed hulls). Do not treat fleet reduction as free.
+
+`slots` is the most promising direction and is consistent with the
+measured 61% array saturation.
+
+**Attribution trap avoided, worth recording:** the first pass at this
+table matched arms by tuning FILENAME, and several pins reuse
+`base.ini`, so it compared across different binaries and produced a
+plausible, wrong table (hitch -50.90 instead of -16.90). Group by the
+server hash in `key.txt`, which is exactly what the content-addressed
+cache records it for.
