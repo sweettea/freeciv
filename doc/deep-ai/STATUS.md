@@ -3766,3 +3766,38 @@ log an execution counter, and it should be read BEFORE the score.
 This is the second such case tonight after hitch-a-ride went four
 commits deep with `lift_manifest_max = 1` in every run, never taking a
 branch.
+
+### The combined configuration, 20 seeds (2026-08-04)
+
+Human-specified bundle: quarter-priority boat building
+(`colony_lift_weight` 0.779 -> 0.195), hitching with a >=2 turn wait
+floor, two-sided rendezvous, nearest-first delivery.
+
+Counters first, per the rule above: hitching FIRED (127 enrolments, 106
+patience-waits, 48 two-passenger crossings) but `nextstop = 0` -- the
+binary predates `fc4262ff15`, so multi-drop still did not run. The
+bundle was missing the ingredient it was built around.
+
+For the parts that did execute, 20 paired seeds:
+
+    variant  arrived  cross-TO    mean      diff
+    ctrl       430      113     164.95
+    combo      394       97     150.30    -14.65 (se 19.05, t=-0.77, 12/20)
+
+**Deliveries fell 8%** -- the boat cut doing exactly what it says --
+and score did not come back.
+
+### Two arms now agree: cutting boat production costs deliveries
+
+    damp  (boat_idle_damping 0.5)   -20.00 (t=-1.17)
+    combo (colony_lift_weight /4)   -14.65 (t=-0.77), deliveries -8%
+
+Neither is significant, but they agree in direction and mechanism. The
+"Too Many Boats" reading -- 73% idle, 3x surplus -- said the fleet was
+overbuilt and the surplus was waste. **That inference is now doubtful.**
+The idle count was an upper bound (it counted exploring and op-claimed
+hulls), and a hull sitting idle on the right ocean when demand appears
+is not waste, it is inventory. Removing it removes crossings.
+
+Do not cut boat production further without measuring what the idle
+hulls do when demand arrives.
