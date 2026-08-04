@@ -3976,3 +3976,41 @@ games on the right metric would have been near-decisive.
 
 **Every score verdict from this session should be re-taken this way
 before it is trusted**, and it is cheap: 20 paired seeds is one batch.
+
+### Boat numbers: the fleet has THREE sources, not one (2026-08-04)
+
+    e73207790e / e3a626aad3  price every ferry proposal
+    bca82de809               count a docked hull as on its water
+
+Every attempt to shrink the fleet failed, and the reason is structural.
+`colony_lift_weight` is one of THREE paths that build boats:
+
+    daidomestic.c:595    "founder's boat"  -- a settler wants passage
+    daimilitary.c:1687   "attacker ferry"  -- an attacker needs one
+    deepdefence.c        deep's colony want
+
+Neither stock path looks at idle hulls at all. Tuning one of three
+inputs cannot set a total, which is why:
+
+    quartering colony_lift_weight   fleet 5.32 -> 4.57, idle 75% both
+    per-ocean idle damping          fleet 6.14 -> 5.78, idle 80% -> 79%
+
+and both cost deliveries while leaving ~12 hulls per waiting passenger.
+
+**Two bugs found on the way, both of the same family** -- a position
+test standing in for a relationship:
+
+- The per-ocean idle count matched the boat's OWN tile against an ocean
+  id. A docked hull sits on the city's LAND tile, so every idle boat
+  matched no ocean, the surplus was always 0 and the damping never
+  fired: the logged want was identical on and off (307.0 vs 309.7).
+- The pricing was then hooked on `choose_building`, which never sees a
+  ferry -- advbuilding.c:311 passes a CT_BUILDING choice with need_boat
+  cleared. Zero discounts logged in both arms.
+
+**Current state: the pricing sits at the end of deep's per-city choice
+loop where every path has spoken, and it EXECUTES -- 96 discounts in a
+2-game check. Its effect on fleet size and score is UNMEASURED.**
+
+That is the next thing to run, on `--arms deep`, checking `deep-hull`
+before the score.
