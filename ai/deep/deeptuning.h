@@ -376,6 +376,17 @@ struct deep_tuning {
    * turn: sailing beats timing out with the core passenger aboard.
    * PLACEHOLDER -- flagged in STATUS.md for a tuning pass. */
   double lift_hitch_wait_ratio;
+  /* Damping on the colony boat want per ALREADY-IDLE hull:
+   * want /= (1 + boat_idle_damping * idle_boats). colony_want is a
+   * pure site-quality number and nothing between it and the shipyard
+   * asked whether the fleet could already serve it -- measured, 73%
+   * of the fleet sits idle and the carrying share FALLS as the fleet
+   * grows (STATUS, "Too Many Boats"). A good site is not worth less
+   * because a boat is idle, but the marginal HULL is, and a hull is
+   * what this want buys. 0.0 restores the undamped signal exactly and
+   * is the A/B switch.
+   * PLACEHOLDER -- flagged in STATUS.md for a tuning pass. */
+  double boat_idle_damping;
   /* A civilian outside a city flees to the nearest own city when an
    * at-war military unit is within this many tiles. 0 disables. */
   int worker_flee_radius;

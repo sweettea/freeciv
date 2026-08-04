@@ -2441,7 +2441,27 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     int lift_demand = 0;
 
     if (dp->colony_want > 0 && dp->colony_turn >= game.info.turn - 1) {
-      lift_demand = dp->colony_want;
+      /* Damped by hulls ALREADY IDLE (human, 2026-08-03). colony_want
+       * is a pure site-quality number -- the best overseas result a
+       * settler can see -- and nothing between it and the shipyard
+       * asked whether the fleet could already serve it. Measured over
+       * 20 games on lategame-80: 1.63 boats per player-turn of which
+       * 1.19 sit idle (73%), only 18% carrying anything, against 0.53
+       * waiting passengers -- 3.1 hulls each, and the carrying share
+       * FALLING from 23.9% to 13.0% as the fleet grew. That is
+       * overbuilding, and it is invisible to a want that cannot see
+       * its own fleet.
+       *
+       * A good site does not become a worse site because a boat is
+       * idle -- but the marginal HULL is worth less, which is what
+       * this want actually buys. boat_idle_damping = 0 restores the
+       * undamped signal exactly and is the A/B switch. */
+      double idle = MAX(0, def_ai_player_data(pplayer,
+                                              ait)->stats.available_boats);
+
+      lift_demand
+        = (int) (dp->colony_want
+                 / (1.0 + deep_tuning_get()->boat_idle_damping * idle));
     }
     {
       /* An amphibious muster short on hulls is lift demand too
