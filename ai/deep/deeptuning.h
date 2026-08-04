@@ -397,6 +397,15 @@ struct deep_tuning {
    * Not a magnitude and NOT a candidate for the tuner: a value between
    * on and off has no meaning. */
   int boat_water_gate;
+  /* When boat_water_gate refuses a ferry, recover the city's own
+   * second-best want instead of dropping to the want=1 fallback
+   * ladder. The refused choice is the WINNER of a max, so its
+   * runner-up has already been computed and freed: this re-asks the
+   * domestic advisor with founder_want zeroed, which makes the
+   * founder's-boat branch (daidomestic.c:595) unreachable and returns
+   * the best surviving candidate. 0 keeps the ladder and is the A/B
+   * switch. Not a magnitude and NOT a candidate for the tuner. */
+  int boat_gate_second_best;
   /* How far the boat will DETOUR to land a passenger at its own site
    * rather than making it walk, in tiles -- "two boat moves" at the
    * human's sizing (2026-08-04). Passengers adjacent to their target

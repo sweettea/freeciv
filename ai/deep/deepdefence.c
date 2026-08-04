@@ -3288,6 +3288,24 @@ static void deep_spend_gold(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Does the useful-water gate refuse this build choice? True only for a
+  ferry chosen by a city whose every sea closes on its own continent.
+  Written once and asked of the winner and of its runner-up alike, so
+  the recovery below cannot smuggle a hull past the gate.
+**************************************************************************/
+static bool deep_boat_choice_refused(struct ai_type *ait,
+                                     const struct adv_choice *choice,
+                                     const struct city *pcity)
+{
+  return deep_tuning_get()->boat_water_gate > 0
+    && choice->want > 0
+    && is_unit_choice_type(choice->type)
+    && choice->value.utype != NULL
+    && dai_is_ferry_type(choice->value.utype, ait)
+    && !deep_city_water_bridges(city_tile(pcity));
+}
+
+/**********************************************************************//**
   Final build-choice selection for one city. Derived from
   dai_city_choose_build(); the differences (W01) are that the
   military-emergency gate is a want TIER check instead of a magnitude
@@ -3303,6 +3321,11 @@ static void deep_city_choose_build(struct ai_type *ait,
   struct adv_data *adv = adv_data_get(pplayer, NULL);
   struct ai_city *city_data = def_ai_city_data(pcity, ait);
   const struct civ_map *nmap = &(wld.map);
+  /* The military candidate as it stood BEFORE the domestic merge. The
+   * merge overwrites the loser, so this is the only surviving copy of
+   * it when the water gate below refuses the winner. */
+  struct adv_choice premerge;
+  bool have_premerge = FALSE;
 
   if (has_handicap(pplayer, H_AWAY)
       && !city_built_last_turn(pcity)
@@ -3311,6 +3334,8 @@ static void deep_city_choose_build(struct ai_type *ait,
     return;
   }
 
+  adv_init_choice(&premerge);
+
   if (is_barbarian(pplayer)) {
     dai_barbarian_choose_build(pplayer, pcity, &(city_data->choice));
   } else {
@@ -3318,6 +3343,8 @@ static void deep_city_choose_build(struct ai_type *ait,
          || city_data->urgency == 0)
         && !(dai_on_war_footing(ait, pplayer) && city_data->choice.want > 0
              && pcity->id != adv->wonder_city)) {
+      adv_choice_copy(&premerge, &(city_data->choice));
+      have_premerge = TRUE;
       newchoice = domestic_advisor_choose_build(ait, pplayer, pcity);
       if (deep_want_cmp(deep_want_from_choice(newchoice),
                         deep_want_from_choice(&city_data->choice)) > 0) {
@@ -3349,12 +3376,7 @@ static void deep_city_choose_build(struct ai_type *ait,
    *
    * boat_water_gate = 0 is the A/B switch and restores the old
    * behaviour exactly. */
-  if (deep_tuning_get()->boat_water_gate > 0
-      && city_data->choice.want > 0
-      && is_unit_choice_type(city_data->choice.type)
-      && city_data->choice.value.utype != NULL
-      && dai_is_ferry_type(city_data->choice.value.utype, ait)
-      && !deep_city_water_bridges(city_tile(pcity))) {
+  if (deep_boat_choice_refused(ait, &(city_data->choice), pcity)) {
     log_base(deep_metric_log_level(),
              "deep-watergate turn=%d player=\"%s\" city=%d type=\"%s\""
              " want=" ADV_WANT_PRINTF,
@@ -3362,6 +3384,59 @@ static void deep_city_choose_build(struct ai_type *ait,
              utype_rule_name(city_data->choice.value.utype),
              city_data->choice.want);
     city_data->choice.want = 0;
+
+    /* What the refused shields buy. Zeroing alone hands the city to
+     * the fallback ladder below at want = 1 -- a trade route, a
+     * defender or a worker, none of them chosen on merit -- because
+     * the refused ferry was the WINNER of a max and its runner-up was
+     * freed one line after losing. The runner-up is recoverable
+     * exactly, from both producers of a ferry choice:
+     *
+     *   domestic: re-ask with founder_want zeroed. The boat rides the
+     *     founder's-boat branch, which fires only on a NEGATIVE
+     *     founder_want ("I want to found and I need a boat"), so
+     *     zeroing makes it unreachable and worker/wonder/improvement/
+     *     trade route compete honestly. Zeroing the founder rather
+     *     than just the boat is the honest reading: the sites that
+     *     want is built on are across water the gate has just proven
+     *     no hull from this city can reach.
+     *   military/deep: `premerge`, which the merge overwrote.
+     *
+     * The re-ask double-counts whatever tech wants the advisor adds
+     * along the way (dai_wants_role_unit), on the ~17 refused
+     * city-turns a game. Accepted, and it is inside the A/B switch.
+     *
+     * The recovered want is logged beside the refused one so the
+     * gain is sizeable before it is believed. */
+    if (deep_tuning_get()->boat_gate_second_best > 0) {
+      int saved_founder_want = city_data->founder_want;
+      struct adv_choice *second;
+
+      city_data->founder_want = 0;
+      second = domestic_advisor_choose_build(ait, pplayer, pcity);
+      city_data->founder_want = saved_founder_want;
+
+      if (deep_boat_choice_refused(ait, second, pcity)) {
+        /* The city's own second-best is another hull on the same dead
+         * water. Refuse it too rather than smuggle it past the gate. */
+        second->want = 0;
+      }
+      if (have_premerge
+          && !deep_boat_choice_refused(ait, &premerge, pcity)
+          && deep_want_cmp(deep_want_from_choice(&premerge),
+                           deep_want_from_choice(second)) > 0) {
+        adv_choice_copy(second, &premerge);
+      }
+      if (second->want > 0) {
+        adv_choice_copy(&(city_data->choice), second);
+      }
+      log_base(deep_metric_log_level(),
+               "deep-watergate-second turn=%d player=\"%s\" city=%d"
+               " pick=\"%s\" want=" ADV_WANT_PRINTF,
+               game.info.turn, player_name(pplayer), pcity->id,
+               adv_choice_rule_name(second), second->want);
+      adv_free_choice(second);
+    }
   }
 
   /* Fallbacks */
@@ -3425,6 +3500,8 @@ static void deep_city_choose_build(struct ai_type *ait,
     change_build_target(pplayer, pcity, &build_new,
                         E_CITY_PRODUCTION_CHANGED);
   }
+
+  adv_deinit_choice(&premerge);
 }
 
 /**********************************************************************//**
