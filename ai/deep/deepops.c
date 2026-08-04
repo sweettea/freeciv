@@ -271,6 +271,11 @@ static void deep_lift_census(struct ai_type *ait, struct player *pplayer)
   Every component of the idle predicate is emitted separately rather
   than only its conjunction, so the predicate can be varied in
   analysis without another 20-game batch.
+
+  `bridge` is the geometry rather than the demand: 1 when some water
+  this hull touches reaches a second land continent at all. It sizes
+  what a build-time gate could refuse, and unlike the demand fields it
+  cannot be an accident of the turn it was sampled on.
 **************************************************************************/
 static void deep_hull_census(struct ai_type *ait, struct player *pplayer)
 {
@@ -285,6 +290,7 @@ static void deep_hull_census(struct ai_type *ait, struct player *pplayer)
     struct tile *ptile = unit_tile(pferry);
     Continent_id seen[8], best = 0;
     int nseen = 0, demand = 0, best_demand = -1, nearest = -1, oc;
+    int bridge = 0;
 
     if (!dai_is_ferry(pferry, ait)) {
       continue;
@@ -321,6 +327,9 @@ static void deep_hull_census(struct ai_type *ait, struct player *pplayer)
       int d = deep_ferry_demand_near(ait, pplayer, seen[oc], ptile, &nearest);
 
       demand += d;
+      if (deep_water_bridges(seen[oc])) {
+        bridge = 1;
+      }
       if (d > best_demand) {
         best_demand = d;
         best = seen[oc];
@@ -331,7 +340,7 @@ static void deep_hull_census(struct ai_type *ait, struct player *pplayer)
              "deep-hull-turn turn=%d player=\"%s\" unit=%d type=\"%s\""
              " born=%d at=(%d,%d) incity=%d ocean=%d waters=%d"
              " cargo=%d psngr=%d task=%d ssa=%d op=%d"
-             " demand=%d neard=%d idle=%d",
+             " demand=%d neard=%d idle=%d bridge=%d",
              game.info.turn, player_name(pplayer), pferry->id,
              unit_rule_name(pferry), pferry->birth_turn,
              TILE_XY(ptile), tile_city(ptile) != NULL ? 1 : 0,
@@ -344,7 +353,8 @@ static void deep_hull_census(struct ai_type *ait, struct player *pplayer)
              && ud->passenger < 0
              && ud->task != AIUNIT_EXPLORE
              && pferry->ssa_controller != SSA_AUTOEXPLORE
-             && deep_op_claiming(pplayer, pferry->id) < 0 ? 1 : 0);
+             && deep_op_claiming(pplayer, pferry->id) < 0 ? 1 : 0,
+             bridge);
   } unit_list_iterate_end;
 }
 

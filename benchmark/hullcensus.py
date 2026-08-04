@@ -36,13 +36,16 @@ LINE = re.compile(
     r"deep-hull-turn turn=(\d+) player=\"([^\"]+)\" unit=(\d+) type=\"([^\"]+)\" "
     r"born=(-?\d+) at=\((\d+),(\d+)\) incity=(\d+) ocean=(-?\d+) waters=(\d+) "
     r"cargo=(\d+) psngr=(-?\d+) task=(\d+) ssa=(\d+) op=(-?\d+) "
-    r"demand=(\d+) neard=(-?\d+) idle=(\d+)"
+    r"demand=(\d+) neard=(-?\d+) idle=(\d+)(?: bridge=(-?\d+))?"
 )
 
 FIELDS = ["turn", "player", "unit", "type", "born", "x", "y", "incity",
           "ocean", "waters", "cargo", "psngr", "task", "ssa", "op",
-          "demand", "neard", "idle"]
+          "demand", "neard", "idle", "bridge"]
 STRS = {"player", "type"}
+# `bridge` postdates the first census batches; -1 means "not logged",
+# which is kept distinct from 0 ("logged, and this water is closed").
+MISSING = {"bridge": -1}
 
 
 def rows(paths):
@@ -55,7 +58,8 @@ def rows(paths):
                     r = dict(zip(FIELDS, m.groups()))
                     for k in FIELDS:
                         if k not in STRS:
-                            r[k] = int(r[k])
+                            r[k] = (MISSING[k] if r[k] is None
+                                    else int(r[k]))
                     r["game"] = game
                     yield r
 
@@ -90,6 +94,11 @@ def lifetimes(data):
             "survived": obs[-1]["turn"] >= last_turn[game],
             "died_idle": bool(obs[-1]["idle"]),
             "oceans": {r["ocean"] for r in obs},
+            # Geometry, not demand: was any water it touched ever one
+            # that reaches a second land continent. -1 where the census
+            # predates the field.
+            "bridge": max(r["bridge"] for r in obs),
+            "closed_turns": sum(1 for r in obs if r["bridge"] == 0),
         }
         carried = [r["turn"] for r in obs if r["cargo"] > 0]
         h["first_carry"] = carried[0] if carried else None
@@ -224,6 +233,29 @@ def main():
     print(f"  hulls that DIED having never carried anything: "
           f"{len(dead_empty)}  ({100.0*len(dead_empty)/n:.1f}%)")
     print()
+
+    # What a BUILD-TIME geometry gate could refuse. "Closed" water
+    # touches one land continent or none, so no hull on it can put a
+    # passenger ashore anywhere but where it embarked -- at any demand,
+    # in any turn. This is the part of the wrong-harbour class that is
+    # decidable before the hull is paid for.
+    known = [h for h in hulls if h["bridge"] >= 0]
+    if known:
+        closed = [h for h in known if h["bridge"] == 0]
+        ci = sum(h["idle_turns"] for h in closed)
+        print("GEOMETRY: COULD IT EVER HAVE CROSSED TO ANOTHER CONTINENT?")
+        print(f"  hulls whose water NEVER reached a second continent: "
+              f"{len(closed)}  ({100.0*len(closed)/len(known):.1f}% of "
+              f"{len(known)} censused)")
+        print(f"  ... their share of all idle hull-turns: {ci} "
+              f"({100.0*ci/idle:.1f}%)" if idle else "")
+        blind = [h for h in closed if h["max_demand"] == 0]
+        print(f"  ... of which also never saw demand (wrong harbour): "
+              f"{len(blind)}")
+        carried = [h for h in closed if h["first_carry"] is not None]
+        print(f"  ... but carried something anyway: {len(carried)} "
+              f"(same-continent hops a gate would also refuse)")
+        print()
 
     print("VERDICT LADDER (share of hulls)")
     wrong = [h for h in nodem]

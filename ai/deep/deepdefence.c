@@ -2054,6 +2054,61 @@ int deep_ferry_demand_on(struct ai_type *ait, struct player *pplayer,
                          Continent_id ocean);
 
 /**********************************************************************//**
+  Does this body of water touch more than one land continent -- i.e.
+  can a hull launched into it ever put a passenger ashore anywhere
+  other than where it embarked?
+
+  This is the question the boat want has never asked. It is gated on
+  `is_terrain_class_near_tile(TC_OCEAN)`, "am I coastal", and a lake or
+  a sea that closes on one island is indistinguishable there from the
+  world ocean. Per the hull census, one hull in five never once saw a
+  waiting passenger on its water in its whole life.
+
+  Deliberately GEOMETRY and not demand: 84% of idle hull-turns have no
+  waiting passenger on that water because demand is bursty, so a
+  "nobody wants it now" test would suppress the hulls that serve the
+  next burst -- the same mistake five count-based dampings made. This
+  question does not move with demand at all.
+
+  No `home` argument is needed, and that is not an omission: if a water
+  touches exactly one continent then every city adjacent to it stands
+  on that same continent, so a single-surrounder water is useless to
+  every city that could build into it.
+
+  The map already keeps the answer. `assign_continent_numbers()` calls
+  `recalculate_surrounders()` (mapgen_utils.c:237), which is re-run on
+  terrain change, and `get_lake_surrounder()` reports the single
+  continent around a water, or a negative value when there are several.
+  00-context section 3 lists this among the infrastructure built and
+  never read.
+**************************************************************************/
+bool deep_water_bridges(Continent_id ocean)
+{
+  if (ocean >= 0 || -ocean > wld.map.num_oceans) {
+    return FALSE;                     /* Not a body of water at all. */
+  }
+
+  /* < 0: several distinct continents on this water. 0: no land known
+   * to touch it. > 0: exactly one, so both ends of any crossing are
+   * the same landmass. */
+  return get_lake_surrounder(ocean) < 0;
+}
+
+/**********************************************************************//**
+  Does any water this tile touches lead to another continent?
+**************************************************************************/
+bool deep_city_water_bridges(const struct tile *ptile)
+{
+  adjc_iterate(&(wld.map), ptile, atile) {
+    if (deep_water_bridges(tile_continent(atile))) {
+      return TRUE;
+    }
+  } adjc_iterate_end;
+
+  return FALSE;
+}
+
+/**********************************************************************//**
   Spare hulls on the waters this tile touches: idle beyond the units
   waiting to cross them, summed over each distinct body of water.
 **************************************************************************/

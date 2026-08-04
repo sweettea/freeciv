@@ -54,4 +54,11 @@ int deep_ferry_demand_near(struct ai_type *ait, struct player *pplayer,
 int deep_water_surplus(struct ai_type *ait, struct player *pplayer,
                        const struct tile *ptile);
 
+/* Pure GEOMETRY: does this water touch more than one land continent,
+ * so that a hull launched into it can ever land a passenger anywhere
+ * but where it embarked. A single-surrounder sea is useless to every
+ * city that can build into it, whatever the demand does. */
+bool deep_water_bridges(Continent_id ocean);
+bool deep_city_water_bridges(const struct tile *ptile);
+
 #endif /* FC__DEEPDEFENCE_H */
