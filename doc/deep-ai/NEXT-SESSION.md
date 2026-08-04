@@ -170,6 +170,17 @@ which is the number this would actually recover.
   reading is doubtful -- idle hulls are inventory, not waste.
 - **The rendezvous fix is +11.28 (t=0.88) at 40 seeds**, not a win.
   Mechanism banked (gather-timeouts 545 -> 28, deliveries +31%).
+- **`lift_op_slots` defaults OFF.** Relieving the array ceiling works
+  (saturation 8% -> 0%, formations +26%, arrivals +22%) and costs
+  score, -13.50 (t=-0.88).
+- **TEN SEEDS ARE MISLEADING ON THIS CELL.** Two estimates flipped or
+  collapsed under power: rendezvous +29.90 -> +11.28, slots +22.30 ->
+  -13.50. Use 20 minimum for direction, 40 for a claim. A 20-game
+  paired batch costs ~11 minutes.
+- **Read the EXECUTION COUNTER before the score.** Three changes this
+  session measured as "no effect" while never executing: hitch-a-ride
+  (manifest pinned at 1), the drop routing (behind an early return),
+  and the SSA suspension (byte-identical scorelogs).
 
 ## 1d. Two open design calls (human, 2026-08-04), both SIZED FIRST
 
@@ -209,7 +220,24 @@ same lift cluster worse than pairs that walked. If overseas spacing
 matches mainland spacing, this is the known citymindist finding and
 not a lift problem at all.
 
-## 2. Then: the thing nobody has sized
+## 2. THE EPIC IS OVER AND ITS ANSWER IS NEGATIVE
+
+Delivery is not the constraint. The cleanest single statement:
+
+    lift_op_slots: +26% formations, +22% arrivals, -13.50 score
+
+Five mechanisms now -- cross-water worker, the lift, the rendezvous
+protocol, the hold fix, the slot relief -- have repaired, tripled and
+un-capped delivery, and the aggregate has never followed. Section 8
+measured ~11 overseas cities a game whether delivery ran at 12% or
+28%; that number survived everything done to it.
+
+Something downstream of arrival eats the gain. Either the colonies
+that land are not worth their cost, or making them displaces something
+better. **Do not build more transport.** The next epic is site quality
+or settler cost.
+
+## 2b. Then: the thing nobody has sized
 
 **Is the colony worth founding at all?** Delivery has now been fixed
 twice and cities did not follow either time (~11 overseas cities per
