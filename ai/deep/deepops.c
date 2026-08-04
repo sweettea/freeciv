@@ -666,11 +666,19 @@ static int deep_lift_enroll(struct ai_type *ait, struct player *pplayer,
     op->members[op->n_members++] = cand->id;
     room--;
     joined++;
+    /* own=(x,y) is where this joiner actually wants to go, and
+     * ownd is how far that is from the beachhead the op will release
+     * it at -- the core passenger's target, not its own. A hitcher
+     * landed far from its site pays that distance on foot, and
+     * nothing priced it. This is the number that decides whether the
+     * boat should make ONE stop or several in priority order. */
     log_base(deep_metric_log_level(),
              "deep-lift-op turn=%d player=\"%s\" hitch boat=%d unit=%d"
-             " manifest=%d meet=(%d,%d) left=%d",
+             " manifest=%d meet=(%d,%d) left=%d own=(%d,%d) ownd=%d",
              game.info.turn, player_name(pplayer), op->ferry, cand->id,
-             op->n_members, TILE_XY(meet), turns_left);
+             op->n_members, TILE_XY(meet), turns_left,
+             TILE_XY(cand->goto_tile),
+             real_map_distance(cand->goto_tile, beach));
   } unit_list_iterate_end;
 
   return joined;
