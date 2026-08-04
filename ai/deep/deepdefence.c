@@ -65,6 +65,7 @@
 #include "daidomestic.h"
 #include "daiguard.h"
 #include "daieffects.h"
+#include "daiferry.h"
 #include "daihand.h"
 #include "daihunter.h"
 #include "daimilitary.h"
@@ -1960,6 +1961,48 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
 
   expansion_war_survival <= 0 restores stock's behaviour exactly.
 **************************************************************************/
+/**********************************************************************//**
+  Hulls that are genuinely SPARE, for damping the colony boat want.
+
+  Deliberately not `stats.available_boats`, which counts every ferry
+  whose `unit_data->passenger` is FERRY_AVAILABLE (`daiferry.c:113`) --
+  that is "nobody is assigned to me", not "I have nothing to do". A
+  boat out exploring the coastline is unassigned and busy, and damping
+  shipbuilding because the fleet is away working is precisely backwards
+  (human, 2026-08-03).
+
+  Excluded here: anything carrying cargo, anything an operation has
+  claimed (the lift drives its boat directly and never sets
+  `passenger`, so its hull reads as available all through a muster),
+  and anything exploring under either the AI task or the server-side
+  agent.
+
+  Only the SIGN of `passenger` is read, the same convention
+  deep_lift_wants_boat() uses for `ferryboat`: FERRY_AVAILABLE is -1
+  and private to daiferry.c, and an assigned passenger is a real unit
+  id, so `>= 0` means taken.
+**************************************************************************/
+static int deep_idle_ferries(struct ai_type *ait, struct player *pplayer)
+{
+  int idle = 0;
+
+  unit_list_iterate(pplayer->units, punit) {
+    const struct unit_ai *ud = def_ai_unit_data(punit, ait);
+
+    if (!dai_is_ferry(punit, ait)
+        || get_transporter_occupancy(punit) > 0
+        || ud->passenger >= 0
+        || ud->task == AIUNIT_EXPLORE
+        || punit->ssa_controller == SSA_AUTOEXPLORE
+        || deep_op_claiming(pplayer, punit->id) >= 0) {
+      continue;
+    }
+    idle++;
+  } unit_list_iterate_end;
+
+  return idle;
+}
+
 static bool deep_expansion_blocked(struct ai_type *ait,
                                    struct player *pplayer,
                                    struct city *pcity)
@@ -2456,8 +2499,7 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
        * idle -- but the marginal HULL is worth less, which is what
        * this want actually buys. boat_idle_damping = 0 restores the
        * undamped signal exactly and is the A/B switch. */
-      double idle = MAX(0, def_ai_player_data(pplayer,
-                                              ait)->stats.available_boats);
+      double idle = deep_idle_ferries(ait, pplayer);
 
       lift_demand
         = (int) (dp->colony_want
