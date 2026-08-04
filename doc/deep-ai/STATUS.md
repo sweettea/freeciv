@@ -4014,3 +4014,50 @@ loop where every path has spoken, and it EXECUTES -- 96 discounts in a
 
 That is the next thing to run, on `--arms deep`, checking `deep-hull`
 before the score.
+
+### Idle share is INVARIANT to fleet size (2026-08-04)
+
+The hull pricing works and the target does not move. 20 paired seeds,
+`--arms deep`, `isolated-150`, execution confirmed (deep-hull 0 in OFF,
+6940 in ON):
+
+    arm    boats/turn  idle/turn  idle share  arrived  score
+    OFF       6.14       4.94        80%       348    196.25
+    ON        5.26       4.03        77%       328    198.68
+
+    score +2.42 (se 3.14, t=+0.77, 12/20)   unitsbuilt -6.29 (t=-2.78)
+
+Fleet -14%, idle share 80% -> 77%, arrivals -6%.
+
+**Across every fleet size produced tonight, by five different
+interventions, idle share sits at 75-80%:**
+
+    fleet 4.57 -> 75%     fleet 5.78 -> 79%     fleet 6.24 -> 80%
+    fleet 5.26 -> 77%     fleet 6.14 -> 80%
+
+Cutting hulls does not make the survivors busier; it removes busy and
+idle hulls in the same proportion. **Idleness is not a quantity
+problem and no pricing of the COUNT will fix it** (human standard,
+2026-08-04: an idle boat means we are doing it wrong, and a fall in
+crossings when idle hulls are cut indicts the idle PREDICATE rather
+than justifying the surplus).
+
+Arrivals falling 6% while idle share held is exactly that indictment:
+the hulls removed were about to be useful. A per-turn snapshot cannot
+tell "idle" from "idle now, sailing next turn".
+
+### What to measure instead
+
+Per-HULL idleness over its lifetime, not per-turn fleet aggregates:
+how many turns each boat spends with no passenger, and what ENDS that
+idleness -- a crossing, or nothing, ever. That separates three causes
+a count cannot:
+
+    too many boats        -> fixable by building fewer
+    wrong harbour         -> fixable by WHERE they are built
+    demand evaporated     -> the settler founded elsewhere, was
+                             re-tasked, or died, and its hull is idle
+                             forever regardless of fleet size
+
+Only the first is what the pricing addresses, and the invariant says
+it is probably not the dominant one.
