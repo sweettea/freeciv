@@ -19,6 +19,14 @@ ONE pinned binary with tuning-file switches (they interact):
 3. patience: `lift_hitch_wait_ratio = 0.25`
 4. slots: `lift_op_slots = 4`
 
+**On the island cell, do (4) FIRST.** The array is full on 61.1% of
+lift-running turns there against 36.0% on lategame-80, and lifts hold
+3.26 of 3.44 live ops -- they saturate it against themselves. Also
+note (2) cannot bind there at all: 95.4% of hulls carry at most 2, so
+lift_manifest_max = 3 is unreachable and hitch-a-ride can add ONE
+passenger onto an empty boat. Consider tuning that constant per cell;
+lategame-80's techlevel 50 gives capacity-8 Transports instead.
+
 **(1) IS DONE**: `benchmark/results/lategame-80-f138f69c9d1c`, 20/20,
 score -3.70 (t=-0.11). The rendezvous does NOT shorten the muster --
 that claim is falsified, see STATUS. Start at (2).
