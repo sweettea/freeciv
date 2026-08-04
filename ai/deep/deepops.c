@@ -606,6 +606,64 @@ static int deep_lift_enroll(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Should the boat hold the quay another turn for a straggler?
+
+  The blanket "a hitcher never delays the lift" rule is too blunt in
+  one direction: waiting two turns to double the manifest is obviously
+  worth it on a fifteen-turn crossing and obviously not on a two-turn
+  hop. So the patience is priced against the trip it is buying --
+  lift_hitch_wait_ratio of the estimated crossing, and nothing when
+  the ratio is 0.
+
+  Two hard bounds keep the patience from eating the mission it is
+  meant to improve:
+
+  - It never spends the last turn of the gather window. Waiting into a
+    gather-timeout would dissolve a lift whose core passenger is
+    ABOARD and ready, trading a delivered colony for a hitcher.
+  - It only waits for a straggler that can actually make it in the
+    time being budgeted, using the same walk estimate enrollment used.
+
+  Returns TRUE if some enrolled member is worth holding for.
+**************************************************************************/
+static bool deep_lift_worth_waiting(struct deep_operation *op,
+                                    struct unit *ferry,
+                                    const struct tile *meet,
+                                    const struct tile *beach,
+                                    int turns_left)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  int budget, boat_rate, eta_cross, i;
+
+  if (tune->lift_hitch_wait_ratio <= 0.0 || meet == NULL || beach == NULL) {
+    return FALSE;
+  }
+  boat_rate = MAX(1, unit_move_rate(ferry) / SINGLE_MOVE);
+  eta_cross = (real_map_distance(unit_tile(ferry), beach) + boat_rate - 1)
+              / boat_rate;
+  budget = (int) (tune->lift_hitch_wait_ratio * eta_cross);
+  /* Never spend the window's last turn: sail beats time out. */
+  budget = MIN(budget, turns_left - 1);
+  if (budget <= 0) {
+    return FALSE;
+  }
+
+  for (i = 1; i < op->n_members; i++) {
+    struct unit *m = game_unit_by_number(op->members[i]);
+
+    if (m == NULL || unit_transport_get(m) == ferry) {
+      continue;
+    }
+    if (deep_lift_can_make_meeting(nmap, m, meet, budget)) {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+/**********************************************************************//**
   Is this unit waiting for a lift nobody is bringing? Only the SIGN of
   unit_ai.ferryboat is read (FERRY_WANTED is -1 and private to
   daiferry.c), the same convention deep_settler_lift_state() uses.
@@ -750,14 +808,28 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
 
   if (op->state == DEEP_OP_MUSTER) {
     /* The core passenger is members[0] -- the one the lift was formed
-     * for. Hitchers ride only if they are aboard when it is: contract
-     * 1 of deep_lift_enroll() is that a hitcher NEVER delays the
-     * lift, so a straggler is released here rather than waited for.
-     * (Validation compacts members[], so if the original core dies a
-     * hitcher becomes the core and the lift is still worth sailing.) */
+     * for. Once it is aboard the lift CAN sail; whether it should is
+     * deep_lift_worth_waiting(), which holds the quay for a straggler
+     * only when the crossing it is buying is long enough to pay for
+     * the delay. A straggler not worth holding for is released rather
+     * than waited for. (Validation compacts members[], so if the
+     * original core dies a hitcher becomes the core and the lift is
+     * still worth sailing.) */
     struct unit *core = (op->n_members > 0
                          ? game_unit_by_number(op->members[0]) : NULL);
     bool core_aboard = (core != NULL && unit_transport_get(core) == ferry);
+    struct tile *rv = index_to_tile(nmap, op->rendezvous);
+    int left = tune->lift_gather_turns - (game.info.turn - op->phase_turn);
+
+    if (core_aboard
+        && deep_lift_worth_waiting(op, ferry, rv, beach, left)) {
+      log_base(deep_metric_log_level(),
+               "deep-lift-op turn=%d player=\"%s\" op=%d hitch-wait"
+               " boat=%d manifest=%d aboard=%d left=%d",
+               game.info.turn, player_name(pplayer), oi, op->ferry,
+               op->n_members, aboard, left);
+      core_aboard = FALSE;      /* Hold the quay; drive the walkers. */
+    }
 
     if (core_aboard) {
       int kept = 0;

@@ -367,6 +367,15 @@ struct deep_tuning {
    * whole manifest (human, 2026-08-03).
    * PLACEHOLDER -- flagged in STATUS.md for a tuning pass. */
   int lift_manifest_max;
+  /* How long the boat will hold the quay for a straggler, as a
+   * fraction of the crossing it is about to make (human doctrine
+   * 2026-08-03: patience should scale with the trip -- two turns is
+   * cheap against a fifteen-turn crossing and absurd against a
+   * two-turn hop). 0.0 never waits, which is the old contract and the
+   * A/B switch. Bounded so it never spends the gather window's last
+   * turn: sailing beats timing out with the core passenger aboard.
+   * PLACEHOLDER -- flagged in STATUS.md for a tuning pass. */
+  double lift_hitch_wait_ratio;
   /* A civilian outside a city flees to the nearest own city when an
    * at-war military unit is within this many tiles. 0 disables. */
   int worker_flee_radius;
