@@ -895,6 +895,75 @@ static bool deep_op_form_lift(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Serve the stop the boat is standing at: release every member whose
+  own target is within lift_drop_radius of it, and if anyone is still
+  aboard for somewhere else, re-aim the op at the nearest of THEIR
+  targets.
+
+  Returns TRUE if the operation continues to another stop, FALSE if
+  this stop was the last and the caller should dissolve it as arrived.
+
+  Called from BOTH arrival paths. It was originally inline in the
+  slow one, and the same-turn arrival added later returned before
+  reaching it -- so with same-turn arrivals now the common case, the
+  routing never ran at all: 16 two-passenger manifests over 20 games
+  produced zero next stops.
+**************************************************************************/
+static bool deep_lift_serve_stop(struct player *pplayer,
+                                 struct deep_operation *op, int oi,
+                                 struct unit *ferry, struct tile *beach)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  struct unit *next = NULL;
+  int kept = 0, bestd = -1, k, was = op->n_members;
+
+  for (k = 0; k < op->n_members; k++) {
+    struct unit *m = game_unit_by_number(op->members[k]);
+
+    if (m == NULL) {
+      continue;
+    }
+    if (m->goto_tile == NULL
+        || real_map_distance(m->goto_tile, beach)
+           <= tune->lift_drop_radius) {
+      continue;                 /* Served by this stop: let it go. */
+    }
+    op->members[kept++] = op->members[k];
+  }
+  if (kept <= 0 || kept >= was) {
+    return FALSE;
+  }
+  op->n_members = kept;
+  for (k = 0; k < op->n_members; k++) {
+    struct unit *m = game_unit_by_number(op->members[k]);
+    int d;
+
+    if (m == NULL || m->goto_tile == NULL) {
+      continue;
+    }
+    d = real_map_distance(unit_tile(ferry), m->goto_tile);
+    if (next == NULL || d < bestd) {
+      next = m;
+      bestd = d;
+    }
+  }
+  if (next == NULL
+      || deep_lift_meeting_tile(nmap, ferry, next->goto_tile) == NULL) {
+    return FALSE;
+  }
+  op->beachhead = tile_index(next->goto_tile);
+  op->phase_turn = game.info.turn;      /* fresh cross budget */
+  log_base(deep_metric_log_level(),
+           "deep-lift-op turn=%d player=\"%s\" op=%d nextstop"
+           " boat=%d manifest=%d beach=(%d,%d) gap=%d",
+           game.info.turn, player_name(pplayer), oi, op->ferry,
+           op->n_members, TILE_XY(next->goto_tile), bestd);
+
+  return TRUE;
+}
+
+/**********************************************************************//**
   Drive one lift. MUSTER is the rendezvous -- the boat goes to the
   manifest, which is the half stock never does -- and MARCH is the
   crossing. The op releases the manifest once the boat is beside the
@@ -1273,67 +1342,10 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
     }
     if (real_map_distance(unit_tile(ferry), beach) <= 1
         || same_pos(unit_tile(ferry), land)) {
-      /* Beside the target: hand back everyone this stop serves, and
-       * if anyone is still aboard for somewhere else, sail on to the
-       * nearest of THEIR targets instead of dissolving.
-       *
-       * The beachhead is the CORE passenger's target, so a joiner
-       * released here walks the difference: measured median 7 tiles,
-       * half of them 6 or more, which is about as long as the
-       * crossing. Hull-turns are in 3x surplus and mostly idle while
-       * settler-turns are the scarce resource, so the boat makes the
-       * extra stop rather than charging the walk to the passenger.
-       * Nearest-first, which for the two- and three-berth manifests
-       * the hulls actually carry is the whole of the routing problem.
-       *
-       * lift_drop_radius large collapses this to one drop for all. */
-      {
-        int kept = 0, k;
-
-        for (k = 0; k < op->n_members; k++) {
-          struct unit *m = game_unit_by_number(op->members[k]);
-
-          if (m == NULL) {
-            continue;
-          }
-          if (m->goto_tile == NULL
-              || real_map_distance(m->goto_tile, beach)
-                 <= tune->lift_drop_radius) {
-            continue;           /* Served by this stop: let it go. */
-          }
-          op->members[kept++] = op->members[k];
-        }
-        if (kept > 0 && kept < op->n_members) {
-          struct unit *next = NULL;
-          int bestd = -1;
-
-          op->n_members = kept;
-          for (k = 0; k < op->n_members; k++) {
-            struct unit *m = game_unit_by_number(op->members[k]);
-            int d;
-
-            if (m == NULL || m->goto_tile == NULL) {
-              continue;
-            }
-            d = real_map_distance(unit_tile(ferry), m->goto_tile);
-            if (next == NULL || d < bestd) {
-              next = m;
-              bestd = d;
-            }
-          }
-          if (next != NULL
-              && deep_lift_meeting_tile(nmap, ferry,
-                                        next->goto_tile) != NULL) {
-            op->beachhead = tile_index(next->goto_tile);
-            op->phase_turn = game.info.turn;   /* fresh cross budget */
-            log_base(deep_metric_log_level(),
-                     "deep-lift-op turn=%d player=\"%s\" op=%d nextstop"
-                     " boat=%d manifest=%d beach=(%d,%d) gap=%d",
-                     game.info.turn, player_name(pplayer), oi, op->ferry,
-                     op->n_members, TILE_XY(next->goto_tile), bestd);
-            return;
-          }
-        }
+      /* Beside the target: serve this stop, and sail on if anyone
+       * aboard is bound elsewhere (deep_lift_serve_stop). */
+      if (deep_lift_serve_stop(pplayer, op, oi, ferry, beach)) {
+        return;
       }
       /* Nobody left aboard for elsewhere: hand the manifest back. A
        * settler aboard a boat adjacent to its own goto_tile is exactly
@@ -1369,6 +1381,9 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
                  game.info.turn, player_name(pplayer), oi, op->ferry,
                  aboard, TILE_XY(unit_tile(ferry)), TILE_XY(beach),
                  game.info.turn - op->formed_turn);
+        if (deep_lift_serve_stop(pplayer, op, oi, ferry, beach)) {
+          return;
+        }
         deep_op_dissolve(op, oi, "lift-arrived", pplayer);
         return;
       }
