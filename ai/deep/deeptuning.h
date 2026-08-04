@@ -387,6 +387,16 @@ struct deep_tuning {
    * is the A/B switch.
    * PLACEHOLDER -- flagged in STATUS.md for a tuning pass. */
   double boat_idle_damping;
+  /* Refuse a ferry outright when every sea the city touches closes on
+   * the city's own continent, so nothing it carries could ever land
+   * anywhere else. Pure geometry: 84% of idle hull-turns have no
+   * waiting passenger because demand is BURSTY, so a demand test would
+   * suppress the hulls that serve the next burst -- but a sea with one
+   * surrounding continent does not become useful at any demand, ever.
+   * 0 restores the ungated behaviour exactly and is the A/B switch.
+   * Not a magnitude and NOT a candidate for the tuner: a value between
+   * on and off has no meaning. */
+  int boat_water_gate;
   /* How far the boat will DETOUR to land a passenger at its own site
    * rather than making it walk, in tiles -- "two boat moves" at the
    * human's sizing (2026-08-04). Passengers adjacent to their target

@@ -3327,6 +3327,43 @@ static void deep_city_choose_build(struct ai_type *ait,
     }
   }
 
+  /* The useful-water gate. A hull is only worth its shields if the
+   * water it would launch into leads somewhere: if every sea this city
+   * touches closes on this city's own continent, no boat built here
+   * can ever put a passenger on foreign soil, at any demand, in any
+   * turn.
+   *
+   * This is asked HERE and not beside the surplus pricing because the
+   * choice is only final after the domestic advisor has spoken --
+   * stock adds the founder's boat inside it (daidomestic.c:595), and a
+   * gate upstream of that would miss the commonest ferry order of all.
+   *
+   * Refusing the want rather than damping it: the claim is geometric,
+   * not economic. There is no fleet size at which a lake becomes
+   * useful. Zeroing hands the city back to the fallback ladder below,
+   * which is the same path an unwanted choice always takes.
+   *
+   * The cost is same-continent coastal hops, which this refuses too --
+   * measured in the census as the closed-water hulls that carried
+   * something anyway.
+   *
+   * boat_water_gate = 0 is the A/B switch and restores the old
+   * behaviour exactly. */
+  if (deep_tuning_get()->boat_water_gate > 0
+      && city_data->choice.want > 0
+      && is_unit_choice_type(city_data->choice.type)
+      && city_data->choice.value.utype != NULL
+      && dai_is_ferry_type(city_data->choice.value.utype, ait)
+      && !deep_city_water_bridges(city_tile(pcity))) {
+    log_base(deep_metric_log_level(),
+             "deep-watergate turn=%d player=\"%s\" city=%d type=\"%s\""
+             " want=" ADV_WANT_PRINTF,
+             game.info.turn, player_name(pplayer), pcity->id,
+             utype_rule_name(city_data->choice.value.utype),
+             city_data->choice.want);
+    city_data->choice.want = 0;
+  }
+
   /* Fallbacks */
   if (city_data->choice.want == 0) {
     /* Fallbacks do happen with techlevel 0, which is now default. -- Per */

@@ -88,6 +88,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .lift_manifest_max = 8,               /* human call 2026-08-04 */
   .lift_hitch_wait_ratio = 0.25,        /* PLACEHOLDER, untuned */
   .boat_idle_damping = 0.5,             /* PLACEHOLDER, untuned */
+  .boat_water_gate = 1,                 /* geometry, not a magnitude */
   .lift_drop_radius = 12,               /* human: two boat moves */
   .lift_hitch_wait_min = 1,             /* PLACEHOLDER, untuned */
   .worker_flee_radius = 3,              /* PLACEHOLDER, untuned */
@@ -251,6 +252,7 @@ void deep_tuning_init(void)
   TUNE_INT(lift_manifest_max);
   TUNE_DOUBLE(lift_hitch_wait_ratio);
   TUNE_DOUBLE(boat_idle_damping);
+  TUNE_INT(boat_water_gate);
   TUNE_INT(lift_drop_radius);
   TUNE_INT(lift_hitch_wait_min);
   TUNE_INT(worker_flee_radius);
@@ -286,7 +288,7 @@ void deep_tuning_init(void)
              " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
              " wos=%d wot=%d gb=%d gsm=%f sdw=%f gf=%d gs=%d gt=%d tqs=%f dip=%f stream=%f pot=%f"
              " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f hhealth=%f hcont=%f cmws=%f htech=%f"
-             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d dfv=%d dfr=%d dfrt=%d dpv=%d dpt=%d wfw=%f srw=%f chk=%f cml=%d cwr=%d wfr=%d wgr=%d wdd=%f wxcd=%f ugw=%f uuw=%f rpr=%f rwant=%d rfin=%f svt=%f svf=%f svh=%d taf=%f avw=%f swf=%f ott=%f omw=%d sfd=%f clw=%f irr=%f oww=%d rrad=%d hrr=%d hrd=%f oaf=%f brr=%f lfr=%d lgt=%d lct=%d los=%d lmm=%d lhwr=%f bid=%f ldr=%d lhwm=%d",
+             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d dfv=%d dfr=%d dfrt=%d dpv=%d dpt=%d wfw=%f srw=%f chk=%f cml=%d cwr=%d wfr=%d wgr=%d wdd=%f wxcd=%f ugw=%f uuw=%f rpr=%f rwant=%d rfin=%f svt=%f svf=%f svh=%d taf=%f avw=%f swf=%f ott=%f omw=%d sfd=%f clw=%f irr=%f oww=%d rrad=%d hrr=%d hrd=%f oaf=%f brr=%f lfr=%d lgt=%d lct=%d los=%d lmm=%d lhwr=%f bid=%f bwg=%d ldr=%d lhwm=%d",
              path,
              deep_tuning_active.settler_fearfulness_mult,
              deep_tuning_active.settler_risk_tolerance,
@@ -377,6 +379,7 @@ void deep_tuning_init(void)
              deep_tuning_active.lift_manifest_max,
              deep_tuning_active.lift_hitch_wait_ratio,
              deep_tuning_active.boat_idle_damping,
+             deep_tuning_active.boat_water_gate,
              deep_tuning_active.lift_drop_radius,
              deep_tuning_active.lift_hitch_wait_min);
 }
