@@ -1137,7 +1137,7 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
         log_base(deep_metric_log_level(),
                  "deep-lift-op turn=%d player=\"%s\" op=%d offboard"
                  " boat=%d unit=%d alive=%d at=(%d,%d) beach=(%d,%d)"
-                 " dist=%d trans=%d goal=%d turns=%d",
+                 " dist=%d trans=%d goal=%d turns=%d ssa=%d boatd=%d",
                  game.info.turn, player_name(pplayer), oi, op->ferry,
                  op->members[i], m != NULL ? 1 : 0,
                  mt != NULL ? index_to_map_pos_x(tile_index(mt)) : -1,
@@ -1147,7 +1147,19 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
                  (m != NULL && unit_transported(m)) ? 1 : 0,
                  (m != NULL && m->goto_tile != NULL
                   && same_pos(m->goto_tile, beach)) ? 1 : 0,
-                 game.info.turn - op->formed_turn);
+                 game.info.turn - op->formed_turn,
+                 /* Who was actually driving this unit. deep_op_holds()
+                  * sets unit_ai.done, which gates DEEP's manager only:
+                  * a server-side agent keeps acting on the unit every
+                  * turn regardless, and dai_manage_settler() stamps
+                  * SSA_AUTOWORKER on every settler it ever touches
+                  * (daiunit.c:2726). If the strays carry an agent, the
+                  * lift is being overruled rather than mis-aimed. */
+                 m != NULL ? (int) m->ssa_controller : -1,
+                 /* And where the hull was: a passenger that left 20
+                  * tiles out while the boat was still at sea did not
+                  * land badly, it was taken off mid-voyage. */
+                 real_map_distance(unit_tile(ferry), beach));
       }
       /* Name the two apart in the metric itself, so a later reader
        * cannot mistake one for the other the way "lift-landed" once
