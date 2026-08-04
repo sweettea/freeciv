@@ -726,7 +726,8 @@ static bool deep_lift_worth_waiting(struct deep_operation *op,
    * crossing" into "never wait" for every short trip -- exactly the
    * cheap waits most likely to pay, since a straggler one turn out is
    * the commonest kind. Willing at all means willing for one turn. */
-  budget = MAX(1, (int) (tune->lift_hitch_wait_ratio * eta_cross));
+  budget = MAX(MAX(1, tune->lift_hitch_wait_min),
+               (int) (tune->lift_hitch_wait_ratio * eta_cross));
   /* Never spend the window's last turn: sail beats time out. */
   budget = MIN(budget, turns_left - 1);
   if (budget <= 0) {

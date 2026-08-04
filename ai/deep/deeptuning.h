@@ -396,6 +396,14 @@ struct deep_tuning {
    * A large value collapses to the old single drop.
    * PLACEHOLDER -- flagged in STATUS.md for a tuning pass. */
   int lift_drop_radius;
+  /* Floor, in whole turns, under the hitch wait budget when the ratio
+   * admits any wait at all. The ratio scales patience with the
+   * crossing; this says the smallest useful amount of patience is not
+   * necessarily one turn (human, 2026-08-04). Still clipped to the
+   * gather window's second-to-last turn, so it can never trade a
+   * loaded boat for a timeout.
+   * PLACEHOLDER -- flagged in STATUS.md for a tuning pass. */
+  int lift_hitch_wait_min;
   /* A civilian outside a city flees to the nearest own city when an
    * at-war military unit is within this many tiles. 0 disables. */
   int worker_flee_radius;
