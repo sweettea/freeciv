@@ -3171,7 +3171,7 @@ AND UNVALIDATED** -- `meson test` and `tune-audit` green, no benchmark
 run on any of it. Rule 6 applies; the pending runs may come back flat
 like every other lift change so far.
 
-### MEASURED: `lift_gather_turns` is not a lever in 4..16
+### MEASURED (AND NOW SUPERSEDED): `lift_gather_turns` in 4..16
 
 20 games each, `lategame-80`, mirrored, one pinned binary, tuning-file
 switch:
@@ -3183,6 +3183,19 @@ switch:
 
 A 4x range moves timeouts 55 -> 12 and moves deliveries by one colony
 and score by nothing, coin-flip on seeds in both directions.
+
+**DO NOT READ THIS AS "the parameter is inert" (human, 2026-08-03).**
+It was measured against the BROKEN rendezvous -- 2.22-turn musters, 31
+timeouts -- where it could only ever be a give-up timer on a commute
+the passenger was not helping with. After the protocol fix musters run
+0.70 turns and timeouts are ZERO, so the window does not bind at all
+at 8; and with a manifest above 1 it stops being a give-up timer and
+becomes a real GATHERING window, which is the first job it has ever
+had. It is tunable and untuned, and this bracket does not speak to it.
+
+Third instance this session of one error: a verdict sized against a
+mechanism that then changed underneath it (see also hitch-a-ride's
+census, and the two-sided rendezvous's own premise).
 
 ### MEASURED: why it could not have been a lever
 

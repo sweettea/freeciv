@@ -50,10 +50,14 @@ on one and not the other is information.
 
 ## 1. What was settled, so you do not re-derive it
 
-**`lift_gather_turns` is not a lever in 4..16.** 60 games. Timeouts
-55 -> 12, deliveries 74/73/72, score flat both directions. Do not
-tune it again; it was inert because `n_members` was pinned at 1, so
-"gather" gathered nothing.
+**`lift_gather_turns` measured flat in 4..16 BEFORE the protocol fix,
+and that result is superseded** (human, 2026-08-03). 60 games, timeouts
+55 -> 12, deliveries 74/73/72, score flat -- but against 2.22-turn
+musters with 31 timeouts, where it was only a give-up timer. Now
+musters run 0.70 turns, timeouts are 0, so it does not bind at 8, and
+with manifest > 1 it becomes a real gathering window for the first
+time. TUNABLE AND UNTUNED. Re-measure it after the manifest, not
+before.
 
 **The rendezvous was one-sided and that was the defect.** The boat did
 all the travelling while `deep_op_holds()` froze the passenger: ~570
@@ -150,7 +154,6 @@ entirely. Say so rather than tuning them.
 - **Loosening the 1:1 cap.** Passengers it admits are not collected.
 - **Routing ferries into stock's manager.** Refused three times.
 - **Site scoring to change city spacing.** W02b falsified it.
-- **`lift_gather_turns`.** Section 1.
 
 ## METHOD NOTES THAT EARNED THEIR PLACE
 
