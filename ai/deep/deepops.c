@@ -1044,6 +1044,27 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
           } else {
             (void) dai_unit_goto(ait, m, shore);
             m = game_unit_by_number(op->members[i]);
+            /* Arriving with moves to spare means boarding NOW, not
+             * next turn (human, 2026-08-03). The boarding tests above
+             * ran against where this unit stood at the start of the
+             * turn, so without this a passenger that walks onto the
+             * shore beside its own waiting hull stands there a whole
+             * turn looking at it -- and musters only last about two,
+             * so that is a large share of the entire rendezvous. */
+            if (m != NULL && unit_transport_get(m) != ferry
+                && m->moves_left > 0) {
+              if (same_pos(unit_tile(m), unit_tile(ferry))) {
+                if (can_unit_load(m, ferry)) {
+                  unit_transport_load_send(m, ferry);
+                  why = "walk-board";
+                }
+              } else if (is_tiles_adjacent(unit_tile(m),
+                                           unit_tile(ferry))) {
+                (void) dai_unit_goto(ait, m, unit_tile(ferry));
+                m = game_unit_by_number(op->members[i]);
+                why = "walk-board";
+              }
+            }
           }
           log_base(deep_metric_log_level(),
                    "deep-lift-walk turn=%d player=\"%s\" op=%d unit=%d"
@@ -1056,6 +1077,40 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
                    m != NULL ? real_map_distance(unit_tile(m),
                                                  unit_tile(ferry)) : -1);
         }
+      }
+
+      /* Sail THIS turn if the boarding above completed the manifest
+       * and the hull still has moves (human, 2026-08-03). The sail
+       * test at the top of this function ran before anyone had moved,
+       * so without this the boat loads its passenger and then sits at
+       * the quay for the rest of the turn, waiting for a state change
+       * that only happens next turn. The MARCH block below is a
+       * separate `if` in the same call, so flipping the state here is
+       * all it takes for the crossing to start immediately. */
+      core = (op->n_members > 0
+              ? game_unit_by_number(op->members[0]) : NULL);
+      if (core != NULL && unit_transport_get(core) == ferry
+          && ferry->moves_left > 0
+          && !deep_lift_worth_waiting(op, ferry, meet, beach, left)) {
+        int kept = 0;
+
+        for (i = 0; i < op->n_members; i++) {
+          struct unit *m = game_unit_by_number(op->members[i]);
+
+          if (m != NULL && unit_transport_get(m) == ferry) {
+            op->members[kept++] = op->members[i];
+          }
+        }
+        op->n_members = kept;
+        aboard = kept;
+        op->state = DEEP_OP_MARCH;
+        op->phase_turn = game.info.turn;
+        op->march_turn = game.info.turn;
+        log_base(deep_metric_log_level(),
+                 "deep-lift-op turn=%d player=\"%s\" op=%d sail boat=%d"
+                 " manifest=%d beach=(%d,%d) sameturn=1",
+                 game.info.turn, player_name(pplayer), oi, op->ferry,
+                 aboard, TILE_XY(beach));
       }
     }
   }
