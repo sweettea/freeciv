@@ -64,6 +64,42 @@ rendezvous the passenger walks and the boat detours zero, which moves
 the binding rung from `d3` (0.4/game) to `cont` (2.9/game there,
 122/game on the island cell). That is why it was rebuilt.
 
+## 1b. Two human leads (2026-08-03), neither built
+
+**Boat supply is not measured where the lift needs it.** Colony demand
+does reach the shipyard -- `dp->colony_want` feeds `lift_demand`
+(`deepdefence.c:2443`) -- but the berth-SHORTAGE test next to it
+(`berths < needed`) counts only MUSTER ops with a real `target_city`,
+and a lift sets `target_city = 0` (`deepops.c:763`). So
+`game_city_by_number(0)` is NULL and **every lift contributes zero to
+measured hull demand**: the want named `colony_lift_weight` is fed by
+amphibious assaults only. Proximity is not modelled either -- the gate
+is `is_terrain_class_near_tile(TC_OCEAN)`, any coastal city, with no
+weighting toward where passengers are actually waiting. "Bias boat
+building toward the rendezvous, especially when short of hulls" is
+therefore two separate gaps, and the second is arguably a defect.
+
+Size it before building it: `lift-noboat` runs 7-10 per 20 games on
+lategame-80, which is small. The island cell is where hulls are
+scarce (95.4% of them carry <=2) and is the place to measure it.
+
+**The passenger walk is UNVERIFIED, not just ineffective.** "The walk
+fires and does not help" and "the walk never fires" produce identical
+aggregates, and nothing distinguishes them. Ordering says it should
+fire -- ops drive in first_activities before `done` is set, with full
+moves -- but that is reasoning, not measurement, and this session
+punished exactly that. Log passenger displacement during MUSTER before
+reasoning any further from the flat result.
+
+Note also that "the boat outruns the settler" is only true on
+unimproved terrain: roads give 3 tiles/turn and rails are effectively
+free, so the walk may matter in developed late-game positions and not
+at all early. The better-supported explanation for the flat muster is
+that successful musters already average 2.22 turns against a mean
+formation gap of 4.48 tiles -- near the floor the boat's own travel
+sets -- while the failures are the impossible-rendezvous class that
+walking cannot fix either.
+
 ## 2. Then: the thing nobody has sized
 
 **Is the colony worth founding at all?** Delivery has now been fixed
