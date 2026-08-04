@@ -1996,6 +1996,24 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
 int deep_ferry_demand_on(struct ai_type *ait, struct player *pplayer,
                          Continent_id ocean)
 {
+  return deep_ferry_demand_near(ait, pplayer, ocean, NULL, NULL);
+}
+
+/**********************************************************************//**
+  The same demand, with its DISTANCE reported.
+
+  A count alone says "somebody wants to cross this water", and on an
+  island map one body of water can be the whole world sea -- so an
+  idle hull "with demand on its water" may be half a map from the unit
+  waiting. Where `from` is given, `*nearest` receives the map distance
+  to the closest waiting unit (unchanged when there is none), which is
+  what separates a hull that ignored a passenger at the next quay from
+  one that was simply somewhere else.
+**************************************************************************/
+int deep_ferry_demand_near(struct ai_type *ait, struct player *pplayer,
+                           Continent_id ocean, const struct tile *from,
+                           int *nearest)
+{
   const struct civ_map *nmap = &(wld.map);
   int want = 0;
 
@@ -2017,6 +2035,13 @@ int deep_ferry_demand_on(struct ai_type *ait, struct player *pplayer,
     } adjc_iterate_end;
     if (touches) {
       want++;
+      if (from != NULL && nearest != NULL) {
+        int d = real_map_distance(from, unit_tile(punit));
+
+        if (*nearest < 0 || d < *nearest) {
+          *nearest = d;
+        }
+      }
     }
   } unit_list_iterate_end;
 

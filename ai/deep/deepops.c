@@ -284,7 +284,7 @@ static void deep_hull_census(struct ai_type *ait, struct player *pplayer)
     const struct unit_ai *ud = def_ai_unit_data(pferry, ait);
     struct tile *ptile = unit_tile(pferry);
     Continent_id seen[8], best = 0;
-    int nseen = 0, demand = 0, best_demand = -1, oc;
+    int nseen = 0, demand = 0, best_demand = -1, nearest = -1, oc;
 
     if (!dai_is_ferry(pferry, ait)) {
       continue;
@@ -318,7 +318,7 @@ static void deep_hull_census(struct ai_type *ait, struct player *pplayer)
     } adjc_iterate_end;
 
     for (oc = 0; oc < nseen; oc++) {
-      int d = deep_ferry_demand_on(ait, pplayer, seen[oc]);
+      int d = deep_ferry_demand_near(ait, pplayer, seen[oc], ptile, &nearest);
 
       demand += d;
       if (d > best_demand) {
@@ -331,7 +331,7 @@ static void deep_hull_census(struct ai_type *ait, struct player *pplayer)
              "deep-hull-turn turn=%d player=\"%s\" unit=%d type=\"%s\""
              " born=%d at=(%d,%d) incity=%d ocean=%d waters=%d"
              " cargo=%d psngr=%d task=%d ssa=%d op=%d"
-             " demand=%d idle=%d",
+             " demand=%d neard=%d idle=%d",
              game.info.turn, player_name(pplayer), pferry->id,
              unit_rule_name(pferry), pferry->birth_turn,
              TILE_XY(ptile), tile_city(ptile) != NULL ? 1 : 0,
@@ -339,7 +339,7 @@ static void deep_hull_census(struct ai_type *ait, struct player *pplayer)
              get_transporter_occupancy(pferry), ud->passenger,
              (int) ud->task, (int) pferry->ssa_controller,
              deep_op_claiming(pplayer, pferry->id),
-             demand,
+             demand, nearest,
              get_transporter_occupancy(pferry) == 0
              && ud->passenger < 0
              && ud->task != AIUNIT_EXPLORE

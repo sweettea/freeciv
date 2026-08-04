@@ -46,6 +46,11 @@ int deep_idle_ferries_on(struct ai_type *ait, struct player *pplayer,
                          Continent_id ocean);
 int deep_ferry_demand_on(struct ai_type *ait, struct player *pplayer,
                          Continent_id ocean);
+/* The same demand with the distance to its nearest unit, for the hull
+ * census: on an island map one ocean can be the whole world sea. */
+int deep_ferry_demand_near(struct ai_type *ait, struct player *pplayer,
+                           Continent_id ocean, const struct tile *from,
+                           int *nearest);
 int deep_water_surplus(struct ai_type *ait, struct player *pplayer,
                        const struct tile *ptile);
 
