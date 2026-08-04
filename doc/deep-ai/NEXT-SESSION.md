@@ -19,10 +19,9 @@ ONE pinned binary with tuning-file switches (they interact):
 3. patience: `lift_hitch_wait_ratio = 0.25`
 4. slots: `lift_op_slots = 4`
 
-A run of (1) on `lategame-80` was in flight when the session ended --
-`benchmark/results/lategame-80-f138f69c9d1c`, 20 games, pin at
-`scratchpad/pin-rv` (tmpfs, GONE; re-pin from the commit). Check its
-DONE count before trusting it.
+**(1) IS DONE**: `benchmark/results/lategame-80-f138f69c9d1c`, 20/20,
+score -3.70 (t=-0.11). The rendezvous does NOT shorten the muster --
+that claim is falsified, see STATUS. Start at (2).
 
 **Run both cells.** `lategame-80` for continuity with every lift number
 on record; `isolated-150` because it carries ~10x the demand density
@@ -42,6 +41,13 @@ held-idle passenger-turns per 20 games, 57% on lifts that never
 sailed, and every gather-timeout burned the entire window (mean 9.0
 against a cap of 8). Those musters were not slow, they were
 impossible.
+
+**The two-sided rendezvous does not do what its commit says.** Muster
+duration unchanged, idle time up, timeouts still burning the full
+window. The boat outruns a settler several times over, so the walking
+never closed the gap. What it did buy is `unreachable` 4 -> 0, from the
+formation-time reachability check. Keep the gate, drop the reasoning:
+hitch-a-ride needs the meeting point NAMED and STABLE, not fast.
 
 **Section 10's "do not build hitch-a-ride" is SCOPED** (see the
 correction appended to findings/settler-missions.md). It judged
