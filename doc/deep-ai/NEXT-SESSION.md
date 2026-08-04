@@ -133,9 +133,30 @@ measurably wrong in THREE directions, all on the same 20-game batches:
   (`deepops.c:763`), so lifts are invisible to the scarcity signal
   that is named `colony_lift_weight`.
 
-It cannot see surplus OR scarcity, and it is upstream of everything
-the lift epic touched. Size it before building: the counts above are
-hulls, not shields, so price the waste first.
+- **No term for WHICH WATER (human, 2026-08-03).** The want is gated
+  on `is_terrain_class_near_tile(ptile, TC_OCEAN)` -- "am I coastal" --
+  and nothing asks whether that particular body of water is the one
+  the demand needs. A hull is only useful to a lift if its ocean
+  touches BOTH ends: the rendezvous with the settler AND the
+  settler's destination. A boat launched into a lake, or into a sea
+  that does not reach the target island, is pure waste and is
+  currently indistinguishable from a useful one.
+
+  **The infrastructure for this already exists and is unread.** Ocean
+  bodies are numbered -- `tile_continent()` is negative for water and
+  `assign_continent_numbers()` maintains it across terrain change --
+  and `adv->oceans[]` is rebuilt every phase (`advdata.c:313`), of
+  which 00-context section 3 notes only `.threat` is ever read. So the
+  test is cheap: does the candidate city touch the ocean body that
+  also touches the beachhead. deep_lift_best_meeting() already proves
+  hull reachability with real pathfinding at formation; this is the
+  same question asked one step earlier, at BUILD time.
+
+It cannot see surplus, scarcity, or geography, and it is upstream of
+everything the lift epic touched. Size it before building: the counts
+above are hulls, not shields, so price the waste first -- and count
+how many existing hulls sit on an ocean that reaches no wanted site,
+which is the number this would actually recover.
 
 ## 2. Then: the thing nobody has sized
 
