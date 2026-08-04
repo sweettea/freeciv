@@ -1249,9 +1249,71 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
     }
     if (real_map_distance(unit_tile(ferry), beach) <= 1
         || same_pos(unit_tile(ferry), land)) {
-      /* Beside the target: hand the manifest back. A settler aboard a
-       * boat adjacent to its own goto_tile is exactly the case the
-       * stock settler path disembarks correctly. */
+      /* Beside the target: hand back everyone this stop serves, and
+       * if anyone is still aboard for somewhere else, sail on to the
+       * nearest of THEIR targets instead of dissolving.
+       *
+       * The beachhead is the CORE passenger's target, so a joiner
+       * released here walks the difference: measured median 7 tiles,
+       * half of them 6 or more, which is about as long as the
+       * crossing. Hull-turns are in 3x surplus and mostly idle while
+       * settler-turns are the scarce resource, so the boat makes the
+       * extra stop rather than charging the walk to the passenger.
+       * Nearest-first, which for the two- and three-berth manifests
+       * the hulls actually carry is the whole of the routing problem.
+       *
+       * lift_drop_radius large collapses this to one drop for all. */
+      {
+        int kept = 0, k;
+
+        for (k = 0; k < op->n_members; k++) {
+          struct unit *m = game_unit_by_number(op->members[k]);
+
+          if (m == NULL) {
+            continue;
+          }
+          if (m->goto_tile == NULL
+              || real_map_distance(m->goto_tile, beach)
+                 <= tune->lift_drop_radius) {
+            continue;           /* Served by this stop: let it go. */
+          }
+          op->members[kept++] = op->members[k];
+        }
+        if (kept > 0 && kept < op->n_members) {
+          struct unit *next = NULL;
+          int bestd = -1;
+
+          op->n_members = kept;
+          for (k = 0; k < op->n_members; k++) {
+            struct unit *m = game_unit_by_number(op->members[k]);
+            int d;
+
+            if (m == NULL || m->goto_tile == NULL) {
+              continue;
+            }
+            d = real_map_distance(unit_tile(ferry), m->goto_tile);
+            if (next == NULL || d < bestd) {
+              next = m;
+              bestd = d;
+            }
+          }
+          if (next != NULL
+              && deep_lift_meeting_tile(nmap, ferry,
+                                        next->goto_tile) != NULL) {
+            op->beachhead = tile_index(next->goto_tile);
+            op->phase_turn = game.info.turn;   /* fresh cross budget */
+            log_base(deep_metric_log_level(),
+                     "deep-lift-op turn=%d player=\"%s\" op=%d nextstop"
+                     " boat=%d manifest=%d beach=(%d,%d) gap=%d",
+                     game.info.turn, player_name(pplayer), oi, op->ferry,
+                     op->n_members, TILE_XY(next->goto_tile), bestd);
+            return;
+          }
+        }
+      }
+      /* Nobody left aboard for elsewhere: hand the manifest back. A
+       * settler aboard a boat adjacent to its own goto_tile is exactly
+       * the case the stock settler path disembarks correctly. */
       log_base(deep_metric_log_level(),
                "deep-lift-op turn=%d player=\"%s\" op=%d arrive boat=%d"
                " manifest=%d at=(%d,%d) beach=(%d,%d) turns=%d",

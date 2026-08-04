@@ -387,6 +387,15 @@ struct deep_tuning {
    * is the A/B switch.
    * PLACEHOLDER -- flagged in STATUS.md for a tuning pass. */
   double boat_idle_damping;
+  /* How near its OWN target a lift passenger must be before the boat
+   * drops it and moves on. The beachhead is the core passenger's
+   * target, so a joiner released there walks the difference --
+   * measured median 7 tiles, half of them 6 or more, which is about
+   * as long as the crossing itself. With hull-turns in 3x surplus and
+   * settler-turns scarce, the boat should make the extra stop.
+   * A large value collapses to the old single drop.
+   * PLACEHOLDER -- flagged in STATUS.md for a tuning pass. */
+  int lift_drop_radius;
   /* A civilian outside a city flees to the nearest own city when an
    * at-war military unit is within this many tiles. 0 disables. */
   int worker_flee_radius;
