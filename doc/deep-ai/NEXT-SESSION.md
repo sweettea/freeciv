@@ -150,7 +150,17 @@ entirely. Say so rather than tuning them.
   server path and inflate the count 5x. And `ps` inside the tool
   sandbox sees an empty PID namespace -- it is not evidence a batch
   died.
-- Check DONE counts equal the game count before analysing.
+- Check DONE counts equal the game count before analysing -- AND
+  before sequencing. "Wait until no freeciv-server is running" is NOT
+  a valid test that a batch finished: run.sh dispatches through
+  `xargs -P N`, so the gap between one game exiting and the next
+  spawning is indistinguishable from completion, and a waiter built
+  that way fires early and runs the next batch concurrently. Use
+  `until [ "$(find $dir -name DONE | wc -l)" -ge $games ]` on the
+  specific result directory. Oversubscription does not corrupt results
+  -- each game is its own process with a pinned binary and a fixed
+  seed -- but it can push games past TIMEOUT_S, and lategame-80's 2700s
+  is already close at 10-way concurrency.
 - /tmp is tmpfs and IS wiped between sessions.
 - `meson test -C build` is the suite; `python3 benchmark/tune-audit.py`
   must print CLEAN (102/102/102/102 now).
