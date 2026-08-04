@@ -3426,3 +3426,44 @@ Two independent routes to the same conclusion: the supply side is
 measured too crudely to respond to either surplus or scarcity. That is
 a better-specified target than "bias boat building toward the
 rendezvous", and it is sized by the numbers above rather than assumed.
+
+### Too Many Boats (human, 2026-08-03)
+
+Same 20-game batch, `lategame-80`, per player-turn:
+
+    boats/turn             1.63
+    idle (available)       1.19   = 73% of the fleet
+    carrying anything      0.29   = 18% of the fleet
+    passengers waiting     0.53   -> 3.1 boats per waiting passenger
+
+    over the game:     boats/turn   carrying
+      turns  0-19         0.19       15.0%
+      turns 20-39         1.69       23.9%
+      turns 40-59         2.51       18.3%
+      turns 60-79         2.03       13.0%
+
+**The carrying fraction FALLS as the fleet grows** -- 23.9% down to
+13.0% while hull count peaks at 2.51, about five boats per waiting
+passenger. That is the signature of overbuilding: more hulls chasing
+demand that is not growing. (Shield cost is not measured here; the
+counts are hulls, not shields.)
+
+### What this does to the epic's premise
+
+The delivery pipeline was repaired all session against a supply side
+carrying a **3x surplus throughout**. Boats were never scarce --
+`lift-noboat` was 7 of 165 before the fix and 1 of 143 after -- and
+section 9's "95.6% of blocked passengers had a free slot somewhere"
+was the same fact seen from the passenger's side. The rendezvous was
+really broken and is really fixed, but "too few crossings" was never a
+hull-supply problem.
+
+Third independent route to the same defect: `colony_want` drives boat
+production with **no term for idle hulls**, just as it has none for
+fleet productivity (the -32% throughput case above) and none for
+lifts going unserved (the berth test that excludes them). It cannot
+see 73% of the fleet doing nothing, so it keeps building.
+
+**The specified target is now the build signal, not the transport
+mechanism.** It is wrong in three measured directions and it is
+upstream of everything this epic touched.
