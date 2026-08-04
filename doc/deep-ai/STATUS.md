@@ -3461,6 +3461,16 @@ passenger. That is the signature of overbuilding: more hulls chasing
 demand that is not growing. (Shield cost is not measured here; the
 counts are hulls, not shields.)
 
+**CAVEAT on the 73% (human, 2026-08-03): `available_boats` is not
+idle.** It counts every ferry whose `passenger` is FERRY_AVAILABLE --
+"nobody is assigned to me" -- which includes boats out EXPLORING, and
+includes every hull a lift has claimed, since the lift drives its boat
+directly and never sets `passenger`. So 73% is an upper bound and the
+true idle share is lower. The overbuilding conclusion does not rest on
+it: the carrying share falling from 23.9% to 13.0% as the fleet grows
+is independent of how idle is defined. Re-measure the headline with
+deep_idle_ferries() before quoting it.
+
 ### What this does to the epic's premise
 
 The delivery pipeline was repaired all session against a supply side
