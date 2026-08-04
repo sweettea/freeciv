@@ -117,6 +117,118 @@ bool deep_op_holds(const struct player *pplayer, int unit_id)
 }
 
 /**********************************************************************//**
+  Size the trip-sharing gap, once per player per turn.
+
+  The 1:1 ferry cap (`passengers >= boats`) refuses 50.6% of the
+  cross-water worker attempts and gates overseas site evaluation for
+  settlers too, but it counts SETTLERS, not TRIPS. civ2civ3's Transport
+  has capacity 8 and carries one passenger, so a unit boarding a boat
+  that is ALREADY crossing costs nothing -- that is the argument for the
+  lift operation, and this is the measurement of what it would be worth.
+
+  A LADDER, not a single number: each rung relaxes one more of the
+  constraints a trip-counting cap would have to satisfy, so a gap that
+  closes at a particular rung names the constraint that binds.
+
+    wait          units flagged waiting for a lift (only the sign of
+                  unit_ai.ferryboat is read, per
+                  deep_settler_lift_state())
+    slot          ... that could ride some boat of ours holding a free
+                  cargo slot, at any distance
+    d0 / d3 / d5  ... with that boat 0 / within 3 / within 5 tiles away
+    loaded        ... within 5 tiles of a boat that already has cargo
+                  aboard -- a trip under way they could join for free
+
+  `loaded` is the rung that matters: it is the demand a trip-counting
+  cap would admit and the settler-counting cap refuses. If it is ~0 the
+  manifest is worth nothing and the lift operation must earn its place
+  by scheduling crossings rather than by sharing them.
+**************************************************************************/
+static void deep_lift_census(struct ai_type *ait, struct player *pplayer)
+{
+  const struct ai_plr *plr_data = def_ai_player_data(pplayer, ait);
+  int slots = 0, loaded_boats = 0;
+  int wait = 0, with_slot = 0, d0 = 0, d3 = 0, d5 = 0, on_loaded = 0;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+
+  unit_list_iterate(pplayer->units, pferry) {
+    if (dai_is_ferry(pferry, ait)) {
+      int free_slots = get_transporter_capacity(pferry)
+                       - get_transporter_occupancy(pferry);
+
+      slots += MAX(free_slots, 0);
+      if (get_transporter_occupancy(pferry) > 0) {
+        loaded_boats++;
+      }
+    }
+  } unit_list_iterate_end;
+
+  unit_list_iterate(pplayer->units, punit) {
+    int nearest_slot = -1, nearest_loaded = -1;
+
+    if (unit_transported(punit)
+        || def_ai_unit_data(punit, ait)->ferryboat >= 0) {
+      continue;
+    }
+    wait++;
+
+    unit_list_iterate(pplayer->units, pferry) {
+      int d;
+
+      /* could_unit_load(), NOT can_unit_load(): the latter opens with a
+       * same_pos() test, so asking it about a boat five tiles away is
+       * always FALSE and every distance rung below would collapse to
+       * "already standing on the boat". The question here is whether
+       * this unit could ride that hull at all -- type compatibility,
+       * ownership, free-load rules -- with distance reported
+       * separately. */
+      if (!dai_is_ferry(pferry, ait)
+          || get_transporter_occupancy(pferry)
+             >= get_transporter_capacity(pferry)
+          || !could_unit_load(punit, pferry)) {
+        continue;
+      }
+      d = real_map_distance(unit_tile(punit), unit_tile(pferry));
+      if (nearest_slot < 0 || d < nearest_slot) {
+        nearest_slot = d;
+      }
+      if (get_transporter_occupancy(pferry) > 0
+          && (nearest_loaded < 0 || d < nearest_loaded)) {
+        nearest_loaded = d;
+      }
+    } unit_list_iterate_end;
+
+    if (nearest_slot >= 0) {
+      with_slot++;
+      if (nearest_slot == 0) {
+        d0++;
+      }
+      if (nearest_slot <= 3) {
+        d3++;
+      }
+      if (nearest_slot <= 5) {
+        d5++;
+      }
+    }
+    if (nearest_loaded >= 0 && nearest_loaded <= 5) {
+      on_loaded++;
+    }
+  } unit_list_iterate_end;
+
+  log_base(deep_metric_log_level(),
+           "deep-lift turn=%d player=\"%s\" boats=%d avail=%d psng=%d"
+           " slots=%d loadedboats=%d wait=%d slot=%d d0=%d d3=%d d5=%d"
+           " loaded=%d",
+           game.info.turn, player_name(pplayer),
+           plr_data->stats.boats, plr_data->stats.available_boats,
+           plr_data->stats.passengers,
+           slots, loaded_boats, wait, with_slot, d0, d3, d5, on_loaded);
+}
+
+/**********************************************************************//**
   The stock manage loop with one change: operation holds survive.
   dai_manage_units() clears every unit's done flag before managing,
   which silently erased everything the operation layer had marked --
@@ -132,6 +244,8 @@ void deep_manage_units(struct ai_type *ait, struct player *pplayer)
   TIMING_LOG(AIT_AIRLIFT, TIMER_START);
   dai_airlift(ait, pplayer);
   TIMING_LOG(AIT_AIRLIFT, TIMER_STOP);
+
+  deep_lift_census(ait, pplayer);
 
   unit_list_iterate(pplayer->units, punit) {
     struct unit_ai *unit_data = def_ai_unit_data(punit, ait);
