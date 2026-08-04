@@ -3527,3 +3527,43 @@ The suspension itself is left in place but is UNVALIDATED and unjustified
 by its stated evidence -- it may be neutral or harmful, and the paired
 score against the fixed-rendezvous arm is what should decide whether it
 stays.
+
+### Straying: the hold leaked through a SECOND driver (2026-08-04)
+
+    4cbe7618cd  trace every lift member through the crossing
+    b699ddefa1  honour the operation hold in the settler_run hook
+
+**Traced, not correlated.** The trace logs every member every MARCH
+turn -- which hull it is on, both tiles, the hull's moves and hp -- and
+the detach events are unambiguous:
+
+    unit=219 turn 59->60: on 208->0  unit (42,55)->(46,57) boat (42,55)->(43,56)
+    unit=219 turn 67->68: on 249->0  unit (42,53)->(41,54) boat (42,53)->(41,53)
+    unit=219 turn 74->75: on 249->0  unit (41,53)->(42,54) boat (41,53)->(41,53)
+
+The passenger steps onto adjacent land under its OWN power with the
+hull mid-ocean at full hp -- and unit 219 does it on turns 59, 67, 74
+and 84, which is section 8's pick-drop churn with a mechanism attached.
+
+**The cause is a second, independent driver.** deep_op_holds() is
+honoured in deep_manage_units(), but `auto_workers_player()` reaches
+every worker and cityfounder of an AI player through the settler_run
+vtable hook, gated on
+
+    ssa_controller == SSA_AUTOWORKER || is_ai(pplayer)  (autoworkers.c:1372)
+
+The `|| is_ai(pplayer)` means the agent flag is never consulted for an
+AI player at all. deep_auto_settler_run() then re-tasks the held unit,
+which disembarks it. The hook now returns early for a unit an
+operation holds.
+
+**Why the previous fix failed, kept as the lesson:** ac1310ccd4
+suspended SSA_AUTOWORKER and changed nothing, because this gate
+ignores it. Its evidence was a constant -- SSA_AUTOWORKER sat on 100%
+of strays and 100% of deliveries, printed side by side and read as
+confirmation. A variable identical in both populations cannot explain
+the difference between them, and only a trace over time could show
+what a detach-time snapshot never could.
+
+That suspension is now redundant AND unvalidated. Leave it or revert
+it on the paired numbers, not on argument.
