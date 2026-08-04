@@ -3594,3 +3594,40 @@ because the number was implausible. The rule earned: when a change
 alters WHICH code path an outcome exits through, every rate computed
 over those paths changes meaning, and the ratio must be re-derived
 before it is compared to an older one.
+
+### The hold fix removes straying (2026-08-04)
+
+`b699ddefa1`, quick check on `isolated-150`, success = arrived +
+delivered (the denominator note above applies):
+
+    binary                success  stray  rate   success/game
+    without hold fix (2g)    20      13    60%       10.0
+    without hold fix (3g)    35      23    60%       11.7
+    WITH hold fix (3g)       31       1    96%       10.3
+
+**23 strays in three games becomes 1.** Small sample, but not a subtle
+shift, and it is the effect the trace predicted: the settler_run hook
+was the driver, and it now returns early for a unit an operation
+holds.
+
+And the fix it replaces is confirmed a NO-OP: `ac1310ccd4` (suspending
+SSA_AUTOWORKER) produced BYTE-IDENTICAL scorelogs over 20 games from a
+different binary and a different tuning file -- paired score diff
+exactly +0.00, se 0.00, every mechanism count matching to the digit.
+Reverted in `31a8016bc7`. `auto_workers_player()` never reads the flag
+for an AI player, so clearing it could not do anything.
+
+### The full arc, worth keeping as method
+
+1. Snapshot correlation at detach time said SSA_AUTOWORKER (100% of
+   strays). It was also 100% of DELIVERIES -- a constant read as a
+   cause. The fix built on it was provably inert.
+2. A TRACE over time -- every member, every MARCH turn, hull id and
+   both tiles -- showed a held settler stepping onto land with the hull
+   mid-ocean at full hp, repeatedly.
+3. That named a second driver the hold never covered, and the one-line
+   check removed ~97% of the failure.
+
+A snapshot can only show what correlates with an outcome. A trace shows
+what happened before it. When a candidate cause is present in both
+populations, only the second kind of evidence can discriminate.
