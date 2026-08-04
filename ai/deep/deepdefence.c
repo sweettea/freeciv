@@ -3477,6 +3477,47 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
       }
     }
     TIMING_LOG(AIT_CITY_SETTLERS, TIMER_STOP);
+
+    /* Price a ferry choice against the water it would sail on, once
+     * the choice is FINAL -- every path has spoken by here.
+     *
+     * Deep's own colony want is one of three sources and tuning it
+     * alone could not set the fleet: stock adds a founder's boat when
+     * a settler wants passage (daidomestic.c:595) and an attacker
+     * ferry for a needy attacker (daimilitary.c:1687), neither of
+     * which looks at idle hulls. Measured, damping the colony want
+     * moved the fleet 6.14 -> 5.78 per player-turn and left it 79%
+     * idle at ~12 hulls per waiting passenger.
+     *
+     * The first attempt hooked choose_building, which never sees this
+     * at all -- that hook is handed a CT_BUILDING choice with
+     * need_boat cleared (advbuilding.c:311), so the ferry test could
+     * not fire once and logged zero discounts in both arms.
+     *
+     * Demand counts military passengers too, so an invasion short of
+     * shipping is never damped. boat_idle_damping = 0 is the
+     * off-switch. */
+    if (city_data->choice.want > 0
+        && city_data->choice.type != CT_BUILDING
+        && city_data->choice.value.utype != NULL
+        && deep_tuning_get()->boat_idle_damping > 0.0
+        && dai_is_ferry_type(city_data->choice.value.utype, ait)) {
+      int surplus = deep_water_surplus(ait, pplayer, city_tile(pcity));
+
+      if (surplus > 0) {
+        adv_want before = city_data->choice.want;
+
+        city_data->choice.want
+          = (adv_want) (before / (1.0 + deep_tuning_get()->boat_idle_damping
+                                        * surplus));
+        log_base(deep_metric_log_level(),
+                 "deep-hull turn=%d player=\"%s\" city=%d type=\"%s\""
+                 " surplus=%d want=" ADV_WANT_PRINTF " -> " ADV_WANT_PRINTF,
+                 game.info.turn, player_name(pplayer), pcity->id,
+                 utype_rule_name(city_data->choice.value.utype), surplus,
+                 before, city_data->choice.want);
+      }
+    }
     ADV_CHOICE_ASSERT(city_data->choice);
   } city_list_iterate_end;
   /* Reset auto settler state for the next run. */
