@@ -1224,6 +1224,29 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
     }
     if (ferry->moves_left > 0) {
       (void) dai_unit_goto(ait, ferry, land);
+      ferry = game_unit_by_number(op->ferry);
+      /* Re-check arrival in the SAME turn, the mirror of sailing on
+       * the turn the manifest boards (human, 2026-08-03). The test
+       * above ran before the hull moved, so a boat that reached its
+       * beachhead this turn used to hold its passengers aboard until
+       * the next one -- a wasted turn at the far end to match the one
+       * that used to be wasted at the near end. Releasing here also
+       * frees the hull with whatever movement it has left, so it can
+       * turn around for the next passenger instead of idling at the
+       * beach: the fleet is already 3x oversupplied, and throughput
+       * per hull is the thing worth buying. */
+      if (ferry != NULL
+          && real_map_distance(unit_tile(ferry), beach) <= 1) {
+        log_base(deep_metric_log_level(),
+                 "deep-lift-op turn=%d player=\"%s\" op=%d arrive boat=%d"
+                 " manifest=%d at=(%d,%d) beach=(%d,%d) turns=%d"
+                 " sameturn=1",
+                 game.info.turn, player_name(pplayer), oi, op->ferry,
+                 aboard, TILE_XY(unit_tile(ferry)), TILE_XY(beach),
+                 game.info.turn - op->formed_turn);
+        deep_op_dissolve(op, oi, "lift-arrived", pplayer);
+        return;
+      }
     }
   }
 }
