@@ -173,6 +173,14 @@ which is the number this would actually recover.
 - **`lift_op_slots` defaults OFF.** Relieving the array ceiling works
   (saturation 8% -> 0%, formations +26%, arrivals +22%) and costs
   score, -13.50 (t=-0.88).
+- **USE `--arms deep`, NOT `mixed_*`, FOR SCORE.** Measured 2026-08-04:
+  separate-game paired se is 2.22 against 15-20 for the head-to-head
+  margin, at identical cost -- four deep seats averaged, no opponent
+  variance. 00-context section 6 said so and ~15 comparisons this
+  session ignored it because liftcmp.py computed the margin. Deep's
+  absolute score was FLAT at ~209 across every intervention while the
+  margins swung, because classic's score was moving. Every score
+  verdict from 2026-08-03/04 is owed a re-take this way.
 - **TEN SEEDS ARE MISLEADING ON THIS CELL.** Two estimates flipped or
   collapsed under power: rendezvous +29.90 -> +11.28, slots +22.30 ->
   -13.50. Use 20 minimum for direction, 40 for a claim. A 20-game
