@@ -4061,3 +4061,66 @@ a count cannot:
 
 Only the first is what the pricing addresses, and the invariant says
 it is probably not the dominant one.
+
+## Why any individual hull is idle: measured per hull (2026-08-04)
+
+The invariant said fleet COUNT is the wrong lever; this asks the
+question a count cannot. `deep_hull_census()` emits one
+`deep-hull-turn` line per hull per player-turn (birth, cargo, assigned
+passenger, task/ssa, op claim, the water it TOUCHES, the demand on
+that water and the distance to its nearest waiting unit);
+`benchmark/hullcensus.py` reconstructs lifetimes offline. Logging
+only. 20 paired seeds, `isolated-150`, `--arms deep`, pinned binary,
+20/20 DONE, 0 pairing violations.
+
+    1244 hulls, 48397 hull-turns (38.9 turns of life each)
+
+    carrying             23.4%      never carried, ever   47.4% of hulls
+    assigned, empty       9.5%      birth -> first cargo  median 7 turns
+    op-claimed, empty     0.7%
+    idle                 66.4%
+
+**The answer: idle hulls are idle because nothing is there.** Of the
+32155 idle hull-turns, 84.0% have NO unit waiting to cross that hull's
+water at all; 96.8% have none within five tiles. A matching defect
+would put idle hulls beside waiting passengers, and that population is
+3.2% of idle time.
+
+    wrong harbour   20.5% of hulls   demand NEVER appeared on its
+                                     water (15.1% of idle turns)
+    missed it       28.9%            idle while demand stood SOMEWHERE
+                                     on its water -- but one ocean can
+                                     be the whole world sea; only
+                                     23.4% ever had it within 10 tiles
+    worked          52.6%            carried at least once
+
+Idle spells end: crossing 19.5%, assigned 41.2%, claimed 4.3%, death
+5.8%, **never (game end) 29.2%**. 109 hulls (8.8%) died having never
+carried anything.
+
+**What it decides.** Fleet count is confirmed wrong from the hull
+side: the fleet sits idle where and when there is no demand, so
+cutting it removes hulls from the burst as readily as the lull --
+which is why five interventions moved the share not at all and cost
+arrivals. The cleanly recoverable slice is the wrong-harbour class:
+one hull in five is built on a water nothing ever wants to cross, and
+those hulls own 15.1% of idle time. That is exactly the useful-oceans
+gap already spec'd -- the want is gated on "am I coastal"
+(`is_terrain_class_near_tile(TC_OCEAN)`) and never asks whether that
+water touches the demand. The remainder is a TIMING problem: bursty
+demand against standing inventory, and pricing it needs the wait a
+passenger would face without the hull, not the idle count.
+
+Second, smaller waste the old predicate hid: 9.5% of hull-turns are
+"assigned, empty" -- a passenger named, nobody aboard -- which the
+idle predicate counts as busy. One such turn for every 2.5 spent
+carrying.
+
+Caveat recorded in `findings/hull-idleness.md`: demand counts only
+units with a `goto_tile` on another continent and no ferry assigned,
+so latent demand is undercounted and the wrong-harbour class is if
+anything slightly overstated.
+
+Commits: `c6210a10d9` census, `21780b1183` demand distance,
+`aafcd3633d` hullcensus.py. `meson test -C build` 2/2 OK;
+`tune-audit.py` CLEAN (106/106/106/106).

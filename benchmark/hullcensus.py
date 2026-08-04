@@ -104,7 +104,18 @@ def lifetimes(data):
                 if cur is None:
                     cur, spells = r["turn"], spells + 1
             elif cur is not None:
-                ends["crossing" if r["cargo"] > 0 else "retask"] += 1
+                # Which non-idle state it moved into. "assigned" and
+                # "claimed" are work about to happen; only "crossing"
+                # is work happening. Explore is a hull the ferry code
+                # never gets to use at all.
+                if r["cargo"] > 0:
+                    ends["crossing"] += 1
+                elif r["psngr"] >= 0:
+                    ends["assigned"] += 1
+                elif r["op"] >= 0:
+                    ends["claimed"] += 1
+                else:
+                    ends["explore"] += 1
                 cur = None
         if cur is not None:
             ends["gameend" if h["survived"] else "death"] += 1
@@ -157,13 +168,46 @@ def main():
           f"({100.0*nc/idle:.1f}% of idle)" if idle else "")
     print()
 
+    # civ2civ3's Transport carries the Workers flag, and stock's
+    # dispatch tests worker before ferry -- such a hull is parked on
+    # SSA_AUTOWORKER and never reaches the ferry code (upstream-bugs
+    # #33). The idle predicate does not exclude it, so it is worth
+    # knowing how much of the idleness is that.
+    aw = sum(1 for r in data if r["idle"] and r["ssa"] == 1)
+    print(f"  ... of which parked on auto-worker (ssa=1): {aw} "
+          f"({100.0*aw/idle:.1f}%)" if idle else "")
+    print()
+
+    # The whole life of the fleet, in mutually exclusive states. The
+    # idle predicate calls a hull with an assigned passenger BUSY, so
+    # "assigned but empty" -- waiting for a passenger that has not
+    # boarded -- hides inside the 20-25% the fleet spends not idle.
+    print("EVERY HULL-TURN, BY STATE")
+    st = defaultdict(int)
+    for r in data:
+        if r["cargo"] > 0:
+            st["carrying"] += 1
+        elif r["psngr"] >= 0:
+            st["assigned, empty"] += 1
+        elif r["op"] >= 0:
+            st["op-claimed, empty"] += 1
+        elif r["ssa"] == 2 or r["task"] == 5:
+            st["exploring"] += 1
+        else:
+            st["idle"] += 1
+    for k in ("carrying", "assigned, empty", "op-claimed, empty",
+              "exploring", "idle"):
+        print(f"  {k:20s} {st[k]:7d}  {100.0*st[k]/ht:5.1f}%")
+    print()
+
     print("WHAT ENDS AN IDLE SPELL")
     ends = defaultdict(int)
     for h in hulls:
         for k, v in h["ends"].items():
             ends[k] += v
     tot = sum(ends.values()) or 1
-    for k in ("crossing", "retask", "death", "gameend"):
+    for k in ("crossing", "assigned", "claimed", "explore", "death",
+              "gameend"):
         print(f"  {k:9s} {ends[k]:6d}  {100.0*ends[k]/tot:5.1f}%")
     print()
 

@@ -158,7 +158,46 @@ above are hulls, not shields, so price the waste first -- and count
 how many existing hulls sit on an ocean that reaches no wanted site,
 which is the number this would actually recover.
 
+## 0y. ANSWERED (2026-08-04): why any individual hull is idle
+
+Section 0z below is DONE. `c6210a10d9` / `21780b1183` / `aafcd3633d`
+built the per-hull census and `benchmark/hullcensus.py` reads it; 20
+paired seeds on `isolated-150`, `--arms deep`, 20/20 DONE. Full
+numbers in STATUS and `findings/hull-idleness.md`.
+
+**Idle hulls are idle because nothing is there.** 84% of idle
+hull-turns have no unit waiting to cross that hull's water at all,
+96.8% have none within five tiles. Matching is NOT the defect: idle
+hulls standing next to waiting passengers are 3.2% of idle time.
+47.4% of hulls never carried anything in their lives; 29.2% of idle
+spells never end.
+
+**Do not price the fleet COUNT again.** That is now falsified from
+both sides -- the aggregate (idle share invariant 75-80% across five
+interventions) and the hull (idleness concentrated where demand is
+absent, so a cut removes burst capacity as readily as slack).
+
+**The one cleanly recoverable slice, sized: 20.5% of hulls are built
+on a water nothing ever wants to cross**, and they own 15.1% of idle
+time. This is the useful-oceans gap in section 1c, and the census is
+its measurement. `deep_water_surplus()` already decomposes idleness
+per body of water and `deep_ferry_demand_near()` now reports demand
+and its distance per water; what is missing is the BUILD-time test --
+the want is gated on `is_terrain_class_near_tile(TC_OCEAN)`, "am I
+coastal", never on whether that water touches the demand. Check the
+execution counter before the score, per the standing rule.
+
+The remaining idleness is a TIMING problem (bursty demand, standing
+inventory) and pricing it needs the wait a passenger faces WITHOUT the
+hull -- which is the same missing number section 1d asks for. Do not
+invent a cost model for it.
+
+Also newly visible: 9.5% of hull-turns are "assigned, empty" -- a
+passenger named, nobody aboard -- which the idle predicate scores as
+busy. One such turn for every 2.5 spent carrying. Unexamined.
+
 ## 0z. THE NEXT THING TO DIG INTO: why is any individual hull idle?
+    (ANSWERED -- see 0y)
 
 **The hull pricing is DONE and measured.** `e3a626aad3` executes (6940
 discounts against 0), cuts the fleet 14%, and does not move the thing
