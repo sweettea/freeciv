@@ -3091,3 +3091,64 @@ Left open, in order:
    already a manifest and the beachhead is already named.
 3. Whether the colony that lands is worth founding at all -- site
    quality, not delivery.
+
+## Hitch-a-ride is ruled out on its own census (2026-08-03, late)
+
+    a1e7e7f774  ai/deep: census the demand that could join a lift
+    4e7267e139  doc: hitch-a-ride is 0.4 admissible unit-turns a game
+
+**The second specified design call in a row was falsified by sizing it
+before building it.** Nothing was built on it.
+`findings/settler-missions.md` section 10 has the full ladder.
+
+The lift ON, 20 games, `lategame-80`, 10 train seeds, mirrored, one
+pinned binary. Per unit-turn where a unit wants a boat, no operation
+holds it, and its target is overseas:
+
+    A LIFT IS RUNNING: 877 player-turns, 337 waiting unit-turns
+
+    anyop  335  99.4%    cont    57  16.9%    muster  41  12.2%
+    d5      26   7.7%    d3       8   2.4%    d0       0   0.0% [tripwire]
+
+### 12.2% is not the 1.6% getting better
+
+Section 9 measured 1.6% and killed trip-counting; this reads 12.2% and
+still fails, because **the rate rose from the denominator collapsing**,
+not from supply appearing: waiting unit-turns fell 1160 -> 337. The
+lift already absorbs what used to queue.
+
+    trip-counting cap (section 9, no lift)   18 unit-turns / 20 games
+    hitch-a-ride, joinable                   41 unit-turns / 20 games
+    hitch-a-ride, within a 1-turn detour      8 unit-turns / 20 games
+
+`d3` is the rung the stated gate ("detour < one extra turn of boat
+waiting") actually admits: **0.4 per game**, fewer than the 18 already
+judged not worth a manifest, and unit-turns overcount the units behind
+them.
+
+### The risk runs the wrong way (human, 2026-08-03)
+
+A hitched manifest concentrates N passengers in one hull, so one
+sinking loses all of them: the downside scales with exactly the
+quantity the feature raises, while the upside is one saved trip. That
+makes it a do-not-build rather than a tune-it-carefully.
+
+### What the same census found instead: the op array
+
+`opfull` was carried so a storage ceiling could not masquerade as a
+manifest ceiling. A lift only forms into a free slot
+(`deepops.c:2420`) and `DEEP_OPS_MAX` is 4, shared with assaults:
+
+    op array full                        1125 / 4823  23.3%
+    ... AND an unclaimed waiter present   239 / 4823   5.0%  = 11.9/game
+
+**Formation is blocked ~30x more often than hitch-a-ride would have
+fired.** Unmeasured whether relieving it is worth anything -- the
+army's claim winning is deliberate, and more crossings have twice now
+been neutral. It is the next thing to SIZE, not to build.
+
+### Provenance
+
+The batch reproduced the previous session's lift tally exactly -- 165
+form / 110 sail / 77 offboard / 15 arrive, 58 delivered + 19 strayed --
+confirming the census is log-only and the pin is honest.
