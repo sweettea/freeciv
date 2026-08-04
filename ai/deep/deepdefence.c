@@ -2065,8 +2065,25 @@ static int deep_idle_ferries_on(struct ai_type *ait, struct player *pplayer,
         || deep_op_claiming(pplayer, punit->id) >= 0) {
       continue;
     }
-    if (ocean != 0 && tile_continent(unit_tile(punit)) != ocean) {
-      continue;
+    if (ocean != 0) {
+      /* A hull IN PORT sits on the city's LAND tile, so matching the
+       * unit's own continent against an ocean id excluded exactly the
+       * boats that are idle -- the count came back ~0 and the damping
+       * never fired at all (the logged want was identical with it on
+       * and off). A boat belongs to the water it touches. */
+      bool touches = (tile_continent(unit_tile(punit)) == ocean);
+
+      if (!touches) {
+        adjc_iterate(&(wld.map), unit_tile(punit), atile) {
+          if (tile_continent(atile) == ocean) {
+            touches = TRUE;
+            break;
+          }
+        } adjc_iterate_end;
+      }
+      if (!touches) {
+        continue;
+      }
     }
     idle++;
   } unit_list_iterate_end;
