@@ -488,8 +488,46 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
     struct tile *land = deep_lift_meeting_tile(nmap, ferry, beach);
 
     if (aboard == 0) {
-      /* Everyone got off, or died, on the way. */
-      deep_op_dissolve(op, oi, "lift-landed", pplayer);
+      /* The manifest left the boat mid-crossing. This is NOT self
+       * evidently a landing: it is equally the shape of a passenger
+       * dumped somewhere useless, or dead. Report each member's fate
+       * so the two can be told apart -- distance to the beachhead is
+       * the discriminator, and a member that ends far from it with the
+       * boat still at sea is a lost mission, not an arrival. */
+      bool delivered = FALSE;
+
+      for (i = 0; i < op->n_members; i++) {
+        struct unit *m = game_unit_by_number(op->members[i]);
+        struct tile *mt = (m != NULL ? unit_tile(m) : NULL);
+
+        if (mt != NULL && real_map_distance(mt, beach) <= 1) {
+          delivered = TRUE;
+        }
+        log_base(deep_metric_log_level(),
+                 "deep-lift-op turn=%d player=\"%s\" op=%d offboard"
+                 " boat=%d unit=%d alive=%d at=(%d,%d) beach=(%d,%d)"
+                 " dist=%d trans=%d goal=%d turns=%d",
+                 game.info.turn, player_name(pplayer), oi, op->ferry,
+                 op->members[i], m != NULL ? 1 : 0,
+                 mt != NULL ? index_to_map_pos_x(tile_index(mt)) : -1,
+                 mt != NULL ? index_to_map_pos_y(tile_index(mt)) : -1,
+                 TILE_XY(beach),
+                 mt != NULL ? real_map_distance(mt, beach) : -1,
+                 (m != NULL && unit_transported(m)) ? 1 : 0,
+                 (m != NULL && m->goto_tile != NULL
+                  && same_pos(m->goto_tile, beach)) ? 1 : 0,
+                 game.info.turn - op->formed_turn);
+      }
+      /* Name the two apart in the metric itself, so a later reader
+       * cannot mistake one for the other the way "lift-landed" once
+       * invited: DELIVERED is a member standing on or beside the
+       * beachhead, STRAYED is one that left the boat anywhere else.
+       * Measured 9 / 1 / 1 at dist 0 / 3 / 25 over three games, all
+       * alive -- the empty boat is overwhelmingly a success, because
+       * the passenger disembarks itself the moment the hull touches
+       * its target. */
+      deep_op_dissolve(op, oi, delivered ? "lift-delivered"
+                                         : "lift-strayed", pplayer);
       return;
     }
     if (game.info.turn - op->phase_turn > tune->lift_cross_turns) {
