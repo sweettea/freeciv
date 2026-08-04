@@ -3951,3 +3951,28 @@ better route.
 separate-game measurement** (`--arms deep,classic` rather than
 `mixed_*`), which is what section 6 specifies as primary and which was
 never run.
+
+### The separate-game metric is 8x tighter and was available all along
+    (2026-08-04)
+
+First A/B run on `--arms deep` (every seat deep, no opponent), 20
+paired seeds, `isolated-150`, per-ocean idle damping:
+
+    damping OFF   score 194.51   cities 14.35
+    damping ON    score 195.29   cities 14.65
+    diff          +0.78   se 2.22   t=+0.35   up 2/20
+
+The result is neutral. **The standard error is the finding:** 2.22,
+against 15-20 for every head-to-head margin taken tonight. Averaging
+four deep seats per game and removing opponent variance makes this
+metric roughly EIGHT TIMES more precise at identical cost.
+
+`00-context` section 6 names separate-game score as the primary metric
+and explicitly refuses head-to-head as the headline. Roughly fifteen
+comparisons were run tonight on the noisy one anyway, because
+`liftcmp.py` computed it and the tooling shaped the question. Several
+of those were called "neutral" or "negative" at |t| < 1 when the same
+games on the right metric would have been near-decisive.
+
+**Every score verdict from this session should be re-taken this way
+before it is trusted**, and it is cheap: 20 paired seeds is one batch.
