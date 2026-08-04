@@ -426,6 +426,10 @@ committed without at least one run in which its code takes a branch.
   -- each game is its own process with a pinned binary and a fixed
   seed -- but it can push games past TIMEOUT_S, and lategame-80's 2700s
   is already close at 10-way concurrency.
+- **The ~11-minute figure is the CLOUD BOX.** Measured locally
+  2026-08-04: `isolated-150`, 20 games, 10 jobs, one arm took about an
+  hour on the laptop -- late turns dominate and 10-way contention
+  slows every game. Budget accordingly before promising a quick check.
 - /tmp is tmpfs and IS wiped between sessions.
 - `meson test -C build` is the suite; `python3 benchmark/tune-audit.py`
   must print CLEAN (102/102/102/102 now).
