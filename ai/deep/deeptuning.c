@@ -81,6 +81,9 @@ static const struct deep_tuning deep_tuning_defaults = {
   .site_choke_bonus = 12.0,             /* PLACEHOLDER, untuned */
   .convoy_min_load = 2,                 /* PLACEHOLDER, untuned */
   .convoy_wait_radius = 6,              /* PLACEHOLDER, untuned */
+  .lift_form_radius = 8,                /* PLACEHOLDER, untuned */
+  .lift_gather_turns = 8,               /* PLACEHOLDER, untuned */
+  .lift_cross_turns = 20,               /* PLACEHOLDER, untuned */
   .worker_flee_radius = 3,              /* PLACEHOLDER, untuned */
   .worker_guard_radius = 6,             /* PLACEHOLDER, untuned */
   .worker_danger_discount = 1.0,        /* PLACEHOLDER, untuned */
@@ -235,6 +238,9 @@ void deep_tuning_init(void)
   TUNE_DOUBLE(site_choke_bonus);
   TUNE_INT(convoy_min_load);
   TUNE_INT(convoy_wait_radius);
+  TUNE_INT(lift_form_radius);
+  TUNE_INT(lift_gather_turns);
+  TUNE_INT(lift_cross_turns);
   TUNE_INT(worker_flee_radius);
   TUNE_INT(worker_guard_radius);
   TUNE_DOUBLE(worker_danger_discount);
@@ -268,7 +274,7 @@ void deep_tuning_init(void)
              " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
              " wos=%d wot=%d gb=%d gsm=%f sdw=%f gf=%d gs=%d gt=%d tqs=%f dip=%f stream=%f pot=%f"
              " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f hhealth=%f hcont=%f cmws=%f htech=%f"
-             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d dfv=%d dfr=%d dfrt=%d dpv=%d dpt=%d wfw=%f srw=%f chk=%f cml=%d cwr=%d wfr=%d wgr=%d wdd=%f wxcd=%f ugw=%f uuw=%f rpr=%f rwant=%d rfin=%f svt=%f svf=%f svh=%d taf=%f avw=%f swf=%f ott=%f omw=%d sfd=%f clw=%f irr=%f oww=%d rrad=%d hrr=%d hrd=%f oaf=%f brr=%f",
+             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d dfv=%d dfr=%d dfrt=%d dpv=%d dpt=%d wfw=%f srw=%f chk=%f cml=%d cwr=%d wfr=%d wgr=%d wdd=%f wxcd=%f ugw=%f uuw=%f rpr=%f rwant=%d rfin=%f svt=%f svf=%f svh=%d taf=%f avw=%f swf=%f ott=%f omw=%d sfd=%f clw=%f irr=%f oww=%d rrad=%d hrr=%d hrd=%f oaf=%f brr=%f lfr=%d lgt=%d lct=%d",
              path,
              deep_tuning_active.settler_fearfulness_mult,
              deep_tuning_active.settler_risk_tolerance,
@@ -351,7 +357,10 @@ void deep_tuning_init(void)
              deep_tuning_active.hut_risk_radius,
              deep_tuning_active.hut_risk_discount,
              deep_tuning_active.op_abort_floor,
-             deep_tuning_active.barb_reinforce_rate);
+             deep_tuning_active.barb_reinforce_rate,
+             deep_tuning_active.lift_form_radius,
+             deep_tuning_active.lift_gather_turns,
+             deep_tuning_active.lift_cross_turns);
 }
 
 /**********************************************************************//**

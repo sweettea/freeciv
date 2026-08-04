@@ -340,6 +340,16 @@ struct deep_tuning {
    * transport recruits an idle warship bodyguard from its tile. */
   int convoy_min_load;
   int convoy_wait_radius;
+  /* The colony lift (findings/settler-missions.md section 9). A lift
+   * operation forms when a waiting passenger has an unclaimed boat
+   * within lift_form_radius tiles, and aborts if boat and manifest
+   * have not met within lift_gather_turns, or the crossing has not
+   * landed within lift_cross_turns. lift_form_radius <= 0 disables the
+   * lift entirely and leaves stock's two-sided ferry protocol alone.
+   * ALL PLACEHOLDERS -- flagged in STATUS.md for a tuning pass. */
+  int lift_form_radius;
+  int lift_gather_turns;
+  int lift_cross_turns;
   /* A civilian outside a city flees to the nearest own city when an
    * at-war military unit is within this many tiles. 0 disables. */
   int worker_flee_radius;

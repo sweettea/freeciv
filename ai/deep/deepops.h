@@ -63,9 +63,21 @@ enum deep_op_state {
  * and dissolves when the hunting stops. Raids coexist with assaults
  * now, but assault formation runs first each turn: the army's first
  * claim on fresh units stands. */
+/* LIFT (the colony-lift epic) owns a crossing end to end: a named boat,
+ * a named passenger list, a named beachhead, held against re-tasking,
+ * with an abort condition. It exists because the ferry pipeline's
+ * binding constraint is the RENDEZVOUS, not capacity and not the 1:1
+ * cap's arithmetic -- 95.6% of capped waiting unit-turns have a
+ * rideable boat with a free slot and only 0.6% ever stand on the same
+ * tile, which is where loading happens
+ * (findings/settler-missions.md section 9). Stock's two-sided protocol
+ * -- passenger raises a flag, boat independently looks for flagged
+ * passengers -- is what never closes that gap, so the lift drives the
+ * boat itself rather than routing units back into that manager. */
 enum deep_op_kind {
   DEEP_OPK_ASSAULT = 0,
   DEEP_OPK_RAID,
+  DEEP_OPK_LIFT,
 };
 
 struct deep_operation {
@@ -78,6 +90,11 @@ struct deep_operation {
   int march_turn;               /* turn the wave launched into MARCH */
   int march_eta;                /* eta to target measured at launch */
   int phase_turn;               /* turn the current phase was entered */
+  /* LIFT only: the named boat, and the named landing tile. A lift
+   * reuses MUSTER for "the boat is coming to fetch the manifest" and
+   * MARCH for "loaded and crossing"; members[] is the manifest. */
+  int ferry;                    /* unit id of the boat, 0 if none */
+  int beachhead;                /* tile index to land on, -1 if none */
   int n_members;
   int members[DEEP_OP_MEMBERS]; /* unit ids */
 };
