@@ -3152,3 +3152,122 @@ been neutral. It is the next thing to SIZE, not to build.
 The batch reproduced the previous session's lift tally exactly -- 165
 form / 110 sail / 77 offboard / 15 arrive, 58 delivered + 19 strayed --
 confirming the census is log-only and the pin is honest.
+
+## The lift's parameter was never the lever; the rendezvous was
+   (2026-08-03, late night)
+
+    a4af2f21e4  ai/deep: make the lift rendezvous two-sided
+    2aed19c427  ai/deep: let a second passenger join at the rendezvous
+    8b94854e62  ai/deep: require a hitcher to be able to WALK there
+    e35c0ba323  ai/deep: hold the quay in proportion to the crossing
+    b338a7eeef  ai/deep: round the hitch wait up to a whole turn
+    8c59eeac3a  ai/deep: give the lift its own operation slots
+    dfde81faf1  ai/deep: measure slot pressure and hull capacity
+    19792cb887  doc: scope section 10
+
+**READ THIS FIRST: only the gather bracket and the censuses below are
+MEASURED. Everything the five ai/deep commits above changed is BUILT
+AND UNVALIDATED** -- `meson test` and `tune-audit` green, no benchmark
+run on any of it. Rule 6 applies; the pending runs may come back flat
+like every other lift change so far.
+
+### MEASURED: `lift_gather_turns` is not a lever in 4..16
+
+20 games each, `lategame-80`, mirrored, one pinned binary, tuning-file
+switch:
+
+    gather   form  sail  delivered+arrived  timeout   score vs base
+      4       177   107        74             55    -0.50 (t=-0.03, 5/10)
+      8       165   110        73             31       --
+     16       147   108        72             12    -4.90 (t=-0.20, 5/10)
+
+A 4x range moves timeouts 55 -> 12 and moves deliveries by one colony
+and score by nothing, coin-flip on seeds in both directions.
+
+### MEASURED: why it could not have been a lever
+
+`n_members` was fixed at 1, so "gather" gathered nothing -- the
+parameter was a give-up timer on the boat's commute (human, 2026-08-03).
+And the commute was one-sided: `deep_op_holds()` froze the passenger,
+which only moved if ALREADY adjacent to the hull. Over the same 20
+games:
+
+    muster outcome     n    idle passenger-turns   mean
+    sailed            110          244             2.2
+    gather-timeout     31          279             9.0
+    nobody             10           47             4.7
+
+~570 held-idle passenger-turns per 20 games, 57% of them on lifts that
+never sailed. **Every timeout burned the whole window (mean 9.0 against
+a cap of 8, max 9)** -- not one was a boat that almost made it. The
+boat was not arriving late, it was not arriving at all, which is what
+a shorter window cannot rescue and a longer one cannot either.
+
+### MEASURED: the island cell is a different world
+
+`isolated-150`, 2 games, lift ON. Per game against `lategame-80`:
+
+    unclaimed overseas waiters   16.9 -> 287
+    joinable (cont)               2.9 -> 122
+    within a 1-turn detour (d3)   0.4 -> 12.5
+    waiters per lift-running turn 0.38 -> 4.04
+
+`mapgenerator3` keeps making islands until the landmass runs out
+(`mapgen.c:2401-2428`), so the unclaimed-island tail is the
+colonisation target set. Section 10's verdict is scoped accordingly.
+
+### BUILT, NOT VALIDATED
+
+- **Two-sided rendezvous.** A tile named at formation, FIXED (a
+  passenger homing on a hull that homes on the passenger orbits it),
+  with both ends driving to it and formation refusing a meeting the
+  passenger cannot reach.
+- **Hitch-a-ride**, reopened because the fixed rendezvous moved the
+  cost from the boat to the passenger. Contracts: a hitcher is drawn
+  only from units already waiting for a boat, and a straggler is
+  dropped rather than waited for unless the wait is priced.
+- **Proportional patience.** `lift_hitch_wait_ratio` of the estimated
+  crossing, rounded UP to a whole turn (truncation was refusing every
+  short-trip wait, which is where the cheap wins are), never spending
+  the gather window's last turn.
+- **Dedicated lift slots.** The array is 4 army + 4 lift-only; the
+  army's range is unchanged so assault placement cannot move.
+
+### STATE: four new placeholders, all untuned, all A/B switchable
+
+    lift_op_slots         4    (0 = old behaviour, proven identical)
+    lift_manifest_max     3    (1 = old single-passenger lift)
+    lift_hitch_wait_ratio 0.25 (0 = never wait)
+    (plus lift_form_radius 0 = whole lift off)
+
+The `lift_op_slots = 0` equivalence was PROVEN, not assumed: one seed
+on the new binary reproduced the old binary's scorelog exactly across
+80 turns and all players, with every metric line identical once
+`opfull` was masked. That check is also what caught `opfull` silently
+redefining itself when `DEEP_OPS_MAX` went 4 -> 8.
+
+Measure in order -- rendezvous, then manifest, then wait -- since they
+interact.
+
+### Method notes earned here
+
+- **A census sizes a MECHANISM, not a feature.** Section 10 killed
+  hitch-a-ride correctly and could not speak to a version where the
+  passenger walks instead of the boat detouring. When the cost model
+  changes, the ladder has to be re-derived, not just re-run.
+- **A verdict inherits the venue it was taken in.** 30x between cells.
+- **Read the mechanism before spending the machine on its parameter.**
+  60 games confirmed a knob that `n_members = 1` had already made
+  inert. The measurement was sound; the hypothesis was never
+  mechanically plausible.
+- **`can_unit_exist_at_tile()` is not reachability.** It says a unit
+  could stand somewhere, not that it could get there -- straight-line
+  distance to such a tile enrolled units across open ocean, and would
+  have been invisible because non-arriving hitchers are dropped by
+  design. Same class as gating formation on straight-line distance.
+
+### Stale reference
+
+`CLAUDE.md` cites `./benchmark/report.py`; no such file exists.
+`extract.py` writes `metrics.csv` and the per-cell comparisons are
+ad-hoc. Either restore the script or correct the doc.
