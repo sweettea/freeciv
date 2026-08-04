@@ -869,13 +869,21 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
     } else {
       /* Both ends drive to the named rendezvous. The boat used to do
        * all of the travelling while deep_op_holds() froze the
-       * passenger where it stood: measured over 20 games, that cost
-       * ~570 held-idle passenger-turns, 57% of them on lifts that
-       * never sailed, and EVERY gather-timeout burned the whole
-       * window (mean 9.0 turns against a cap of 8, max 9) -- the
-       * boat was not arriving late, it was not arriving at all.
-       * A settler that can walk half the distance is half a
-       * rendezvous the boat no longer has to sail. */
+       * passenger where it stood: ~570 held-idle passenger-turns per
+       * 20 games, 57% on lifts that never sailed, and EVERY
+       * gather-timeout burning the whole window (mean 9.0 against a
+       * cap of 8) -- the boat was not arriving late, it was not
+       * arriving at all.
+       *
+       * MEASURED AFTERWARDS: making it two-sided did not shorten the
+       * muster (2.22 -> 2.26 turns) and did not cut idle time. The
+       * original claim here -- that a walking settler saves the boat
+       * half the trip -- is NOT supported. Successful musters were
+       * already near the floor the boat's own travel sets, and the
+       * failures are unreachable rather than slow. The deep-lift-walk
+       * line below exists because "the walk fires and does not help"
+       * and "the walk never fires" were indistinguishable in the
+       * aggregates that produced that conclusion. */
       struct unit *waiting = NULL;
       struct tile *meet = index_to_tile(nmap, op->rendezvous);
 
@@ -932,16 +940,42 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
                    && m->moves_left > 0) {
           /* A land unit stepping onto the boat's tile loads itself. */
           (void) dai_unit_goto(ait, m, unit_tile(ferry));
-        } else if (m->moves_left > 0) {
+        } else {
           /* The other half of the meeting: walk to the shore beside
            * the rendezvous. Toward the fixed TILE, never toward the
            * boat -- a passenger homing on a hull that is itself
-           * homing on the passenger orbits it instead of meeting it. */
+           * homing on the passenger orbits it instead of meeting it.
+           *
+           * Logged whether it walks or not, and why not: a member with
+           * no moves, no shore, or already standing on it are three
+           * different reasons the rendezvous stays one-sided, and the
+           * aggregate cannot tell them apart. */
           struct tile *shore = deep_lift_shore_tile(nmap, m, meet);
+          struct tile *was = unit_tile(m);
+          int d0 = real_map_distance(was, meet);
+          int mleft = m->moves_left;
+          const char *why = "walk";
 
-          if (shore != NULL && !same_pos(unit_tile(m), shore)) {
+          if (shore == NULL) {
+            why = "noshore";
+          } else if (same_pos(was, shore)) {
+            why = "arrived";
+          } else if (mleft <= 0) {
+            why = "nomoves";
+          } else {
             (void) dai_unit_goto(ait, m, shore);
+            m = game_unit_by_number(op->members[i]);
           }
+          log_base(deep_metric_log_level(),
+                   "deep-lift-walk turn=%d player=\"%s\" op=%d unit=%d"
+                   " why=%s d0=%d d1=%d moved=%d mleft=%d gap=%d",
+                   game.info.turn, player_name(pplayer), oi,
+                   op->members[i], why, d0,
+                   m != NULL ? real_map_distance(unit_tile(m), meet) : -1,
+                   (m != NULL && !same_pos(unit_tile(m), was)) ? 1 : 0,
+                   mleft,
+                   m != NULL ? real_map_distance(unit_tile(m),
+                                                 unit_tile(ferry)) : -1);
         }
       }
     }
