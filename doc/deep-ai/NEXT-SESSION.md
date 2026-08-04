@@ -158,6 +158,44 @@ above are hulls, not shields, so price the waste first -- and count
 how many existing hulls sit on an ocean that reaches no wanted site,
 which is the number this would actually recover.
 
+## 1d. Two open design calls (human, 2026-08-04), both SIZED FIRST
+
+**The hitcher decides on feasibility, not on comparison.**
+deep_lift_enroll() asks "can this unit reach the rendezvous in time"
+and never asks "what would it get by waiting for its own boat". The
+alternative is often cheap -- hulls are in 3x surplus and mostly idle
+-- which may be exactly why hitching shows no value. But idle-hull
+count is NOT the expected wait, because lift formation is capped at
+one per player per turn, so a queue drains slowly however many boats
+are free.
+
+DO NOT invent the cost model. The missing number is the wait itself:
+log the turns between a unit first wanting a boat (deep_lift_wants_boat
+true) and being enrolled as a lift's core, then compare that against
+the hitch cost, which is now walk-to-rendezvous plus at most
+lift_drop_radius. If the wait is short the feature is worth little at
+any tuning.
+
+**Overseas settlers can still found on top of each other.**
+`citymap_reserve_city_spot()` (daitools.c:710) hard-blocks the exact
+chosen tile -- deepsite.c:589 treats `reserved < 0` as worthless -- and
+only increments a soft crowding counter over the city radius. Nothing
+prevents founding at citymindist, and STATUS already measures deep's
+median founded city sitting exactly there, with W02b moving spacing
+0.07 tiles. The lift does not cause this but amplifies it overseas by
+delivering more settlers to one fresh continent.
+
+Note the reservation is also fragile for lifts: it is keyed on the
+unit holding AIUNIT_BUILD_CITY, so a passenger re-tasked mid-crossing
+drops its claim -- which is what the straying bug did until
+b699ddefa1.
+
+Size it before building: measure whether OVERSEAS cities are founded
+closer together than mainland ones, and whether pairs delivered by the
+same lift cluster worse than pairs that walked. If overseas spacing
+matches mainland spacing, this is the known citymindist finding and
+not a lift problem at all.
+
 ## 2. Then: the thing nobody has sized
 
 **Is the colony worth founding at all?** Delivery has now been fixed
