@@ -1,6 +1,6 @@
 Continue the Freeciv deep-AI work. Read CLAUDE.md, doc/deep-ai/00-context.md,
-then doc/deep-ai/STATUS.md -- start at "Why any individual hull is idle"
-(the last section) and read backward as far as you need. Branch
+then doc/deep-ai/STATUS.md -- start at "The useful-water gate" (the last
+section) and read backward as far as you need. Branch
 epic/w03-horizon-content.
 
 **Section 0 is the job.** Sections 0b-1d are why, and what has already
@@ -8,74 +8,78 @@ been falsified so you do not redo it. Sections 8-9 are history kept for
 provenance: they contain instructions that were correct when written and
 are NOT to be followed now.
 
-## 0. THE JOB: gate boat production on USEFUL water
+## 0. THE JOB: confirm the useful-water gate, then ask what it freed
 
-**Build the useful-oceans gate on boat production.** It is the one
-lever the per-hull census supports, and it is sized: 20.5% of hulls --
-one in five -- never once saw a waiting passenger on their water in
-their whole life, and those hulls own 15.1% of all idle hull-turns.
+**The gate is BUILT and its mechanism is exact.** `boat_water_gate`
+(`73bd3ef440`) refuses a ferry when every sea the city touches closes
+on the city's own continent. 20 paired seeds, `isolated-150`,
+`--arms deep`: closed-sea hulls **69 -> 0**, arrivals 17.9 -> 21.8
+(t=+2.67), score +4.65 (se 4.16, t=+1.12, 9/20). Full numbers in
+STATUS.
 
-**Gate on GEOMETRY, not on demand-now.** This is the trap and the
-census is explicit about it: 84% of idle hull-turns have no waiting
-passenger on that water, because demand is BURSTY. A "no demand here
-right now, do not build" rule would suppress exactly the hulls that
-serve the next burst -- which is the same mistake the five count-based
-dampings made, in a new costume. Ask instead the question that does not
-move: **does this body of water touch any land continent other than the
-city's own?** A hull launched into a lake, or into a sea that reaches
-nothing but its own island, can never deliver a colonist at any time
-under any demand pattern.
+**This is the first fleet change that raised arrivals.** Every earlier
+one bought a smaller fleet with fewer deliveries. This one is not a cut
+at all: the fleet grew 18.6% and the empire grew 0.75 cities, because
+shields refused at closed-water cities bought other things.
 
-The infrastructure exists and is unread (00-context section 3):
-`tile_continent()` is negative for water and `assign_continent_numbers()`
-maintains it across terrain change; `adv->oceans[]` is rebuilt every
-phase with only `.threat` ever consumed. `deep_water_surplus()` already
-walks the distinct waters a city touches, and `deep_ferry_demand_near()`
-(added 2026-08-04) reports demand and its distance per water. The
-missing piece is purely the BUILD-time test: the want is gated on
-`is_terrain_class_near_tile(TC_OCEAN)` -- "am I coastal" -- and never on
-whether that water reaches anything.
+### First: does the score survive power?
 
-Where to hook it: the same place the hull pricing sits, at the end of
-deep's per-city choice loop where every ferry path has spoken
-(`deepdefence.c`, see `e3a626aad3`). Hooking `choose_building` does not
-work -- that hook is handed a CT_BUILDING choice with need_boat cleared
-(advbuilding.c:311), and the first attempt at the pricing logged zero
-discounts in both arms because of it.
+**+4.65 at t=1.12 is direction, not a claim, and this cell has flipped
+two estimates under power** (rendezvous +29.90 -> +11.28, slots +22.30
+-> -13.50). Run 40 paired seeds, `--arms deep`, same pinned-binary
+tuning-file A/B. The mechanism does not need re-measuring -- 69 -> 0 is
+not going to move -- so this is purely the aggregate.
 
-**Check the execution counter before the score.** Three changes in the
-2026-08-04 session measured as "no effect" while never once executing.
-Log every gate decision and confirm the gate fires on a real map before
-running a batch.
+**Then a second cell.** A verdict inherits its venue, by 30x on this
+project. `lategame-80` is where every other lift number was taken and
+where hulls are Transports rather than Triremes; if the gate is worth
+nothing there, say so rather than averaging it away.
 
-**Measure on `--arms deep`, not `mixed_*`** (separate-game paired se is
-2.22 against 15-20 for the head-to-head margin, at identical cost), 20
-seeds minimum for direction and 40 for a claim, and read
-`benchmark/hullcensus.py`'s wrong-harbour class -- it should fall -- as
-well as arrivals, which must NOT fall. Every previous fleet cut bought
-its smaller fleet with fewer deliveries; this one is supposed to remove
-hulls that could never have delivered anything.
+### Second: what did the refused shields buy?
+
+The interesting part of the result is that unitsbuilt rose 7.64
+(t=3.14) and cities rose 0.75 while the fleet also grew. Nobody has
+looked at WHAT the closed-water cities built instead -- the gate hands
+them to the fallback ladder in deep_city_choose_build(), which is a
+trade route, then a defender, then a worker, and none of those was
+chosen on merit. If the gain is real, some of it is being left there:
+a refused ferry currently falls through to `want = 0` rather than to
+the city's own second-best want.
 
 ### What NOT to do next, and why
 
-- **Do not price the fleet COUNT again.** Falsified from both sides now:
-  the aggregate (idle share invariant at 75-80% across five
-  interventions) and the hull (idleness concentrated where demand is
-  absent, so a cut removes burst capacity as readily as slack).
-- **Do not invent a cost model for the remaining idleness.** It is
-  inventory against bursty demand, and its honest price is the WAIT a
-  passenger faces without the hull -- the number section 1d asks for and
-  nobody has measured.
+- **Do not price the fleet COUNT.** Falsified from the aggregate (idle
+  share invariant 75-80% across five interventions) and from the hull
+  (idleness concentrated where demand is absent).
+- **Do not add a demand term to the build gate.** The geometry test
+  works precisely because it does not move with demand. 84% of idle
+  hull-turns have no waiting passenger on that water and the demand is
+  BURSTY.
+- **Do not invent a cost model for the remaining idleness.** Its honest
+  price is the WAIT a passenger faces without the hull -- the number
+  section 1d asks for and nobody has measured.
 
-### Second, if the gate lands and there is session left
+### Third, still open: does a boat order outlive its reason?
 
-**Does a boat order outlive its reason?** 29.2% of idle spells never end
-and 8.8% of hulls die having never carried anything. A hull ordered
-because a settler wanted passage, finished six turns later after that
-settler founded elsewhere or died, is waste no build-time gate catches.
-Nobody has checked whether deep ever abandons a part-built ferry when
-the demand that justified it is gone. The census already logs birth
-turn, so this is a join against existing data before it is any code.
+29.2% of idle spells never end and 8.8% of hulls die having never
+carried anything. Joining the existing census gets as far as: hulls are
+born into zero demand 68.2% of the time against a 70.0% baseline over
+all hull-turns, so arriving is no likelier to meet a passenger than a
+random turn is. That is CONSISTENT with the order outliving its reason
+and is not evidence for it. The honest test needs the turn production
+STARTED, which nothing logs; hulls born into demand carried something
+68% of the time against 50% for the rest.
+
+## 0aa. HARNESS: the tuning file must have a [tuning] section
+
+A 40-game A/B was lost to this on 2026-08-04. Without the header every
+key is ignored, both arms run the compiled defaults, and the result key
+still differs so nothing downstream notices. The tell was the OFF arm
+logging 17.2 executions per game of the feature it was disabling.
+`run.sh` now refuses such a file, and any key not in
+`tuning-params.ini`, before a game starts (`70acda4798`). Prove the
+off-switch by its execution counter every time; it cost one batch and
+caught itself only because the counter was read.
 
 ## 0b. WHY: the per-hull census (2026-08-04)
 
