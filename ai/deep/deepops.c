@@ -53,6 +53,7 @@
 
 #include "deepai.h"
 #include "deepcombat.h"
+#include "deepdefence.h"
 #include "deeptuning.h"
 
 /* server */
@@ -245,6 +246,106 @@ static void deep_lift_census(struct ai_type *ait, struct player *pplayer)
            plr_data->stats.boats, plr_data->stats.available_boats,
            plr_data->stats.passengers,
            slots, loaded_boats, wait, with_slot, d0, d3, d5, on_loaded);
+}
+
+/**********************************************************************//**
+  One line per HULL per turn, against `deep-lift`'s one line per fleet.
+
+  The fleet census cannot answer the question the epic is now on. Five
+  interventions moved the fleet between 4.57 and 6.24 hulls per
+  player-turn and left the idle share pinned at 75-80% every time, and
+  cutting hulls cut arrivals with it -- which says the removed boats
+  were about to be useful and indicts the per-turn snapshot itself. A
+  count cannot tell "idle" from "idle now, sailing next turn", and no
+  aggregate over hulls can say WHY any particular hull is idle.
+
+  So this emits the state, keyed on unit id, that lets a lifetime be
+  reconstructed offline: when the boat was born, what it holds, what
+  claims it, which body of water it sits on, and how many units are
+  waiting to cross THAT water. The three causes a count conflates then
+  separate -- too many boats (demand elsewhere is served), wrong
+  harbour (demand never appears on its water at all), demand
+  evaporated (demand was there and stopped) -- and each has a
+  different fix.
+
+  Every component of the idle predicate is emitted separately rather
+  than only its conjunction, so the predicate can be varied in
+  analysis without another 20-game batch.
+**************************************************************************/
+static void deep_hull_census(struct ai_type *ait, struct player *pplayer)
+{
+  const struct civ_map *nmap = &(wld.map);
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+
+  unit_list_iterate(pplayer->units, pferry) {
+    const struct unit_ai *ud = def_ai_unit_data(pferry, ait);
+    struct tile *ptile = unit_tile(pferry);
+    Continent_id seen[8], best = 0;
+    int nseen = 0, demand = 0, best_demand = -1, oc;
+
+    if (!dai_is_ferry(pferry, ait)) {
+      continue;
+    }
+
+    /* The waters this hull can actually serve. A docked boat stands on
+     * the city's LAND tile, so its own continent is the wrong answer
+     * for exactly the boats that are idle -- that bug is why the
+     * per-ocean damping silently never fired. A hull belongs to the
+     * water it TOUCHES. */
+    oc = tile_continent(ptile);
+    if (oc < 0) {
+      seen[nseen++] = oc;
+    }
+    adjc_iterate(nmap, ptile, atile) {
+      Continent_id ac = tile_continent(atile);
+      int si;
+
+      if (ac >= 0) {
+        continue;
+      }
+      for (si = 0; si < nseen; si++) {
+        if (seen[si] == ac) {
+          break;
+        }
+      }
+      if (si < nseen || nseen >= (int) ARRAY_SIZE(seen)) {
+        continue;
+      }
+      seen[nseen++] = ac;
+    } adjc_iterate_end;
+
+    for (oc = 0; oc < nseen; oc++) {
+      int d = deep_ferry_demand_on(ait, pplayer, seen[oc]);
+
+      demand += d;
+      if (d > best_demand) {
+        best_demand = d;
+        best = seen[oc];
+      }
+    }
+
+    log_base(deep_metric_log_level(),
+             "deep-hull-turn turn=%d player=\"%s\" unit=%d type=\"%s\""
+             " born=%d at=(%d,%d) incity=%d ocean=%d waters=%d"
+             " cargo=%d psngr=%d task=%d ssa=%d op=%d"
+             " demand=%d idle=%d",
+             game.info.turn, player_name(pplayer), pferry->id,
+             unit_rule_name(pferry), pferry->birth_turn,
+             TILE_XY(ptile), tile_city(ptile) != NULL ? 1 : 0,
+             (int) best, nseen,
+             get_transporter_occupancy(pferry), ud->passenger,
+             (int) ud->task, (int) pferry->ssa_controller,
+             deep_op_claiming(pplayer, pferry->id),
+             demand,
+             get_transporter_occupancy(pferry) == 0
+             && ud->passenger < 0
+             && ud->task != AIUNIT_EXPLORE
+             && pferry->ssa_controller != SSA_AUTOEXPLORE
+             && deep_op_claiming(pplayer, pferry->id) < 0 ? 1 : 0);
+  } unit_list_iterate_end;
 }
 
 /* Defined below, with the rest of the operation lifecycle. */
@@ -1418,6 +1519,7 @@ void deep_manage_units(struct ai_type *ait, struct player *pplayer)
   TIMING_LOG(AIT_AIRLIFT, TIMER_STOP);
 
   deep_lift_census(ait, pplayer);
+  deep_hull_census(ait, pplayer);
   /* After deep_run_operations() has already formed and driven every
    * lift it could this turn, which is the vantage the question needs:
    * who is STILL waiting once the lift has done its best, and was
