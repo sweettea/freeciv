@@ -387,13 +387,16 @@ struct deep_tuning {
    * is the A/B switch.
    * PLACEHOLDER -- flagged in STATUS.md for a tuning pass. */
   double boat_idle_damping;
-  /* How near its OWN target a lift passenger must be before the boat
-   * drops it and moves on. The beachhead is the core passenger's
-   * target, so a joiner released there walks the difference --
-   * measured median 7 tiles, half of them 6 or more, which is about
-   * as long as the crossing itself. With hull-turns in 3x surplus and
-   * settler-turns scarce, the boat should make the extra stop.
-   * A large value collapses to the old single drop.
+  /* How far the boat will DETOUR to land a passenger at its own site
+   * rather than making it walk, in tiles -- "two boat moves" at the
+   * human's sizing (2026-08-04). Passengers adjacent to their target
+   * disembark here regardless (that is the game mechanic, not a
+   * tunable); anyone further gets another stop if it is within this
+   * budget, and walks if it is not.
+   *
+   * Sized against measurement: a joiner released at the core's
+   * beachhead lands a median 7 tiles from its own target, half of them
+   * 6 or more. 0 collapses to a single drop for the whole manifest.
    * PLACEHOLDER -- flagged in STATUS.md for a tuning pass. */
   int lift_drop_radius;
   /* Floor, in whole turns, under the hitch wait budget when the ratio

@@ -924,9 +924,12 @@ static bool deep_lift_serve_stop(struct player *pplayer,
     if (m == NULL) {
       continue;
     }
+    /* Served here means "can walk off onto its own target": adjacency
+     * is the game mechanic, not a tunable. Anyone further wants
+     * another stop, and lift_drop_radius decides whether the boat is
+     * willing to make it. */
     if (m->goto_tile == NULL
-        || real_map_distance(m->goto_tile, beach)
-           <= tune->lift_drop_radius) {
+        || real_map_distance(m->goto_tile, beach) <= 1) {
       continue;                 /* Served by this stop: let it go. */
     }
     op->members[kept++] = op->members[k];
@@ -948,7 +951,13 @@ static bool deep_lift_serve_stop(struct player *pplayer,
       bestd = d;
     }
   }
+  /* lift_drop_radius is the DETOUR the boat will make for a further
+   * stop, in tiles -- "two boat moves" at the human's sizing
+   * (2026-08-04). Beyond it the remaining passengers are released to
+   * walk, because a hull is not worth tying up indefinitely for one
+   * settler however cheap hull-turns are. */
   if (next == NULL
+      || bestd > tune->lift_drop_radius
       || deep_lift_meeting_tile(nmap, ferry, next->goto_tile) == NULL) {
     return FALSE;
   }
