@@ -3643,10 +3643,17 @@ populations, only the second kind of evidence can discriminate.
 
     score paired: hitch - base = -16.90 (se 19.35, t=-0.87, up 4/10)
 
-It WORKS -- 85 enrolments, 33 crossings carrying two -- and it buys
-nothing: deliveries 174 vs 177, score trending negative. Section 10's
-original verdict is upheld, now measured on the mechanism it was
-wrongly scoped against instead of argued from a ladder.
+It WORKS -- 85 enrolments, 33 crossings carrying two -- and on THIS
+binary it buys nothing: deliveries 174 vs 177, score trending negative.
+
+**PROVISIONAL, and for the fourth time this session for the same
+reason (human, 2026-08-04): the mechanism changed underneath the
+measurement.** That binary had SINGLE-DROP, so every joiner was landed
+a median 7 tiles from its own site and walked the rest -- and it had NO
+beachhead reachability gate, so 21% of crossings were stalled from
+formation, on which a hitcher is a settler wasted twice. Both make
+hitching maximally expensive, and both are now fixed (`75d108f119`,
+`de5265b641`). Re-measure before concluding anything.
 
 Note this ran with single-drop, so every joiner walked a median 7 tiles
 from the core's beachhead. The multi-drop commit (`75d108f119`) lands
