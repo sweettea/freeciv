@@ -3828,3 +3828,47 @@ mechanism works and the demand is real; it simply does not convert. The
 switch stays so a future cell with capacity-8 hulls and denser demand
 can re-test it cheaply, and section 10's verdict is upheld on its
 third and fairest measurement.
+
+### The full stack, three arms, counters verified (2026-08-04)
+
+20 paired seeds, `isolated-150`, `pin-final`, all mechanisms firing
+(ctrl 0/0/0; combo enrol 133, nextstop 31, wait 111; noboatcut enrol
+133, nextstop 29, wait 144):
+
+    variant                     arrived     mean      diff
+    ctrl                          430     164.95
+    combo (with boat cut)         361     147.80   -17.15 (t=-0.93,  9/20)
+    noboatcut (transport only)    414     155.50    -9.45 (t=-0.58, 11/20)
+
+**The boat cut is the damaging half, now isolated**: it costs ~8 points
+AND 53 deliveries (414 -> 361, -13%). Removing it leaves -9.45, which
+is indistinguishable from hitch-alone (-8.25) -- the bundle adds
+nothing beyond hitching, and hitching adds nothing.
+
+Deliveries fall slightly even without the boat cut (430 -> 414). That
+is the patience cost: 144 waits means hulls holding the quay for
+joiners, delaying crossings that would otherwise have sailed. Patience
+is not free even when it is bounded.
+
+### The session's shape, stated plainly
+
+Every ECONOMIC knob tested measured neutral or negative:
+
+    hitch-a-ride           -8.25  (t=-0.47)  -> defaulted OFF
+    + patience             -9.45  (t=-0.58)
+    + boat cut            -17.15  (t=-0.93)
+    boat_idle_damping     -20.00  (t=-1.17)
+    lift_gather_turns       flat  across 4..16 (pre-fix mechanism)
+
+Every MECHANISM repair measured large and unambiguous:
+
+    gather-timeouts     545 -> 28
+    deliveries          +31%
+    straying            109 -> 4
+    unreachable          11 -> 0
+    muster duration    2.22 -> 0.70 turns
+    sail rate           67% -> 98.6%
+
+**The value was in fixing what was broken, not in tuning what worked.**
+Only `lift_op_slots` remains a live positive direction (+22.30 at 10
+seeds, backed by 61% array saturation) and is being re-measured at 20.
