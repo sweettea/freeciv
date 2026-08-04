@@ -195,6 +195,24 @@ entirely. Say so rather than tuning them.
 - **A mechanism that provably works can still be worth zero.** Now
   twice over.
 
+## RUN CADENCE (human, 2026-08-04)
+
+**Human attention is the scarce resource, not machine time.** While the
+human is engaged, build and check with QUICK tests -- a few games, a
+mechanism proxy off existing logs, the unit suite. Save full-power runs
+(40+ seeds, multi-cell sweeps, tuning passes) for an explicit go, so
+they run while the human is asleep or elsewhere.
+
+Costs, measured 2026-08-03, so nobody rations cheap measurements again:
+**a 20-game paired batch is ~11 minutes at 10 jobs**; 40 seeds x 2 arms
+is about an hour. This session mis-estimated that as 1.5 hours per
+batch and skipped measurements accordingly -- including never once
+executing hitch-a-ride, which sat four commits deep with
+`lift_manifest_max = 1` in every run.
+
+Corollary: quick tests are cheap enough that no mechanism should be
+committed without at least one run in which its code takes a branch.
+
 ## BENCHMARK DISCIPLINE
 
 - PIN the binary (server + libfreeciv.so + tuning to a scratch dir;
