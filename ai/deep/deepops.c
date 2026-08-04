@@ -249,6 +249,134 @@ static void deep_lift_census(struct ai_type *ait, struct player *pplayer)
 /* Defined below, with the rest of the operation lifecycle. */
 static void deep_op_dissolve(struct deep_operation *op, int oi,
                              const char *why, struct player *pplayer);
+static bool deep_lift_wants_boat(struct ai_type *ait, struct unit *punit);
+
+/**********************************************************************//**
+  Size hitch-a-ride BEFORE building it, once per player per turn.
+
+  The human design call is that a unit wanting passage should inspect
+  boats ALREADY servicing someone bound for its continent and join if
+  the detour is cheap. The first census of that idea (the trip-counting
+  cap) measured 1.6% and killed it -- but it measured a world with no
+  trips in it: boats carried cargo on 11.1% of boat-turns. The lift
+  changed that denominator, which is why the question is re-asked here
+  rather than assumed answered either way.
+
+  A LADDER again, because a single number names no constraint. Per
+  waiting passenger that no operation has claimed:
+
+    want      unclaimed, wants a boat, and its target is OVERSEAS --
+              the population hitch-a-ride could act on at all
+    anyop     ... while some live lift's boat has a free cargo slot it
+              could physically load onto
+    cont      ... and that lift's beachhead is on the SAME continent as
+              its own target -- the passage it wants is the passage
+              already being run
+    muster    ... and that lift is still MUSTERing. This is the rung
+              that decides the design: joining a boat that has not
+              sailed costs a detour, joining one mid-ocean costs a
+              turnaround, and only the first can plausibly clear "less
+              than one extra turn of waiting"
+    d0/d3/d5  ... with that boat 0 / within 3 / within 5 tiles
+
+  d0 is kept as the permanent tripwire the first census earned: if it
+  reads equal to d5 the load predicate has silently collapsed to
+  same-tile and every rung above is meaningless.
+
+  `opfull` counts the turns where all DEEP_OPS_MAX slots are taken --
+  if lifts are queueing behind a full array, the ceiling is storage and
+  not the manifest, and hitch-a-ride would be fixing the wrong thing.
+**************************************************************************/
+static void deep_hitch_census(struct ai_type *ait, struct player *pplayer)
+{
+  const struct deep_plr *dp = deep_plr_data(pplayer);
+  int live = 0, lifts = 0, freeslots = 0, oi;
+  int want = 0, anyop = 0, cont = 0, muster = 0, d0 = 0, d3 = 0, d5 = 0;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+
+  for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+    const struct deep_operation *op = &dp->ops[oi];
+
+    if (op->state == DEEP_OP_NONE) {
+      continue;
+    }
+    live++;
+    if (op->kind == DEEP_OPK_LIFT) {
+      struct unit *ferry = game_unit_by_number(op->ferry);
+
+      lifts++;
+      if (ferry != NULL) {
+        freeslots += MAX(get_transporter_capacity(ferry)
+                         - get_transporter_occupancy(ferry), 0);
+      }
+    }
+  }
+
+  unit_list_iterate(pplayer->units, punit) {
+    int nearest = -1;
+    bool has_op = FALSE, has_cont = FALSE, has_muster = FALSE;
+
+    if (!deep_lift_wants_boat(ait, punit)
+        || deep_op_claiming(pplayer, punit->id) >= 0
+        || tile_continent(unit_tile(punit))
+           == tile_continent(punit->goto_tile)) {
+      continue;
+    }
+    want++;
+
+    for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+      const struct deep_operation *op = &dp->ops[oi];
+      struct unit *ferry;
+      struct tile *beach;
+      int d;
+
+      if (op->state == DEEP_OP_NONE || op->kind != DEEP_OPK_LIFT) {
+        continue;
+      }
+      ferry = game_unit_by_number(op->ferry);
+      beach = index_to_tile(&(wld.map), op->beachhead);
+      if (ferry == NULL || beach == NULL
+          || get_transporter_occupancy(ferry)
+             >= get_transporter_capacity(ferry)
+          || !could_unit_load(punit, ferry)) {
+        continue;
+      }
+      has_op = TRUE;
+      if (tile_continent(beach) != tile_continent(punit->goto_tile)) {
+        continue;
+      }
+      has_cont = TRUE;
+      if (op->state != DEEP_OP_MUSTER) {
+        continue;
+      }
+      has_muster = TRUE;
+      d = real_map_distance(unit_tile(punit), unit_tile(ferry));
+      if (nearest < 0 || d < nearest) {
+        nearest = d;
+      }
+    }
+
+    anyop += has_op ? 1 : 0;
+    cont += has_cont ? 1 : 0;
+    muster += has_muster ? 1 : 0;
+    if (nearest >= 0) {
+      d0 += (nearest == 0) ? 1 : 0;
+      d3 += (nearest <= 3) ? 1 : 0;
+      d5 += (nearest <= 5) ? 1 : 0;
+    }
+  } unit_list_iterate_end;
+
+  log_base(deep_metric_log_level(),
+           "deep-hitch turn=%d player=\"%s\" ops=%d lifts=%d opfull=%d"
+           " liftslots=%d want=%d anyop=%d cont=%d muster=%d d0=%d"
+           " d3=%d d5=%d",
+           game.info.turn, player_name(pplayer), live, lifts,
+           live >= DEEP_OPS_MAX ? 1 : 0, freeslots,
+           want, anyop, cont, muster, d0, d3, d5);
+}
 
 /**********************************************************************//**
   Where a boat and a passenger can physically meet: the passenger's own
@@ -576,6 +704,11 @@ void deep_manage_units(struct ai_type *ait, struct player *pplayer)
   TIMING_LOG(AIT_AIRLIFT, TIMER_STOP);
 
   deep_lift_census(ait, pplayer);
+  /* After deep_run_operations() has already formed and driven every
+   * lift it could this turn, which is the vantage the question needs:
+   * who is STILL waiting once the lift has done its best, and was
+   * there a crossing they could have joined? */
+  deep_hitch_census(ait, pplayer);
 
   unit_list_iterate(pplayer->units, punit) {
     struct unit_ai *unit_data = def_ai_unit_data(punit, ait);
