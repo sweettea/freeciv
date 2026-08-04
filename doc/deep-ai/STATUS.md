@@ -3338,3 +3338,52 @@ saturate the array against themselves, not against the army. On the
 island cell `lift_op_slots` is plausibly the largest of the four
 pending changes, and it is currently ordered last -- reorder it first
 if the island cell is the venue.
+
+### MEASURED: the rendezvous protocol is fixed, and score still does not move
+    (2026-08-03, late night)
+
+    c5c7d27939  meet where the later arrival is soonest
+    92d9c4009a  board and sail on the turn the two ends meet
+    486f99030d  log whether the passenger actually walks
+
+Three human observations (2026-08-03), bundled per this file's own
+note that fixes to opposite ends of one protocol measure nothing
+apart. 20 games, `lategame-80`, mirrored, one pinned binary:
+
+    variant        form  sail  sail%  delivered+arrived  timeout  unreach
+    base            165   110   67%          73            31       4
+    two-sided only  173   114   66%          82            35       0
+    ALL THREE       143   141   98.6%        97             0       0
+
+    muster mean   2.22 -> 0.70 turns      idle 244 -> 99
+    same-turn sails  0 -> 131 of 141 (93%)
+
+**Gather-timeouts 31 -> 0. The rendezvous is solved.** The walk
+instrumentation also settles the question the flat two-sided result
+could not: the walk DOES fire -- 56 walks, 40 walk-then-board in the
+same turn, 32 already at the shore.
+
+Why the two-sided change alone did nothing is now clear:
+`deep_lift_meeting_tile()` chose water at or beside the PASSENGER, so
+the meeting point sat at its feet and there was nowhere to walk to.
+Both ends drove to a point only one had to reach.
+
+**Score: -1.80 (se 25.54, t=-0.07, up 6/10). Flat.**
+
+### That is four working mechanisms worth zero
+
+Cross-water worker, the lift, the two-sided rendezvous, and now a
+protocol that tripled muster completion and delivered 33% more
+colonies. None moved score on this cell.
+
+**Stop reading these as individually-too-small.** Section 8 measured
+the absolute overseas yield at ~11 cities per game whether delivery
+ran at 12% or 28%; delivery has now been repaired four times and the
+count still does not follow. The constraint is not transport. It is
+whether the colony that lands is worth founding -- site quality --
+which is specified and unbuilt.
+
+The island cell is the last honest test of that reading: if 98.6%
+completion moves nothing where crossings ARE the game, transport is
+settled and the remaining lift tunables should be measured only to
+confirm they can be set aside.
