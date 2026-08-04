@@ -628,3 +628,80 @@ for the wrong reason. `could_unit_load()` is the position-independent
 predicate. The `d0` rung is kept deliberately as the tripwire: `d0`
 reading 0.6% while `d3` reads 13.0% is what proves the predicate is not
 silently collapsing.
+
+## 10. Hitch-a-ride is not worth building either (2026-08-03, late)
+
+Section 9 killed the trip-counting cap at 1.6% and noted the census had
+measured a world with no trips in it. The lift put trips in it, so the
+question was re-asked -- **before** building anything -- against the
+same discipline. It does not survive either, and this time the reason
+is not the rate.
+
+`lategame-80`, 10 train seeds, mirrored, 20 games, lift ON at the
+compiled placeholders, on one pinned binary. Per unit-turn where a unit
+wants a boat, no operation has claimed it, and its target is overseas:
+
+    A LIFT IS RUNNING: 877 player-turns, 337 waiting unit-turns
+
+    anyop     335   99.4%   a live lift with a free slot
+    cont       57   16.9%   ... bound for their own continent
+    muster     41   12.2%   ... and still gathering (joinable)
+    d5         26    7.7%   ... within 5 tiles
+    d3          8    2.4%   ... within 3 tiles
+    d0          0    0.0%   ... on the same tile [TRIPWIRE]
+
+The tripwire is clean: `d0` at 0.0% while `d3` reads 2.4% proves the
+load predicate has not collapsed to same-tile the way section 9's first
+attempt would have.
+
+### The rate improved because the denominator collapsed
+
+12.2% against section 9's 1.6% looks like the lift vindicated the
+design call. It did not. **The waiting population fell from 1160
+unit-turns to 337** -- the lift is already absorbing the demand that
+used to queue. In absolute terms:
+
+    trip-counting cap (section 9, no lift)   18 unit-turns / 20 games
+    hitch-a-ride, joinable                   41 unit-turns / 20 games
+    hitch-a-ride, within a 1-turn detour      8 unit-turns / 20 games
+
+The design gate is "the detour costs **less than one extra turn of boat
+waiting**", and `d3` is the rung that gate actually admits: **8
+unit-turns per 20 games, 0.4 per game** -- less than the 18 that were
+already judged not worth a manifest. And unit-turns overcount units: one
+passenger waiting four turns is four rows here, one hitch in reality.
+
+### The risk runs the wrong way (human, 2026-08-03)
+
+A hitched manifest concentrates N passengers in one hull, so a single
+sunk transport loses all of them rather than one. **The downside scales
+with exactly the quantity the feature exists to raise, while the upside
+is one saved boat-trip.** At 0.4 admissible unit-turns per game there is
+no plausible sizing where that trade is positive, so this is not a
+"tune it carefully" case -- it is a do-not-build.
+
+### The ceiling the same census found instead
+
+`opfull` was carried alongside precisely so a storage limit could not
+masquerade as a manifest limit, and it is the larger number on the page.
+A lift can only form into a free slot (`deepops.c:2420`), and
+`DEEP_OPS_MAX` is 4, shared with assaults and raids:
+
+    op array full                        1125 / 4823  23.3%
+    ... AND an unclaimed waiter present   239 / 4823   5.0%  = 11.9/game
+    (36.0% of the turns where a lift is running)
+
+**Formation is blocked by a full operation array 11.9 times per game,
+against 0.4 gated hitch-a-ride opportunities.** That is a ~30x
+difference in how often each constraint binds. Whether relieving it is
+worth anything is unmeasured -- the army's claim winning is deliberate
+(deepops.c:2415) and more lifts may simply be more neutral crossings,
+which is what section 8 and the lift epic both found. It is named here
+as the next thing to SIZE, not the next thing to build.
+
+### Status of the design call
+
+**This overrides an explicit human design call (2026-08-03) for the
+second time, so it is flagged rather than acted on.** Nothing was built.
+The census cost 20 games; the manifest, the join gate, the detour
+costing and the loss-risk accounting would have cost the session.
