@@ -3396,3 +3396,33 @@ the asymmetry in how to read it: a score move there would be real
 news, but another flat result does NOT retire the mechanism work --
 it only says score is the wrong instrument for it, which is already
 the conclusion here.
+
+### The freed hull capacity is not harvested (2026-08-03, late night)
+
+Human hypothesis: a faster rendezvous should mean fewer boats needed.
+Measured on the same two 20-game batches, per player-turn:
+
+    metric                        base    bundled
+    standing fleet (boats)        1.67      1.63   -2.4%
+    idle boats (avail)            1.24      1.19   -4.0%
+    passengers waiting (psng)     0.57      0.53   -7.0%
+    sails per 1000 boat-turns    13.68     18.02   +32%
+
+**Each hull does 32% more crossings, and the fleet is the same size.**
+The -0.04 boats/turn is inside noise. So the capacity was freed and
+not harvested.
+
+There is a mechanical reason, and it is the same gap section 1b of the
+handoff names from the other side: **nothing in the build decision can
+see fleet productivity.** Boat want is `dp->colony_want` plus a
+berth-shortage test, and that test counts only MUSTER ops with a real
+`target_city` -- which excludes every lift, since a lift sets
+`target_city = 0`. The shipyard's entire demand signal is "is there
+colony want, am I coastal". A fleet that doubled its throughput builds
+at exactly the same rate, and one whose lifts are all starved of hulls
+reports no shortage at all.
+
+Two independent routes to the same conclusion: the supply side is
+measured too crudely to respond to either surplus or scarcity. That is
+a better-specified target than "bias boat building toward the
+rendezvous", and it is sized by the numbers above rather than assumed.
