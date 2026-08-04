@@ -112,6 +112,27 @@ formation gap of 4.48 tiles -- near the floor the boat's own travel
 sets -- while the failures are the impossible-rendezvous class that
 walking cannot fix either.
 
+## 1c. THE TARGET THIS SESSION ACTUALLY FOUND: the boat build signal
+
+Not a transport mechanism. `colony_want` drives boat production and is
+measurably wrong in THREE directions, all on the same 20-game batches:
+
+- **No term for idle hulls.** 73% of the fleet is idle per player-turn
+  and only 18% carries anything, against 0.53 waiting passengers --
+  3.1 hulls each, ~5 at the peak. The carrying fraction FALLS from
+  23.9% to 13.0% as the fleet grows: overbuilding.
+- **No term for fleet productivity.** The rendezvous fix raised
+  crossings per hull 32% and the fleet did not shrink (-0.04
+  boats/turn, noise). Freed capacity is not harvested.
+- **No term for lifts going unserved.** The berth-shortage test counts
+  only ops with a real `target_city`, and a lift sets it to 0
+  (`deepops.c:763`), so lifts are invisible to the scarcity signal
+  that is named `colony_lift_weight`.
+
+It cannot see surplus OR scarcity, and it is upstream of everything
+the lift epic touched. Size it before building: the counts above are
+hulls, not shields, so price the waste first.
+
 ## 2. Then: the thing nobody has sized
 
 **Is the colony worth founding at all?** Delivery has now been fixed
