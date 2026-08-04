@@ -642,7 +642,12 @@ static bool deep_lift_worth_waiting(struct deep_operation *op,
   boat_rate = MAX(1, unit_move_rate(ferry) / SINGLE_MOVE);
   eta_cross = (real_map_distance(unit_tile(ferry), beach) + boat_rate - 1)
               / boat_rate;
-  budget = (int) (tune->lift_hitch_wait_ratio * eta_cross);
+  /* Round UP to a whole turn: patience is spent in turns, and
+   * truncation quietly turned "wait a quarter of a four-turn
+   * crossing" into "never wait" for every short trip -- exactly the
+   * cheap waits most likely to pay, since a straggler one turn out is
+   * the commonest kind. Willing at all means willing for one turn. */
+  budget = MAX(1, (int) (tune->lift_hitch_wait_ratio * eta_cross));
   /* Never spend the window's last turn: sail beats time out. */
   budget = MIN(budget, turns_left - 1);
   if (budget <= 0) {
