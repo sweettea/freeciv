@@ -1982,7 +1982,35 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
   and private to daiferry.c, and an assigned passenger is a real unit
   id, so `>= 0` means taken.
 **************************************************************************/
+static int deep_idle_ferries_on(struct ai_type *ait, struct player *pplayer,
+                                Continent_id ocean);
+
 static int deep_idle_ferries(struct ai_type *ait, struct player *pplayer)
+{
+  return deep_idle_ferries_on(ait, pplayer, 0);
+}
+
+/**********************************************************************//**
+  Idle hulls ON ONE BODY OF WATER (a negative continent id), or on all
+  of them when `ocean` is 0.
+
+  Counting the whole fleet was the wrong denominator, and the measured
+  reason is that the idle FRACTION does not move with fleet size:
+  quartering the boat want took the fleet 5.32 -> 4.57 hulls per
+  player-turn and left idleness at exactly 75% both times, while
+  deliveries fell. A fleet that is 75% idle at every size is not
+  overbuilt, it is badly DISTRIBUTED -- you need nine hulls to have one
+  where the demand is, because a boat on the wrong sea cannot serve any
+  of it.
+
+  So the damping asks the question a shipyard can actually act on: how
+  many idle hulls are already on MY water. A city on a crowded sea
+  stops building; a city on an empty one keeps going. `adv->oceans[]`
+  has carried this decomposition every phase since forever with only
+  `.threat` ever read (00-context section 3).
+**************************************************************************/
+static int deep_idle_ferries_on(struct ai_type *ait, struct player *pplayer,
+                                Continent_id ocean)
 {
   int idle = 0;
 
@@ -1995,6 +2023,9 @@ static int deep_idle_ferries(struct ai_type *ait, struct player *pplayer)
         || ud->task == AIUNIT_EXPLORE
         || punit->ssa_controller == SSA_AUTOEXPLORE
         || deep_op_claiming(pplayer, punit->id) >= 0) {
+      continue;
+    }
+    if (ocean != 0 && tile_continent(unit_tile(punit)) != ocean) {
       continue;
     }
     idle++;
@@ -2499,7 +2530,33 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
        * idle -- but the marginal HULL is worth less, which is what
        * this want actually buys. boat_idle_damping = 0 restores the
        * undamped signal exactly and is the A/B switch. */
-      double idle = deep_idle_ferries(ait, pplayer);
+      /* Idle hulls on THIS city's water, not in the whole empire: a
+       * boat sitting on another sea cannot serve the demand this city
+       * would be building for. Measured, the empire-wide idle
+       * fraction is 75% at every fleet size, so the empire-wide count
+       * damps a shipyard for hulls it can never use. */
+      double idle = 0;
+      Continent_id seen[8];
+      int nseen = 0;
+
+      adjc_iterate(nmap, ptile, atile) {
+        Continent_id oc = tile_continent(atile);
+        int si;
+
+        if (oc >= 0) {
+          continue;             /* Land. */
+        }
+        for (si = 0; si < nseen; si++) {
+          if (seen[si] == oc) {
+            break;
+          }
+        }
+        if (si < nseen || nseen >= (int) ARRAY_SIZE(seen)) {
+          continue;
+        }
+        seen[nseen++] = oc;
+        idle += deep_idle_ferries_on(ait, pplayer, oc);
+      } adjc_iterate_end;
 
       lift_demand
         = (int) (dp->colony_want
