@@ -3314,3 +3314,27 @@ Hitch-a-ride and the proportional patience are still UNMEASURED, and
 they rest on the same fixed-rendezvous machinery -- but not on this
 claim: they need the meeting point to be STABLE and NAMED (so a joiner
 has something to walk to), not FAST. That premise is intact.
+
+### MEASURED: the hull is the manifest's real cap, and it differs by cell
+
+`isolated-150`, 2 games, one mirror -- small, but hull capacity is
+structural rather than noisy. While a lift is running:
+
+    boats/turn 14.81   capacity<=2  95.4%   carrying 1  25.0%
+                                            carrying 2+  2.4%
+
+**95.4% of hulls can carry at most two units** (human, 2026-08-03:
+"not every boat type can carry more than 2 things"), and 2+ is carried
+on 2.4% of boat-turns. So `lift_manifest_max = 3` is UNREACHABLE on
+that cell: hitch-a-ride can add at most one passenger there, and only
+onto an empty boat. `lategame-80` sets `techlevel 50` and gets
+capacity-8 Transports, so the same constant means different things in
+the two cells -- an argument for tuning it per cell, not globally.
+
+**The operation array is full on 61.1% of lift-running turns** there,
+against 36.0% on `lategame-80`, measured with the CORRECTED opfull
+(slots a lift may actually use). Lifts are 3.26 of 3.44 live ops: they
+saturate the array against themselves, not against the army. On the
+island cell `lift_op_slots` is plausibly the largest of the four
+pending changes, and it is currently ordered last -- reorder it first
+if the island cell is the venue.
