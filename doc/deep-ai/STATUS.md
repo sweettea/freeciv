@@ -3631,3 +3631,42 @@ for an AI player, so clearing it could not do anything.
 A snapshot can only show what correlates with an outcome. A trace shows
 what happened before it. When a candidate cause is present in both
 populations, only the second kind of evidence can discriminate.
+
+### Hitch-a-ride measured at last: it does not pay (2026-08-04)
+
+20 games, `isolated-150`, ONE pinned binary, one tuning switch
+(`lift_manifest_max` 1 -> 3 with `lift_hitch_wait_ratio` 0 -> 0.25):
+
+    variant  form  sail  arrived  strayed  cross-TO  enrol  manifests
+    base      344   335    174       4       112       0     335x1
+    hitch     328   322    177       3        90      85     289x1, 33x2
+
+    score paired: hitch - base = -16.90 (se 19.35, t=-0.87, up 4/10)
+
+It WORKS -- 85 enrolments, 33 crossings carrying two -- and it buys
+nothing: deliveries 174 vs 177, score trending negative. Section 10's
+original verdict is upheld, now measured on the mechanism it was
+wrongly scoped against instead of argued from a ladder.
+
+Note this ran with single-drop, so every joiner walked a median 7 tiles
+from the core's beachhead. The multi-drop commit (`75d108f119`) lands
+after this binary and could change it; that is the one remaining reason
+to keep the feature switched on for another measurement rather than
+defaulting it off.
+
+### The hold fix, confirmed at scale
+
+`strayed` 109 -> 4 over 20 games on the same cell (3 in the hitch arm).
+The 3-game quick check said 23 -> 1 and it holds. Straying is solved.
+
+### New bottleneck: the crossing itself
+
+    cross-timeout   2 per 20 games (before)  ->  90-112 (now)
+
+With the muster solved, the failures moved downstream. `lift_cross_turns`
+= 20 was described in the last handoff as barely binding at 2 events;
+it now dominates the failure mix. It is a PLACEHOLDER and has never
+been tuned, and unlike `lift_gather_turns` it now has a real job.
+Measure before assuming: a crossing that times out may be a boat that
+cannot path to its beachhead at all, which is a routing bug rather than
+a budget that is too small.
