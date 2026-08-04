@@ -37,6 +37,7 @@
 #include "handicaps.h"
 #include "maphand.h"
 #include "srv_log.h"
+#include "unithand.h"
 #include "unittools.h"
 
 /* server/advisors */
@@ -881,6 +882,32 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
   if (ferry == NULL || unit_owner(ferry) != pplayer || beach == NULL) {
     deep_op_dissolve(op, oi, "lift-noboat", pplayer);
     return;
+  }
+
+  /* Take the passengers off the server-side agent for the crossing.
+   *
+   * deep_op_holds() sets unit_ai.done, which gates DEEP's manager and
+   * nothing else -- the auto-worker agent runs from the server every
+   * turn regardless, and dai_manage_settler() stamps SSA_AUTOWORKER on
+   * every settler it has ever touched (daiunit.c:2726). So the op
+   * owned its manifest as far as the AI was concerned while something
+   * else walked it off the deck mid-ocean.
+   *
+   * Measured on isolated-150: passengers that stray leave a median of
+   * 4 turns after formation with the boat still 11-45 tiles from the
+   * beachhead (12 of 14 cases), against delivered ones that leave at
+   * distance <=2 after a median 11 turns -- and ALL of them carry
+   * SSA_AUTOWORKER. Two clean populations, one cause.
+   *
+   * Not restored explicitly on release: dai_manage_settler() re-stamps
+   * the agent the next time it manages the unit, which is exactly the
+   * behaviour that should resume once the lift is done with it. */
+  for (i = 0; i < op->n_members; i++) {
+    struct unit *m = game_unit_by_number(op->members[i]);
+
+    if (m != NULL && m->ssa_controller != SSA_NONE) {
+      (void) unit_server_side_agent_set(pplayer, m, SSA_NONE);
+    }
   }
   for (i = 0; i < op->n_members; i++) {
     struct unit *m = game_unit_by_number(op->members[i]);
