@@ -457,6 +457,40 @@ static struct tile *deep_lift_meeting_tile(const struct civ_map *nmap,
 }
 
 /**********************************************************************//**
+  A tile THIS unit can stand on, at or beside the rendezvous, nearest
+  to where it is now. The land half of the meeting: the boat floats on
+  the rendezvous tile itself (or docks in the city on it), and the
+  passenger walks to the shore beside it.
+
+  Returns NULL if the unit cannot reach any tile touching the
+  rendezvous, which is the honest answer that the meeting cannot
+  happen there rather than a tile it would fail to walk to.
+**************************************************************************/
+static struct tile *deep_lift_shore_tile(const struct civ_map *nmap,
+                                         struct unit *punit,
+                                         const struct tile *meet)
+{
+  struct tile *best = NULL;
+  int bestd = -1;
+
+  if (can_unit_exist_at_tile(nmap, punit, meet)) {
+    return (struct tile *) meet;
+  }
+  adjc_iterate(nmap, meet, atile) {
+    if (can_unit_exist_at_tile(nmap, punit, atile)) {
+      int d = real_map_distance(unit_tile(punit), atile);
+
+      if (best == NULL || d < bestd) {
+        best = atile;
+        bestd = d;
+      }
+    }
+  } adjc_iterate_end;
+
+  return best;
+}
+
+/**********************************************************************//**
   Is this unit waiting for a lift nobody is bringing? Only the SIGN of
   unit_ai.ferryboat is read (FERRY_WANTED is -1 and private to
   daiferry.c), the same convention deep_settler_lift_state() uses.
@@ -493,6 +527,7 @@ static bool deep_op_form_lift(struct ai_type *ait, struct player *pplayer,
   const struct deep_tuning *tune = deep_tuning_get();
   const struct civ_map *nmap = &(wld.map);
   struct unit *best_psngr = NULL, *best_boat = NULL;
+  struct tile *meet;
   int best_d = -1;
 
   unit_list_iterate(pplayer->units, psngr) {
@@ -533,10 +568,15 @@ static bool deep_op_form_lift(struct ai_type *ait, struct player *pplayer,
   }
   /* The boat must be able to reach the passenger at all, and the
    * manifest must have somewhere to land. */
-  if (deep_lift_meeting_tile(nmap, best_boat,
-                             unit_tile(best_psngr)) == NULL
+  meet = deep_lift_meeting_tile(nmap, best_boat, unit_tile(best_psngr));
+  if (meet == NULL
       || deep_lift_meeting_tile(nmap, best_boat,
                                 best_psngr->goto_tile) == NULL) {
+    return FALSE;
+  }
+  /* ... and the passenger must be able to walk to the shore beside
+   * that tile, or there is no meeting to schedule. */
+  if (deep_lift_shore_tile(nmap, best_psngr, meet) == NULL) {
     return FALSE;
   }
 
@@ -551,6 +591,7 @@ static bool deep_op_form_lift(struct ai_type *ait, struct player *pplayer,
   op->phase_turn = game.info.turn;
   op->ferry = best_boat->id;
   op->beachhead = tile_index(best_psngr->goto_tile);
+  op->rendezvous = tile_index(meet);
   op->n_members = 1;
   op->members[0] = best_psngr->id;
 
@@ -606,10 +647,17 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
       deep_op_dissolve(op, oi, "lift-gather-timeout", pplayer);
       return;
     } else {
-      /* Bring the boat to the first member still ashore, then board
-       * whoever is standing with it. */
+      /* Both ends drive to the named rendezvous. The boat used to do
+       * all of the travelling while deep_op_holds() froze the
+       * passenger where it stood: measured over 20 games, that cost
+       * ~570 held-idle passenger-turns, 57% of them on lifts that
+       * never sailed, and EVERY gather-timeout burned the whole
+       * window (mean 9.0 turns against a cap of 8, max 9) -- the
+       * boat was not arriving late, it was not arriving at all.
+       * A settler that can walk half the distance is half a
+       * rendezvous the boat no longer has to sail. */
       struct unit *waiting = NULL;
-      struct tile *meet;
+      struct tile *meet = index_to_tile(nmap, op->rendezvous);
 
       for (i = 0; i < op->n_members && waiting == NULL; i++) {
         struct unit *m = game_unit_by_number(op->members[i]);
@@ -622,7 +670,15 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
         deep_op_dissolve(op, oi, "lift-empty", pplayer);
         return;
       }
-      meet = deep_lift_meeting_tile(nmap, ferry, unit_tile(waiting));
+      if (meet == NULL) {
+        /* Pre-rendezvous save, or a tile that stopped working: fall
+         * back to the old one-sided choice rather than dissolving a
+         * lift that is otherwise healthy. */
+        meet = deep_lift_meeting_tile(nmap, ferry, unit_tile(waiting));
+        if (meet != NULL) {
+          op->rendezvous = tile_index(meet);
+        }
+      }
       if (meet == NULL) {
         deep_op_dissolve(op, oi, "lift-unreachable", pplayer);
         return;
@@ -650,6 +706,16 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
                    && m->moves_left > 0) {
           /* A land unit stepping onto the boat's tile loads itself. */
           (void) dai_unit_goto(ait, m, unit_tile(ferry));
+        } else if (m->moves_left > 0) {
+          /* The other half of the meeting: walk to the shore beside
+           * the rendezvous. Toward the fixed TILE, never toward the
+           * boat -- a passenger homing on a hull that is itself
+           * homing on the passenger orbits it instead of meeting it. */
+          struct tile *shore = deep_lift_shore_tile(nmap, m, meet);
+
+          if (shore != NULL && !same_pos(unit_tile(m), shore)) {
+            (void) dai_unit_goto(ait, m, shore);
+          }
         }
       }
     }
@@ -1030,6 +1096,9 @@ static void deep_op_dissolve(struct deep_operation *op, int oi,
   }
   op->state = DEEP_OP_NONE;
   op->n_members = 0;
+  /* Cleared here as well as set at formation, so a slot reused by an
+   * assault can never hand a stale meeting point to a later lift. */
+  op->rendezvous = -1;
 }
 
 /**********************************************************************//**

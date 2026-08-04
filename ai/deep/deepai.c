@@ -216,6 +216,8 @@ static void dpai_player_save(struct player *pplayer,
                        "player%d.deep_state.op%d.ferry", plrno, oi);
     secfile_insert_int(file, op->beachhead,
                        "player%d.deep_state.op%d.beachhead", plrno, oi);
+    secfile_insert_int(file, op->rendezvous,
+                       "player%d.deep_state.op%d.rendezvous", plrno, oi);
     secfile_insert_int(file, op->n_members,
                        "player%d.deep_state.op%d.n_members", plrno, oi);
     for (i = 0; i < op->n_members; i++) {
@@ -313,6 +315,12 @@ static void dpai_player_load(struct player *pplayer,
     op->beachhead
       = secfile_lookup_int_default(file, -1,
                                    "player%d.deep_state.op%d.beachhead",
+                                   plrno, oi);
+    /* Saves written before the rendezvous existed default to -1, and
+     * the muster re-derives one on its next pass. */
+    op->rendezvous
+      = secfile_lookup_int_default(file, -1,
+                                   "player%d.deep_state.op%d.rendezvous",
                                    plrno, oi);
     n = secfile_lookup_int_default(file, 0,
                                    "player%d.deep_state.op%d.n_members",

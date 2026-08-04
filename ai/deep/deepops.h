@@ -115,6 +115,12 @@ struct deep_operation {
    * MARCH for "loaded and crossing"; members[] is the manifest. */
   int ferry;                    /* unit id of the boat, 0 if none */
   int beachhead;                /* tile index to land on, -1 if none */
+  /* Where boat and manifest have agreed to meet. Named and FIXED at
+   * formation on purpose: a passenger walking toward a boat that is
+   * simultaneously sailing toward the passenger chases a moving
+   * target, and the two can orbit each other for the whole muster. A
+   * fixed tile makes the rendezvous a convergence instead. */
+  int rendezvous;               /* tile index to meet on, -1 if none */
   int n_members;
   int members[DEEP_OP_MEMBERS]; /* unit ids */
 };
