@@ -4124,3 +4124,87 @@ anything slightly overstated.
 Commits: `c6210a10d9` census, `21780b1183` demand distance,
 `aafcd3633d` hullcensus.py. `meson test -C build` 2/2 OK;
 `tune-audit.py` CLEAN (106/106/106/106).
+
+## The useful-water gate: the first fleet change that RAISES arrivals (2026-08-04)
+
+The boat want was gated on `is_terrain_class_near_tile(TC_OCEAN)` --
+"am I coastal" -- and never asked whether that water leads anywhere.
+`boat_water_gate` refuses a ferry choice when every sea the city
+touches closes on the city's own continent. Pure geometry: the map has
+kept the answer since generation in `get_lake_surrounder()`, which
+`assign_continent_numbers()` refreshes on terrain change, and no AI has
+ever read it (00-context section 3).
+
+Deliberately NOT a demand test. 84% of idle hull-turns have no waiting
+passenger because demand is bursty, so "nobody wants it here now"
+suppresses the hulls that serve the next burst -- the mistake the five
+count-based dampings made. A single-surrounder sea does not become
+useful when demand arrives.
+
+**Sized before building** (4 games, 217 hulls): closed-water hulls were
+6.9% of hulls but owned 11.2% of all idle time -- more than the entire
+demand-blind wrong-harbour class (664 turns against 639), because a
+hull on a closed sea can sit beside a passenger it could never serve.
+13 of 15 never carried anything.
+
+**Measured**: 20 paired seeds, `isolated-150`, `--arms deep`, one
+pinned binary, tuning-file switch, 20/20 DONE both arms, 0 pairing
+violations. Deep's four seats averaged per game.
+
+    metric              gate OFF   gate ON    delta      t
+    score                 195.00    199.65    +4.65   +1.12   9/20
+    cities                 13.95     14.70    +0.75   +1.23
+    unitsbuilt             89.04     96.67    +7.64   +3.14
+    lift-arrived           17.90     21.80    +3.90   +2.67
+    gate refusals           0.00     17.20   +17.20   +7.20
+    closed hull-turns     211.30     55.80  -155.50   -5.55
+
+    closed-sea hulls, per hullcensus:   69 (6.2%)  ->  0 (0.0%)
+
+**The mechanism is exact, not approximate: the class it targets goes
+to zero.** The residue of `bridge=0` hull-turns in the ON arm is
+river-borne Triremes from coastal cities (civ2civ3 lets them navigate
+rivers), which is a census artefact and not a hull on a closed sea --
+108 of the 109 remaining, and zero hulls whose whole life was dry.
+
+**Arrivals went UP, and that has not happened before.** Every previous
+fleet intervention bought a smaller fleet with fewer deliveries; the
+hull pricing cut the fleet 14% and lost 6% of arrivals. This is not a
+cut at all: the fleet got BIGGER (hull-turns +18.6%, unitsbuilt +7.64,
+t=3.14) because shields refused at closed-water cities bought other
+things, the empire is slightly larger (+0.75 cities), and the hulls
+that do get built are on water that can deliver. +22% arrivals.
+
+**The score is directional, not a claim.** +4.65 at t=1.12 on 20 seeds
+is what the brief calls direction; 40 seeds is its bar for a claim, and
+this cell has flipped two estimates under power before (rendezvous
++29.90 -> +11.28, slots +22.30 -> -13.50). Do not bank the number.
+
+Honest counter-reading on the demand-defined class: wrong harbour FELL
+as a share of idle time (9.8% -> 6.8%) but ROSE in hull count (127 ->
+226, 11.4% -> 15.7%), because the fleet is 29% larger. The geometry
+class is gone; the demand class is a bigger fleet's problem and is
+still the timing question nobody has priced.
+
+**A 40-game A/B was wasted first, and the guard is now in the harness.**
+Both arms came back byte-identical: the tuning files had no `[tuning]`
+section, so every key was ignored and both arms ran the compiled
+default. The tell was not the equal scores -- it was the OFF arm
+logging 17.2 executions per game of the feature it was meant to
+disable. `run.sh` now refuses a tuning file with no section header, or
+with a key absent from `tuning-params.ini`, before any game starts
+(`70acda4798`). The off-switch was then PROVEN, not assumed: zero
+`deep-watergate` lines in 20 games.
+
+Side result from joining the existing census: hulls are born into zero
+demand 68.2% of the time against a 70.0% baseline over all hull-turns,
+so a hull's arrival is no likelier to meet a passenger than a random
+turn is. Consistent with "the order outlived its reason" but NOT
+evidence for it -- the honest test needs the production-start turn,
+which nothing logs. Hulls born into demand carried something 68% of
+the time against 50% for the rest.
+
+Commits: `159b914815` geometry read, `73bd3ef440` the gate,
+`9ff747c634` sizing, `70acda4798` tuning-file guard, `97daac1087`
+river/closed-sea split. `meson test -C build` 2/2 OK; `tune-audit.py`
+CLEAN (107/107/107/107).
