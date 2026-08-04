@@ -2,7 +2,19 @@ Continue the Freeciv deep-AI work. Read CLAUDE.md, doc/deep-ai/00-context.md,
 then doc/deep-ai/STATUS.md -- start at "The lift's parameter was never the
 lever" and read forward. Branch epic/w03-horizon-content.
 
-## 0. FIRST: four changes are committed and UNVALIDATED
+## 0a. BANKED: the rendezvous protocol is fixed (mechanism win)
+
+`c5c7d27939` + `92d9c4009a`, measured over 20 games on lategame-80:
+gather-timeouts 31 -> 0, sail rate 67% -> 98.6%, muster 2.22 -> 0.70
+turns, 93% of lifts loading and sailing the turn the two ends meet,
+delivered+arrived 73 -> 97. Score -1.80 (t=-0.07), FLAT.
+
+**Human call 2026-08-03: this is banked as a mechanism win and the
+flat score is not a defect.** Do not re-litigate it, do not tune it
+chasing score, and do not revert it on the headline. 00-context
+section 8 is the standing authority for that.
+
+## 0. THEN: four changes are committed and UNVALIDATED
 
 `a4af2f21e4`, `2aed19c427`, `8b94854e62`, `e35c0ba323`, `b338a7eeef`
 and `8c59eeac3a` changed lift behaviour. **No benchmark has run on any
