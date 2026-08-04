@@ -3370,20 +3370,29 @@ Both ends drove to a point only one had to reach.
 
 **Score: -1.80 (se 25.54, t=-0.07, up 6/10). Flat.**
 
-### That is four working mechanisms worth zero
+### The mechanism IS the deliverable here (human call, 2026-08-03)
 
 Cross-water worker, the lift, the two-sided rendezvous, and now a
 protocol that tripled muster completion and delivered 33% more
-colonies. None moved score on this cell.
+colonies. None moved score on this cell, and **that does not make them
+worth zero** -- 00-context section 8 says so in advance: record the
+proxy AND the aggregate, and do not discard a correct fix because the
+headline was flat. An AI that no longer freezes a settler for nine
+turns against a boat that cannot arrive is a better AI at the thing it
+was doing wrong. This epic is banked as a MECHANISM win, flat score
+noted and not treated as a defect.
 
-**Stop reading these as individually-too-small.** Section 8 measured
+What the flat score does license is a narrower, still-useful claim
+about where to look next -- not a verdict on the fixes. Section 8
+measured
 the absolute overseas yield at ~11 cities per game whether delivery
 ran at 12% or 28%; delivery has now been repaired four times and the
 count still does not follow. The constraint is not transport. It is
 whether the colony that lands is worth founding -- site quality --
 which is specified and unbuilt.
 
-The island cell is the last honest test of that reading: if 98.6%
-completion moves nothing where crossings ARE the game, transport is
-settled and the remaining lift tunables should be measured only to
-confirm they can be set aside.
+The island cell tests that reading where crossings ARE the game. Note
+the asymmetry in how to read it: a score move there would be real
+news, but another flat result does NOT retire the mechanism work --
+it only says score is the wrong instrument for it, which is already
+the conclusion here.
