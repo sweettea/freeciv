@@ -158,18 +158,66 @@ above are hulls, not shields, so price the waste first -- and count
 how many existing hulls sit on an ocean that reaches no wanted site,
 which is the number this would actually recover.
 
-## 0z. FIRST THING: measure the hull pricing, it is live and UNMEASURED
+## 0z. THE NEXT THING TO DIG INTO: why is any individual hull idle?
 
-`e3a626aad3` prices every ferry choice against spare hulls on the
-city's own water, at the end of deep's per-city choice loop where all
-three boat-building paths have spoken. It EXECUTES (96 discounts in a
-2-game check) and nothing else about it is known.
+**The hull pricing is DONE and measured.** `e3a626aad3` executes (6940
+discounts against 0), cuts the fleet 14%, and does not move the thing
+it was built to move:
 
-Run: `--arms deep`, 20 seeds, `isolated-150`, `boat_idle_damping`
-0.0 vs 0.5, and CHECK `deep-hull` IN BOTH ARMS BEFORE READING SCORE.
-Read fleet size (`deep-lift ... boats=`), idle share, and deliveries
-alongside it -- the target is "fewer hulls, same crossings", and if
-crossings fall with the fleet the pricing is too blunt.
+    arm    boats/turn  idle/turn  idle share  arrived  score
+    OFF       6.14       4.94        80%       348    196.25
+    ON        5.26       4.03        77%       328    198.68
+    (score +2.42, se 3.14, t=+0.77, 12/20; unitsbuilt -6.29, t=-2.78)
+
+**Idle share is INVARIANT at 75-80% across every fleet size produced
+this session, by five separate interventions:**
+
+    fleet 4.57 -> 75%   5.26 -> 77%   5.78 -> 79%   6.14 -> 80%   6.24 -> 80%
+
+Cutting hulls removes busy and idle ones in the same proportion, so
+building fewer cannot fix idleness. And arrivals fell 6% while idle
+share held, which indicts the idle PREDICATE: a per-turn snapshot
+cannot tell "idle" from "idle now, sailing next turn", so the pricing
+removed hulls that were about to be useful.
+
+The human standard stands (2026-08-04): **an idle boat means we are
+doing it wrong.** The question is WHY a given hull is idle, and no
+fleet aggregate can answer it.
+
+### The measurement to build
+
+Per-HULL, over its whole life, not per-turn fleet counts:
+
+- turns from launch to first passenger carried (or never)
+- total turns held with no passenger
+- what ENDS each idle spell: a crossing, a re-task, or the boat dying
+  still empty
+- which ocean body it sat on, and whether any crossing demand ever
+  appeared on that water while it waited
+
+Emit one line per hull at death or game end. `deep_idle_ferries_on()`
+already has the "is it idle" predicate; this needs the same test
+accumulated per unit id rather than summed per turn.
+
+### What the answer decides
+
+    too many boats     -> building fewer helps. The invariant says
+                          this is probably NOT dominant: if it were,
+                          cutting the fleet would have raised
+                          utilisation, and five attempts did not.
+    wrong harbour      -> fix WHERE they are built. This is the
+                          "useful oceans" gap (section 1c): the want
+                          is gated on "am I coastal", never on whether
+                          that water reaches any demand. A hull on a
+                          lake is idle forever at any fleet size.
+    demand evaporated  -> the settler founded elsewhere, was re-tasked
+                          or died after its boat was ordered. Then the
+                          defect is the ORDER surviving its reason,
+                          and the fix is cancelling production when
+                          the demand that justified it is gone.
+
+Only the first is what pricing addresses. Size before building, as
+always -- and check the execution counter before the score.
 
 Pinned binaries in the session scratchpad are GONE (tmpfs). Re-pin
 from HEAD.
