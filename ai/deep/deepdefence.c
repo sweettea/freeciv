@@ -1982,8 +1982,6 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
   and private to daiferry.c, and an assigned passenger is a real unit
   id, so `>= 0` means taken.
 **************************************************************************/
-static int deep_idle_ferries_on(struct ai_type *ait, struct player *pplayer,
-                                Continent_id ocean);
 
 /**********************************************************************//**
   Units standing on land touching this water that want a crossing: the
@@ -1995,8 +1993,8 @@ static int deep_idle_ferries_on(struct ai_type *ait, struct player *pplayer,
   the fleet globally measured as fewer deliveries with the idle
   fraction pinned at 75% either way.
 **************************************************************************/
-static int deep_ferry_demand_on(struct ai_type *ait, struct player *pplayer,
-                                Continent_id ocean)
+int deep_ferry_demand_on(struct ai_type *ait, struct player *pplayer,
+                         Continent_id ocean)
 {
   const struct civ_map *nmap = &(wld.map);
   int want = 0;
@@ -2025,6 +2023,44 @@ static int deep_ferry_demand_on(struct ai_type *ait, struct player *pplayer,
   return want;
 }
 
+int deep_idle_ferries_on(struct ai_type *ait, struct player *pplayer,
+                         Continent_id ocean);
+int deep_ferry_demand_on(struct ai_type *ait, struct player *pplayer,
+                         Continent_id ocean);
+
+/**********************************************************************//**
+  Spare hulls on the waters this tile touches: idle beyond the units
+  waiting to cross them, summed over each distinct body of water.
+**************************************************************************/
+int deep_water_surplus(struct ai_type *ait, struct player *pplayer,
+                       const struct tile *ptile)
+{
+  Continent_id seen[8];
+  int nseen = 0, surplus = 0;
+
+  adjc_iterate(&(wld.map), ptile, atile) {
+    Continent_id oc = tile_continent(atile);
+    int si;
+
+    if (oc >= 0) {
+      continue;
+    }
+    for (si = 0; si < nseen; si++) {
+      if (seen[si] == oc) {
+        break;
+      }
+    }
+    if (si < nseen || nseen >= (int) ARRAY_SIZE(seen)) {
+      continue;
+    }
+    seen[nseen++] = oc;
+    surplus += MAX(0, deep_idle_ferries_on(ait, pplayer, oc)
+                      - deep_ferry_demand_on(ait, pplayer, oc));
+  } adjc_iterate_end;
+
+  return surplus;
+}
+
 static int deep_idle_ferries(struct ai_type *ait, struct player *pplayer)
 {
   return deep_idle_ferries_on(ait, pplayer, 0);
@@ -2049,8 +2085,8 @@ static int deep_idle_ferries(struct ai_type *ait, struct player *pplayer)
   has carried this decomposition every phase since forever with only
   `.threat` ever read (00-context section 3).
 **************************************************************************/
-static int deep_idle_ferries_on(struct ai_type *ait, struct player *pplayer,
-                                Continent_id ocean)
+int deep_idle_ferries_on(struct ai_type *ait, struct player *pplayer,
+                         Continent_id ocean)
 {
   int idle = 0;
 

@@ -505,6 +505,47 @@ static void dpai_build_adv_override(struct city *pcity, struct adv_choice *choic
   struct ai_type *deftype = deep_ai_get_self();
 
   dai_build_adv_override(deftype, pcity, choice);
+
+  /* Price EVERY ferry proposal against the water it would sail on.
+   *
+   * Damping deep's own colony want could never control the fleet,
+   * because deep's want is only one of three paths that build boats:
+   * stock adds a "founder's boat" whenever a settler wants passage
+   * (daidomestic.c:595) and an "attacker ferry" for an attacker that
+   * needs one (daimilitary.c:1687), and NEITHER looks at how many
+   * hulls are already idle. Measured, damping the colony want moved
+   * the fleet 6.14 -> 5.78 hulls per player-turn and left it 79%
+   * idle, ~12 hulls per waiting passenger.
+   *
+   * This hook is where all three converge, so the surplus is applied
+   * here instead: spare hulls on this city's waters, beyond the units
+   * actually waiting to cross them, discount the choice. Demand
+   * counts military passengers too, so an invasion short of shipping
+   * is never damped.
+   *
+   * boat_idle_damping = 0 restores the undamped behaviour exactly. */
+  if (choice != NULL
+      && choice->type != CT_BUILDING
+      && choice->value.utype != NULL
+      && deep_tuning_get()->boat_idle_damping > 0.0
+      && dai_is_ferry_type(choice->value.utype, deftype)) {
+    int surplus = deep_water_surplus(deftype, city_owner(pcity),
+                                     city_tile(pcity));
+
+    if (surplus > 0) {
+      adv_want before = choice->want;
+
+      choice->want = (adv_want) (choice->want
+                                 / (1.0 + deep_tuning_get()->boat_idle_damping
+                                          * surplus));
+      log_base(deep_metric_log_level(),
+               "deep-hull turn=%d player=\"%s\" city=%d type=\"%s\""
+               " surplus=%d want=" ADV_WANT_PRINTF " -> " ADV_WANT_PRINTF,
+               game.info.turn, player_name(city_owner(pcity)), pcity->id,
+               utype_rule_name(choice->value.utype), surplus,
+               before, choice->want);
+    }
+  }
 }
 
 /**********************************************************************//**

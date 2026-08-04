@@ -38,4 +38,15 @@ double deep_remaining_sites(const struct player *pplayer);
  * the reference where the crowding prior is pinned at 1.0. */
 double deep_land_pressure(void);
 
+/* Fleet supply and demand on one body of water (a negative continent
+ * id), exposed so the build-choice override can price EVERY ferry
+ * proposal -- stock's founder's boat and attacker ferry as well as
+ * deep's own colony want. */
+int deep_idle_ferries_on(struct ai_type *ait, struct player *pplayer,
+                         Continent_id ocean);
+int deep_ferry_demand_on(struct ai_type *ait, struct player *pplayer,
+                         Continent_id ocean);
+int deep_water_surplus(struct ai_type *ait, struct player *pplayer,
+                       const struct tile *ptile);
+
 #endif /* FC__DEEPDEFENCE_H */
