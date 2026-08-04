@@ -3490,3 +3490,40 @@ see 73% of the fleet doing nothing, so it keeps building.
 **The specified target is now the build signal, not the transport
 mechanism.** It is wrong in three measured directions and it is
 upstream of everything this epic touched.
+
+### The stray diagnosis was WRONG, and the cause is still unknown
+    (2026-08-04)
+
+    261075c429  instrument the stray
+    ac1310ccd4  take a lift's passengers off the auto-worker agent
+
+**`ac1310ccd4` does not fix straying and its justification was
+invalid.** With the agent provably suspended (`ssa=0` on every
+offboard passenger), strays are 70 of 131 -- 53%, no better than the
+38% before -- and they still leave with the boat a median 18 tiles
+from the beachhead, 68 of 70 still at sea, 100% alive.
+
+**The reasoning error, recorded because it is the instructive part:**
+the fix was justified on "100% of strays carry SSA_AUTOWORKER". But
+100% of DELIVERED passengers carried it too -- the same log line said
+so, and it was read as confirmation. **A variable that is constant
+across both populations cannot explain the difference between them.**
+The only thing that ever separated the two groups was the boat's
+distance, which says WHEN they leave (mid-ocean, median turn 4-6) and
+never said WHO removes them.
+
+Ruled out since: `deep_flee_workers()` skips transported units
+(deepdefence.c:1469); `deep_manage_units()` skips own-transported
+units entirely; the auto-worker agent is now off. Still open: the
+stock ferry code acting on the claimed hull, transport-to-transport
+transfer (3 of 70 were aboard something else), or a server-side unload
+elsewhere.
+
+**Next step is a trace, not another hypothesis.** Log every member's
+transport id and tile each MARCH turn, then read the turn a stray
+detaches, rather than correlating one snapshot at detach time.
+
+The suspension itself is left in place but is UNVALIDATED and unjustified
+by its stated evidence -- it may be neutral or harmful, and the paired
+score against the fixed-rendezvous arm is what should decide whether it
+stays.
