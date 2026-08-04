@@ -1985,6 +1985,46 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
 static int deep_idle_ferries_on(struct ai_type *ait, struct player *pplayer,
                                 Continent_id ocean);
 
+/**********************************************************************//**
+  Units standing on land touching this water that want a crossing: the
+  DEMAND one body of water has to serve.
+
+  Pairing this against the idle hulls on the same water is what makes
+  "how many boats do we need" answerable at all. A ratio damping cannot
+  target a number -- it only ever says "fewer than now" -- and cutting
+  the fleet globally measured as fewer deliveries with the idle
+  fraction pinned at 75% either way.
+**************************************************************************/
+static int deep_ferry_demand_on(struct ai_type *ait, struct player *pplayer,
+                                Continent_id ocean)
+{
+  const struct civ_map *nmap = &(wld.map);
+  int want = 0;
+
+  unit_list_iterate(pplayer->units, punit) {
+    bool touches = FALSE;
+
+    if (unit_transported(punit)
+        || def_ai_unit_data(punit, ait)->ferryboat >= 0
+        || punit->goto_tile == NULL
+        || tile_continent(unit_tile(punit))
+           == tile_continent(punit->goto_tile)) {
+      continue;                 /* Not waiting for a crossing. */
+    }
+    adjc_iterate(nmap, unit_tile(punit), atile) {
+      if (tile_continent(atile) == ocean) {
+        touches = TRUE;
+        break;
+      }
+    } adjc_iterate_end;
+    if (touches) {
+      want++;
+    }
+  } unit_list_iterate_end;
+
+  return want;
+}
+
 static int deep_idle_ferries(struct ai_type *ait, struct player *pplayer)
 {
   return deep_idle_ferries_on(ait, pplayer, 0);
@@ -2555,7 +2595,14 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
           continue;
         }
         seen[nseen++] = oc;
-        idle += deep_idle_ferries_on(ait, pplayer, oc);
+        /* SURPLUS on this water, not raw idleness: hulls already idle
+         * beyond the passengers waiting to use them. Damping on idle
+         * alone suppressed building while demand went unserved, which
+         * is how a 75%-idle fleet still lost deliveries when it was
+         * cut. One spare hull per waiting passenger is the target this
+         * expresses; anything past that is what gets damped. */
+        idle += MAX(0, deep_idle_ferries_on(ait, pplayer, oc)
+                       - deep_ferry_demand_on(ait, pplayer, oc));
       } adjc_iterate_end;
 
       lift_demand
