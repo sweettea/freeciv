@@ -283,24 +283,47 @@ static bool deep_lift_wants_boat(struct ai_type *ait, struct unit *punit);
   reads equal to d5 the load predicate has silently collapsed to
   same-tile and every rung above is meaningless.
 
-  `opfull` counts the turns where all DEEP_OPS_MAX slots are taken --
-  if lifts are queueing behind a full array, the ceiling is storage and
-  not the manifest, and hitch-a-ride would be fixing the wrong thing.
+  `opfull` counts the turns where no slot a LIFT MAY USE is free -- the
+  army's four plus however many of the lift-only slots lift_op_slots
+  admits. It is deliberately the lift's own view rather than "the whole
+  array is full": if lifts queue behind a storage bound, the ceiling is
+  not the manifest and hitch-a-ride would be fixing the wrong thing.
+
+  The hull rungs answer a separate question -- how often the AI gets to
+  carry more than one unit at a time, and whether the boat could even
+  if it wanted. Capacity is NOT uniform: civ2civ3's Trireme carries 2
+  and its Transport carries 8, so a cell that starts at tech 0 is
+  hull-limited where one starting at techlevel 50 is not. `caple2`
+  separates "no room" from "no demand", which a single carry count
+  would silently merge.
 **************************************************************************/
 static void deep_hitch_census(struct ai_type *ait, struct player *pplayer)
 {
+  const struct deep_tuning *tune = deep_tuning_get();
   const struct deep_plr *dp = deep_plr_data(pplayer);
   int live = 0, lifts = 0, freeslots = 0, oi;
+  int liftfree = 0, usable;
+  int boats = 0, caple2 = 0, carry1 = 0, carry2p = 0;
   int want = 0, anyop = 0, cont = 0, muster = 0, d0 = 0, d3 = 0, d5 = 0;
 
   if (!log_do_output_for_level(deep_metric_log_level())) {
     return;
   }
 
+  /* The slot range a lift may actually form into, mirroring
+     deep_run_operations(): the army's four, plus lift_op_slots of the
+     lift-only range. */
+  usable = DEEP_ARMY_OPS_MAX + CLIP(0, tune->lift_op_slots,
+                                    DEEP_LIFT_OPS_MAX);
+
   for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
     const struct deep_operation *op = &dp->ops[oi];
 
     if (op->state == DEEP_OP_NONE) {
+      if (oi < DEEP_ARMY_OPS_MAX
+          || oi < usable) {
+        liftfree++;
+      }
       continue;
     }
     live++;
@@ -314,6 +337,25 @@ static void deep_hitch_census(struct ai_type *ait, struct player *pplayer)
       }
     }
   }
+
+  unit_list_iterate(pplayer->units, pferry) {
+    int cap, occ;
+
+    if (!dai_is_ferry(pferry, ait)) {
+      continue;
+    }
+    cap = get_transporter_capacity(pferry);
+    occ = get_transporter_occupancy(pferry);
+    boats++;
+    if (cap <= 2) {
+      caple2++;
+    }
+    if (occ == 1) {
+      carry1++;
+    } else if (occ >= 2) {
+      carry2p++;
+    }
+  } unit_list_iterate_end;
 
   unit_list_iterate(pplayer->units, punit) {
     int nearest = -1;
@@ -372,10 +414,11 @@ static void deep_hitch_census(struct ai_type *ait, struct player *pplayer)
   log_base(deep_metric_log_level(),
            "deep-hitch turn=%d player=\"%s\" ops=%d lifts=%d opfull=%d"
            " liftslots=%d want=%d anyop=%d cont=%d muster=%d d0=%d"
-           " d3=%d d5=%d",
+           " d3=%d d5=%d boats=%d caple2=%d carry1=%d carry2p=%d",
            game.info.turn, player_name(pplayer), live, lifts,
-           live >= DEEP_OPS_MAX ? 1 : 0, freeslots,
-           want, anyop, cont, muster, d0, d3, d5);
+           liftfree == 0 ? 1 : 0, freeslots,
+           want, anyop, cont, muster, d0, d3, d5,
+           boats, caple2, carry1, carry2p);
 }
 
 /**********************************************************************//**

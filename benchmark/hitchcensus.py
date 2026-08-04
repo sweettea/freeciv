@@ -22,9 +22,15 @@ boat, is unclaimed by any operation, and its target is overseas:
 would admit. `d0` is the tripwire -- if it equals d5 the load predicate
 has collapsed to same-tile and no rung means anything.
 
-`opfull` reports the turns where all operation slots were occupied. If
-lifts queue behind a full array the ceiling is storage, not the
-manifest.
+`opfull` reports the turns where NO slot a lift may form into was free
+(the army's four plus lift_op_slots of the lift-only range). If lifts
+queue behind that bound, the ceiling is storage, not the manifest.
+
+The hull rungs answer a different question: how often the AI carries
+more than one unit at a time, and whether the boat could. Capacity is
+not uniform -- civ2civ3's Trireme carries 2 against the Transport's 8 --
+so `caple2` is what keeps "no room" from being read as "no demand" on
+a cell that starts at low tech.
 
 Usage: hitchcensus.py RESULTS_DIR [RESULTS_DIR ...]
 """
@@ -37,10 +43,14 @@ LINE = re.compile(
     r"deep-hitch turn=(\d+) player=\"([^\"]+)\" ops=(\d+) lifts=(\d+) "
     r"opfull=(\d+) liftslots=(\d+) want=(\d+) anyop=(\d+) cont=(\d+) "
     r"muster=(\d+) d0=(\d+) d3=(\d+) d5=(\d+)"
+    # Hull rungs were added later; older logs stop at d5 and parse with
+    # these reading zero rather than dropping out of the census.
+    r"(?: boats=(\d+) caple2=(\d+) carry1=(\d+) carry2p=(\d+))?"
 )
 
 FIELDS = ["turn", "player", "ops", "lifts", "opfull", "liftslots",
-          "want", "anyop", "cont", "muster", "d0", "d3", "d5"]
+          "want", "anyop", "cont", "muster", "d0", "d3", "d5",
+          "boats", "caple2", "carry1", "carry2p"]
 
 
 def rows(paths):
@@ -53,7 +63,7 @@ def rows(paths):
                     r["player"] = m.group(2)
                     for k in FIELDS:
                         if k != "player":
-                            r[k] = int(r[k])
+                            r[k] = int(r[k]) if r[k] is not None else 0
                     r["game"] = str(log.parent)
                     yield r
 
@@ -63,7 +73,8 @@ def block(title, sub):
         print(f"{title}: none\n")
         return
     keys = ("want", "anyop", "cont", "muster", "d0", "d3", "d5",
-            "ops", "lifts", "opfull", "liftslots")
+            "ops", "lifts", "opfull", "liftslots",
+            "boats", "caple2", "carry1", "carry2p")
     tot = {k: sum(r[k] for r in sub) for k in keys}
     w = tot["want"]
     print(f"{title}: {len(sub)} player-turns, {w} waiting unit-turns")
@@ -76,6 +87,11 @@ def block(title, sub):
                          ("d0", "... on the same tile [TRIPWIRE]")):
             print(f"  {k:8s} {tot[k]:7d}  {100.0*tot[k]/w:5.1f}%   {label}")
     pt = len(sub)
+    b = tot["boats"]
+    print(f"  boats/turn {b/pt:5.2f}   hulls capacity<=2 "
+          f"{(100.0*tot['caple2']/b) if b else 0:5.1f}%   "
+          f"carrying 1 {(100.0*tot['carry1']/b) if b else 0:5.1f}%   "
+          f"carrying 2+ {(100.0*tot['carry2p']/b) if b else 0:5.1f}%")
     print(f"  live ops/turn {tot['ops']/pt:5.2f}   "
           f"lifts/turn {tot['lifts']/pt:5.2f}   "
           f"free lift slots/turn {tot['liftslots']/pt:5.2f}   "
