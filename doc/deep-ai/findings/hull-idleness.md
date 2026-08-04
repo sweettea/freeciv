@@ -112,3 +112,41 @@ is what every attempt so far has priced.
   reported on the same cell, because this denominator counts every
   hull-turn of every ferry-capable hull rather than the per-turn
   snapshot's population.
+
+---
+
+## Addendum: how much of the wrong harbour is decidable in advance (2026-08-04)
+
+"Demand never appeared on its water" is a fact about the game that
+ran. A build-time gate needs a test that holds before the shields are
+spent, so the census gained one: `bridge=`, 1 when some water the hull
+touches reaches a second land continent at all.
+
+No demand enters this test. It is the same question
+`get_lake_surrounder()` has answered since map generation --
+`assign_continent_numbers()` calls `recalculate_surrounders()` on every
+terrain change -- and nothing in the AI has ever read it.
+
+Four `isolated-150` games, `--arms deep`, 217 hulls:
+
+    closed-water hulls        15    6.9% of hulls
+    their idle hull-turns    664   11.2% of all idle time
+    of those, never carried   13 of 15
+    carried anyway             2    same-continent hops
+
+    (wrong harbour, same run: 24 hulls, 639 idle turns)
+
+Two things worth stating plainly:
+
+- **The geometry class owns MORE idle time than the demand class**
+  (664 against 639) while containing fewer hulls. A hull on a closed
+  sea can sit beside a unit that wants a crossing it could never
+  provide, so it is scored as "demand stood on its water" and misses
+  the wrong-harbour bucket entirely while being just as useless.
+- **The cost of refusing them is two hulls in 217.** That is the
+  measured price of the gate's one false positive class,
+  same-continent coastal hops.
+
+A single-surrounder sea needs no `home` argument to judge: every city
+adjacent to it stands on the one continent it touches, so it is
+useless to all of them.
