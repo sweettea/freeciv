@@ -99,6 +99,13 @@ def lifetimes(data):
             # predates the field.
             "bridge": max(r["bridge"] for r in obs),
             "closed_turns": sum(1 for r in obs if r["bridge"] == 0),
+            # civ2civ3 Triremes navigate RIVERS, and a hull on a river
+            # tile touches no ocean at all -- waters=0, which the bridge
+            # flag scores 0 exactly like a lake. Per hull the two are
+            # separable: a river-borne hull from a coastal city has
+            # bridging turns too, so only a hull that never touched any
+            # water in its life is ambiguous.
+            "wet": max(r["waters"] for r in obs),
         }
         carried = [r["turn"] for r in obs if r["cargo"] > 0]
         h["first_carry"] = carried[0] if carried else None
@@ -241,7 +248,8 @@ def main():
     # decidable before the hull is paid for.
     known = [h for h in hulls if h["bridge"] >= 0]
     if known:
-        closed = [h for h in known if h["bridge"] == 0]
+        closed = [h for h in known if h["bridge"] == 0 and h["wet"] > 0]
+        dry = [h for h in known if h["bridge"] == 0 and h["wet"] == 0]
         ci = sum(h["idle_turns"] for h in closed)
         print("GEOMETRY: COULD IT EVER HAVE CROSSED TO ANOTHER CONTINENT?")
         print(f"  hulls whose water NEVER reached a second continent: "
@@ -255,6 +263,8 @@ def main():
         carried = [h for h in closed if h["first_carry"] is not None]
         print(f"  ... but carried something anyway: {len(carried)} "
               f"(same-continent hops a gate would also refuse)")
+        print(f"  hulls that never touched any water (rivers, inland): "
+              f"{len(dry)}  -- NOT closed seas, reported apart")
         print()
 
     print("VERDICT LADDER (share of hulls)")
