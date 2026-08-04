@@ -1145,6 +1145,37 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
   if (op->state == DEEP_OP_MARCH) {
     struct tile *land = deep_lift_meeting_tile(nmap, ferry, beach);
 
+    /* TRACE, every MARCH turn, per member: which hull it is on (0 =
+     * none, and a DIFFERENT id means it changed boats), where it is,
+     * where the hull is, and what the hull has left to move with.
+     *
+     * A trace rather than another correlation. The auto-worker
+     * hypothesis died because it was inferred from ONE snapshot taken
+     * at detach time, where SSA_AUTOWORKER was 100% of strays and also
+     * 100% of deliveries -- a constant read as a cause. The turn a
+     * passenger detaches, and what the hull was doing on exactly that
+     * turn, is the thing no snapshot can show. */
+    for (i = 0; i < op->n_members; i++) {
+      struct unit *m = game_unit_by_number(op->members[i]);
+      struct unit *tr = (m != NULL ? unit_transport_get(m) : NULL);
+
+      log_base(deep_metric_log_level(),
+               "deep-lift-trace turn=%d player=\"%s\" op=%d unit=%d"
+               " on=%d boat=%d at=(%d,%d) boatat=(%d,%d) bmoves=%d"
+               " bhp=%d beachd=%d alive=%d",
+               game.info.turn, player_name(pplayer), oi, op->members[i],
+               tr != NULL ? tr->id : 0, op->ferry,
+               /* NOT `cond ? TILE_XY(t) : -1`: TILE_XY expands to two
+                * comma-separated expressions, so the ternary would
+                * swallow the pair with the comma operator and log the
+                * y twice. Same shape as the offboard line above. */
+               m != NULL ? index_to_map_pos_x(tile_index(unit_tile(m))) : -1,
+               m != NULL ? index_to_map_pos_y(tile_index(unit_tile(m))) : -1,
+               TILE_XY(unit_tile(ferry)), ferry->moves_left, ferry->hp,
+               m != NULL ? real_map_distance(unit_tile(m), beach) : -1,
+               m != NULL ? 1 : 0);
+    }
+
     if (aboard == 0) {
       /* The manifest left the boat mid-crossing. This is NOT self
        * evidently a landing: it is equally the shape of a passenger
