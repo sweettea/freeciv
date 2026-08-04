@@ -3567,3 +3567,30 @@ what a detach-time snapshot never could.
 
 That suspension is now redundant AND unvalidated. Leave it or revert
 it on the paired numbers, not on argument.
+
+### Metric trap: the arrival fix moved its own denominator (2026-08-04)
+
+Reading the stray rate after `2485c95279` (release the manifest on the
+turn the boat reaches the beach) gave **100% strayed**, which looks
+like a catastrophic regression and is not one.
+
+`lift-delivered` is logged from the `offboard` branch, which fires when
+the manifest has already left the hull. The arrival fix dissolves the
+op as `lift-arrived` while the passengers are still ABOARD, so
+successful crossings stopped passing through `offboard` entirely and
+the offboard population became pure failures by construction:
+
+    binary        arrived  delivered  strayed   success/game  stray/game
+    pin-board        52       88        115         7.0          5.8
+    pin-trace(3g)    35        0         23        11.7          7.7
+    pin-trace(2g)    20        0         13        10.0          6.5
+
+Read as arrived+delivered against strayed, the success rate is 55% ->
+~60% with throughput up from 7.0 to ~10-11.7 crossings per game.
+
+**Second instance of this class tonight**, after `opfull` silently
+redefining itself when DEEP_OPS_MAX went 4 -> 8. Both were caught only
+because the number was implausible. The rule earned: when a change
+alters WHICH code path an outcome exits through, every rate computed
+over those paths changes meaning, and the ratio must be re-derived
+before it is compared to an older one.
