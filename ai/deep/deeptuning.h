@@ -350,6 +350,15 @@ struct deep_tuning {
   int lift_form_radius;
   int lift_gather_turns;
   int lift_cross_turns;
+  /* How many of the DEEP_LIFT_OPS_MAX lift-only slots a lift may use.
+   * 0 is exactly the old behaviour -- lifts take whatever the army
+   * left free and queue when the array is full -- so this doubles as
+   * the A/B switch for the change on one pinned binary. Measured
+   * ceiling it exists to relieve: the array was full with an
+   * unclaimed overseas passenger waiting 11.9 times per game
+   * (findings/settler-missions.md section 10).
+   * PLACEHOLDER -- flagged in STATUS.md for a tuning pass. */
+  int lift_op_slots;
   /* A civilian outside a city flees to the nearest own city when an
    * at-war military unit is within this many tiles. 0 disables. */
   int worker_flee_radius;

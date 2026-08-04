@@ -2379,7 +2379,7 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
   {
     bool tried_assault = FALSE, tried_raid = FALSE;
 
-    for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+    for (oi = 0; oi < DEEP_ARMY_OPS_MAX; oi++) {
       if (dp->ops[oi].state != DEEP_OP_NONE
           && dp->ops[oi].kind == DEEP_OPK_RAID) {
         int joined = deep_op_enroll_raiders(ait, pplayer, &dp->ops[oi]);
@@ -2394,7 +2394,10 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
         break;
       }
     }
-    for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+    /* The army keeps exactly its four slots: it never forms into the
+     * lift-only range, so adding that range cannot change where an
+     * assault or a raid goes. */
+    for (oi = 0; oi < DEEP_ARMY_OPS_MAX; oi++) {
       if (dp->ops[oi].state != DEEP_OP_NONE) {
         continue;
       }
@@ -2411,14 +2414,30 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
     }
   }
 
-  /* One lift per turn, in whatever slot is still free. Formed AFTER
-   * the army, so where the two pools DO overlap -- a spare hull, or a
-   * military unit that could either join an assault or be redeployed
-   * across the water -- the army's claim wins and the lift takes what
-   * is left. deep_op_claiming() is what enforces that: anything an
-   * assault already holds is invisible to the lift's scan. */
+  /* One lift per turn. Formed AFTER the army, so where the two pools
+   * DO overlap -- a spare hull, or a military unit that could either
+   * join an assault or be redeployed across the water -- the army's
+   * claim wins and the lift takes what is left. deep_op_claiming() is
+   * what enforces that: anything an assault already holds is invisible
+   * to the lift's scan.
+   *
+   * Slot order: the lift's OWN range first, then the army's leftovers.
+   * Preferring its own range is what keeps a lift from sitting in an
+   * army slot for the eight turns of a muster and blocking an assault
+   * that wants it, and taking leftovers afterwards means the extra
+   * range only ever adds capacity. lift_op_slots == 0 leaves exactly
+   * the old behaviour -- leftovers only -- which is the A/B switch. */
   if (tune->lift_form_radius > 0) {
-    for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+    int slots = CLIP(0, tune->lift_op_slots, DEEP_LIFT_OPS_MAX);
+    bool formed = FALSE;
+
+    for (oi = DEEP_ARMY_OPS_MAX; oi < DEEP_ARMY_OPS_MAX + slots; oi++) {
+      if (dp->ops[oi].state == DEEP_OP_NONE) {
+        formed = deep_op_form_lift(ait, pplayer, &dp->ops[oi], oi);
+        break;
+      }
+    }
+    for (oi = 0; !formed && oi < DEEP_ARMY_OPS_MAX; oi++) {
       if (dp->ops[oi].state == DEEP_OP_NONE) {
         (void) deep_op_form_lift(ait, pplayer, &dp->ops[oi], oi);
         break;

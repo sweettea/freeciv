@@ -30,11 +30,25 @@ struct ai_type;
  * on every reload cost those games their assaults. The enum values
  * below are part of the savegame format: append, never reorder. */
 #define DEEP_OP_MEMBERS 24
-/* Storage cap on concurrent operations, like DEEP_OP_MEMBERS a
- * bookkeeping bound rather than a tunable: forming an op at all
- * requires a distinct unclaimed target plus enough free attackers to
- * clear op_take_target against it, so the count is self-limiting. */
-#define DEEP_OPS_MAX 4
+/* Storage cap on concurrent ARMY operations (assault and raid), like
+ * DEEP_OP_MEMBERS a bookkeeping bound rather than a tunable: forming
+ * one at all requires a distinct unclaimed target plus enough free
+ * attackers to clear op_take_target against it, so the count is
+ * self-limiting. */
+#define DEEP_ARMY_OPS_MAX 4
+/* Extra slots only a lift may occupy. A lift is NOT self-limiting the
+ * way an assault is -- it needs one passenger and one spare hull --
+ * so it used to consume the army's four slots and then queue behind
+ * them: the array was full on 23.3% of player-turns, and full WITH an
+ * unclaimed overseas-bound passenger waiting 11.9 times per game
+ * (findings/settler-missions.md section 10). How many of these are
+ * usable is the tunable lift_op_slots; this is only the storage.
+ *
+ * Savegame: slots are stored per index with defaulted lookups, so a
+ * save written when the array was four long loads into an eight-long
+ * one with the new slots reading DEEP_OP_NONE. */
+#define DEEP_LIFT_OPS_MAX 4
+#define DEEP_OPS_MAX (DEEP_ARMY_OPS_MAX + DEEP_LIFT_OPS_MAX)
 
 /* Phase list (W33 commits 2-3). A land assault runs MUSTER -> MARCH
  * -> STRIKE; launching into MARCH releases the members to the stock
