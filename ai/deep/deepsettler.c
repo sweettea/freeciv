@@ -64,6 +64,7 @@
 #include "deeptuning.h"
 
 #include "deepai.h"
+#include "deepops.h"
 #include "deepsettler.h"
 
 /* The stock settler site search prices travel as if the map were empty
@@ -1479,6 +1480,28 @@ void deep_auto_settler_run(struct ai_type *ait, const struct civ_map *nmap,
   int completion_time = 0;
 
   CHECK_UNIT(punit);
+
+  /* An operation's claim outranks worker autonomy, and THIS is the
+   * entry point where that had to be said. deep_op_holds() is honoured
+   * in deep_manage_units(), but auto_workers_player() is a second,
+   * independent driver: it reaches every worker or cityfounder of an
+   * AI player through the settler_run hook, gated on
+   * `ssa_controller == SSA_AUTOWORKER || is_ai(pplayer)`
+   * (autoworkers.c:1372). The `|| is_ai` is why the hold leaked --
+   * for an AI player the agent flag is not even consulted.
+   *
+   * That is what was walking lift passengers off their boat in open
+   * water: traced on isolated-150, a held settler steps onto adjacent
+   * land with the hull mid-ocean and undamaged, repeatedly (unit 219
+   * detached on turns 59, 67, 74 and 84 -- the pick-drop churn of
+   * section 8). Suspending SSA_AUTOWORKER did not help precisely
+   * because this gate ignores it, and the earlier diagnosis that
+   * blamed the agent was reading a constant: SSA_AUTOWORKER was on
+   * 100% of strays AND 100% of deliveries. */
+  if (deep_op_claiming(pplayer, punit->id) >= 0
+      && deep_op_holds(pplayer, punit->id)) {
+    return;
+  }
 
   /*** If we are on a city mission: Go where we should ***/
 
