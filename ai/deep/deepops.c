@@ -491,6 +491,112 @@ static struct tile *deep_lift_shore_tile(const struct civ_map *nmap,
 }
 
 /**********************************************************************//**
+  Can this unit stand on the shore beside the rendezvous within the
+  turns the muster has left? Distance over its own move rate, which is
+  optimistic (it ignores terrain and roads) and deliberately so: the
+  cost of being wrong is that a hitcher fails to arrive, and a hitcher
+  that fails to arrive is DROPPED rather than waited for.
+**************************************************************************/
+static bool deep_lift_can_make_meeting(const struct civ_map *nmap,
+                                       struct unit *punit,
+                                       const struct tile *meet,
+                                       int turns_left)
+{
+  struct tile *shore = deep_lift_shore_tile(nmap, punit, meet);
+  int rate, d;
+
+  if (shore == NULL) {
+    return FALSE;
+  }
+  d = real_map_distance(unit_tile(punit), shore);
+  rate = MAX(1, unit_move_rate(punit) / SINGLE_MOVE);
+
+  return d <= turns_left * rate;
+}
+
+/**********************************************************************//**
+  Enroll extra passengers into a lift that is still gathering.
+
+  This is hitch-a-ride, and it is only worth building BECAUSE the
+  rendezvous is two-sided and named. The original design had the boat
+  detour to collect a second passenger, gated on the detour costing
+  less than one turn of boat waiting; sized against that gate it was
+  worth 0.4 unit-turns per game on lategame-80 and was refused
+  (findings/settler-missions.md section 10). With a FIXED meeting tile
+  the boat detours by exactly zero -- the joiner walks to a tile the
+  hull is already sailing to -- so the rung that binds is no longer
+  "is the boat near the passenger" but "is the passenger bound for the
+  same continent", which measured 2.9 per game there and 122 per game
+  on the island cell.
+
+  Two contracts, both deliberate:
+
+  1. A HITCHER NEVER DELAYS THE LIFT. Only members[0] is required to
+     sail; anyone else who has not boarded when the core passenger has
+     is released, not waited for. That is why the ETA test above may
+     be optimistic without costing anything.
+  2. A HITCHER IS ALREADY WAITING. Candidates come from
+     deep_lift_wants_boat(), so holding one costs no activity it would
+     otherwise have had -- it was standing still waiting for a boat
+     that was not coming.
+
+  The manifest is capped by lift_manifest_max AND by the hull, which
+  is not the same bound: civ2civ3's Trireme carries 2 where its
+  Transport carries 8. Concentration is a real cost -- one sunk hull
+  now loses the whole manifest rather than one unit -- which is why
+  the cap is a tunable rather than "fill the boat".
+**************************************************************************/
+static int deep_lift_enroll(struct ai_type *ait, struct player *pplayer,
+                            struct deep_operation *op, struct unit *ferry,
+                            const struct tile *meet, int turns_left)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  struct tile *beach = index_to_tile(nmap, op->beachhead);
+  int room, joined = 0;
+
+  if (beach == NULL || meet == NULL) {
+    return 0;
+  }
+  room = MIN(tune->lift_manifest_max, get_transporter_capacity(ferry))
+         - op->n_members;
+  room = MIN(room, DEEP_OP_MEMBERS - op->n_members);
+  if (room <= 0) {
+    return 0;
+  }
+
+  unit_list_iterate(pplayer->units, cand) {
+    if (room <= 0) {
+      break;
+    }
+    if (!deep_lift_wants_boat(ait, cand)
+        || deep_op_claiming(pplayer, cand->id) >= 0
+        || !could_unit_load(cand, ferry)) {
+      continue;
+    }
+    /* Same crossing, not merely another crossing: the passage it
+     * wants must be the passage this hull is already running. */
+    if (tile_continent(unit_tile(cand)) == tile_continent(cand->goto_tile)
+        || tile_continent(cand->goto_tile) != tile_continent(beach)) {
+      continue;
+    }
+    if (!deep_lift_can_make_meeting(nmap, cand, meet, turns_left)) {
+      continue;
+    }
+    op->members[op->n_members++] = cand->id;
+    room--;
+    joined++;
+    log_base(deep_metric_log_level(),
+             "deep-lift-op turn=%d player=\"%s\" hitch boat=%d unit=%d"
+             " manifest=%d meet=(%d,%d) left=%d",
+             game.info.turn, player_name(pplayer), op->ferry, cand->id,
+             op->n_members, TILE_XY(meet), turns_left);
+  } unit_list_iterate_end;
+
+  return joined;
+}
+
+/**********************************************************************//**
   Is this unit waiting for a lift nobody is bringing? Only the SIGN of
   unit_ai.ferryboat is read (FERRY_WANTED is -1 and private to
   daiferry.c), the same convention deep_settler_lift_state() uses.
@@ -634,7 +740,35 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
   }
 
   if (op->state == DEEP_OP_MUSTER) {
-    if (aboard > 0 && aboard == op->n_members) {
+    /* The core passenger is members[0] -- the one the lift was formed
+     * for. Hitchers ride only if they are aboard when it is: contract
+     * 1 of deep_lift_enroll() is that a hitcher NEVER delays the
+     * lift, so a straggler is released here rather than waited for.
+     * (Validation compacts members[], so if the original core dies a
+     * hitcher becomes the core and the lift is still worth sailing.) */
+    struct unit *core = (op->n_members > 0
+                         ? game_unit_by_number(op->members[0]) : NULL);
+    bool core_aboard = (core != NULL && unit_transport_get(core) == ferry);
+
+    if (core_aboard) {
+      int kept = 0;
+
+      for (i = 0; i < op->n_members; i++) {
+        struct unit *m = game_unit_by_number(op->members[i]);
+
+        if (m != NULL && unit_transport_get(m) == ferry) {
+          op->members[kept++] = op->members[i];
+        } else if (m != NULL) {
+          log_base(deep_metric_log_level(),
+                   "deep-lift-op turn=%d player=\"%s\" op=%d hitch-drop"
+                   " boat=%d unit=%d",
+                   game.info.turn, player_name(pplayer), oi, op->ferry,
+                   op->members[i]);
+        }
+      }
+      op->n_members = kept;
+      aboard = kept;
+
       op->state = DEEP_OP_MARCH;
       op->phase_turn = game.info.turn;
       op->march_turn = game.info.turn;
@@ -683,6 +817,12 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
         deep_op_dissolve(op, oi, "lift-unreachable", pplayer);
         return;
       }
+      /* Fill the spare capacity while the hull is on its way. Done
+       * before the boat moves, so a joiner enrolled this turn starts
+       * walking this turn. */
+      (void) deep_lift_enroll(ait, pplayer, op, ferry, meet,
+                              tune->lift_gather_turns
+                              - (game.info.turn - op->phase_turn));
       if (!same_pos(unit_tile(ferry), meet) && ferry->moves_left > 0) {
         (void) dai_unit_goto(ait, ferry, meet);
         ferry = game_unit_by_number(op->ferry);

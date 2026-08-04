@@ -359,6 +359,14 @@ struct deep_tuning {
    * (findings/settler-missions.md section 10).
    * PLACEHOLDER -- flagged in STATUS.md for a tuning pass. */
   int lift_op_slots;
+  /* Largest manifest a lift will gather, hitchers included. 1 is
+   * exactly the old single-passenger lift, so it is the A/B switch.
+   * The hull caps it independently and lower: civ2civ3's Trireme
+   * carries 2 where its Transport carries 8. Not "fill the boat",
+   * because concentration is a real cost -- one sunk hull loses the
+   * whole manifest (human, 2026-08-03).
+   * PLACEHOLDER -- flagged in STATUS.md for a tuning pass. */
+  int lift_manifest_max;
   /* A civilian outside a city flees to the nearest own city when an
    * at-war military unit is within this many tiles. 0 disables. */
   int worker_flee_radius;
