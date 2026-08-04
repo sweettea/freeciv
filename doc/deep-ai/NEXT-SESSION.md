@@ -158,6 +158,22 @@ above are hulls, not shields, so price the waste first -- and count
 how many existing hulls sit on an ocean that reaches no wanted site,
 which is the number this would actually recover.
 
+## 0z. FIRST THING: measure the hull pricing, it is live and UNMEASURED
+
+`e3a626aad3` prices every ferry choice against spare hulls on the
+city's own water, at the end of deep's per-city choice loop where all
+three boat-building paths have spoken. It EXECUTES (96 discounts in a
+2-game check) and nothing else about it is known.
+
+Run: `--arms deep`, 20 seeds, `isolated-150`, `boat_idle_damping`
+0.0 vs 0.5, and CHECK `deep-hull` IN BOTH ARMS BEFORE READING SCORE.
+Read fleet size (`deep-lift ... boats=`), idle share, and deliveries
+alongside it -- the target is "fewer hulls, same crossings", and if
+crossings fall with the fleet the pricing is too blunt.
+
+Pinned binaries in the session scratchpad are GONE (tmpfs). Re-pin
+from HEAD.
+
 ## 1a. SETTLED overnight (2026-08-04), do not redo
 
 - **Straying is fixed.** `b699ddefa1`: the settler_run hook now honours
