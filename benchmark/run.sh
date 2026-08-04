@@ -70,6 +70,26 @@ confhash=$(sha256sum "$CONFIG" | cut -d' ' -f1)
 srvhash=$(sha256sum "$server_bin" | cut -d' ' -f1)
 runhash=$(sha256sum "$here/run-game.sh" | cut -d' ' -f1)
 if [ -n "${TUNING:-}" ]; then
+  # A tuning file without the [tuning] section header loads as an EMPTY
+  # override set: secfile lookups miss, every field keeps its compiled
+  # default, and the run silently measures the defaults twice. That has
+  # now cost one 40-game A/B (2026-08-04), which came back byte-identical
+  # in both arms with the "off" arm still executing the feature. The
+  # result key differs, so nothing downstream notices.
+  grep -qE '^\[tuning\]' "$TUNING" || {
+    echo "tuning file has no [tuning] section, so NOTHING in it would" \
+         "be applied: $TUNING" >&2
+    exit 1
+  }
+  # Same failure at key level: a name the loader never reads is a
+  # silently inert line. tuning-params.ini is the registry tune-audit.py
+  # checks the C side against.
+  bad=$(grep -oE '^[a-z_0-9]+' "$TUNING" \
+        | grep -vxFf <(grep -oE '^[a-z_0-9]+' "$here/tuning-params.ini") || true)
+  [ -z "$bad" ] || {
+    echo "tuning file sets keys the server does not know: $bad" >&2
+    exit 1
+  }
   tunhash=$(sha256sum "$TUNING" | cut -d' ' -f1)
 else
   tunhash=none
