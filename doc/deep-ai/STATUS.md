@@ -3872,3 +3872,41 @@ Every MECHANISM repair measured large and unambiguous:
 **The value was in fixing what was broken, not in tuning what worked.**
 Only `lift_op_slots` remains a live positive direction (+22.30 at 10
 seeds, backed by 61% array saturation) and is being re-measured at 20.
+
+### lift_op_slots: the ceiling was real, relieving it costs score
+    (2026-08-04)
+
+20 paired seeds, `isolated-150`, same control:
+
+    variant  opfull  forms  arrived    mean      diff
+    ctrl       8%     789     430    164.95
+    slots      0%     997     526    151.45   -13.50 (t=-0.88, 9/20)
+
+The mechanism did exactly what it was built to do -- saturation 8% ->
+0%, formations +26%, **deliveries +22%** -- and score fell. Ninety-six
+extra colonies delivered across 40 games bought -13.50 points.
+
+Defaulted to 0. Second 10-seed estimate to FLIP SIGN under power
+(+22.30 -> -13.50), after the rendezvous fix (+29.90 -> +11.28). Ten
+seeds on this cell are not weak evidence, they are misleading
+evidence.
+
+### The conclusion this epic actually reached
+
+Delivery is not the constraint, and this is the cleanest statement of
+it the project has:
+
+    more crossings   (+26% formations)
+    more colonies    (+22% arrivals)
+    LESS score       (-13.50)
+
+Section 8 measured the overseas yield as ~11 cities a game whether
+delivery ran at 12% or 28%. Five mechanisms later -- cross-water
+worker, the lift, the rendezvous protocol, the hold fix, the slot
+relief -- delivery has been repaired, tripled and un-capped, and the
+aggregate has never followed. Something downstream of arrival consumes
+the gain: the colonies land and are not worth what they cost, or they
+displace something better.
+
+**That is where the next epic goes.** Not transport. Site quality, or
+what the settlers cost to make.
