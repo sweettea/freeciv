@@ -158,6 +158,19 @@ above are hulls, not shields, so price the waste first -- and count
 how many existing hulls sit on an ocean that reaches no wanted site,
 which is the number this would actually recover.
 
+## 1a. SETTLED overnight (2026-08-04), do not redo
+
+- **Straying is fixed.** `b699ddefa1`: the settler_run hook now honours
+  the operation hold. strayed 109 -> 4, and 0 in later runs.
+- **Hitch-a-ride is NEUTRAL and defaults off.** Measured three times,
+  fairest last (multi-drop live, 20 seeds): -8.25, t=-0.47, 10/20 up.
+  Keep `lift_manifest_max = 1`.
+- **Cutting boat production HURTS.** Two arms agree: damping -20.00,
+  quartering the want -14.65 with deliveries -8%. The "Too Many Boats"
+  reading is doubtful -- idle hulls are inventory, not waste.
+- **The rendezvous fix is +11.28 (t=0.88) at 40 seeds**, not a win.
+  Mechanism banked (gather-timeouts 545 -> 28, deliveries +31%).
+
 ## 1d. Two open design calls (human, 2026-08-04), both SIZED FIRST
 
 **The hitcher decides on feasibility, not on comparison.**

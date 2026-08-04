@@ -3801,3 +3801,30 @@ is not waste, it is inventory. Removing it removes crossings.
 
 Do not cut boat production further without measuring what the idle
 hulls do when demand arrives.
+
+### Hitch-a-ride, final: neutral even with routing live (2026-08-04)
+
+20 paired seeds, `isolated-150`, `pin-drop` (multi-drop routing
+verified firing: enrol=143, nextstop=23, 38 two-passenger crossings):
+
+    variant  arrived    mean      diff
+    base       430    164.95
+    hitch      422    156.70   -8.25 (se 17.67, t=-0.47, up 10/20)
+
+Ten of twenty seeds up, deliveries flat. **Neutral.**
+
+The progression across three binaries is the useful part, and it
+confirms the human's call that multi-drop was a precondition:
+
+    pin-hold  multi-drop absent      -16.90 (t=-0.87)
+    pin-full  multi-drop DEAD CODE   -19.00 (t=-0.76)
+    pin-drop  multi-drop LIVE         -8.25 (t=-0.47)
+
+Routing halved the penalty -- joiners no longer walk the median 7
+tiles -- and did not get the feature past zero.
+
+**Recommendation: default `lift_manifest_max = 1`** (off). The
+mechanism works and the demand is real; it simply does not convert. The
+switch stays so a future cell with capacity-8 hulls and denser demand
+can re-test it cheaply, and section 10's verdict is upheld on its
+third and fairest measurement.
