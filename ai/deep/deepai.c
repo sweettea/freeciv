@@ -212,6 +212,10 @@ static void dpai_player_save(struct player *pplayer,
                        "player%d.deep_state.op%d.march_eta", plrno, oi);
     secfile_insert_int(file, op->phase_turn,
                        "player%d.deep_state.op%d.phase_turn", plrno, oi);
+    secfile_insert_int(file, op->ferry,
+                       "player%d.deep_state.op%d.ferry", plrno, oi);
+    secfile_insert_int(file, op->beachhead,
+                       "player%d.deep_state.op%d.beachhead", plrno, oi);
     secfile_insert_int(file, op->n_members,
                        "player%d.deep_state.op%d.n_members", plrno, oi);
     for (i = 0; i < op->n_members; i++) {
@@ -263,11 +267,17 @@ static void dpai_player_load(struct player *pplayer,
       continue;
     }
     op->state = state;
-    op->kind
-      = secfile_lookup_int_default(file, DEEP_OPK_ASSAULT,
-                                   "player%d.deep_state.op%d.kind",
-                                   plrno, oi) == DEEP_OPK_RAID
-        ? DEEP_OPK_RAID : DEEP_OPK_ASSAULT;
+    {
+      int kind = secfile_lookup_int_default(file, DEEP_OPK_ASSAULT,
+                                            "player%d.deep_state.op%d.kind",
+                                            plrno, oi);
+
+      /* Anything unrecognised loads as an assault, which is what a
+       * save written by a newer build would otherwise smuggle in. */
+      op->kind = (kind == DEEP_OPK_RAID ? DEEP_OPK_RAID
+                  : kind == DEEP_OPK_LIFT ? DEEP_OPK_LIFT
+                  : DEEP_OPK_ASSAULT);
+    }
     op->target_city
       = secfile_lookup_int_default(file, 0,
                                    "player%d.deep_state.op%d.target",
@@ -295,6 +305,14 @@ static void dpai_player_load(struct player *pplayer,
     op->phase_turn
       = secfile_lookup_int_default(file, 0,
                                    "player%d.deep_state.op%d.phase_turn",
+                                   plrno, oi);
+    op->ferry
+      = secfile_lookup_int_default(file, 0,
+                                   "player%d.deep_state.op%d.ferry",
+                                   plrno, oi);
+    op->beachhead
+      = secfile_lookup_int_default(file, -1,
+                                   "player%d.deep_state.op%d.beachhead",
                                    plrno, oi);
     n = secfile_lookup_int_default(file, 0,
                                    "player%d.deep_state.op%d.n_members",

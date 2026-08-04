@@ -37,6 +37,7 @@
 #include "handicaps.h"
 #include "maphand.h"
 #include "srv_log.h"
+#include "unittools.h"
 
 /* server/advisors */
 #include "advgoto.h"
@@ -76,6 +77,13 @@ int deep_op_claiming(const struct player *pplayer, int unit_id)
     if (op->state == DEEP_OP_NONE) {
       continue;
     }
+    /* A lift's boat is claimed as firmly as its manifest: the whole
+     * point is that nothing else re-tasks it out from under the
+     * crossing. */
+    if (op->kind == DEEP_OPK_LIFT && op->ferry == unit_id
+        && unit_id != 0) {
+      return oi;
+    }
     for (i = 0; i < op->n_members; i++) {
       if (op->members[i] == unit_id) {
         return oi;
@@ -101,6 +109,16 @@ bool deep_op_holds(const struct player *pplayer, int unit_id)
 
   if (oi < 0) {
     return FALSE;
+  }
+  if (dp->ops[oi].kind == DEEP_OPK_LIFT) {
+    /* The lift drives both ends itself, every turn it is alive: the
+     * boat must not wander off to stock's ferry manager, and the
+     * manifest must WAIT at the port instead of re-picking a land
+     * mission (the pick-drop churn of section 8). Passengers aboard
+     * stay held too -- unlike an assault, here the op owns the hull,
+     * so holding cargo cannot freeze the boat. */
+    return dp->ops[oi].state == DEEP_OP_MUSTER
+           || dp->ops[oi].state == DEEP_OP_MARCH;
   }
   if (dp->ops[oi].kind != DEEP_OPK_ASSAULT) {
     return FALSE;
@@ -226,6 +244,280 @@ static void deep_lift_census(struct ai_type *ait, struct player *pplayer)
            plr_data->stats.boats, plr_data->stats.available_boats,
            plr_data->stats.passengers,
            slots, loaded_boats, wait, with_slot, d0, d3, d5, on_loaded);
+}
+
+/* Defined below, with the rest of the operation lifecycle. */
+static void deep_op_dissolve(struct deep_operation *op, int oi,
+                             const char *why, struct player *pplayer);
+
+/**********************************************************************//**
+  Where a boat and a passenger can physically meet: the passenger's own
+  tile if the boat can float there (a coastal city -- the boat docks on
+  top of the settler), otherwise the adjacent tile the boat can reach
+  that is nearest to it.
+
+  Loading only ever happens on ONE tile, which is the whole problem the
+  lift exists to solve: 0.6% of waiting unit-turns had a boat on their
+  tile while 95.6% had one with a free slot somewhere
+  (findings/settler-missions.md section 9).
+**************************************************************************/
+static struct tile *deep_lift_meeting_tile(const struct civ_map *nmap,
+                                           struct unit *ferry,
+                                           const struct tile *at)
+{
+  struct tile *best = NULL;
+  int bestd = -1;
+
+  if (can_unit_exist_at_tile(nmap, ferry, at)) {
+    return (struct tile *) at;
+  }
+  adjc_iterate(nmap, at, atile) {
+    if (can_unit_exist_at_tile(nmap, ferry, atile)) {
+      int d = real_map_distance(unit_tile(ferry), atile);
+
+      if (best == NULL || d < bestd) {
+        best = atile;
+        bestd = d;
+      }
+    }
+  } adjc_iterate_end;
+
+  return best;
+}
+
+/**********************************************************************//**
+  Is this unit waiting for a lift nobody is bringing? Only the SIGN of
+  unit_ai.ferryboat is read (FERRY_WANTED is -1 and private to
+  daiferry.c), the same convention deep_settler_lift_state() uses.
+
+  Deliberately ANY unit, not just civilians. A lift is transport, not an
+  attack: a settler going to a site, a worker going to an unimproved
+  colony, and a defensive blade being redeployed to a garrison across
+  the water are the same problem -- a unit that must cross and has no
+  way to arrange it. Amphibious ASSAULT is a separate op kind with its
+  own escort and invade gates; wanting a boat is not wanting a battle,
+  and a garrison move must not have to pretend to be one to get a hull.
+**************************************************************************/
+static bool deep_lift_wants_boat(struct ai_type *ait, struct unit *punit)
+{
+  return !unit_transported(punit)
+         && def_ai_unit_data(punit, ait)->ferryboat < 0
+         && punit->goto_tile != NULL;
+}
+
+/**********************************************************************//**
+  Form one lift: a named boat, a named passenger, a named beachhead.
+
+  The pairing is nearest-first over (passenger, boat) pairs inside
+  lift_form_radius, and the beachhead is the passenger's OWN target --
+  punit->goto_tile, which dai_unit_new_task() set when the settler
+  chose the site. The operation does not second-guess where the settler
+  wanted to go; it only makes the crossing happen.
+
+  Returns TRUE if a lift now occupies slot 'oi'.
+**************************************************************************/
+static bool deep_op_form_lift(struct ai_type *ait, struct player *pplayer,
+                              struct deep_operation *op, int oi)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  struct unit *best_psngr = NULL, *best_boat = NULL;
+  int best_d = -1;
+
+  unit_list_iterate(pplayer->units, psngr) {
+    if (!deep_lift_wants_boat(ait, psngr)
+        || deep_op_claiming(pplayer, psngr->id) >= 0) {
+      continue;
+    }
+    /* Only a crossing. A target on our own landmass is a walk, and
+     * stock's own goto already handles it. */
+    if (tile_continent(unit_tile(psngr))
+        == tile_continent(psngr->goto_tile)) {
+      continue;
+    }
+    unit_list_iterate(pplayer->units, boat) {
+      int d;
+
+      if (!dai_is_ferry(boat, ait)
+          || deep_op_claiming(pplayer, boat->id) >= 0
+          || get_transporter_occupancy(boat)
+             >= get_transporter_capacity(boat)
+          || !could_unit_load(psngr, boat)) {
+        continue;
+      }
+      d = real_map_distance(unit_tile(psngr), unit_tile(boat));
+      if (d > tune->lift_form_radius) {
+        continue;
+      }
+      if (best_d < 0 || d < best_d) {
+        best_d = d;
+        best_psngr = psngr;
+        best_boat = boat;
+      }
+    } unit_list_iterate_end;
+  } unit_list_iterate_end;
+
+  if (best_psngr == NULL) {
+    return FALSE;
+  }
+  /* The boat must be able to reach the passenger at all, and the
+   * manifest must have somewhere to land. */
+  if (deep_lift_meeting_tile(nmap, best_boat,
+                             unit_tile(best_psngr)) == NULL
+      || deep_lift_meeting_tile(nmap, best_boat,
+                                best_psngr->goto_tile) == NULL) {
+    return FALSE;
+  }
+
+  op->state = DEEP_OP_MUSTER;
+  op->kind = DEEP_OPK_LIFT;
+  op->target_city = 0;
+  op->staging_city = 0;
+  op->required = 1;
+  op->formed_turn = game.info.turn;
+  op->march_turn = 0;
+  op->march_eta = 0;
+  op->phase_turn = game.info.turn;
+  op->ferry = best_boat->id;
+  op->beachhead = tile_index(best_psngr->goto_tile);
+  op->n_members = 1;
+  op->members[0] = best_psngr->id;
+
+  log_base(deep_metric_log_level(),
+           "deep-lift-op turn=%d player=\"%s\" op=%d form boat=%d"
+           " psngr=%d gap=%d beach=(%d,%d)",
+           game.info.turn, player_name(pplayer), oi, op->ferry,
+           op->members[0], best_d, TILE_XY(best_psngr->goto_tile));
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Drive one lift. MUSTER is the rendezvous -- the boat goes to the
+  manifest, which is the half stock never does -- and MARCH is the
+  crossing. The op releases the manifest once the boat is beside the
+  beachhead: a settler aboard a boat adjacent to its own target is a
+  case the stock settler path already handles, and section 8 measured
+  that half working.
+**************************************************************************/
+static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
+                               struct deep_operation *op, int oi)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  struct unit *ferry = game_unit_by_number(op->ferry);
+  struct tile *beach = index_to_tile(nmap, op->beachhead);
+  int aboard = 0, i;
+
+  if (ferry == NULL || unit_owner(ferry) != pplayer || beach == NULL) {
+    deep_op_dissolve(op, oi, "lift-noboat", pplayer);
+    return;
+  }
+  for (i = 0; i < op->n_members; i++) {
+    struct unit *m = game_unit_by_number(op->members[i]);
+
+    if (m != NULL && unit_transport_get(m) == ferry) {
+      aboard++;
+    }
+  }
+
+  if (op->state == DEEP_OP_MUSTER) {
+    if (aboard > 0 && aboard == op->n_members) {
+      op->state = DEEP_OP_MARCH;
+      op->phase_turn = game.info.turn;
+      op->march_turn = game.info.turn;
+      log_base(deep_metric_log_level(),
+               "deep-lift-op turn=%d player=\"%s\" op=%d sail boat=%d"
+               " manifest=%d beach=(%d,%d)",
+               game.info.turn, player_name(pplayer), oi, op->ferry,
+               aboard, TILE_XY(beach));
+    } else if (game.info.turn - op->phase_turn > tune->lift_gather_turns) {
+      deep_op_dissolve(op, oi, "lift-gather-timeout", pplayer);
+      return;
+    } else {
+      /* Bring the boat to the first member still ashore, then board
+       * whoever is standing with it. */
+      struct unit *waiting = NULL;
+      struct tile *meet;
+
+      for (i = 0; i < op->n_members && waiting == NULL; i++) {
+        struct unit *m = game_unit_by_number(op->members[i]);
+
+        if (m != NULL && unit_transport_get(m) != ferry) {
+          waiting = m;
+        }
+      }
+      if (waiting == NULL) {
+        deep_op_dissolve(op, oi, "lift-empty", pplayer);
+        return;
+      }
+      meet = deep_lift_meeting_tile(nmap, ferry, unit_tile(waiting));
+      if (meet == NULL) {
+        deep_op_dissolve(op, oi, "lift-unreachable", pplayer);
+        return;
+      }
+      if (!same_pos(unit_tile(ferry), meet) && ferry->moves_left > 0) {
+        (void) dai_unit_goto(ait, ferry, meet);
+        ferry = game_unit_by_number(op->ferry);
+        if (ferry == NULL) {
+          deep_op_dissolve(op, oi, "lift-boatlost", pplayer);
+          return;
+        }
+      }
+      /* Board every member the boat is now standing on or beside. */
+      for (i = 0; i < op->n_members; i++) {
+        struct unit *m = game_unit_by_number(op->members[i]);
+
+        if (m == NULL || unit_transport_get(m) == ferry) {
+          continue;
+        }
+        if (same_pos(unit_tile(m), unit_tile(ferry))) {
+          if (can_unit_load(m, ferry)) {
+            unit_transport_load_send(m, ferry);
+          }
+        } else if (is_tiles_adjacent(unit_tile(m), unit_tile(ferry))
+                   && m->moves_left > 0) {
+          /* A land unit stepping onto the boat's tile loads itself. */
+          (void) dai_unit_goto(ait, m, unit_tile(ferry));
+        }
+      }
+    }
+  }
+
+  if (op->state == DEEP_OP_MARCH) {
+    struct tile *land = deep_lift_meeting_tile(nmap, ferry, beach);
+
+    if (aboard == 0) {
+      /* Everyone got off, or died, on the way. */
+      deep_op_dissolve(op, oi, "lift-landed", pplayer);
+      return;
+    }
+    if (game.info.turn - op->phase_turn > tune->lift_cross_turns) {
+      deep_op_dissolve(op, oi, "lift-cross-timeout", pplayer);
+      return;
+    }
+    if (land == NULL) {
+      deep_op_dissolve(op, oi, "lift-nobeach", pplayer);
+      return;
+    }
+    if (real_map_distance(unit_tile(ferry), beach) <= 1
+        || same_pos(unit_tile(ferry), land)) {
+      /* Beside the target: hand the manifest back. A settler aboard a
+       * boat adjacent to its own goto_tile is exactly the case the
+       * stock settler path disembarks correctly. */
+      log_base(deep_metric_log_level(),
+               "deep-lift-op turn=%d player=\"%s\" op=%d arrive boat=%d"
+               " manifest=%d at=(%d,%d) beach=(%d,%d) turns=%d",
+               game.info.turn, player_name(pplayer), oi, op->ferry,
+               aboard, TILE_XY(unit_tile(ferry)), TILE_XY(beach),
+               game.info.turn - op->formed_turn);
+      deep_op_dissolve(op, oi, "lift-arrived", pplayer);
+      return;
+    }
+    if (ferry->moves_left > 0) {
+      (void) dai_unit_goto(ait, ferry, land);
+    }
+  }
 }
 
 /**********************************************************************//**
@@ -1862,6 +2154,14 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
       }
       continue;
     }
+    if (op->kind == DEEP_OPK_LIFT) {
+      /* Validation only; the crossing is driven in the drive pass
+       * below, like every other kind. */
+      if (op->n_members == 0) {
+        deep_op_dissolve(op, oi, "lift-nobody", pplayer);
+      }
+      continue;
+    }
     if (target != NULL && city_owner(target) == pplayer
         && (op->state == DEEP_OP_MARCH || op->state == DEEP_OP_STRIKE)) {
       /* The city fell to us: hold it. (A march can capture too --
@@ -1940,12 +2240,29 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
     }
   }
 
+  /* One lift per turn, in whatever slot is still free. Formed AFTER
+   * the army, so where the two pools DO overlap -- a spare hull, or a
+   * military unit that could either join an assault or be redeployed
+   * across the water -- the army's claim wins and the lift takes what
+   * is left. deep_op_claiming() is what enforces that: anything an
+   * assault already holds is invisible to the lift's scan. */
+  if (tune->lift_form_radius > 0) {
+    for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
+      if (dp->ops[oi].state == DEEP_OP_NONE) {
+        (void) deep_op_form_lift(ait, pplayer, &dp->ops[oi], oi);
+        break;
+      }
+    }
+  }
+
   for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
     if (dp->ops[oi].state == DEEP_OP_NONE) {
       continue;
     }
     if (dp->ops[oi].kind == DEEP_OPK_RAID) {
       deep_op_drive_raid(ait, pplayer, &dp->ops[oi], oi);
+    } else if (dp->ops[oi].kind == DEEP_OPK_LIFT) {
+      deep_op_drive_lift(ait, pplayer, &dp->ops[oi], oi);
     } else {
       deep_op_drive(ait, pplayer, &dp->ops[oi], oi);
     }

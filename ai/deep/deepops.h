@@ -73,7 +73,13 @@ enum deep_op_state {
  * (findings/settler-missions.md section 9). Stock's two-sided protocol
  * -- passenger raises a flag, boat independently looks for flagged
  * passengers -- is what never closes that gap, so the lift drives the
- * boat itself rather than routing units back into that manager. */
+ * boat itself rather than routing units back into that manager.
+ *
+ * A lift carries ANY unit that needs to cross: a settler, a worker, or
+ * a defensive unit being redeployed to a garrison overseas. Moving
+ * troops is not the same intention as attacking with them -- ASSAULT
+ * is the amphibious battle, with its own escort and invade gates, and
+ * a garrison move must not have to masquerade as one to get a hull. */
 enum deep_op_kind {
   DEEP_OPK_ASSAULT = 0,
   DEEP_OPK_RAID,
