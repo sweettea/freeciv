@@ -1,6 +1,119 @@
 Continue the Freeciv deep-AI work. Read CLAUDE.md, doc/deep-ai/00-context.md,
-then doc/deep-ai/STATUS.md -- start at "The lift's parameter was never the
-lever" and read forward. Branch epic/w03-horizon-content.
+then doc/deep-ai/STATUS.md -- start at "Why any individual hull is idle"
+(the last section) and read backward as far as you need. Branch
+epic/w03-horizon-content.
+
+**Section 0 is the job.** Sections 0b-1d are why, and what has already
+been falsified so you do not redo it. Sections 8-9 are history kept for
+provenance: they contain instructions that were correct when written and
+are NOT to be followed now.
+
+## 0. THE JOB: gate boat production on USEFUL water
+
+**Build the useful-oceans gate on boat production.** It is the one
+lever the per-hull census supports, and it is sized: 20.5% of hulls --
+one in five -- never once saw a waiting passenger on their water in
+their whole life, and those hulls own 15.1% of all idle hull-turns.
+
+**Gate on GEOMETRY, not on demand-now.** This is the trap and the
+census is explicit about it: 84% of idle hull-turns have no waiting
+passenger on that water, because demand is BURSTY. A "no demand here
+right now, do not build" rule would suppress exactly the hulls that
+serve the next burst -- which is the same mistake the five count-based
+dampings made, in a new costume. Ask instead the question that does not
+move: **does this body of water touch any land continent other than the
+city's own?** A hull launched into a lake, or into a sea that reaches
+nothing but its own island, can never deliver a colonist at any time
+under any demand pattern.
+
+The infrastructure exists and is unread (00-context section 3):
+`tile_continent()` is negative for water and `assign_continent_numbers()`
+maintains it across terrain change; `adv->oceans[]` is rebuilt every
+phase with only `.threat` ever consumed. `deep_water_surplus()` already
+walks the distinct waters a city touches, and `deep_ferry_demand_near()`
+(added 2026-08-04) reports demand and its distance per water. The
+missing piece is purely the BUILD-time test: the want is gated on
+`is_terrain_class_near_tile(TC_OCEAN)` -- "am I coastal" -- and never on
+whether that water reaches anything.
+
+Where to hook it: the same place the hull pricing sits, at the end of
+deep's per-city choice loop where every ferry path has spoken
+(`deepdefence.c`, see `e3a626aad3`). Hooking `choose_building` does not
+work -- that hook is handed a CT_BUILDING choice with need_boat cleared
+(advbuilding.c:311), and the first attempt at the pricing logged zero
+discounts in both arms because of it.
+
+**Check the execution counter before the score.** Three changes in the
+2026-08-04 session measured as "no effect" while never once executing.
+Log every gate decision and confirm the gate fires on a real map before
+running a batch.
+
+**Measure on `--arms deep`, not `mixed_*`** (separate-game paired se is
+2.22 against 15-20 for the head-to-head margin, at identical cost), 20
+seeds minimum for direction and 40 for a claim, and read
+`benchmark/hullcensus.py`'s wrong-harbour class -- it should fall -- as
+well as arrivals, which must NOT fall. Every previous fleet cut bought
+its smaller fleet with fewer deliveries; this one is supposed to remove
+hulls that could never have delivered anything.
+
+### What NOT to do next, and why
+
+- **Do not price the fleet COUNT again.** Falsified from both sides now:
+  the aggregate (idle share invariant at 75-80% across five
+  interventions) and the hull (idleness concentrated where demand is
+  absent, so a cut removes burst capacity as readily as slack).
+- **Do not invent a cost model for the remaining idleness.** It is
+  inventory against bursty demand, and its honest price is the WAIT a
+  passenger faces without the hull -- the number section 1d asks for and
+  nobody has measured.
+
+### Second, if the gate lands and there is session left
+
+**Does a boat order outlive its reason?** 29.2% of idle spells never end
+and 8.8% of hulls die having never carried anything. A hull ordered
+because a settler wanted passage, finished six turns later after that
+settler founded elsewhere or died, is waste no build-time gate catches.
+Nobody has checked whether deep ever abandons a part-built ferry when
+the demand that justified it is gone. The census already logs birth
+turn, so this is a join against existing data before it is any code.
+
+## 0b. WHY: the per-hull census (2026-08-04)
+
+The question in section 8 is ANSWERED. `c6210a10d9` / `21780b1183` / `aafcd3633d`
+built the per-hull census and `benchmark/hullcensus.py` reads it; 20
+paired seeds on `isolated-150`, `--arms deep`, 20/20 DONE. Full
+numbers in STATUS and `findings/hull-idleness.md`.
+
+**Idle hulls are idle because nothing is there.** 84% of idle
+hull-turns have no unit waiting to cross that hull's water at all,
+96.8% have none within five tiles. Matching is NOT the defect: idle
+hulls standing next to waiting passengers are 3.2% of idle time.
+47.4% of hulls never carried anything in their lives; 29.2% of idle
+spells never end.
+
+**Do not price the fleet COUNT again.** That is now falsified from
+both sides -- the aggregate (idle share invariant 75-80% across five
+interventions) and the hull (idleness concentrated where demand is
+absent, so a cut removes burst capacity as readily as slack).
+
+**The one cleanly recoverable slice, sized: 20.5% of hulls are built
+on a water nothing ever wants to cross**, and they own 15.1% of idle
+time. This is the useful-oceans gap in section 1c, and the census is
+its measurement. `deep_water_surplus()` already decomposes idleness
+per body of water and `deep_ferry_demand_near()` now reports demand
+and its distance per water; what is missing is the BUILD-time test --
+the want is gated on `is_terrain_class_near_tile(TC_OCEAN)`, "am I
+coastal", never on whether that water touches the demand. Check the
+execution counter before the score, per the standing rule.
+
+The remaining idleness is a TIMING problem (bursty demand, standing
+inventory) and pricing it needs the wait a passenger faces WITHOUT the
+hull -- which is the same missing number section 1d asks for. Do not
+invent a cost model for it.
+
+Also newly visible: 9.5% of hull-turns are "assigned, empty" -- a
+passenger named, nobody aboard -- which the idle predicate scores as
+busy. One such turn for every 2.5 spent carrying. Unexamined.
 
 ## 0a. BANKED: the rendezvous protocol is fixed (mechanism win)
 
@@ -13,40 +126,6 @@ delivered+arrived 73 -> 97. Score -1.80 (t=-0.07), FLAT.
 flat score is not a defect.** Do not re-litigate it, do not tune it
 chasing score, and do not revert it on the headline. 00-context
 section 8 is the standing authority for that.
-
-## 0. THEN: four changes are committed and UNVALIDATED
-
-`a4af2f21e4`, `2aed19c427`, `8b94854e62`, `e35c0ba323`, `b338a7eeef`
-and `8c59eeac3a` changed lift behaviour. **No benchmark has run on any
-of them.** Tests and tune-audit are green; that is all. Rule 6 says
-nothing about them may be claimed until measured, and the honest prior
-is that they land flat -- every lift change so far has.
-
-**Measure in this order, each against the previous as control**, on
-ONE pinned binary with tuning-file switches (they interact):
-
-1. rendezvous: `lift_manifest_max = 1`, `lift_hitch_wait_ratio = 0`,
-   `lift_op_slots = 0` -- vs the pre-session baseline
-2. manifest: `lift_manifest_max = 3`, wait still 0
-3. patience: `lift_hitch_wait_ratio = 0.25`
-4. slots: `lift_op_slots = 4`
-
-**On the island cell, do (4) FIRST.** The array is full on 61.1% of
-lift-running turns there against 36.0% on lategame-80, and lifts hold
-3.26 of 3.44 live ops -- they saturate it against themselves. Also
-note (2) cannot bind there at all: 95.4% of hulls carry at most 2, so
-lift_manifest_max = 3 is unreachable and hitch-a-ride can add ONE
-passenger onto an empty boat. Consider tuning that constant per cell;
-lategame-80's techlevel 50 gives capacity-8 Transports instead.
-
-**(1) IS DONE**: `benchmark/results/lategame-80-f138f69c9d1c`, 20/20,
-score -3.70 (t=-0.11). The rendezvous does NOT shorten the muster --
-that claim is falsified, see STATUS. Start at (2).
-
-**Run both cells.** `lategame-80` for continuity with every lift number
-on record; `isolated-150` because it carries ~10x the demand density
-and is where a transport change can actually show. A change that helps
-on one and not the other is information.
 
 ## 1. What was settled, so you do not re-derive it
 
@@ -79,6 +158,38 @@ correction appended to findings/settler-missions.md). It judged
 rendezvous the passenger walks and the boat detours zero, which moves
 the binding rung from `d3` (0.4/game) to `cont` (2.9/game there,
 122/game on the island cell). That is why it was rebuilt.
+
+## 1a. SETTLED overnight (2026-08-04), do not redo
+
+- **Straying is fixed.** `b699ddefa1`: the settler_run hook now honours
+  the operation hold. strayed 109 -> 4, and 0 in later runs.
+- **Hitch-a-ride is NEUTRAL and defaults off.** Measured three times,
+  fairest last (multi-drop live, 20 seeds): -8.25, t=-0.47, 10/20 up.
+  Keep `lift_manifest_max = 1`.
+- **Cutting boat production HURTS.** Two arms agree: damping -20.00,
+  quartering the want -14.65 with deliveries -8%. The "Too Many Boats"
+  reading is doubtful -- idle hulls are inventory, not waste.
+- **The rendezvous fix is +11.28 (t=0.88) at 40 seeds**, not a win.
+  Mechanism banked (gather-timeouts 545 -> 28, deliveries +31%).
+- **`lift_op_slots` defaults OFF.** Relieving the array ceiling works
+  (saturation 8% -> 0%, formations +26%, arrivals +22%) and costs
+  score, -13.50 (t=-0.88).
+- **USE `--arms deep`, NOT `mixed_*`, FOR SCORE.** Measured 2026-08-04:
+  separate-game paired se is 2.22 against 15-20 for the head-to-head
+  margin, at identical cost -- four deep seats averaged, no opponent
+  variance. 00-context section 6 said so and ~15 comparisons this
+  session ignored it because liftcmp.py computed the margin. Deep's
+  absolute score was FLAT at ~209 across every intervention while the
+  margins swung, because classic's score was moving. Every score
+  verdict from 2026-08-03/04 is owed a re-take this way.
+- **TEN SEEDS ARE MISLEADING ON THIS CELL.** Two estimates flipped or
+  collapsed under power: rendezvous +29.90 -> +11.28, slots +22.30 ->
+  -13.50. Use 20 minimum for direction, 40 for a claim. A 20-game
+  paired batch costs ~11 minutes.
+- **Read the EXECUTION COUNTER before the score.** Three changes this
+  session measured as "no effect" while never executing: hitch-a-ride
+  (manifest pinned at 1), the drop routing (behind an early return),
+  and the SSA suspension (byte-identical scorelogs).
 
 ## 1b. Two human leads (2026-08-03), neither built
 
@@ -116,7 +227,7 @@ formation gap of 4.48 tiles -- near the floor the boat's own travel
 sets -- while the failures are the impossible-rendezvous class that
 walking cannot fix either.
 
-## 1c. THE TARGET THIS SESSION ACTUALLY FOUND: the boat build signal
+## 1c. The boat build signal: the rest of the gap
 
 Not a transport mechanism. `colony_want` drives boat production and is
 measurably wrong in THREE directions, all on the same 20-game batches:
@@ -157,141 +268,6 @@ everything the lift epic touched. Size it before building: the counts
 above are hulls, not shields, so price the waste first -- and count
 how many existing hulls sit on an ocean that reaches no wanted site,
 which is the number this would actually recover.
-
-## 0y. ANSWERED (2026-08-04): why any individual hull is idle
-
-Section 0z below is DONE. `c6210a10d9` / `21780b1183` / `aafcd3633d`
-built the per-hull census and `benchmark/hullcensus.py` reads it; 20
-paired seeds on `isolated-150`, `--arms deep`, 20/20 DONE. Full
-numbers in STATUS and `findings/hull-idleness.md`.
-
-**Idle hulls are idle because nothing is there.** 84% of idle
-hull-turns have no unit waiting to cross that hull's water at all,
-96.8% have none within five tiles. Matching is NOT the defect: idle
-hulls standing next to waiting passengers are 3.2% of idle time.
-47.4% of hulls never carried anything in their lives; 29.2% of idle
-spells never end.
-
-**Do not price the fleet COUNT again.** That is now falsified from
-both sides -- the aggregate (idle share invariant 75-80% across five
-interventions) and the hull (idleness concentrated where demand is
-absent, so a cut removes burst capacity as readily as slack).
-
-**The one cleanly recoverable slice, sized: 20.5% of hulls are built
-on a water nothing ever wants to cross**, and they own 15.1% of idle
-time. This is the useful-oceans gap in section 1c, and the census is
-its measurement. `deep_water_surplus()` already decomposes idleness
-per body of water and `deep_ferry_demand_near()` now reports demand
-and its distance per water; what is missing is the BUILD-time test --
-the want is gated on `is_terrain_class_near_tile(TC_OCEAN)`, "am I
-coastal", never on whether that water touches the demand. Check the
-execution counter before the score, per the standing rule.
-
-The remaining idleness is a TIMING problem (bursty demand, standing
-inventory) and pricing it needs the wait a passenger faces WITHOUT the
-hull -- which is the same missing number section 1d asks for. Do not
-invent a cost model for it.
-
-Also newly visible: 9.5% of hull-turns are "assigned, empty" -- a
-passenger named, nobody aboard -- which the idle predicate scores as
-busy. One such turn for every 2.5 spent carrying. Unexamined.
-
-## 0z. THE NEXT THING TO DIG INTO: why is any individual hull idle?
-    (ANSWERED -- see 0y)
-
-**The hull pricing is DONE and measured.** `e3a626aad3` executes (6940
-discounts against 0), cuts the fleet 14%, and does not move the thing
-it was built to move:
-
-    arm    boats/turn  idle/turn  idle share  arrived  score
-    OFF       6.14       4.94        80%       348    196.25
-    ON        5.26       4.03        77%       328    198.68
-    (score +2.42, se 3.14, t=+0.77, 12/20; unitsbuilt -6.29, t=-2.78)
-
-**Idle share is INVARIANT at 75-80% across every fleet size produced
-this session, by five separate interventions:**
-
-    fleet 4.57 -> 75%   5.26 -> 77%   5.78 -> 79%   6.14 -> 80%   6.24 -> 80%
-
-Cutting hulls removes busy and idle ones in the same proportion, so
-building fewer cannot fix idleness. And arrivals fell 6% while idle
-share held, which indicts the idle PREDICATE: a per-turn snapshot
-cannot tell "idle" from "idle now, sailing next turn", so the pricing
-removed hulls that were about to be useful.
-
-The human standard stands (2026-08-04): **an idle boat means we are
-doing it wrong.** The question is WHY a given hull is idle, and no
-fleet aggregate can answer it.
-
-### The measurement to build
-
-Per-HULL, over its whole life, not per-turn fleet counts:
-
-- turns from launch to first passenger carried (or never)
-- total turns held with no passenger
-- what ENDS each idle spell: a crossing, a re-task, or the boat dying
-  still empty
-- which ocean body it sat on, and whether any crossing demand ever
-  appeared on that water while it waited
-
-Emit one line per hull at death or game end. `deep_idle_ferries_on()`
-already has the "is it idle" predicate; this needs the same test
-accumulated per unit id rather than summed per turn.
-
-### What the answer decides
-
-    too many boats     -> building fewer helps. The invariant says
-                          this is probably NOT dominant: if it were,
-                          cutting the fleet would have raised
-                          utilisation, and five attempts did not.
-    wrong harbour      -> fix WHERE they are built. This is the
-                          "useful oceans" gap (section 1c): the want
-                          is gated on "am I coastal", never on whether
-                          that water reaches any demand. A hull on a
-                          lake is idle forever at any fleet size.
-    demand evaporated  -> the settler founded elsewhere, was re-tasked
-                          or died after its boat was ordered. Then the
-                          defect is the ORDER surviving its reason,
-                          and the fix is cancelling production when
-                          the demand that justified it is gone.
-
-Only the first is what pricing addresses. Size before building, as
-always -- and check the execution counter before the score.
-
-Pinned binaries in the session scratchpad are GONE (tmpfs). Re-pin
-from HEAD.
-
-## 1a. SETTLED overnight (2026-08-04), do not redo
-
-- **Straying is fixed.** `b699ddefa1`: the settler_run hook now honours
-  the operation hold. strayed 109 -> 4, and 0 in later runs.
-- **Hitch-a-ride is NEUTRAL and defaults off.** Measured three times,
-  fairest last (multi-drop live, 20 seeds): -8.25, t=-0.47, 10/20 up.
-  Keep `lift_manifest_max = 1`.
-- **Cutting boat production HURTS.** Two arms agree: damping -20.00,
-  quartering the want -14.65 with deliveries -8%. The "Too Many Boats"
-  reading is doubtful -- idle hulls are inventory, not waste.
-- **The rendezvous fix is +11.28 (t=0.88) at 40 seeds**, not a win.
-  Mechanism banked (gather-timeouts 545 -> 28, deliveries +31%).
-- **`lift_op_slots` defaults OFF.** Relieving the array ceiling works
-  (saturation 8% -> 0%, formations +26%, arrivals +22%) and costs
-  score, -13.50 (t=-0.88).
-- **USE `--arms deep`, NOT `mixed_*`, FOR SCORE.** Measured 2026-08-04:
-  separate-game paired se is 2.22 against 15-20 for the head-to-head
-  margin, at identical cost -- four deep seats averaged, no opponent
-  variance. 00-context section 6 said so and ~15 comparisons this
-  session ignored it because liftcmp.py computed the margin. Deep's
-  absolute score was FLAT at ~209 across every intervention while the
-  margins swung, because classic's score was moving. Every score
-  verdict from 2026-08-03/04 is owed a re-take this way.
-- **TEN SEEDS ARE MISLEADING ON THIS CELL.** Two estimates flipped or
-  collapsed under power: rendezvous +29.90 -> +11.28, slots +22.30 ->
-  -13.50. Use 20 minimum for direction, 40 for a claim. A 20-game
-  paired batch costs ~11 minutes.
-- **Read the EXECUTION COUNTER before the score.** Three changes this
-  session measured as "no effect" while never executing: hitch-a-ride
-  (manifest pinned at 1), the drop routing (behind an early return),
-  and the SSA suspension (byte-identical scorelogs).
 
 ## 1d. Two open design calls (human, 2026-08-04), both SIZED FIRST
 
@@ -432,7 +408,7 @@ committed without at least one run in which its code takes a branch.
   slows every game. Budget accordingly before promising a quick check.
 - /tmp is tmpfs and IS wiped between sessions.
 - `meson test -C build` is the suite; `python3 benchmark/tune-audit.py`
-  must print CLEAN (102/102/102/102 now).
+  must print CLEAN (106/106/106/106 as of 2026-08-04).
 
 ## STATE
 
@@ -445,3 +421,112 @@ committed without at least one run in which its code takes a branch.
 - Both campaign boxes are STOPPED, not terminated (a6 us-east-1
   i-0e9a257ef3b781349, b6 us-east-2 i-05162168cf393cb20 -- DIFFERENT
   REGIONS). EBS caches preserved. NEVER terminate.
+
+## 8. HISTORY: the question section 0b answered (2026-08-04)
+
+**Kept for provenance: this is the brief section 0b discharged.** Its
+reasoning about what a per-hull measurement would decide is still
+sound; its verdict ladder is now filled in with real numbers.
+
+**The hull pricing is DONE and measured.** `e3a626aad3` executes (6940
+discounts against 0), cuts the fleet 14%, and does not move the thing
+it was built to move:
+
+    arm    boats/turn  idle/turn  idle share  arrived  score
+    OFF       6.14       4.94        80%       348    196.25
+    ON        5.26       4.03        77%       328    198.68
+    (score +2.42, se 3.14, t=+0.77, 12/20; unitsbuilt -6.29, t=-2.78)
+
+**Idle share is INVARIANT at 75-80% across every fleet size produced
+this session, by five separate interventions:**
+
+    fleet 4.57 -> 75%   5.26 -> 77%   5.78 -> 79%   6.14 -> 80%   6.24 -> 80%
+
+Cutting hulls removes busy and idle ones in the same proportion, so
+building fewer cannot fix idleness. And arrivals fell 6% while idle
+share held, which indicts the idle PREDICATE: a per-turn snapshot
+cannot tell "idle" from "idle now, sailing next turn", so the pricing
+removed hulls that were about to be useful.
+
+The human standard stands (2026-08-04): **an idle boat means we are
+doing it wrong.** The question is WHY a given hull is idle, and no
+fleet aggregate can answer it.
+
+### The measurement to build
+
+Per-HULL, over its whole life, not per-turn fleet counts:
+
+- turns from launch to first passenger carried (or never)
+- total turns held with no passenger
+- what ENDS each idle spell: a crossing, a re-task, or the boat dying
+  still empty
+- which ocean body it sat on, and whether any crossing demand ever
+  appeared on that water while it waited
+
+Emit one line per hull at death or game end. `deep_idle_ferries_on()`
+already has the "is it idle" predicate; this needs the same test
+accumulated per unit id rather than summed per turn.
+
+### What the answer decides
+
+    too many boats     -> building fewer helps. The invariant says
+                          this is probably NOT dominant: if it were,
+                          cutting the fleet would have raised
+                          utilisation, and five attempts did not.
+    wrong harbour      -> fix WHERE they are built. This is the
+                          "useful oceans" gap (section 1c): the want
+                          is gated on "am I coastal", never on whether
+                          that water reaches any demand. A hull on a
+                          lake is idle forever at any fleet size.
+    demand evaporated  -> the settler founded elsewhere, was re-tasked
+                          or died after its boat was ordered. Then the
+                          defect is the ORDER surviving its reason,
+                          and the fix is cancelling production when
+                          the demand that justified it is gone.
+
+Only the first is what pricing addresses. Size before building, as
+always -- and check the execution counter before the score.
+
+Pinned binaries in the session scratchpad are GONE (tmpfs). Re-pin
+from HEAD.
+
+## 9. HISTORY: the lift measurement ladder -- SUPERSEDED
+
+**Kept for provenance. Do NOT follow the instructions in this section.**
+The measurement ladder below was superseded by later sessions: section 2
+("delivery is not the constraint, do not build more transport") is the
+verdict that replaced it, and section 1a records what each rung
+eventually measured. Read it only to understand how the lift epic
+reached its conclusion.
+
+`a4af2f21e4`, `2aed19c427`, `8b94854e62`, `e35c0ba323`, `b338a7eeef`
+and `8c59eeac3a` changed lift behaviour. **No benchmark has run on any
+of them.** Tests and tune-audit are green; that is all. Rule 6 says
+nothing about them may be claimed until measured, and the honest prior
+is that they land flat -- every lift change so far has.
+
+**Measure in this order, each against the previous as control**, on
+ONE pinned binary with tuning-file switches (they interact):
+
+1. rendezvous: `lift_manifest_max = 1`, `lift_hitch_wait_ratio = 0`,
+   `lift_op_slots = 0` -- vs the pre-session baseline
+2. manifest: `lift_manifest_max = 3`, wait still 0
+3. patience: `lift_hitch_wait_ratio = 0.25`
+4. slots: `lift_op_slots = 4`
+
+**On the island cell, do (4) FIRST.** The array is full on 61.1% of
+lift-running turns there against 36.0% on lategame-80, and lifts hold
+3.26 of 3.44 live ops -- they saturate it against themselves. Also
+note (2) cannot bind there at all: 95.4% of hulls carry at most 2, so
+lift_manifest_max = 3 is unreachable and hitch-a-ride can add ONE
+passenger onto an empty boat. Consider tuning that constant per cell;
+lategame-80's techlevel 50 gives capacity-8 Transports instead.
+
+**(1) IS DONE**: `benchmark/results/lategame-80-f138f69c9d1c`, 20/20,
+score -3.70 (t=-0.11). The rendezvous does NOT shorten the muster --
+that claim is falsified, see STATUS. Start at (2).
+
+**Run both cells.** `lategame-80` for continuity with every lift number
+on record; `isolated-150` because it carries ~10x the demand density
+and is where a transport change can actually show. A change that helps
+on one and not the other is information.
