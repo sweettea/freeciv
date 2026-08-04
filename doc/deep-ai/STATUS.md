@@ -3910,3 +3910,44 @@ displace something better.
 
 **That is where the next epic goes.** Not transport. Site quality, or
 what the settlers cost to make.
+
+### The metric was wrong all night: deep's absolute score never moved
+    (2026-08-04)
+
+Prompted by asking whether the quarter-boat arm actually FREED shields.
+It did not -- with the cut, `unitsbuilt` FELL 99.2 -> 94.5 and `mfg`
+68.9 -> 66.4. Nothing was redirected; the AI just built less and lost a
+city. But splitting the arms into absolute sides showed something
+larger:
+
+    arm          deep   classic   margin   deep cities  classic cities
+    ctrl        208.9    167.7    +41.2       16.65        14.20
+    combo(cut)  209.0    172.1    +36.9       15.61        14.65
+    noboatcut   209.3    170.4    +38.9       16.32        14.47
+    slots       207.2    169.3    +37.9       16.59        14.32
+    hitch       209.8    170.7    +39.2       16.49        14.11
+
+**Deep's own score is FLAT at ~209 across every intervention** (range
+2.6 points, ~1.2%). The margins moved mostly because CLASSIC's score
+moved, 167.7 -> 172.1 -- and it moved because deep took fewer cities
+and left more for the opponent (deep 15.61 / classic 14.65 in the cut
+arm against 16.65 / 14.20 in control).
+
+So every score number reported tonight -- -8.25, -13.50, -17.15,
+-20.00, +11.28 -- is a head-to-head margin substantially driven by the
+opponent's side of a shared game. `00-context` section 6 refuses
+head-to-head as the headline metric for exactly this reason, and it was
+used anyway because `liftcmp.py` made it the easy thing to compute.
+
+**What this does and does not overturn.** The MECHANISM results stand
+untouched -- they are counts, not margins. The score verdicts become
+much weaker: "hitch-a-ride is neutral" and "slots costs score" are now
+"unjudged on a metric worth trusting". The one thing the absolute
+column does say is that NONE of these interventions moved deep's own
+score, which is consistent with the epic's conclusion and reached by a
+better route.
+
+**Owed before any of tonight's tuning defaults are trusted: a
+separate-game measurement** (`--arms deep,classic` rather than
+`mixed_*`), which is what section 6 specifies as primary and which was
+never run.
