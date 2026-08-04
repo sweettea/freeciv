@@ -3741,3 +3741,28 @@ table matched arms by tuning FILENAME, and several pins reuse
 plausible, wrong table (hitch -50.90 instead of -16.90). Group by the
 server hash in `key.txt`, which is exactly what the content-addressed
 cache records it for.
+
+### Dead code that measured as "no effect" (2026-08-04)
+
+    fc4262ff15  run the multi-drop routing on BOTH arrival paths
+
+The nearest-first drop routing (`75d108f119`) sat inline in the slow
+arrival branch, and the same-turn arrival (`2485c95279`) returned
+before reaching it. Same-turn arrival is now the common case, so the
+routing NEVER RAN: 20 games carried 16 two-passenger manifests and
+logged zero next stops.
+
+So the full-stack hitch re-measurement (-19.00, t=-0.76) did not test
+what it was built to test either -- joiners were still landed at the
+core's beachhead and still walked the median 7 tiles the routing
+exists to remove. Both numbers are void; re-running.
+
+**The rule this earns:** a feature that never executes and a feature
+that does nothing are IDENTICAL in the score column. The only reason
+this surfaced is that the routing logs a counter -- `nextstop=0` is
+visible where a flat score is not. Every mechanism added here should
+log an execution counter, and it should be read BEFORE the score.
+
+This is the second such case tonight after hitch-a-ride went four
+commits deep with `lift_manifest_max = 1` in every run, never taking a
+branch.
