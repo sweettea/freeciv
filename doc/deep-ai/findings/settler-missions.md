@@ -705,3 +705,42 @@ as the next thing to SIZE, not the next thing to build.
 second time, so it is flagged rather than acted on.** Nothing was built.
 The census cost 20 games; the manifest, the join gate, the detour
 costing and the loss-risk accounting would have cost the session.
+
+### SCOPE CORRECTION (2026-08-03, later the same session)
+
+**Section 10 above is a `lategame-80` verdict about a
+boat-detours mechanism, and it was written as though it were a general
+one. Both qualifiers matter and neither was stated.**
+
+**Venue.** Probed on `isolated-150` (ISLAND generator, 4 players, 2
+games, lift ON) the same ladder reads an order of magnitude larger:
+
+    per game                        lategame-80   isolated-150
+    unclaimed overseas waiters             16.9          287
+    joinable, still gathering (cont)        2.9          122
+    within a 1-turn detour (d3)             0.4         12.5
+    waiters per lift-running turn          0.38         4.04
+
+The island cell has ~10x the demand DENSITY, because there
+essentially every expansion needs a hull. `mapgenerator3` makes
+`player_count()` islands with start positions and then keeps making
+islands until the landmass runs out (`mapgen.c:2401-2428`), so the
+unclaimed-island tail IS the colonisation target set. The config
+comments' "one island per player" describes the starting islands only.
+
+**Mechanism.** The gate section 10 sized was "the BOAT detours to
+collect a second passenger, for less than one turn of boat waiting" --
+hence `d3`, boat-near-passenger. Once the rendezvous is a fixed named
+tile the boat detours by exactly ZERO and the joiner walks, so the
+rung that binds is `cont`, not `d3`. Same census, different mechanism,
+7x the admissible demand on lategame-80 and 300x on the island cell.
+
+So the census was not wrong and it was not wasted -- it correctly
+killed a design in which the boat pays. It could not speak to a design
+in which the passenger pays, because that design did not exist when
+the ladder was defined.
+
+**What survives unqualified:** the concentration cost. A shared
+manifest still loses N units to one sinking, whatever the cell and
+whoever walks. That is why the manifest is capped by a tunable rather
+than by the hull.
