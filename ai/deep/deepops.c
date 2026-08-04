@@ -491,6 +491,76 @@ static struct tile *deep_lift_shore_tile(const struct civ_map *nmap,
 }
 
 /**********************************************************************//**
+  The meeting point that MINIMISES THE LATER ARRIVAL: the tile where
+  max(boat turns, passenger turns) is smallest, which is as close to
+  equal-turns-from-both as the map allows (human, 2026-08-03).
+
+  This replaces "a tile the boat can float on at or beside the
+  passenger", and that choice is why making the rendezvous two-sided
+  bought nothing: the meeting point was AT THE PASSENGER'S FEET, so
+  the boat travelled the whole gap and the passenger had nowhere to
+  walk. Both ends drove to a point only one of them had to reach.
+
+  Turns come from real pathfinding on both sides, not from
+  real_map_distance(). Straight line is what made formation accept 31
+  musters against a boat that could never arrive, and it would be
+  wrong in both directions here -- ocean paths bend around headlands
+  and land paths follow roads.
+
+  The boat's map is the caller's, built once per formation. Returns
+  the tile, with *pturns set to the later of the two arrivals, or NULL
+  if no tile is reachable by both.
+**************************************************************************/
+static struct tile *deep_lift_best_meeting(const struct civ_map *nmap,
+                                           struct pf_map *boatmap,
+                                           struct unit *ferry,
+                                           struct unit *psngr,
+                                           int radius, int *pturns)
+{
+  struct pf_parameter parameter;
+  struct pf_map *walkmap;
+  struct tile *best = NULL;
+  int bestcost = -1, bestsum = -1;
+
+  pft_fill_unit_parameter(&parameter, nmap, psngr);
+  parameter.omniscience = !has_handicap(unit_owner(psngr), H_MAP);
+  walkmap = pf_map_new(&parameter);
+
+  square_iterate(nmap, unit_tile(psngr), radius, cand) {
+    struct pf_position bpos, wpos;
+    struct tile *shore;
+    int cost, sum;
+
+    if (!can_unit_exist_at_tile(nmap, ferry, cand)
+        || !pf_map_position(boatmap, cand, &bpos)) {
+      continue;
+    }
+    shore = deep_lift_shore_tile(nmap, psngr, cand);
+    if (shore == NULL || !pf_map_position(walkmap, shore, &wpos)) {
+      continue;
+    }
+    /* The boat cannot sail before the later of the two gets there, so
+     * the max is the cost to minimise; the sum breaks ties toward the
+     * meeting that wastes fewer unit-turns overall. */
+    cost = MAX(bpos.turn, wpos.turn);
+    sum = bpos.turn + wpos.turn;
+    if (best == NULL || cost < bestcost
+        || (cost == bestcost && sum < bestsum)) {
+      best = cand;
+      bestcost = cost;
+      bestsum = sum;
+    }
+  } square_iterate_end;
+
+  pf_map_destroy(walkmap);
+  if (best != NULL && pturns != NULL) {
+    *pturns = bestcost;
+  }
+
+  return best;
+}
+
+/**********************************************************************//**
   Can this unit stand on the shore beside the rendezvous within the
   turns the muster has left? Distance over its own move rate, which is
   optimistic (it ignores terrain and roads) and deliberately so: the
@@ -706,7 +776,7 @@ static bool deep_op_form_lift(struct ai_type *ait, struct player *pplayer,
   const struct civ_map *nmap = &(wld.map);
   struct unit *best_psngr = NULL, *best_boat = NULL;
   struct tile *meet;
-  int best_d = -1;
+  int best_d = -1, meet_turns = 0;
 
   unit_list_iterate(pplayer->units, psngr) {
     if (!deep_lift_wants_boat(ait, psngr)
@@ -744,17 +814,25 @@ static bool deep_op_form_lift(struct ai_type *ait, struct player *pplayer,
   if (best_psngr == NULL) {
     return FALSE;
   }
-  /* The boat must be able to reach the passenger at all, and the
-   * manifest must have somewhere to land. */
-  meet = deep_lift_meeting_tile(nmap, best_boat, unit_tile(best_psngr));
+  /* Where to meet: the tile whose LATER arrival is soonest, found by
+   * real pathfinding from both ends. The boat's map is built once
+   * here and reused for every candidate, and it is also the honest
+   * test of the thing straight-line distance kept getting wrong --
+   * whether this hull can reach that water at all. */
+  {
+    struct pf_parameter parameter;
+    struct pf_map *boatmap;
+
+    pft_fill_unit_parameter(&parameter, nmap, best_boat);
+    parameter.omniscience = !has_handicap(pplayer, H_MAP);
+    boatmap = pf_map_new(&parameter);
+    meet = deep_lift_best_meeting(nmap, boatmap, best_boat, best_psngr,
+                                  tune->lift_form_radius, &meet_turns);
+    pf_map_destroy(boatmap);
+  }
   if (meet == NULL
       || deep_lift_meeting_tile(nmap, best_boat,
                                 best_psngr->goto_tile) == NULL) {
-    return FALSE;
-  }
-  /* ... and the passenger must be able to walk to the shore beside
-   * that tile, or there is no meeting to schedule. */
-  if (deep_lift_shore_tile(nmap, best_psngr, meet) == NULL) {
     return FALSE;
   }
 
@@ -775,9 +853,10 @@ static bool deep_op_form_lift(struct ai_type *ait, struct player *pplayer,
 
   log_base(deep_metric_log_level(),
            "deep-lift-op turn=%d player=\"%s\" op=%d form boat=%d"
-           " psngr=%d gap=%d beach=(%d,%d)",
+           " psngr=%d gap=%d beach=(%d,%d) meet=(%d,%d) eta=%d",
            game.info.turn, player_name(pplayer), oi, op->ferry,
-           op->members[0], best_d, TILE_XY(best_psngr->goto_tile));
+           op->members[0], best_d, TILE_XY(best_psngr->goto_tile),
+           TILE_XY(meet), meet_turns);
 
   return TRUE;
 }
