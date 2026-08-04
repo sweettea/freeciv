@@ -3271,3 +3271,46 @@ interact.
 `CLAUDE.md` cites `./benchmark/report.py`; no such file exists.
 `extract.py` writes `metrics.csv` and the per-cell comparisons are
 ad-hoc. Either restore the script or correct the doc.
+
+### MEASURED: the two-sided rendezvous, and the reason given for it
+    (2026-08-03, late night)
+
+20 games, `lategame-80`, mirrored, one pinned binary, everything else
+switched off (`lift_op_slots = 0`, no manifest, no patience):
+
+    variant      form  sail  delivered  arrived  strayed  unreachable
+    base          165   110     58        15       19         4
+    two-sided     173   114     69        13       16         0
+
+    score, deep minus classic, paired: -3.70 (se 32.81, t=-0.11, 3/10)
+
+**The mechanism the change was justified by does not operate.** The
+commit said "a settler that can walk half the distance is half a
+rendezvous the boat no longer has to sail". Measured:
+
+    variant     sailed  idle-turns  mean muster  timeouts  timeout idle
+    base          110      244         2.22        31         279
+    two-sided     114      258         2.26        35         315
+
+Muster duration is UNCHANGED, total idle time rose slightly, and the
+timeouts still burn the entire window (315/35 = 9.0, exactly as
+before). The boat is far faster than a settler, so the passenger
+walking contributes almost nothing to closing the gap -- the arithmetic
+was available before the run and was not done.
+
+Nor is the delivery gain a result: 73 -> 82 delivered+arrived on counts
+that size carries a difference SD near 12. The one unambiguous change
+is `unreachable` 4 -> 0, which is the formation-time reachability check
+working, and that is a small class.
+
+**Not a regression, not a win, and -- unlike the lift and the
+cross-water worker -- not even a proxy that moved.** Those two fixed a
+measured defect and failed to convert it. This one did not move its own
+proxy. The reachability gate is worth keeping on correctness grounds;
+the "shortens the muster" reasoning is falsified and must not survive
+into the next design as motivation.
+
+Hitch-a-ride and the proportional patience are still UNMEASURED, and
+they rest on the same fixed-rendezvous machinery -- but not on this
+claim: they need the meeting point to be STABLE and NAMED (so a joiner
+has something to walk to), not FAST. That premise is intact.
