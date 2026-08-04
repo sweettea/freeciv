@@ -2954,3 +2954,56 @@ expected shape, and the change costs nothing there.
 
 No cross-cell regression. The fix is correct, guarded, and waiting on
 lift supply on both cells.
+
+## The lift epic's premise is falsified: there are no trips to share
+   (2026-08-03, night)
+
+    fc195bab2d  ai/deep: census the lift demand that could share a boat
+
+**The first action of the lift epic was to size it, and the size is
+1.6%. The design call the epic was built around does not survive.**
+
+The specified epic was "the colony lift as an operation, and the cap
+counts TRIPS" -- keep 1:1 for ordinary settlers, but let a unit ride a
+boat that is already crossing, which needs a manifest, which needs the
+lift to be an operation. `findings/settler-missions.md` section 9 has
+the full ladder; the decisive rows, restricted to the player-turns where
+the 1:1 cap actually binds (607 turns, 1160 waiting unit-turns,
+`lategame-80`, 10 train seeds, 20 games):
+
+    slot        1109   95.6%   a rideable boat with a free slot exists
+    d5           329   28.4%   ... within 5 tiles
+    d3           151   13.0%   ... within 3 tiles
+    d0             7    0.6%   ... on the same tile
+    loaded        18    1.6%   ... already carrying cargo (d<=5)
+
+A trip-counting cap admits the last row and refuses nothing else:
+**1.6%**. The manifest has nothing to share -- boats carry cargo on
+11.1% of 8384 boat-turns, 0.19 loaded boats per player-turn.
+
+### The finding is the rung above it
+
+**95.6% of capped waiting unit-turns have a rideable boat with a free
+slot, and 5017 free cargo slots sit idle on those turns.** The cap
+refuses passengers while empty hulls ride along. But only **0.6% ever
+stand on the same tile as a boat** -- and same-tile is where loading
+happens.
+
+The binding constraint is the **rendezvous**, not the cap's arithmetic
+and not cargo capacity. Supply and demand coexist in the same empire, on
+the same turn, a few tiles apart, and nothing closes the gap. Section 8
+measured the identical defect from the boat's side (778 boat-turns with
+a flagged, reachable settler, idle).
+
+### What this means for the next session
+
+- The lift-as-operation is **still the right epic**; its job changes
+  from sharing crossings to CAUSING them: a named boat driven to a named
+  passenger, loaded, crossed, landed, held against re-tasking.
+- **Do not build the manifest as the win** (1.6%), and **do not loosen
+  the cap** -- passengers it admits would not be collected either.
+- The 1:1 cap can stay exactly as it is until the rendezvous works.
+
+**This overrides an explicit human design call (2026-08-03), so it is
+flagged rather than acted on.** Nothing was built on the falsified
+premise.

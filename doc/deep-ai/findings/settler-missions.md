@@ -545,3 +545,86 @@ prerequisite for the lift work and belongs in the same epic.**
 
 The per-city founder pool is in history at `5d422d0b44`, superseded by
 the per-site formula.
+
+## 9. The cap should NOT count trips: there are no trips to share
+   (2026-08-03, night)
+
+The lift epic was specified around one design call, made twice in the
+handoffs: keep 1:1 for ordinary settlers, but **make the cap count TRIPS
+rather than settlers**, because a unit boarding a boat that is already
+crossing costs nothing (civ2civ3's Transport has capacity 8 and carries
+one passenger). That call was to be delivered by a manifest, which is
+why the lift had to become an operation.
+
+**Measured first, and it does not survive the measurement.**
+
+`lategame-80`, 10 train seeds, mirrored `mixed_dc`/`mixed_cd`, 20 games,
+4818 player-turns, 3248 waiting unit-turns. The census
+(`deep_lift_census()`, `benchmark/liftcensus.py`) is a ladder: each rung
+relaxes one more constraint a trip-counting cap would have to satisfy.
+
+Restricted to the population the change would act on -- player-turns
+where the 1:1 cap actually binds (`psng >= boats`, `boats > 0`), 607 of
+them, 1160 waiting unit-turns:
+
+    slot        1109   95.6%   a rideable boat with a free slot exists
+    d5           329   28.4%   ... within 5 tiles
+    d3           151   13.0%   ... within 3 tiles
+    d0             7    0.6%   ... on the same tile
+    loaded        18    1.6%   ... already carrying cargo (d<=5)
+
+**1.6%.** That is what a trip-counting cap would admit that the
+settler-counting cap refuses. The manifest is worth essentially nothing,
+because the thing it shares does not exist: across all 8384 boat-turns,
+a boat is carrying anything on **11.1%** of them, and only 0.19 boats
+per player-turn are loaded at all. You cannot share a trip that nobody
+is making.
+
+### What the same census found instead
+
+The rung above it is the finding:
+
+**95.6% of capped waiting unit-turns have a rideable boat with a free
+cargo slot.** On those same capped turns, 5017 free cargo slots sit
+idle. The cap says "every boat already has somebody waiting for it" and
+refuses the passenger -- while 8.3 empty slots per turn ride along doing
+nothing.
+
+And the boat and the passenger never meet: 28.4% are within 5 tiles,
+13.0% within 3, and **0.6% ever stand on the same tile**. That 0.6% is
+the whole pipeline, because same-tile is where loading happens.
+
+So the binding constraint is not the cap's arithmetic and not cargo
+capacity. It is the **rendezvous**: supply and demand coexist, in the
+same empire, on the same turn, within a few tiles of each other, and
+nothing closes the last gap. That is the same defect section 8 measured
+from the other side (778 boat-turns with a flagged, provably reachable
+settler and the boat idle) and it is RC2 -- "statistical mechanics
+rather than logic" -- with a second number on it.
+
+### What this changes about the epic
+
+- **Do not build the manifest as the win.** Trip-sharing is a 1.6%
+  lever. If a manifest appears it should be a by-product of owning the
+  crossing, never the justification for it.
+- **Do not loosen the cap either.** The cap is not what is costing the
+  colonies; passengers it admits would still not be collected. Raising
+  it only queues more units against the same broken rendezvous.
+- **The lift operation is still the right next epic** -- but its job is
+  to make the crossing HAPPEN (drive a named boat to a named passenger,
+  load, cross, land) rather than to let more passengers share crossings
+  that are already happening.
+
+The 1:1 cap can stay exactly as it is until the rendezvous works. It is
+refusing demand that the pipeline could not have served anyway.
+
+### Method note
+
+The first version of this census used `can_unit_load()`, which opens
+with a `same_pos()` test -- so every distance rung would have read the
+same as `d0` and the census would have reported ~0 sharable demand for a
+purely mechanical reason, confirming the epic's premise was worthless
+for the wrong reason. `could_unit_load()` is the position-independent
+predicate. The `d0` rung is kept deliberately as the tripwire: `d0`
+reading 0.6% while `d3` reads 13.0% is what proves the predicate is not
+silently collapsing.
