@@ -508,6 +508,15 @@ static bool deep_lift_can_make_meeting(const struct civ_map *nmap,
   if (shore == NULL) {
     return FALSE;
   }
+  /* Walking distance, so it has to BE walkable: can_unit_exist_at_tile()
+   * inside deep_lift_shore_tile() says the unit could stand there, not
+   * that it could get there. Without this a unit on another landmass
+   * entirely reads as three tiles away across open ocean, enrolls, and
+   * then cannot move -- the same class of error as measuring a
+   * rendezvous by straight-line distance. */
+  if (tile_continent(shore) != tile_continent(unit_tile(punit))) {
+    return FALSE;
+  }
   d = real_map_distance(unit_tile(punit), shore);
   rate = MAX(1, unit_move_rate(punit) / SINGLE_MOVE);
 
