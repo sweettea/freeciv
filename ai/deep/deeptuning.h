@@ -130,10 +130,16 @@ struct deep_tuning {
   double horizon_capacity_weight;
   double horizon_growth_weight;
   double horizon_bundle_weight;
-  /* Credit per point of Health_Pct once the city is within one pop
-   * of the ruleset's illness threshold: plague insurance is worth
+  /* Plague insurance, in the same tile-sum currency as the credits
+   * around it: scale on (expected citizens the building's Health_Pct
+   * saves over MORT turns) x (what a citizen earns from the best
+   * unworked tile). Active once the city is within one pop of the
+   * ruleset's illness threshold, because the insurance is worth
    * having before the size gate the building's other effects wait
-   * for. */
+   * for. Was "credit per PERCENT POINT of Health_Pct" -- a third
+   * currency, and a flat 30 for an Aqueduct in a city whose plague
+   * risk was zero (economy audit 3.11). The knob's scale moved with
+   * its dimension and it owes the tuning pile a value. */
   double horizon_health_weight;
   /* Credit per citizen a Make_Content/Force_Content building frees
    * from pacification duty, in the same tile-sum currency as the
@@ -492,6 +498,15 @@ struct deep_tuning {
    * hyperbola and equilibrated at fleets of 20-51 on island maps.
    * 0 restores that behaviour. */
   double explore_explorer_claim;
+  /* Disposal, keyed to the same quantity. Slack in EXPLORERS between
+   * the point where the prize stops paying for another one and the
+   * point where standing ones are salvaged, so build and disband
+   * cannot alternate on one turn's arithmetic; and the number of
+   * explorers never salvaged, because island hut supply reopens as
+   * new landmasses are reached and W04's recon value lands on this
+   * same fleet. */
+  double explore_salvage_gap;
+  int explore_retain_floor;
   /* City manager factors by city state (W09-lite); the stock
    * hardcoded default is food 10-20, shield 5, trade 0, happy 0. */
   int cm_happy_factor;
