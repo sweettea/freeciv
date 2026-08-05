@@ -1703,6 +1703,16 @@ test('deepodds',
                 include_directories: include_directories('ai/deep'),
                 dependencies: m_dep,
                 install: false))
+# The tuning loader needs the registry, so this one links libfreeciv.
+test('deeptuning',
+     executable('deeptuning_test',
+                'tests/deeptuning_test.c',
+                'ai/deep/deeptuning.c',
+                sources: [verhdr, specenum],
+                include_directories: [common_inc,
+                                      include_directories('ai/deep')],
+                link_with: common_lib,
+                install: false))
 endif
 
 endif
