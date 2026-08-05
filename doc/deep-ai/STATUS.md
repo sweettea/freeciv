@@ -5842,3 +5842,388 @@ with the fix and its evidence.
   defaults. Any tuned value it reports is now a value the compiled
   default can be replaced with directly, with no float round trip
   hiding in between.
+
+## R1: the rates leave stock's ladder, and the price that is not there (2026-08-05)
+
+Four code commits and this one. `ai/deep` chooses its own
+science/tax/luxury split by comparing the amortized value of what each
+point buys, behind `rates_enabled` -- compiled default 0, stock's
+ladder untouched, off arm byte-identical to the pre-session binary.
+
+    9fa647545a  ai/deep: expose the marginal citizen value and the
+                pacification load
+    2bd394990c  ai/deep: price a bulb, a gold and a luxury point in
+                want currency
+    626de48689  ai/deep: let deep re-choose the rate split behind
+                rates_enabled
+    b9b77dca51  ai/deep: correct the rate model where its first probe
+                showed it degenerate
+
+**Headline: the mechanism executes on 100% of player-turns, moves
+every quantity it targets in the intended direction, and loses 49.81
+score points (t -8.39, 1/20).** It is a calibration result, not a
+mechanism result: the one thing it could not price is a tech, because
+the conversion between stock's want currency and deep's does not
+exist. `rates_enabled` stays 0 and goes to the cloud pile with its two
+gains and a starting range read out of the logged terms.
+
+### 1. The current path, established before anything was built
+
+The brief deliberately did not assert what stock does. Read out of
+`daihand.c:211-699`:
+
+**`dai_manage_taxes` is a solvency ladder with a celebration branch,
+and it prices no tech anywhere.** It treats the whole empire as one
+city (`dai_calc_data` + `distribute`), scans upward in steps of 10 for
+the minimum tax rate whose projected balance is non-negative -- or
+merely "not worse than a tenth of the treasury per turn" -- then, only
+if the ruleset charges tech upkeep, the minimum science rate that
+avoids losing a tech. It then tests celebration, and finally picks by a
+FIXED preference order: celebrate > balanced treasury and research >
+balanced one of them > "risk of tech loss" (max tax) or "risk of empty
+treasury" (max science), the last chosen by `adv_wants_science()` and
+`dai_on_war_footing()`. Whatever is left over is dumped into science,
+tax and luxury in a fixed order. **Science is a residual. No advance,
+anywhere in the function, is ever given a value.**
+
+Deep forwarded it verbatim (`deepdefence.c:3945`) and read the result
+when valuing multiplier buildings (`deephorizon.c:541-551`) -- a
+solvency artefact read as a statement of strategic value, exactly as
+the economy audit says.
+
+**Two venue facts that were not in the plan and change the sizing:**
+
+- The celebration branch is gated on `get_player_bonus(pplayer,
+  EFT_RAPTURE_GROW) > 0`. `Rapture_Grow` **does not exist in the
+  civ2civ3 ruleset at all** (grep: `data/classic/effects.ruleset:681,
+  689` only), and every economy cell this project runs uses the
+  default ruleset. So on isolated-150, garden2b-150 and lategame-80,
+  stock's entire luxury section is dead code: `dai_manage_taxes` never
+  considers a luxury rate, and the observed stock splits confirm it --
+  **luxury is 0 in 100% of stock's player-turns on the cell measured
+  here.** Happiness is left entirely to the city manager, which pays
+  for it in entertainers.
+- Even on the classic cells, `Rapture_Grow` requires Republic or
+  Democracy (`effects.ruleset:685,693`), so celebration is unavailable
+  for the whole early game there too.
+
+### 2. What deep does instead
+
+`deeprates.c`. Deep runs stock's function first and then overrides its
+choice, which keeps the two parts of stock's policy that are load-
+bearing:
+
+- **Solvency stays a constraint**, not a preference. A triple is
+  feasible when the projected balance is non-negative, or when the
+  treasury absorbs the deficit and still holds `dai_gold_reserve()`.
+  A research-solvency mirror was added for rulesets with tech upkeep:
+  a bulb deficit is allowed only while the bank covers it. Losing a
+  tech to buy a luxury point is not a trade the comparison may make.
+- **Celebration stays stock's.** See section 5.
+
+Between those, every legal triple at stock's granularity of 10 (36 of
+them at a 60% government maximum, 66 at 100) is scored and the best
+feasible one wins.
+
+**The three prices, and the one that had to be abandoned.** All three
+terms have to be in ONE currency or the comparison is theatre:
+
+| term | price | source |
+|---|---|---|
+| gold | `net gold/turn x adv->gold_priority x MORT` | the advisor's own price of a trade point taken as gold; the same number `deep_multiplier_credit` already values a Marketplace's gold half with |
+| science | `amortize(bulbs x adv->science_priority, turns-until-the-advance) x MORT x rates_science_gain` | same family; the AMORTIZATION is the part stock never does |
+| luxury | per city, `min(luxury/happy_cost, entertainers) x deep_unworked_tile_value(city)` summed, `x MORT x rates_luxury_gain` | the pair `deep_content_credit()` prices a Temple with |
+
+The yields are linear extrapolations of what the empire really
+produced last turn -- `bulbs_last_turn / science rate`, gross gold /
+tax rate, per-city luxury / luxury rate -- so corruption, waste,
+tithes and every Output_Bonus multiplier are read THROUGH rather than
+modelled. A rate that was zero has no measurement to divide and falls
+back to stock's own trade-share estimate.
+
+**The tech want could not be used as the science scale, and that is
+the session's finding.** `plr_data->tech_want[]` is the only place in
+the codebase a TECH is priced, and deep snapshots it before
+`dai_clear_tech_wants()` wipes it (the array is refilled by the city
+loop that runs BELOW the rates, so the live array at rate time is
+empty). Spread over prerequisite steps the way `dai_select_tech` does,
+it is a real number -- 200 to 16000 on the cell measured -- and it
+gates the override and is logged every turn. It cannot SCALE the
+science term, because it lives in stock's want currency and everything
+else here lives in the advisor's tile-output currency, and the
+conversion between them is **W01's `want_t`, which was declared and
+never built** (economy audit section 2.1: `want_t` appears in exactly
+one place in `ai/deep` and both maps are the identity). Guessing the
+ratio would be rule 7. **Naming the missing price is the finding the
+brief's stop condition asked for.**
+
+### 3. Three defects the first probe found, before any benchmark
+
+The first cut ran two games and was measured degenerate: every empire
+at 0 science and maximum luxury from the moment any city went unhappy.
+Three linked causes, all fixed in `b9b77dca51`:
+
+1. **The currencies disagreed by 170x.** Gold was priced at deep's own
+   `upkeep_gold_weight` (3 want per gold/turn) against a freed citizen
+   at 1300. Gold could never win an argument. Both are now the
+   advisor's priority family.
+2. **The yield slopes divided by the wrong rate.** Last turn's bulbs
+   were divided by THIS turn's science rate -- the one stock had just
+   re-chosen -- so one turn at science 0 gave a bulb slope of 0, which
+   made science worthless, which set science to 0 again. A trap, not a
+   rounding error. Deep now remembers the split it actually left in
+   place.
+3. **Luxury was pooled and over-counted.** It counted every unhappy
+   citizen as reclaimable -- but an unhappy citizen is still on its
+   tile and still producing; only entertainer-equivalent specialists
+   are off the land. And it compared the empire's total luxury against
+   the empire's total entertainers, which credits a content city's
+   luxury to its unhappy neighbour. The term is now per city, each
+   saturating at its own entertainer count.
+
+**Method note earned here: a two-game probe of the LOG is worth more
+than a twenty-game probe of the score.** All three defects are visible
+in the `deep-rates` line and none of them would have been diagnosable
+from an aggregate.
+
+### 4. The A/B: the mechanism works exactly as designed, and the design loses
+
+Cell isolated-150 (civ2civ3, migration, 4 seats, 150 turns), **20
+paired seeds**, `--arms deep`, binary pinned (`638e167d2d0a`, server +
+`libfreeciv.so`, `--server`). Both arms load a tuning FILE: control is
+`benchmark/tuning/identity.ini` (zero keys, provably identity since
+H1), treatment is the same file plus `rates_enabled = 1`. Twenty seeds
+are direction.
+
+    metric                       OFF        ON     delta      se      t   wins
+    score                     194.32    144.51    -49.81    5.94  -8.39   1/20
+    techs                      28.75     13.21    -15.54    0.72 -21.56   0/20
+    cities                     14.50     13.25     -1.25    0.75  -1.67   7/20
+    pop                        89.67     82.69     -6.99    3.50  -2.00   7/20
+    mean_city_size              6.94      7.49     +0.55    0.22  +2.51  12/20
+    settlers                    3.50      2.00     -1.50    0.43  -3.46   4/20
+    landarea               185212.50 166437.50 -18775.00 8477.89  -2.21   7/20
+    unitsbuilt                 98.47     90.16     -8.31    3.35  -2.48   5/20
+
+Proxy metrics, from the per-turn scorelog (mean over the game, and at
+the end):
+
+    metric                     OFF        ON     delta      se      t   wins
+    scirate_mean             58.63     24.23    -34.41    1.11 -31.08   0/20
+    luxrate_mean              0.00     32.62    +32.62    1.06 +30.69  20/20
+    taxrate_mean             41.37     43.16     +1.79    1.20  +1.49  13/20
+    gold_mean                99.56    144.41    +44.85   11.31  +3.97  19/20
+    gold_end                130.24    353.48   +223.24   72.39  +3.08  18/20
+    techout_mean             28.44      5.84    -22.59    1.32 -17.18   0/20
+    specialists_mean          4.51      1.03     -3.48    0.28 -12.52   0/20
+    specialists_end          10.38      3.30     -7.08    0.87  -8.18   1/20
+    unhappypop_mean           2.81      3.44     +0.63    0.24  +2.61  12/20
+    riot_turns (disorder)     2.04      6.61     +4.58    1.74  +2.64  12/20
+
+**Every one of those is the mechanism doing precisely what it was
+built to do.** Luxury goes from a rate stock never touches to a third
+of the empire's trade; the entertainer population it was aimed at
+drops by 77%; the treasury it protects grows by 45%; cities get
+bigger. And the empire finishes with **less than half the techs**, and
+the score falls by 50 points with one seed out of twenty in front.
+
+Execution census (per game, 20/20 seeds, ~600 player-turns each):
+
+    mode=set        476.30 per game   deep overrode stock's split
+    mode=agree       91.30             deep re-derived stock's split
+    mode=unpriced    14.05             no tech want yet (turns 1-2)
+    mode=celebrate    0.00             civ2civ3 has no rapture at all
+
+    turns    set  agree  unpri | mean chosen sci/lux/tax
+     1-30   1246    713    280 |  47.0/  0.9/ 52.2
+    31-60   1690    638      0 |  35.1/ 14.9/ 50.0
+    61-90   1971    357      0 |  19.8/ 42.5/ 37.7
+    91-120  2280     85      0 |   8.9/ 53.5/ 37.7
+   121-150  2339     33      1 |   6.7/ 53.1/ 40.2
+
+Deep starts near stock's split, and from turn 60 -- when the first
+cities go unhappy and the CM starts making entertainers -- walks
+science down to almost nothing and luxury up to the government maximum.
+
+**The diagnosis is a scale, and it is measurable without another
+game.** Over the 9526 overriding player-turns, the winning triple's
+own terms average `vlux = 26318` against `vsci = 1969` and
+`vgold = 3460`; restricted to the 6337 turns where both the science
+and luxury terms are non-zero, `vlux/vsci` averages **4.33**. The
+luxury term is roughly half an order of magnitude too hot relative to
+the science term, which is exactly the gap the missing tech price
+would have closed. `rates_luxury_gain` around 0.1-0.25, or
+`rates_science_gain` around 4-13, is where a tuning pass should START.
+**That is a handoff number read out of the logged terms, not a tuned
+result, and it is not a claim about score.**
+
+**Verdict: `rates_enabled` stays 0 and must not be turned on until the
+two gains have been through a tuning pass.** The alternative reading --
+"the policy is wrong, revert it" -- is not supported: the policy
+executed on 100% of player-turns, moved every quantity it targets in
+the intended direction, and lost on the one quantity whose price it
+was structurally unable to obtain. That is a calibration result, not a
+mechanism result, and the project has been wrong in this exact way
+before (the happiness column's "hot weight" that turned out to be the
+sawtooth).
+
+### 4a. The off switch, proven
+
+Smoke cell, 10 paired seeds, both arms loading the SAME
+`identity.ini`-shaped file; the only difference is the binary.
+Scorelog sha256 per seed:
+
+    seed  1 new=1dd20000f0d8 pre=1dd20000f0d8 SAME
+    seed  2 new=eb8019912f64 pre=eb8019912f64 SAME
+    seed  3 new=624c62cce147 pre=624c62cce147 SAME
+    seed  4 new=727bbf617388 pre=727bbf617388 SAME
+    seed  5 new=24f768bc20c9 pre=24f768bc20c9 SAME
+    seed  6 new=435241a98f26 pre=435241a98f26 SAME
+    seed  7 new=5ecad53c072e pre=5ecad53c072e SAME
+    seed  8 new=c08b4a727226 pre=c08b4a727226 SAME
+    seed  9 new=2d08dec74ab2 pre=2d08dec74ab2 SAME
+    seed 10 new=64344ee8f0e8 pre=64344ee8f0e8 SAME
+    => 10/10 byte-identical
+
+(`new` = this session's tip, `638e167d2d0a`; `pre` = the H1 tip
+`bf6c1bcc81` built in the bench worktree, `1dcd3c7573b7`. Those ten
+hashes are the SAME ten H1 published, which is a second, independent
+check that neither session moved the no-tuning path.)
+
+Execution counter, same ten seeds: **0 `deep-rates` lines in the off
+arm, 3828 in the on arm.** Non-execution and byte-identity are
+different claims and both are made.
+
+Smoke guard, 10 paired seeds, off vs on (100 turns, so a weaker cell):
+
+    metric               OFF        ON     delta      se      t   wins
+    score              82.00     75.03     -6.97    4.17  -1.67   4/10
+    techs              16.02     12.18     -3.85    0.90  -4.28   1/10
+    cities              8.50      8.72     +0.23    0.53  +0.43   6/10
+
+Same direction, same cause, less power. Nothing crashed; no game
+timed out; `meson test -C build` 3/3 and `tune-audit.py` CLEAN
+119/119/119/119 before and after.
+
+### 5. Celebration: the design, deferred rather than half-landed
+
+The human call (2026-08-04) was "AI cities should grow by celebrating
+under suitable govt", as one coupled mechanism with the rates. It is
+NOT in this epic, and the reason is a sizing fact found while reading:
+**celebration is three mechanisms, not one, and its payoff is
+venue-and-government-dependent in a way the rates model structurally
+cannot express.**
+
+**What celebration pays, per venue.**
+
+- **classic**: `Rapture_Grow` (value 3) under **Republic or
+  Democracy** only (`data/classic/effects.ruleset:681-694`). A
+  celebrating city with food surplus > 0 grows by one EVERY turn,
+  ignoring the food box (`cityturn.c:1127`, `city_rapture_grow`).
+  Enormous, and unavailable before Republic.
+- **civ2civ3 (every economy cell)**: `Rapture_Grow` does not exist.
+  Celebration instead SUPPRESSES `Output_Penalty_Tile` for Despotism,
+  Tribal and Monarchy (`effects.ruleset:1480,1494,1508`) -- the -1 on
+  every tile producing more than 2 -- plus a civil-war bonus. Broad,
+  bounded, and worth nothing once the empire leaves the early
+  governments.
+
+**Why it cannot be a term in `deep_rates_pick`.** The luxury term
+there is a SLOPE that saturates: each `happy_cost` of luxury buys one
+citizen back off the tiles, until the city is content. Celebration is
+a THRESHOLD: below the luxury rate at which the CM can find a happy
+arrangement it pays exactly zero, and above it the whole payoff
+appears at once. A threshold cannot be an argmax term over a linear
+model; it has to be a separate CANDIDATE -- "celebrate at luxury L"
+against "the best non-celebrating triple" -- scored in the same
+currency and compared once.
+
+**The three legs, and why all three must land together.**
+
+1. **Rates.** Find the smallest luxury rate at which the target cities
+   can be arranged happy. Stock already does exactly this test
+   (`daihand.c:255-260`: a `cm_parameter` with `require_happy = TRUE`,
+   `allow_specialists = TRUE`, `factor[O_FOOD] = 20`, queried per
+   city), and it is the right test; what is missing is comparing its
+   RESULT against an alternative use of the same trade.
+2. **City manager.** `pcity->cm_parameter.require_happy` must be TRUE
+   for the celebrating cities and must STAY true, or the next
+   `first_activities` arrangement drops them straight back out.
+   `deepcm.c`'s state machine has no celebrate state; it needs one,
+   ranked below `threatened` and above `grow-hard`, whose factors
+   match the payoff's shape (food, for rapture on classic; shield and
+   trade, for the penalty lift on civ2civ3). **This is the leg that
+   makes celebration a CM change and not a rates change**, and the
+   reason the rates half alone would set a luxury rate that nothing
+   holds.
+3. **Government.** The payoff is a government question on both
+   rulesets -- classic needs Republic/Democracy for rapture at all,
+   civ2civ3 pays only under the early governments. Deep forwards the
+   `gov_value` hook to `dai_gov_value`, which temporarily sets each
+   candidate government and calls `auto_arrange_workers` on every
+   city -- which honours `pcity->cm_parameter`, which deep now sets.
+   So a celebrate CM state would silently enter stock's government
+   evaluation. That interaction (seam map section 2.C, "not a bug; not
+   designed either") has to be decided deliberately before a
+   celebrate state exists, not discovered afterwards.
+
+**Pricing it with quantities that are already priced.** Per candidate
+city, per turn of celebration:
+
+- classic: one extra citizen per turn = `deep_unworked_tile_value()`,
+  bounded by `city_can_grow_to()` -- which is the capacity credit's
+  own arithmetic with `ttg = 1`, so no new price is needed.
+- civ2civ3: the summed tile-output delta from lifting the penalty,
+  from the same catchment walk and the same `adv->*_priority`
+  weights.
+
+Cost: `deep_rates_pick`'s value at the celebrating triple minus its
+value at the best triple -- already computed, already in the same
+currency. So the comparison needs **no new constant** beyond a gain.
+
+**Measurement.** Venue is `*-classic` (rapture pays there and only
+there); guard on isolated-150 that nothing regresses. Census:
+`deep-celebrate` per turn with the candidate value, the chosen luxury
+rate, cities MARKED, and cities that actually celebrated the following
+turn -- "marked" and "celebrating" are different claims and only the
+second one says the CM held them.
+
+**Sizing warning for whoever builds it.** On a 150-turn civ2civ3 cell
+the payoff window closes when the empire leaves Despotism/Monarchy,
+and on a classic cell it does not OPEN until Republic. Before writing
+any of it, count the player-turns in each cell where a celebration
+would have been legal AND paid -- W36's own lesson, three times over:
+size the machinery against the population it would act on.
+### 6. What the next session must know
+
+- **`rates_enabled` ships at 0.** Nothing in a default build changes.
+  The knob, `rates_science_gain` and `rates_luxury_gain` are all
+  registered PLACEHOLDERs in the ALL / ECON / G blocks and all three
+  go on the cloud pile. The two gains are not decoration: they are
+  the entire bridge between a bulb, a gold and a freed citizen, and
+  the compiled 1.0/1.0 is the untuned corner of a two-dimensional
+  space that has never been searched.
+- **The missing conversion is now named and located.** Pricing
+  research by the tech want -- the brief's headline, and the
+  economy audit's gap 3 -- needs `want_t`, the W01 currency that
+  section 2.1 of the audit records as declared and never
+  implemented. Any future work that wants to compare a TECH against a
+  BUILDING against a GOLD is blocked on the same thing. That is a
+  bigger prize than the rates.
+- **Stock never uses luxury on the default ruleset**, because its
+  whole luxury section hangs off `EFT_RAPTURE_GROW` and civ2civ3 has
+  no such effect. Every happiness cost on every economy cell is being
+  paid in entertainers by the city manager. Whatever the score says
+  about this A/B, that asymmetry is real and is the reason the
+  luxury term dominates whenever entertainers exist.
+- **`deep_rates_pick()` is a pure function** over a gathered struct
+  (`deeprates.h`), so a unit test of the enumeration and the
+  feasibility rules costs one test file and no game state. It was not
+  written this session (the meson deep tests link only `ai/deep`
+  sources, and `amortize()` lives in `server/advisors`); the cheapest
+  fix is to add `advtools.c` to that test target.
+- **Do not re-open the currency question by guessing.** The 170x gap
+  between `upkeep_gold_weight` and the tile-output priorities is a
+  measurement of RC4, not a bug to patch. Either both prices are
+  right for their own purpose, or one of them is wrong -- and the way
+  to find out is a tuning pass, not an argument.
