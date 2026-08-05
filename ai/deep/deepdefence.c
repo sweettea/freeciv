@@ -83,6 +83,7 @@
 #include "deepsite.h"
 #include "deepcm.h"
 #include "deepops.h"
+#include "deeprates.h"
 #include "deepstance.h"
 #include "deeptuning.h"
 #include "deepwant.h"
@@ -3937,12 +3938,17 @@ static void deep_balance_treasury(struct ai_type *ait,
 void deep_do_last_activities(struct ai_type *ait, struct player *pplayer)
 {
   TIMING_LOG(AIT_ALL, TIMER_START);
+  /* Before the wipe: tech_want[] is cleared here and refilled by the
+   * city loop BELOW the rates, so the only honest read of what
+   * research is worth to this empire is last turn's array, taken now
+   * (deeprates.c). */
+  deep_rates_snapshot_tech(ait, pplayer);
   dai_clear_tech_wants(ait, pplayer);
 
   dai_manage_government(ait, pplayer);
   dai_adjust_policies(ait, pplayer);
   TIMING_LOG(AIT_TAXES, TIMER_START);
-  dai_manage_taxes(ait, pplayer);
+  deep_manage_taxes(ait, pplayer);
   TIMING_LOG(AIT_TAXES, TIMER_STOP);
   TIMING_LOG(AIT_CITIES, TIMER_START);
   deep_manage_cities(ait, pplayer);
