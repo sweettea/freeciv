@@ -57,7 +57,26 @@ live in this game, and is zero otherwise:
    then be struck with no visible approach. Until then, zero. Capability
    test from the ruleset (unit class / paradrop action), not an invented
    list.
-4. **No live class + no active threat ⇒ floor = 0.** The settler or the
+   Refinement (human, 2026-08-05): **carriers are mobile airbases.**
+   Land-based air is range-limited from rival cities/airbases; once a
+   rival can also build a carrier (a buildable unit transporting
+   air-class cargo — ruleset test), the effective airbase is any
+   offshore water, so the class reaches every city within air range of
+   water that LEADS anywhere (same lake-surrounder geometry as the sea
+   class, composed with air move range). Deep-interior cities stay out
+   of reach; coastal and near-coastal ones do not. Own counter for the
+   carrier escalation.
+4. **Same-continent border weighting (human, 2026-08-05).** The menace
+   ratio's same-continent-vs-overseas split is player-level; make the
+   floor's weight per-city: with a same-continent war-capable rival,
+   weight rises with proximity to that rival (border cities carry real
+   insurance, deep-interior cities little), and an overseas-only rival
+   never outweighs a land neighbour for border cities. Ownership
+   question to settle explicitly: density fear (F3) already prices
+   per-city proximity as a fear term — decide whether the floor reuses
+   its distance machinery or F3 subsumes this component, ONE owner, no
+   double charge, decision recorded in the commit.
+5. **No live class + no active threat ⇒ floor = 0.** The settler or the
    building wins. "Active threat" is danger > 0 or an observed wave —
    already the floor's danger==0 precondition; keep it.
 
