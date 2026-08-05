@@ -3039,10 +3039,20 @@ static void deep_assault_want(struct ai_type *ait,
        * settler on the queue (contested run 2026-07-31, median
        * 0.758: worth*1.0 wants of ~190 from turn 1). No contact, no
        * target; unknown tile, no target. The offensive mirror of the
-       * no-fear-before-the-threat law. */
+       * no-fear-before-the-threat law.
+       *
+       * Barbarians are exempt from the contact requirement, exactly
+       * as deep_op_pick_target() exempts them (deepops.c) and as the
+       * survival wave does (deepcombat.c): they never make contact,
+       * so requiring it means the build side can never fund a unit
+       * for a target the ops side forms operations against. That is
+       * the disagreement the ops-side comment claimed did not exist
+       * (military audit C4), and post-T160 -- 47 empty barbarian
+       * cities -- it is most of the target menu. */
       if (!pplayers_at_war(pplayer, aplayer)
-          || player_diplstate_get(pplayer, aplayer)->type
-             == DS_NO_CONTACT) {
+          || (!is_barbarian(aplayer)
+              && player_diplstate_get(pplayer, aplayer)->type
+                 == DS_NO_CONTACT)) {
         continue;
       }
       city_list_iterate(aplayer->cities, acity) {
@@ -3225,10 +3235,11 @@ static void deep_assault_want(struct ai_type *ait,
   }
 
   log_base(deep_metric_log_level(),
-           "deep-kill turn=%d player=\"%s\" city=%d target=%d"
+           "deep-kill turn=%d player=\"%s\" city=%d target=%d barb=%d"
            " worth=" ADV_WANT_PRINTF " pool=%d p0=%.3f p1=%.3f ck=%d"
            " type=\"%s\" want=" ADV_WANT_PRINTF,
            game.info.turn, player_name(pplayer), pcity->id, target->id,
+           is_barbarian(city_owner(target)) ? 1 : 0,
            tworth, n_pool, p0, p1, csize, utype_rule_name(punittype),
            want);
 
