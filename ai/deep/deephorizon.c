@@ -769,6 +769,11 @@ void deep_adjust_building_wants(struct ai_type *ait,
      * sawtooth. */
     adv_want tr_pre = 0, tr_add = 0, tr_post = 0;
     adv_want tr_toppre = 0, tr_topadd = 0;
+    /* The health term's own instrument (knob-coverage 4e listed
+     * horizon_health_weight as having none): summed over the city's
+     * improvements, BEFORE the stance multiplier and the upkeep bill,
+     * so it reports the term rather than the ladder's total. */
+    adv_want tr_health = 0;
     const struct impr_type *tr_top = NULL;
     int tr_n = 0;
 
@@ -883,8 +888,48 @@ void deep_adjust_building_wants(struct ai_type *ait,
         if (health > 0) {
           /* Plague insurance is worth having BEFORE the size gate the
            * building's other effects wait for (civ2civ3: Aqueduct
-           * cuts illness 30% from size 5; Size_Adj matters at 8). */
-          add += health * deep_tuning_get()->horizon_health_weight;
+           * cuts illness 30% from size 5; Size_Adj matters at 8).
+           *
+           * In the SAME currency as every other credit here: citizens
+           * over the horizon, valued at what a citizen earns from the
+           * best unworked tile. This used to add raw EFT_HEALTH_PCT
+           * PERCENT POINTS times a weight -- a third unit beside the
+           * tile-sums and the gold bill, so `horizon_health_weight`
+           * could not be compared with its neighbours and a 30%
+           * Aqueduct scored 30 whatever the city's actual plague risk
+           * was, including in a city whose risk was zero (economy
+           * audit 3.11; D2 fixed the upkeep dimension and left this
+           * one).
+           *
+           * The conversion is the ruleset's own arithmetic:
+           * city_illness_calc() reports base illness in tenths of a
+           * percent per turn BEFORE health effects, a strike costs
+           * exactly one citizen (city_illness_strike(),
+           * citytools.c:2984), and the building removes `health`
+           * percent of that risk. So expected citizens saved over the
+           * planning horizon = ill_base/1000 * health/100 * MORT, and
+           * the value of a citizen is the one this file already pays
+           * everywhere else. No amortize(): the risk is running now,
+           * not waiting on a growth step.
+           *
+           * The knob's SCALE therefore changes with its dimension; it
+           * is a PLACEHOLDER and owes the tuning pile a value. There
+           * is no exact conversion factor to divide by the way the
+           * upkeep fix had MORT, so this commit does not pretend the
+           * charge lands unchanged. */
+          int ill_base = 0;
+
+          (void) city_illness_calc(pcity, &ill_base, NULL, NULL, NULL);
+          if (ill_base > 0) {
+            double saved = (double) ill_base / 1000.0
+                           * MIN(health, 100) / 100.0 * MORT;
+            adv_want hcred
+              = saved * deep_unworked_tile_value(pcity, adv, 3, NULL)
+                * deep_tuning_get()->horizon_health_weight;
+
+            add += hcred;
+            tr_health += hcred;
+          }
         }
       }
 
@@ -952,12 +997,12 @@ void deep_adjust_building_wants(struct ai_type *ait,
       log_base(deep_metric_log_level(),
                "deep-credit turn=%d player=\"%s\" city=%d size=%d n=%d"
                " pre=%.1f add=%.1f post=%.1f top=\"%s\" toppre=%.1f"
-               " topadd=%.1f",
+               " topadd=%.1f health=%.2f",
                game.info.turn, player_name(pplayer), pcity->id,
                city_size_get(pcity), tr_n, (double) tr_pre,
                (double) tr_add, (double) tr_post,
                improvement_rule_name(tr_top), (double) tr_toppre,
-               (double) tr_topadd);
+               (double) tr_topadd, (double) tr_health);
     }
   } city_list_iterate_end;
 }
