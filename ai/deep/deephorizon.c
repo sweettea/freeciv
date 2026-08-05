@@ -531,6 +531,21 @@ void deep_adjust_building_wants(struct ai_type *ait,
   city_list_iterate(pplayer->cities, pcity) {
     adv_want cap_credit;
     bool threatened;
+    /* What this city's credit actually DELIVERS this turn, as opposed
+     * to what it intends. The two are not the same number: stock
+     * clears building_want[] only on its own recalc schedule
+     * (daicity.c, fc_rand(5)+5 turns), so a credit added every turn
+     * lands on top of the credits of every turn since the last
+     * recalc. `pre` is what deep found in the array before it added
+     * anything, summed over the improvements it credits; on a stock
+     * recalc turn that is stock's own fresh want, and on every other
+     * turn it carries deep's own past contributions. A flat `pre`
+     * across a recalc window is the fix; a rising one is the
+     * sawtooth. */
+    adv_want tr_pre = 0, tr_add = 0, tr_post = 0;
+    adv_want tr_toppre = 0, tr_topadd = 0;
+    const struct impr_type *tr_top = NULL;
+    int tr_n = 0;
 
     /* "Threatened" means the city would probably FALL, not that an
      * enemy is nearby. Stock's urgency and grave_danger are presence
@@ -671,12 +686,35 @@ void deep_adjust_building_wants(struct ai_type *ait,
         add = MAX(add, 0);
       }
       if (add > 0) {
+        adv_want pre = pcity->server.adv->building_want[id];
+
         pcity->server.adv->building_want[id] += add;
+        tr_n++;
+        tr_pre += pre;
+        tr_add += add;
+        tr_post += pcity->server.adv->building_want[id];
+        if (tr_top == NULL || add > tr_topadd) {
+          tr_top = pimprove;
+          tr_topadd = add;
+          tr_toppre = pre;
+        }
         log_base(LOG_DEBUG,
                  "deep-horizon city=%d impr=\"%s\" credit=%.1f",
                  pcity->id, improvement_rule_name(pimprove),
                  (double) add);
       }
     } improvement_iterate_end;
+
+    if (tr_n > 0) {
+      log_base(deep_metric_log_level(),
+               "deep-credit turn=%d player=\"%s\" city=%d size=%d n=%d"
+               " pre=%.1f add=%.1f post=%.1f top=\"%s\" toppre=%.1f"
+               " topadd=%.1f",
+               game.info.turn, player_name(pplayer), pcity->id,
+               city_size_get(pcity), tr_n, (double) tr_pre,
+               (double) tr_add, (double) tr_post,
+               improvement_rule_name(tr_top), (double) tr_toppre,
+               (double) tr_topadd);
+    }
   } city_list_iterate_end;
 }
