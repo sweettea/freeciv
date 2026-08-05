@@ -61,4 +61,8 @@ const char *deep_stance_source_name(int source);
 void deep_stance_refresh(struct player *pplayer);
 void deep_stance_log(struct player *pplayer);
 
+/* Gate 1 (W34 A.2): the multiplier the ANTICIPATORY fear terms are
+ * scaled by. Exactly 1.0 whenever the axes are equal. */
+double deep_stance_fear_mult(const struct player *pplayer);
+
 #endif /* FC__DEEPSTANCE_H */

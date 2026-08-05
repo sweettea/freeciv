@@ -83,6 +83,7 @@
 #include "deepsite.h"
 #include "deepcm.h"
 #include "deepops.h"
+#include "deepstance.h"
 #include "deeptuning.h"
 #include "deepwant.h"
 
@@ -943,11 +944,18 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
                                          struct player *pplayer)
 {
   double menace = deep_garrison_menace(pplayer);
+  /* Gate 1 (W34 A.2). Exactly 1.0 at identity axes, which is what
+   * the byte-identity acceptance gate rests on. */
+  double fmult = deep_stance_fear_mult(pplayer);
 
   city_list_iterate(pplayer->cities, pcity) {
     struct ai_city *city_data = def_ai_city_data(pcity, ait);
     double updisc = deep_defender_upkeep_discount(&(wld.map), pcity);
     double sat = deep_fear_satisfaction(&(wld.map), pcity, city_data);
+    unsigned int over = deep_overseas_danger(&(wld.map), pcity);
+    unsigned int shadow = deep_boat_shadow_fear(&(wld.map), pcity);
+    unsigned int density = deep_density_fear(pcity);
+    unsigned int barb = deep_barbarian_fear();
     unsigned int credit;
 
     if (sat < 1.0) {
@@ -955,14 +963,15 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
                "deep-sat turn=%d player=\"%s\" city=%d",
                game.info.turn, player_name(pplayer), pcity->id);
     }
-    city_data->danger += (unsigned int)
-      (deep_overseas_danger(&(wld.map), pcity) * updisc * sat);
-    city_data->danger += (unsigned int)
-      (deep_boat_shadow_fear(&(wld.map), pcity) * updisc * sat);
-    city_data->danger += (unsigned int)
-      (deep_density_fear(pcity) * updisc * sat);
-    city_data->danger += (unsigned int)
-      (deep_barbarian_fear() * updisc * sat);
+    if (fmult != 1.0 && over + shadow + density + barb > 0) {
+      deep_plr_data(pplayer)->stance_fear_gated++;
+    }
+    city_data->danger += (unsigned int) (over * updisc * sat * fmult);
+    city_data->danger += (unsigned int) (shadow * updisc * sat * fmult);
+    city_data->danger += (unsigned int) (density * updisc * sat * fmult);
+    city_data->danger += (unsigned int) (barb * updisc * sat * fmult);
+    /* NOT scaled: the survival deficit prices an OBSERVED wave, and
+     * the garrison floor below is the floor gate 1 scales toward. */
     city_data->danger
       += deep_survival_deficit_fear(&(wld.map), pcity, updisc, TRUE);
     credit = deep_incoming_defence_credit(ait, pcity)
@@ -2273,18 +2282,26 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
      * charges to keep the marginal defender. */
     double updisc = deep_defender_upkeep_discount(nmap, pcity);
     double sat = deep_fear_satisfaction(nmap, pcity, city_data);
+    /* Gate 1, the same multiplier the once-per-turn bookkeeping
+     * applies: the danger the build choice reads must not disagree
+     * with the danger the ledger holds. */
+    double fmult = deep_stance_fear_mult(pplayer);
+    unsigned int over = deep_overseas_danger(nmap, pcity);
+    unsigned int shadow = deep_boat_shadow_fear(nmap, pcity);
+    unsigned int density = deep_density_fear(pcity);
+    unsigned int prior = deep_density_prior(pplayer);
+    unsigned int barb = deep_barbarian_fear();
     unsigned int credit;
 
-    city_data->danger += (unsigned int)
-      (deep_overseas_danger(nmap, pcity) * updisc * sat);
-    city_data->danger += (unsigned int)
-      (deep_boat_shadow_fear(nmap, pcity) * updisc * sat);
-    city_data->danger += (unsigned int)
-      (deep_density_fear(pcity) * updisc * sat);
-    city_data->danger += (unsigned int)
-      (deep_density_prior(pplayer) * updisc * sat);
-    city_data->danger += (unsigned int)
-      (deep_barbarian_fear() * updisc * sat);
+    if (fmult != 1.0 && over + shadow + density + prior + barb > 0) {
+      deep_plr_data(pplayer)->stance_fear_gated++;
+    }
+    city_data->danger += (unsigned int) (over * updisc * sat * fmult);
+    city_data->danger += (unsigned int) (shadow * updisc * sat * fmult);
+    city_data->danger += (unsigned int) (density * updisc * sat * fmult);
+    city_data->danger += (unsigned int) (prior * updisc * sat * fmult);
+    city_data->danger += (unsigned int) (barb * updisc * sat * fmult);
+    /* NOT scaled: see the once-per-turn site. */
     city_data->danger
       += deep_survival_deficit_fear(nmap, pcity, updisc, FALSE);
     credit = deep_incoming_defence_credit(ait, pcity)

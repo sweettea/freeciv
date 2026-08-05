@@ -15,6 +15,8 @@
 #include <fc_config.h>
 #endif
 
+#include <math.h>
+
 /* utility */
 #include "log.h"
 
@@ -198,12 +200,54 @@ void deep_stance_log(struct player *pplayer)
 
   log_base(deep_metric_log_level(),
            "deep-stance turn=%d player=\"%s\" econ=%.3f mil=%.3f"
-           " cult=%.3f src=%s mode=%s preset=%s identity=%d",
+           " cult=%.3f src=%s mode=%s preset=%s identity=%d"
+           " fear_gate=%d",
            game.info.turn, player_name(pplayer),
            plr_data->stance.econ, plr_data->stance.mil,
            plr_data->stance.cult,
            deep_stance_source_name(deep_stance_source_effective()),
            pinned ? "PINNED" : "FREE",
            pinned ? deep_stance_preset_name(tune->stance_forced) : "-",
-           deep_stance_is_identity(&plr_data->stance) ? 1 : 0);
+           deep_stance_is_identity(&plr_data->stance) ? 1 : 0,
+           /* Cumulative, so the last line of a game is the total and
+            * a difference between consecutive lines is the turn's
+            * firing rate. Zero on every line is the identity arm's
+            * proof that the gate is inert, not merely quiet. */
+           plr_data->stance_fear_gated);
+}
+
+/**********************************************************************//**
+  Gate 1 (W34 A.2): the ANTICIPATORY fear terms are scaled by the
+  military-to-economic ratio, so a player whose weight is on its
+  economy is frightened less by what it cannot yet see.
+
+  Shape: (mil / econ) ^ stance_fear_gain. It is EXACTLY 1.0 when the
+  axes are equal, whatever the gain, which is what makes the
+  byte-identity gate provable rather than argued -- x * 1.0 == x for
+  every finite x in IEEE 754.
+
+  What it does NOT scale is the survival floor: the sequential-
+  attrition deficit (deep_survival_deficit_fear) and the garrison
+  floor both price OBSERVED threats and keep full weight. Gate 1
+  scales anticipation TOWARD that floor, never below it -- "a high
+  econ weight means minimise military spend subject to survival, not
+  no army".
+**************************************************************************/
+double deep_stance_fear_mult(const struct player *pplayer)
+{
+  const struct deep_plr *plr_data = deep_plr_data(pplayer);
+  const struct deep_stance *st;
+  const struct deep_tuning *tune = deep_tuning_get();
+
+  if (plr_data == NULL) {
+    return 1.0;
+  }
+  st = &plr_data->stance;
+  if (st->econ <= 0.0 || st->mil <= 0.0
+      || deep_stance_is_identity(st)
+      || tune->stance_fear_gain == 0.0) {
+    return 1.0;
+  }
+
+  return pow(st->mil / st->econ, tune->stance_fear_gain);
 }

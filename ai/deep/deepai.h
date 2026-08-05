@@ -43,6 +43,12 @@ struct deep_plr {
    * behaviour for a control surface. Identity (every axis 1.0) is
    * today's game exactly. */
   struct deep_stance stance;
+  /* Gate 1's execution counter: cities whose anticipatory fear was
+   * actually scaled by a non-identity stance, cumulative. Four
+   * changes in this project have measured as "no effect" while never
+   * executing, so a gate that cannot be shown firing is not
+   * evidence. Saved, so a reload does not reset the census. */
+  int stance_fear_gated;
   /* Operation slots (W33); DEEP_OP_NONE marks a free slot. Saved
    * (W33 phase 4): a mid-march wave that dissolved on every reload
    * cost human-game players their assaults; member ids are

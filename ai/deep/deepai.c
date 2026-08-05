@@ -198,6 +198,8 @@ static void dpai_player_save(struct player *pplayer,
                        "player%d.deep_state.stance_mil", plrno);
   secfile_insert_float(file, plr_data->stance.cult,
                        "player%d.deep_state.stance_cult", plrno);
+  secfile_insert_int(file, plr_data->stance_fear_gated,
+                     "player%d.deep_state.stance_fear_gated", plrno);
 
   /* The operations layer (W33 phase 4). Free slots save only their
    * NONE state, so quiet players cost a handful of keys. */
@@ -275,6 +277,10 @@ static void dpai_player_load(struct player *pplayer,
     = secfile_lookup_float_default(file, 1.0,
                                    "player%d.deep_state.stance_cult",
                                    plrno);
+  plr_data->stance_fear_gated
+    = secfile_lookup_int_default(file, 0,
+                                 "player%d.deep_state.stance_fear_gated",
+                                 plrno);
 
   /* Read back out loud: this hook runs before the next phase
    * re-resolves the axes, so it is the only place the round trip is
