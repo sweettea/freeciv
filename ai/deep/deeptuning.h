@@ -625,6 +625,29 @@ struct deep_tuning {
    * scales anticipation TOWARD the survival floor, never below it.
    * PLACEHOLDER. */
   double stance_fear_gain;
+
+  /* Gate 2: sensitivity of ASSAULT FORMATION to the econ:mil ratio.
+   * The smallest force that clears op_take_target is what forms an
+   * operation; this scales that bar by (econ/mil)^gain, capped at
+   * 1.0, so an economy-weighted player commits its blades only where
+   * the take is near-certain and a force-weighted one forms freely.
+   * Targets that THREATEN us keep the unscaled bar -- the offensive
+   * mirror of gate 1's survival floor. PLACEHOLDER. */
+  double stance_op_gain;
+
+  /* Gate 3: sensitivity of the horizon growth credits (the growth
+   * ladder that bids against barracks and walls) to the econ:mil
+   * ratio, as (econ/mil)^gain. The credits are additive on top of
+   * stock's base want and never go below zero, so this cannot price
+   * a building under stock's own valuation. PLACEHOLDER. */
+  double stance_growth_gain;
+
+  /* Gate 4: sensitivity of EXPANSION -- the settler want and the
+   * colony lift it needs to cross water -- to the econ:mil ratio, as
+   * (econ/mil)^gain. Whether land remains is already asked by the
+   * site machinery; this only says how much this player wants what
+   * remains. PLACEHOLDER. */
+  double stance_expand_gain;
 };
 
 void deep_tuning_init(void);
