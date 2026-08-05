@@ -4861,3 +4861,362 @@ Three new tunables, all PLACEHOLDER at 1.0, none hand-tuned:
   binary, same recipe: build the pre-change commit in
   `.worktrees/bench`, pin both binaries to scratch dirs, `--server`,
   `--arms deep`, compare scorelog sha256 per seed.
+
+## D2: credit integrity -- the sawtooth is real and measured (2026-08-05)
+
+Ten commits. The three read-verified defects that made every horizon
+credit measurement unsound are fixed and the fixes are proven firing by
+census, not by sighting: `9dd9cbc886` the delivery trace, `c1c7d9aa72`
+the sawtooth, `9193cc4ffc` + `938cbe07c9` the counterfactual
+time-to-grow, `e410d99995` one survival verdict, `972648329a` bundle
+reachability, `319c4da6cf` the upkeep dimension, `015c3f81cb` the
+caravan legality test, `3a6dc24cdc` the tuning log, `e4d5bd07ce` the
+ECON block.
+
+**The headline: the audit's 1-9x sawtooth is confirmed at 4.35x mean
+delivery, and the credit the build queue reads is now 1x.** Deep's
+happiness column drops from 6.4x baseline to 1.6x with no weight
+touched, and the capacity credit now pays in 96% of capped city-turns
+against 71%. Score moves on no cell -- -7.50 (t -1.44), -25.07
+(t -0.73), +1.77 (t +1.19), -0.62 (t -0.42) -- which is the expected
+result of removing an unpriced multiplier from weights that were never
+tuned with it. **The tuning pass is now both possible and owed.**
+
+### 1. The sawtooth, before and after (D-B)
+
+`deep_adjust_building_wants()` added into stock's `building_want[]`
+every turn; stock clears that array only every `fc_rand(5)+5` turns per
+city. Pooled over 20 isolated-150 games, per credited city-turn, with
+`post` = what the build decision reads and `add` = what deep intended:
+
+    arm       city-turns   post/add mean  median   p90     max
+    BEFORE        92 719           4.35    2.98   6.95    4325
+    AFTER         91 886           1.50    1.28   2.06     471
+
+The residue deep found in the array before adding anything (`pre`) fell
+905.5 -> 146.5, and in the AFTER arm that residue is entirely stock's
+own want: deep contributes exactly its intent, once.
+
+One city across a recalc window, same seed, same cell:
+
+    BEFORE, city 151            AFTER, city 152
+    turn   pre     add          turn   pre     add
+      60   182.2   214.0          60   124.0   189.2
+      61   245.2   233.4          61   124.0   780.3
+      62   311.0   274.7          62   124.0   247.7
+      63   379.9   254.9          63   124.0   295.7
+      64   443.0   663.3          64   124.0   387.4
+      65    87.0   199.1  <-reset  65   124.0   652.7
+      ...                          66   124.0   171.6
+      69   606.8   533.7          67   183.7   172.1  <-stock recalc
+      70   975.8   630.3          68   183.7   185.7
+      71  1414.3   888.3          69   183.7   186.8
+      72  2040.4   136.7          70   183.7   188.0
+      74  2235.7   147.8          71   183.7   189.2
+      75   208.0   252.1  <-reset  72   141.0   780.3  <-stock recalc
+
+`pre` climbing to 2235 and resetting is the sawtooth; `pre` flat at
+124.0 / 183.7 / 141.0 is stock's own want, moving only when stock
+recalculates. (Different city ids because the games diverge after the
+first behaviour change; the pooled table above is the comparison that
+does not depend on that.)
+
+**How it was fixed.** The credit is applied for exactly the span of the
+decisions it exists to influence and taken back out at the end of the
+build pass (`deep_revert_building_wants()`), so stock's array is stock's
+own again between passes -- no cross-turn state, and no stale credit
+sitting in the array after the city stopped earning it. The two
+alternatives the audit named (credit only on stock's recalc turns;
+subtract deep's prior contribution) both leave one. Stock's recalc
+schedule is untouched.
+
+Execution census, 20 games: **544.8 revert entries per game, 20/20
+seeds, and `stale=0`** -- not one entry was ever clobbered between
+apply and revert, so the wall hack and deep's credit never collided.
+
+### 2. The capacity credit now pays in the capped city (D-C)
+
+`deep_capacity_credit()` triggered on `city_turns_to_grow()`, which in a
+capped city measures the cap rather than growth. It now triggers on a
+counterfactual: the city's citizens on its best food tiles, less its
+live food usage, against the granary box -- computed from the CATCHMENT
+and not from the arrangement, which is what breaks the deadlock with the
+CM without touching the CM. The capped state goes on shedding food the
+city genuinely cannot use.
+
+Census of every capped city-turn, 20 games, isolated-150:
+
+    capped city-turns                      3641
+    the old trigger would have paid        2588   (71%)
+    the new trigger pays                   3499   (96%)
+    old ZERO, new pays                      921
+      of which the CM had shed the food     586   (obsttg == FC_INFINITY)
+      of which the food box was pinned      180   (obsttg == 0)
+
+    cities capped >= 20 turns                59
+      old trigger paid on ... of their capped turns   69%
+      new trigger pays on                             96%
+
+Sample line: `city=147 size=8 obsttg=1000000000 obssurplus=0 cfttg=10
+cfsurplus=4 credit=111.1` -- the CM had shed the food to surplus 0, the
+old code read that as "the cap is not the binding constraint", and the
+city would have grown every ten turns if the gate lifted.
+
+**A correction to the audit, from the data.** D-C predicted the credit
+would be *permanently* zero after the first cap. On this cell it is
+*intermittent* instead -- zero in 29% of capped city-turns, not in all
+of them -- because migration and famine keep resetting the food box, so
+`ttg > 0` recurs. The permanently-pinned case (`obsttg == 0`) is 180
+city-turns here. The mechanism is exactly as described; its frequency
+on a migration cell is lower than the Europe evidence implied.
+
+**The tech-wall route fired zero times in both arms** on this cell: the
+cap-lifting tech is always already known by the time cities cap, so the
+branch that routes the credit into `tech_want` has no population here.
+It is not evidence about the branch.
+
+**A defect found while measuring, and fixed** (`938cbe07c9`): the first
+version of the counterfactual excluded specialists, and in a capped city
+the specialists are made BY the cap -- the capped state weights food at
+`cm_cap_food` against shield and trade at `cm_cap_*`, so a specialist
+beats a food tile and citizens are parked off the land because the city
+cannot grow. That read the credit back to zero in 29 of the 34 deadlock
+city-turns in the first probe. Every citizen is counted now; the
+happiness ceiling is the SOFT cap and `deep_content_credit()` prices it.
+
+### 3. What the mechanism did to the ladder
+
+The happiness column was the sawtooth's headline symptom. Re-taken on
+**20 games** of lategame-80 -- the cell `findings/happiness-ladder.md`
+measured on -- buildings per 100 cities at end of game:
+
+    column        baseline   deep BEFORE   deep AFTER
+    CAPACITY           4.5          31.3          7.7
+    CONTENT            4.6          29.3          7.4
+    MULTIPLIER         1.4           0.4          0.3
+      Temple           0.5           8.1          0.5
+      Colosseum        3.6          15.6          6.1
+      Aqueduct         0.5           1.6          0.3
+      Granary          0.2           2.1          1.8
+    mean city size    4.79          5.64         5.11
+    cities            1098           917          995
+
+Deep's happiness column was **6.4x baseline** and is now **1.6x**. The
+capacity column was 7.0x and is now 1.7x. (The finding's published
+figures were 39.6 against 4.0 on six games with an older binary; this
+is the same story at 20 games and today's tip.) No weight was touched:
+the entire overshoot that the ladder finding attributed to a hot
+placeholder was the delivery multiplier.
+
+On isolated-150, the same census over 20 games:
+
+    column / building      BEFORE   AFTER
+    CAPACITY                 53.0    47.7
+      Aqueduct               11.6    12.4
+      Granary                21.4    16.8
+    CONTENT                 100.6    77.6
+      Temple                 41.3    28.2
+      Colosseum              37.7    32.7
+    MULTIPLIER               20.4    20.1
+      Marketplace             5.4     7.3
+
+-- the happiness column down 23%, and here the cap-lifter RISES against
+a shrinking total. It does NOT on garden2b, where every column falls
+(CAPACITY 70.9 -> 39.0, CONTENT 109.2 -> 79.0, MULTIPLIER 28.5 -> 20.0,
+Aqueduct 9.8 -> 4.3 per 100 cities) while city count rises 31.5 -> 34.2
+per player. Both are the same story told by cells with different
+constraints, and neither is a claim about whether the new level is
+right: that is what the weights are for.
+
+**The clearest single mechanism result is on garden2b's first-build
+table.** Supermarket -- the bundle building the README bug was about --
+was *picked* 12 813 times across 20 games and actually built in 9 of
+them; after, it is picked 1 659 times and built in **13 of 20**. A want
+pinned at DAI_WANT_DOMESTIC_MAX by accumulation makes a city re-pick
+the same building every turn without finishing it; the same want
+delivered once finishes more of them from a seventh of the picks.
+Aqueduct's median first turn moves 69 -> 81 on that cell and 75 -> 74
+on isolated-150, built in 20/20 games in every arm.
+
+### 4. The A/B: four cells, no cell beyond noise
+
+20 paired seeds per cell (10 on smoke), `deep` arm, pinned binaries
+(`--server`), tuning=none. BEFORE is `9dd9cbc886` (the trace commit,
+behaviour-identical to the E34.2 tip); AFTER is `938cbe07c9`.
+
+    cell            score BEFORE   AFTER    delta     se      t   wins
+    isolated-150         201.82   194.32    -7.50   5.22  -1.44   8/20
+    lategame-80          172.38   174.15    +1.77   1.48  +1.19  13/20
+    smoke (10)            82.62    82.00    -0.62   1.50  -0.42   4/10
+    garden2b             640.23   615.15   -25.07  34.24  -0.73   8/20
+
+**Every execution counter first.** Same seeds, per game, all seats:
+
+    counter                isolated-150     garden2b       lategame-80
+    revert entries        0 -> 544.8 20/20  0 -> 598.6 20/20  0 -> 447.2 20/20
+    revert stale          0 -> 0            0 -> 7.3   3/20   0 -> 0
+    capped city-turns     0 -> 182.1 20/20  0 -> 207.1 20/20  0 -> 90.4  20/20
+    capacity credit paid  0 -> 175.0 20/20  0 -> 182.5 20/20  0 -> 85.7  20/20
+    tech-wall routes      0 -> 0            0 -> 0            0 -> 0
+    credited city-turns   4636 -> 4595      8781 -> 9665      2430 -> 2395
+
+(smoke, 10 seeds: revert 0 -> 323.9 10/10, capped 0 -> 3.7, paid
+0 -> 3.5, stale 0.)
+
+Both new mechanisms fire on every seed of every 20-seed cell. The
+credit reaches the same cities; it is simply no longer multiplied.
+
+**The one non-zero stale count is worth naming.** On garden2b -- 300
+turns, the longest cell -- 7.3 ledger entries per game (1.2% of 598.6),
+on 3 of 20 seeds, were found changed between apply and revert and were
+left alone rather than subtracted. That is the wall hack writing to an
+improvement deep had credited. The consequence is bounded and
+self-correcting: one turn of over-credit on one improvement, cleared at
+stock's next recalculation. It is zero on every other cell.
+
+**What moved instead of score.** The same shift appears on every cell:
+the civilian budget buys fewer buildings and more of everything else.
+
+    metric            isolated-150       garden2b         lategame-80
+    unitsbuilt      +1.50  t +0.45   +0.40   t +0.02   +5.58  t +5.81
+    settlers        +0.64  t +1.21   +0.05   t +0.16   +0.22  t +1.97
+    cities          -0.07  t -0.12   +2.65   t +1.53   +0.65  t +3.41
+    techs           -0.60  t -0.80   +2.33   t +1.47   +0.22  t +1.47
+    landarea        -3563  t -0.56   +23425  t +1.25   +5817  t +3.36
+    pop             -2.79  t -0.87   +5.88   t +0.55   -0.67  t -0.83
+    mean_city_size  -0.14  t -0.64   -0.05   t -0.29   -0.49  t -5.21
+
+(smoke: unitsbuilt +4.40 t +3.00, settlers +0.38, cities +0.12.)
+
+That is the expected consequence and not a surprise: the horizon
+weights are PLACEHOLDERS that have never been tuned, and whatever
+informal calibration they had was done while the delivery multiplied
+them by ~4.35. Delivering 1x makes them, by construction, several times
+colder than they were behaving, so buildings lose auctions they were
+winning and the shields go to settlers and units. On lategame-80 that
+trade is worth +0.65 cities and a slightly higher score; on
+isolated-150 it costs mean city size and a slightly lower one. Neither
+is outside noise, and no cell explains the other -- which is exactly
+why the tuning pass this round unblocks has to run before any of these
+weights is called right or wrong.
+
+### 5. The small edges (D-H)
+
+- **Upkeep dimension.** The credits sum a per-turn value across MORT
+  turns; the upkeep correction subtracted ONE turn of the ruleset's gold
+  bill from that number, so a building's recurring cost entered ~24x too
+  cheap. Charged over the same horizon now. `upkeep_gold_weight`'s
+  default and range are divided by MORT in the same commit (3.0 ->
+  0.125, 0..30 -> 0..1.25) so the landed charge is unchanged and this
+  round's A/B stays attributable; the knob owes the tuning pile a value,
+  and before this no value of it could have been right.
+- **Bundle reachability.** A tile counted as viable if it merely had no
+  conflicting extra. Now a worker of ours must be able to put the
+  partner there: caused by a worker action, terrain accepting it, and
+  its requirement vector (tech included) satisfiable. Supermarket is
+  0/20 on isolated-150 and lategame-80, so those cells say nothing; on
+  garden2b it is built in 9/20 games before and 13/20 after, with the
+  sawtooth fix and this one landing together and not separable.
+- **Caravan legality.** `caravan_parameter_is_legal()` is called on the
+  real parameter instead of a re-derivation that admitted exactly 1.0,
+  at which `perpetuity()` divides by zero and every destination scores
+  inf. `tuning-params.ini` endpoint 1.0 -> 0.99.
+- **Tuning log.** The 115-argument hand-written `deep-tuning` line is
+  generated from the loader's own list now, so a knob cannot be loadable
+  and unloggable. The five that were --
+  `horizon_multiplier_weight`, `caravan_discount`,
+  `caravan_foreign_trade`, `site_travel_discount`,
+  `site_travel_crowding` -- print. Verified by running the server with a
+  tuning file and counting 115 name=value pairs with the override
+  visible.
+- **Blocks.** `upkeep_gold_weight` and `survival_target` join ECON,
+  which they tax; they keep their single home in the S/X/G/M partition.
+
+### 6. One survival verdict per city per phase
+
+`deep_city_survival_verdict()` computes it on the first question of the
+phase and remembers it. The CM asked at the top of the turn and the
+growth ladder at the bottom, against a map that had moved in between,
+so the same city could be arranged for a siege and credited for growth
+in the same turn. The two THRESHOLDS are untouched -- `cm_war_survival`
+and `survival_target` price the same probability differently on purpose,
+and deepcm.c's argument for that is about the price, not the
+measurement. The four presence-count consumers the audit lists (melt,
+triage sort, veteran guard, severe-danger cutoff) are military and stay
+for D1.
+
+### 7. WHICH PAST RESULTS THIS INVALIDATES
+
+Everything in this list measured a credit multiplied by a
+phase-randomised 1-9x (mean 4.35, p90 6.95). **Do not quote any of it
+unqualified again.**
+
+- **The happiness ladder** (`findings/happiness-ladder.md` section 5;
+  STATUS 2026-08-01 "the happiness column"): 39.6 happiness buildings
+  per 100 cities against baseline's 4.0, and the conclusion that
+  "the placeholder weight of 1.0 is very probably too hot". The weight
+  was never delivered at 1.0. Re-taken on the same cell at 20 games,
+  the column is 29.3 per 100 cities against baseline's 4.6 before and
+  7.4 after -- most of the overshoot was the delivery, not the weight.
+- **The multiplier column** (`findings/multiplier-column.md`; STATUS
+  "the multiplier column, and three credits that do not score"): the
+  three credits whose mechanism landed and whose score did not were
+  each measured against an inflated, variance-inflated delivery. The
+  *diagnosis* may still stand; the numbers do not.
+- **The horizon ablation** (STATUS ~line 2020: zeroing the seven
+  horizon credits raised the Settlers share ~18% -> ~50%). That
+  contrast is between "no credit" and "4.35x credit", not between
+  "no credit" and "the credit".
+- **W03's acceptance numbers** (capacity buildings 8.9 vs baseline 3.4
+  per 100 cities, and every per-100-cities ladder count taken before
+  today): same reason.
+- **E34.2's gate 3 numbers** (growth_gate 19957 applications per game;
+  the -7.33 score cost of gates 3+4 together; "gates 3 and 4 fight each
+  other at the placeholder gains"). Gate 3 scaled a credit that stock's
+  array then multiplied by a random 1-9x, so the gain's effective
+  magnitude was not the gain. The QUALITATIVE finding -- two gates with
+  one gain on two incommensurable wants do not preserve their ratio --
+  survives; the magnitude is not a measurement.
+- **The Europe T106 attribution** (zero Aqueducts across 85 cities laid
+  entirely at the war gate's door): the census above gives the other two
+  causes their share.
+- Any tuning of `horizon_*` or `upkeep_gold_weight`. None has run;
+  R3's corpus and the cloud campaign were correctly blocked on this
+  session.
+
+### 8. What the next session must know
+
+- **The tuning pass is now the binding constraint, and it is owed the
+  whole ECON block.** The credits' placeholder weights were set when
+  delivery was 4.35x; they now deliver 1x and are, by construction,
+  4.35x too cold relative to whatever informal calibration they had.
+  That is the most likely explanation of the score direction in
+  section 4 and it is a tuning question, not a mechanism one. Deep's
+  horizon weights, `upkeep_gold_weight` (new scale), `stance_growth_gain`
+  and `stance_expand_gain` should be tuned together.
+- **The tech-wall branch has no population on any cell run** (zero
+  routes in 70 games): by the time cities cap, the cap-lifting tech is
+  known. Anyone claiming that branch works or does not needs an
+  early/contested cell where the tech is still unresearched. The bundle
+  credit has population only on garden2b.
+- **E34.2b's fifth gate** (`deep_assault_want`) is unaffected by this
+  round: nothing here touches the military want. Its baseline for
+  comparison should be taken on the post-D2 binary, since the civilian
+  side of the auction just changed magnitude.
+- **The harness reaps background batches at roughly 70 minutes.** Three
+  launches died mid-cell today: a detached `( ... ) &` inside a tool
+  call (killed within ten minutes, at turn 36 of 150), a `setsid nohup`
+  launch (killed immediately), and two tracked background runs at ~58
+  and ~69 minutes. Only `run_in_background` survives at all, and only
+  for about an hour, so a cell longer than that -- garden2b is ~26 min
+  per game and took three launches -- must be resumed by relaunching
+  the same run.sh, which the DONE-marker cache makes free. Never trust
+  `pgrep` here (empty PID namespace); the liveness signals that work
+  are DONE counts, game.log mtimes and load average.
+- **`deep-capacity`, `deep-credit` and `deep-credit-revert` are the
+  three censuses this round added.** Read them before any claim about
+  the growth ladder; `stale=0` on the revert line is the invariant that
+  says the ledger is sound.
+
+`meson test -C build` 2/2 OK. `python3 benchmark/tune-audit.py` CLEAN,
+**115/115/115/115**, before and after.
