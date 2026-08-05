@@ -29,21 +29,22 @@ Three numbers, all from the existing hull census plus one new log line
    enrolment as a lift's core. §1d has asked for this twice and nobody
    has produced it. Hitching cannot be priced without it.
 
-## 0a. FIRST, the small thing: read the bid-time A/B
+## 0a. DONE: the bid-time A/B, and the third producer to close
 
-`a81d509b4a` (bid-time withdrawal) has a 20-seed isolated-150 A/B that
-was launched 2026-08-04 evening: `boat_gate_at_bid` 0 vs 1, gate ON in
-both, pinned binary in the session scratchpad (GONE -- tmpfs -- so if
-the results dirs are incomplete, re-pin from HEAD and rerun).
-Analyse with `benchmark/paircmp.py OFF_DIR ON_DIR`. Cell 3 in STATUS
-is the number to read it against; the re-ask arm there carries a
-tech-want double-count that the bid-time form does not.
+Cell 4 in STATUS. 20 seeds, isolated-150: score +3.56 (t=0.85, 12/20),
+landarea +12125 (t=+2.89), cities +0.81, settlers -1.02 (t=-2.36).
+Direction, not a claim. Two things it settled: the at_bid = 0 path is
+behaviour-exact against cell 3's OFF arm (identical to the digit), and
+the tech dip is the build mix rather than the re-ask's double-count.
 
-Check the counters first, as always: `deep-watergate-bid` (domestic
-withdrawals), `deep-colony` (deep's own bids, should FALL at closed
-water), and the backstop `deep-watergate`, **which should read zero.
-A nonzero backstop means a third producer of ferry bids exists that
-nobody has accounted for** -- that is a finding, not a nuisance.
+**The backstop reads 1.4/game, not zero, and the third producer is
+named: stock's attacker ferry (`daimilitary.c:1687`), a transport for
+a needy attacker set inside `military_advisor_choose_build`.** 92% of
+ferry bids now withdraw at formation; this is the rest. Closing it is
+the same move as the other two -- suppress at the input, not after the
+bid wins -- and it is a small, self-contained commit that belongs
+BEFORE W36, because W36's award step assumes every ferry bid comes
+through the commission path.
 
 ## 1. What was settled this session, do not redo
 

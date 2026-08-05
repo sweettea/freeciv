@@ -4272,3 +4272,43 @@ costing arrivals -- it is the only fleet change that raised them --
 and the channel that does move is shields refused at the wrong city
 buying other things. That is an argument for placing hulls better, not
 for building more of them (section 2 stands).
+
+### Cell 4: bid-time withdrawal, and the third producer it exposed
+
+`a81d509b4a` measured against the same OFF arm as cell 3 (gate ON,
+post-hoc veto), isolated-150, 20 paired seeds, 20/20 both arms.
+
+    metric              OFF       ON      delta     se      t    wins
+    score            199.65   203.21     +3.56   4.22   +0.85   12/20
+    landarea         186825   198950    +12125   4203   +2.89   15/20
+    cities            14.70    15.51     +0.81   0.45   +1.80   14/20
+    settlers           3.52     2.50     -1.02   0.43   -2.36    4/20
+    techs             30.02    29.51     -0.51   0.45   -1.15    5/20
+    lift-arrived      23.50    25.15     +1.65   1.10   +1.50   11/20
+    gate-refusals     17.25     1.40    -15.85   2.09   -7.59    0/20
+
+Score is direction, not a claim, as ever. Two things it does settle:
+
+**The refactor is behaviour-exact where it should be.** Cell 3's and
+cell 4's OFF arms come from different binaries and agree to the digit
+on every metric (score 199.65, cities 14.70, refusals 17.25), so
+`boat_gate_at_bid = 0` restores the post-hoc path exactly.
+
+**The tech dip is the build mix, not the re-ask.** techs fell 0.62 in
+cell 3 and 0.51 here, and only cell 3's arm carried the tech-want
+double-count. The double-count hypothesis is not needed to explain it;
+refusing hulls at closed-water cities buys land and citizens
+(landarea +6.5%, pop +3.98) and slightly less science. Fewer settlers
+(-1.02) with MORE cities and land is the same story: settlers stop
+standing around waiting for a hull that could never come.
+
+**The backstop is NOT zero, and that is the finding.** 28 vetoes over
+20 games (1.4/game) survive bid-time withdrawal, against 345 (17.25)
+in the veto arm -- so 92% of ferry bids now withdraw at formation and
+a third producer accounts for the rest. It is named in deep's own
+comment already: **stock's attacker ferry, `daimilitary.c:1687`**, a
+transport for a needy attacker set inside
+`military_advisor_choose_build`. Same shape as the domestic founder's
+boat and suppressible the same way, at its input rather than after it
+wins. Domestic withdrawals ran 113 over 20 games (5.65/game); deep's
+own colony bids fell 4827 -> 4448.
