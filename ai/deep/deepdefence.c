@@ -2648,6 +2648,11 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
      * want - martial >= tier base + 0.1). */
     struct deep_want w = deep_want_from_choice(choice);
 
+    /* Still a presence count (military audit C7), deliberately: this
+     * and the veteran guard below are the two remaining ones, they
+     * both sit on the GARRISON BUILD ladder, and swapping the test
+     * for a survival threshold moves how much army a quiet city
+     * buys -- which is G1's floor sizing, not this round's. */
     if (w.tier == DWT_EMERGENCY && w.value - martial_value >= 0.1
         && city_data->grave_danger > 0) {
     CITY_LOG(LOGLEVEL_BUILD, pcity,
@@ -2965,6 +2970,9 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
         floor_def++;
       }
     } unit_list_iterate_end;
+    /* Presence count, left alone with the severe-danger cutoff above
+     * and for the same reason (C7): it is a build-ladder gate that
+     * G1 owns. */
     if (floor_def >= MAX(deep_tuning_get()->garrison_floor, 1)
         && city_data->grave_danger == 0) {
       adjust_ai_unit_choice(pcity, choice);
@@ -3234,7 +3242,7 @@ static void deep_assault_want(struct ai_type *ait,
 
 struct deep_emergency {
   struct city *pcity;
-  unsigned int grave_danger;
+  double surv;
   unsigned int urgency;
   int capital;
   adv_want worth;
@@ -3242,17 +3250,27 @@ struct deep_emergency {
 };
 
 /**********************************************************************//**
-  Severity order for simultaneous city emergencies: military gravity
-  first, then how close the danger is, then strategic role, then plain
-  city value; city id keeps the sort deterministic. Lexicographic on
-  purpose -- no scale-mixing weights to invent.
+  Severity order for simultaneous city emergencies: how likely the city
+  is to fall first, then how close the danger is, then strategic role,
+  then plain city value; city id keeps the sort deterministic.
+  Lexicographic on purpose -- no scale-mixing weights to invent.
+
+  The first key used to be grave_danger, a presence count that
+  increments for any capture-capable unit within one turn's move and
+  asks nothing about whether the garrison can hold (the project's own
+  recurring defect; instance six of nine in the military audit's list,
+  C7). It decides which of two dying cities gets the gold, so it is
+  the one that most deserves the probability. The verdict is the
+  shared one D2 landed -- computed once per city per phase and read
+  here, not recomputed against a map that has moved since the citizen
+  arrangement asked the same question.
 **************************************************************************/
 static int deep_emergency_cmp(const void *a_, const void *b_)
 {
   const struct deep_emergency *a = a_, *b = b_;
 
-  if (a->grave_danger != b->grave_danger) {
-    return a->grave_danger > b->grave_danger ? -1 : 1;
+  if (a->surv != b->surv) {
+    return a->surv < b->surv ? -1 : 1;   /* Least likely to hold first. */
   }
   if (a->urgency != b->urgency) {
     return a->urgency > b->urgency ? -1 : 1;
@@ -3693,7 +3711,9 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
 
       emergencies[ecount++] = (struct deep_emergency) {
         .pcity = pcity,
-        .grave_danger = city_data->grave_danger,
+        .surv = deep_city_survival_verdict(&(wld.map), pcity,
+                                           deep_tuning_get()
+                                             ->survival_horizon, NULL),
         .urgency = city_data->urgency,
         .capital = is_capital(pcity) ? 1 : 0,
         .worth = city_data->worth,
@@ -3707,9 +3727,9 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
   for (i = 0; i < ecount; i++) {
     log_base(deep_metric_log_level(),
              "deep-emergency turn=%d player=\"%s\" rank=%d city=%d"
-             " grave=%u urgency=%u capital=%d worth=%d",
+             " surv=%.3f urgency=%u capital=%d worth=%d",
              game.info.turn, player_name(pplayer), i,
-             emergencies[i].id, emergencies[i].grave_danger,
+             emergencies[i].id, emergencies[i].surv,
              emergencies[i].urgency, emergencies[i].capital,
              (int) emergencies[i].worth);
     resolve_city_emergency(ait, pplayer, emergencies[i].pcity);
