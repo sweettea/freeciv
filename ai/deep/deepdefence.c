@@ -3787,6 +3787,13 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
 
   deep_spend_gold(ait, pplayer, explore_want);
 
+  /* Every decision that reads building_want[] this turn has now been
+   * made -- the choose loop above, the wall and wonder paths inside
+   * it, and the buy pass. Hand stock's array back the way it was
+   * found, so deep's credit is delivered exactly once per turn instead
+   * of accumulating between stock's own recalculations. */
+  deep_revert_building_wants(pplayer);
+
   /* Initialize for next turn -- the sentinel that stops the military
    * advisor re-running is only read at the top of the NEXT pass, so
    * it must be restored AFTER the spend pass has consumed the wants.

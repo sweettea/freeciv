@@ -20,5 +20,6 @@ struct ai_type;
 
 void deep_adjust_building_wants(struct ai_type *ait,
                                 struct player *pplayer);
+void deep_revert_building_wants(struct player *pplayer);
 
 #endif /* FC__DEEPHORIZON_H */

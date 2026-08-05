@@ -508,6 +508,98 @@ static adv_want deep_bundle_credit(struct city *pcity,
   return credit;
 }
 
+/* One improvement of one city that deep added credit to during the
+ * current build pass, and the value it left in stock's array. */
+struct deep_credit_entry {
+  int city_id;
+  Impr_type_id id;
+  adv_want add;
+  adv_want post;
+};
+
+static struct deep_credit_entry *deep_credit_ledger = NULL;
+static int deep_credit_n = 0;
+static int deep_credit_cap = 0;
+
+/**********************************************************************//**
+  Remember one credit so deep_revert_building_wants() can take it back
+  out of stock's array when the decisions it was computed for have been
+  made.
+**************************************************************************/
+static void deep_credit_record(const struct city *pcity, Impr_type_id id,
+                               adv_want add, adv_want post)
+{
+  if (deep_credit_n >= deep_credit_cap) {
+    deep_credit_cap = MAX(256, deep_credit_cap * 2);
+    deep_credit_ledger = fc_realloc(deep_credit_ledger,
+                                    deep_credit_cap
+                                    * sizeof(*deep_credit_ledger));
+  }
+  deep_credit_ledger[deep_credit_n++] = (struct deep_credit_entry) {
+    .city_id = pcity->id, .id = id, .add = add, .post = post,
+  };
+}
+
+/**********************************************************************//**
+  Take deep's credits back out of stock's building_want[] array, once
+  every decision that reads it this turn has been made.
+
+  Stock recalculates building_want[] on its own schedule -- every
+  fc_rand(5)+5 turns per city (daicity.c) -- and leaves the array alone
+  in between, which is correct for a want that stock recomputes from
+  scratch when it does recompute. Deep's credit is computed EVERY turn,
+  so adding it into an array nobody clears delivered the intended
+  credit multiplied by the turns since that city's last recalc: 1x to
+  9x, mean ~4.5x, phase-randomised per city, and clipped once the sum
+  hit DAI_WANT_DOMESTIC_MAX. That is an unpriced multiplier on every
+  horizon credit, an inflated within-arm variance in every credit A/B
+  this project has run, and a simpler explanation than "the weight is
+  too hot" for the happiness column's 10x overshoot.
+
+  The alternatives were to credit only on stock's recalc turns, or to
+  subtract deep's previous contribution before adding the new one.
+  Both leave a stale credit sitting in the array between passes: the
+  first freezes a credit for up to nine turns after the city stopped
+  earning it (the wartime gate would be defeated by its own arrears),
+  and the second still exports deep's numbers to any reader outside the
+  build pass. Applying the credit for exactly the span of the decisions
+  it exists to influence has neither problem and needs no cross-turn
+  state: stock's array is stock's own again the moment the pass ends,
+  every turn, whatever the recalc phase.
+
+  Only a value deep itself left behind is removed. If anything else
+  wrote to that improvement in between -- the wall hack in the danger
+  pass is the one that can -- the entry is counted stale and left
+  alone, which is a one-turn over-credit rather than a corrupted want.
+**************************************************************************/
+void deep_revert_building_wants(struct player *pplayer)
+{
+  int taken = 0, stale = 0;
+  int i;
+
+  for (i = deep_credit_n - 1; i >= 0; i--) {
+    const struct deep_credit_entry *e = &deep_credit_ledger[i];
+    struct city *pcity = game_city_by_number(e->city_id);
+
+    if (pcity == NULL || pcity->server.adv == NULL
+        || pcity->server.adv->building_want[e->id] != e->post) {
+      stale++;
+      continue;
+    }
+    pcity->server.adv->building_want[e->id] -= e->add;
+    taken++;
+  }
+
+  if (deep_credit_n > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-credit-revert turn=%d player=\"%s\" entries=%d"
+             " taken=%d stale=%d",
+             game.info.turn, player_name(pplayer), deep_credit_n,
+             taken, stale);
+  }
+  deep_credit_n = 0;
+}
+
 /**********************************************************************//**
   Post-adjust the stock building_want[] array with the horizon and
   bundle credits, once per city per management pass.
@@ -689,6 +781,8 @@ void deep_adjust_building_wants(struct ai_type *ait,
         adv_want pre = pcity->server.adv->building_want[id];
 
         pcity->server.adv->building_want[id] += add;
+        deep_credit_record(pcity, id,
+                           add, pcity->server.adv->building_want[id]);
         tr_n++;
         tr_pre += pre;
         tr_add += add;
