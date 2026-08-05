@@ -97,6 +97,18 @@ through the commission path.
   destination, not on the build want. Human call 2026-08-04: merit
   should amortize the same way as everything else.
 
+## 3a. A capability the gate forecloses (human, 2026-08-04)
+
+Transports beat walking on unimproved terrain, and the water gate
+refuses same-continent coastal hops along with the dead lakes. That
+costs nothing TODAY only because deep's lift model is a continent
+inequality (`deepops.c:478`, `:770`, `:909`) and cannot want a hop at
+all. W36 records what would have to change together -- the gate
+generalising from "reaches another continent" to "shortcuts anything"
+(still geometry, still demand-free), the three continent tests
+becoming route comparisons, and a break-even that is terrain-dependent
+and must be measured in both cells rather than assumed.
+
 ## 4. TUNING is owed
 
 Human call 2026-08-04: tune, regardless of what score says about any

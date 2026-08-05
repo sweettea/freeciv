@@ -88,6 +88,39 @@ on it. Add the order-time shield stock and answer:
   (`deep_lift_wants_boat` true) to enrolled as a lift's core. §1d has
   asked for this number twice; step 5 cannot be priced without it.
 
+## The capability the gate forecloses (human, 2026-08-04)
+
+**Transports beat walking, and not only between continents.** The
+useful-water gate refuses same-continent coastal hops along with the
+dead lakes, and that cost is currently zero *by construction*: deep's
+lift model is a continent inequality --
+`tile_continent(unit) != tile_continent(goto_tile)` at
+`deepops.c:478`, `:770` and `:909` -- so a same-continent passenger is
+rejected at enrolment, at candidate selection and at drop routing. The
+census agrees it is not costing anything today: of the closed-water
+hulls the gate kills, 13 of 15 never carried a passenger, and the ~2
+that did were stock's emergent pickups, about 1% of hulls.
+
+It is free because nothing tries. If intra-continent lifts are ever
+wanted, three things change together:
+
+1. **The gate generalises without becoming demand-driven.** "Does this
+   water reach another continent" becomes "does this water SHORTCUT
+   anything" -- is there a pair of points whose sea path plus
+   embark/disembark beats the land path. Still pure geometry, still
+   computable per water body from the map, so it keeps the property
+   that made the gate work: it does not move with demand, and cannot
+   suppress the hull that serves the next burst. A lake that shortcuts
+   nothing stays refused at any demand.
+2. **The lift's continent test becomes a route comparison** at those
+   three sites: is the sea route materially better than walking.
+3. **The premise is terrain-dependent and must be measured, not
+   assumed.** A boat outruns a settler on unimproved terrain; roads
+   give 3 tiles/turn and rails are effectively free, and a hop pays
+   rendezvous plus load/unload on top. Early game favours the boat, a
+   developed continent favours walking -- exactly the shape that flips
+   between cells, so measure it in both.
+
 ## What this is NOT
 
 **Not a reason to build more transport.** Section 2's verdict stands:
