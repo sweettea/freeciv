@@ -17,6 +17,20 @@
 #include "fc_types.h"
 
 struct ai_type;
+struct adv_data;
+struct city;
+
+/* The two quantities the growth ladder already prices, exported so a
+ * second consumer can reuse the price rather than invent a parallel
+ * one (rule 3, and RC4's own lesson: deep already carried three
+ * incompatible prices for happiness). deep_unworked_tile_value() is
+ * what one more citizen earns per turn; deep_pacification_load() is
+ * how many citizens a city currently spends on keeping order, which
+ * is the population a luxury point can hand back to the tiles. */
+adv_want deep_unworked_tile_value(struct city *pcity,
+                                  struct adv_data *adv, int count,
+                                  int *raw);
+int deep_pacification_load(const struct city *pcity);
 
 void deep_adjust_building_wants(struct ai_type *ait,
                                 struct player *pplayer);

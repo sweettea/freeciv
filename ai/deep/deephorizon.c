@@ -71,9 +71,9 @@
   the identical tile selection. Tiles yield food, shield and trade only;
   the other outputs stay zero here and are derived by the caller.
 **************************************************************************/
-static adv_want deep_unworked_tile_value(struct city *pcity,
-                                         struct adv_data *adv, int count,
-                                         int *raw)
+adv_want deep_unworked_tile_value(struct city *pcity,
+                                  struct adv_data *adv, int count,
+                                  int *raw)
 {
   const struct civ_map *nmap = &(wld.map);
   int best[3] = {0, 0, 0};
@@ -285,7 +285,7 @@ static adv_want deep_capacity_credit(struct city *pcity,
   its helper is static; keeping the definitions identical means the
   horizon credit EXTENDS stock's WAG rather than competing with it.
 **************************************************************************/
-static int deep_pacification_load(const struct city *pcity)
+int deep_pacification_load(const struct city *pcity)
 {
   int load = pcity->feel[CITIZEN_UNHAPPY][FEELING_FINAL];
 
