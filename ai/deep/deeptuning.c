@@ -149,14 +149,128 @@ static const struct deep_tuning deep_tuning_defaults = {
 static struct deep_tuning deep_tuning_active;
 static bool deep_tuning_loaded = FALSE;
 
-#define TUNE_DOUBLE(field) \
-  deep_tuning_active.field \
-    = secfile_lookup_float_default(sf, deep_tuning_defaults.field, \
-                                   "tuning." #field)
-#define TUNE_INT(field) \
-  deep_tuning_active.field \
-    = secfile_lookup_int_default(sf, deep_tuning_defaults.field, \
-                                 "tuning." #field)
+/* Every tunable, once, in one list. The loader and the log line are
+ * both generated from it: a knob that can be set from the file and
+ * cannot be read back from the log is the exact hazard that cost
+ * this project a 40-game batch, and four economy knobs were in that
+ * state when this list was written. Adding a knob in one place now
+ * adds it in both. */
+#define DEEP_TUNING_FIELDS \
+  TUNE_DOUBLE(settler_fearfulness_mult) \
+  TUNE_DOUBLE(settler_risk_tolerance) \
+  TUNE_DOUBLE(settler_guard_tolerance) \
+  TUNE_DOUBLE(site_enough_result) \
+  TUNE_DOUBLE(founder_pool_per_site) \
+  TUNE_DOUBLE(committed_fear_mult) \
+  TUNE_DOUBLE(incoming_defence_eta_weight) \
+  TUNE_DOUBLE(incoming_defence_survival) \
+  TUNE_DOUBLE(embassy_science_value) \
+  TUNE_DOUBLE(explore_hut_value) \
+  TUNE_DOUBLE(explore_discovery_value) \
+  TUNE_INT(cm_happy_factor) \
+  TUNE_INT(cm_war_food) \
+  TUNE_INT(cm_war_shield) \
+  TUNE_INT(cm_war_trade) \
+  TUNE_INT(cm_cap_food) \
+  TUNE_INT(cm_cap_shield) \
+  TUNE_INT(cm_cap_trade) \
+  TUNE_INT(cm_wonder_shield) \
+  TUNE_INT(cm_wonder_trade) \
+  TUNE_INT(cm_grow_below) \
+  TUNE_DOUBLE(cm_grow_safety_margin) \
+  TUNE_DOUBLE(sortie_defence_weight) \
+  TUNE_INT(cm_grow_food) \
+  TUNE_INT(cm_grow_shield) \
+  TUNE_INT(cm_grow_trade) \
+  TUNE_DOUBLE(cm_trade_quality_slope) \
+  TUNE_DOUBLE(diplomat_defence_value) \
+  TUNE_DOUBLE(site_stream_weight) \
+  TUNE_INT(land_pressure_tiles) \
+  TUNE_DOUBLE(site_potential_discount) \
+  TUNE_DOUBLE(site_special_bonus) \
+  TUNE_DOUBLE(site_special_cluster) \
+  TUNE_DOUBLE(site_claim_bonus) \
+  TUNE_DOUBLE(site_pressure_factor) \
+  TUNE_DOUBLE(horizon_capacity_weight) \
+  TUNE_DOUBLE(horizon_growth_weight) \
+  TUNE_DOUBLE(horizon_bundle_weight) \
+  TUNE_DOUBLE(horizon_health_weight) \
+  TUNE_DOUBLE(horizon_content_weight) \
+  TUNE_DOUBLE(horizon_multiplier_weight) \
+  TUNE_DOUBLE(site_travel_discount) \
+  TUNE_DOUBLE(site_travel_crowding) \
+  TUNE_DOUBLE(site_potential_weight) \
+  TUNE_DOUBLE(site_settler_cost_weight) \
+  TUNE_DOUBLE(site_boat_cost_weight) \
+  TUNE_DOUBLE(site_rival_pressure) \
+  TUNE_DOUBLE(site_rival_crowding) \
+  TUNE_DOUBLE(expansion_war_survival) \
+  TUNE_DOUBLE(caravan_discount) \
+  TUNE_INT(caravan_foreign_trade) \
+  TUNE_DOUBLE(cm_war_survival) \
+  TUNE_DOUBLE(horizon_tech_weight) \
+  TUNE_DOUBLE(overseas_fear) \
+  TUNE_DOUBLE(overseas_decay) \
+  TUNE_INT(garrison_floor) \
+  TUNE_INT(garrison_floor_danger) \
+  TUNE_DOUBLE(garrison_menace_slope) \
+  TUNE_DOUBLE(menace_overseas_weight) \
+  TUNE_INT(barbarian_fear) \
+  TUNE_INT(boat_shadow_fear) \
+  TUNE_INT(density_fear_value) \
+  TUNE_INT(density_fear_radius) \
+  TUNE_INT(density_fear_ramp_turns) \
+  TUNE_INT(density_prior_value) \
+  TUNE_INT(density_prior_tiles) \
+  TUNE_DOUBLE(wall_fear_weight) \
+  TUNE_DOUBLE(settler_rush_weight) \
+  TUNE_DOUBLE(site_choke_bonus) \
+  TUNE_INT(convoy_min_load) \
+  TUNE_INT(convoy_wait_radius) \
+  TUNE_INT(lift_form_radius) \
+  TUNE_INT(lift_gather_turns) \
+  TUNE_INT(lift_cross_turns) \
+  TUNE_INT(lift_op_slots) \
+  TUNE_INT(lift_manifest_max) \
+  TUNE_DOUBLE(lift_hitch_wait_ratio) \
+  TUNE_DOUBLE(boat_idle_damping) \
+  TUNE_INT(boat_water_gate) \
+  TUNE_INT(boat_gate_at_bid) \
+  TUNE_INT(lift_drop_radius) \
+  TUNE_INT(lift_hitch_wait_min) \
+  TUNE_INT(worker_flee_radius) \
+  TUNE_INT(worker_guard_radius) \
+  TUNE_DOUBLE(worker_danger_discount) \
+  TUNE_DOUBLE(worker_cross_continent_discount) \
+  TUNE_DOUBLE(upkeep_gold_weight) \
+  TUNE_DOUBLE(upkeep_unit_weight) \
+  TUNE_DOUBLE(rotation_power_ratio) \
+  TUNE_INT(rotation_want) \
+  TUNE_DOUBLE(rotation_finish_relax) \
+  TUNE_DOUBLE(survival_target) \
+  TUNE_DOUBLE(survival_fear_value) \
+  TUNE_INT(survival_horizon) \
+  TUNE_DOUBLE(tired_attack_floor) \
+  TUNE_DOUBLE(attack_value_weight) \
+  TUNE_DOUBLE(sortie_win_floor) \
+  TUNE_DOUBLE(op_take_target) \
+  TUNE_INT(op_muster_wait) \
+  TUNE_DOUBLE(satisfied_fear_discount) \
+  TUNE_DOUBLE(colony_lift_weight) \
+  TUNE_DOUBLE(invasion_reinforce_rate) \
+  TUNE_INT(op_wave_window) \
+  TUNE_INT(raid_radius) \
+  TUNE_INT(hut_risk_radius) \
+  TUNE_DOUBLE(hut_risk_discount) \
+  TUNE_DOUBLE(op_abort_floor) \
+  TUNE_DOUBLE(barb_reinforce_rate) \
+  TUNE_INT(stance_forced) \
+  TUNE_INT(stance_source) \
+  TUNE_DOUBLE(stance_trait_span) \
+  TUNE_DOUBLE(stance_fear_gain) \
+  TUNE_DOUBLE(stance_op_gain) \
+  TUNE_DOUBLE(stance_growth_gain) \
+  TUNE_DOUBLE(stance_expand_gain)
 
 /**********************************************************************//**
   Load tuning overrides from $FREECIV_DEEP_TUNING, if set. Called once
@@ -167,6 +281,7 @@ void deep_tuning_init(void)
 {
   const char *path = getenv("FREECIV_DEEP_TUNING");
   struct section_file *sf;
+  char buf[8192];
 
   deep_tuning_active = deep_tuning_defaults;
   deep_tuning_loaded = TRUE;
@@ -182,230 +297,32 @@ void deep_tuning_init(void)
     return;
   }
 
-  TUNE_DOUBLE(settler_fearfulness_mult);
-  TUNE_DOUBLE(settler_risk_tolerance);
-  TUNE_DOUBLE(settler_guard_tolerance);
-  TUNE_DOUBLE(site_enough_result);
-  TUNE_DOUBLE(founder_pool_per_site);
-  TUNE_DOUBLE(committed_fear_mult);
-  TUNE_DOUBLE(incoming_defence_eta_weight);
-  TUNE_DOUBLE(incoming_defence_survival);
-  TUNE_DOUBLE(embassy_science_value);
-  TUNE_DOUBLE(explore_hut_value);
-  TUNE_DOUBLE(explore_discovery_value);
-  TUNE_INT(cm_happy_factor);
-  TUNE_INT(cm_war_food);
-  TUNE_INT(cm_war_shield);
-  TUNE_INT(cm_war_trade);
-  TUNE_INT(cm_cap_food);
-  TUNE_INT(cm_cap_shield);
-  TUNE_INT(cm_cap_trade);
-  TUNE_INT(cm_wonder_shield);
-  TUNE_INT(cm_wonder_trade);
-  TUNE_INT(cm_grow_below);
-  TUNE_DOUBLE(cm_grow_safety_margin);
-  TUNE_DOUBLE(sortie_defence_weight);
-  TUNE_INT(cm_grow_food);
-  TUNE_INT(cm_grow_shield);
-  TUNE_INT(cm_grow_trade);
-  TUNE_DOUBLE(cm_trade_quality_slope);
-  TUNE_DOUBLE(diplomat_defence_value);
-  TUNE_DOUBLE(site_stream_weight);
-  TUNE_INT(land_pressure_tiles);
-  TUNE_DOUBLE(site_potential_discount);
-  TUNE_DOUBLE(site_special_bonus);
-  TUNE_DOUBLE(site_special_cluster);
-  TUNE_DOUBLE(site_claim_bonus);
-  TUNE_DOUBLE(site_pressure_factor);
-  TUNE_DOUBLE(horizon_capacity_weight);
-  TUNE_DOUBLE(horizon_growth_weight);
-  TUNE_DOUBLE(horizon_bundle_weight);
-  TUNE_DOUBLE(horizon_health_weight);
-  TUNE_DOUBLE(horizon_content_weight);
-  TUNE_DOUBLE(horizon_multiplier_weight);
-  TUNE_DOUBLE(site_travel_discount);
-  TUNE_DOUBLE(site_travel_crowding);
-  TUNE_DOUBLE(site_potential_weight);
-  TUNE_DOUBLE(site_settler_cost_weight);
-  TUNE_DOUBLE(site_boat_cost_weight);
-  TUNE_DOUBLE(site_rival_pressure);
-  TUNE_DOUBLE(site_rival_crowding);
-  TUNE_DOUBLE(expansion_war_survival);
-  TUNE_DOUBLE(caravan_discount);
-  TUNE_INT(caravan_foreign_trade);
-  TUNE_DOUBLE(cm_war_survival);
-  TUNE_DOUBLE(horizon_tech_weight);
-  TUNE_DOUBLE(overseas_fear);
-  TUNE_DOUBLE(overseas_decay);
-  TUNE_INT(garrison_floor);
-  TUNE_INT(garrison_floor_danger);
-  TUNE_DOUBLE(garrison_menace_slope);
-  TUNE_DOUBLE(menace_overseas_weight);
-  TUNE_INT(barbarian_fear);
-  TUNE_INT(boat_shadow_fear);
-  TUNE_INT(density_fear_value);
-  TUNE_INT(density_fear_radius);
-  TUNE_INT(density_fear_ramp_turns);
-  TUNE_INT(density_prior_value);
-  TUNE_INT(density_prior_tiles);
-  TUNE_DOUBLE(wall_fear_weight);
-  TUNE_DOUBLE(settler_rush_weight);
-  TUNE_DOUBLE(site_choke_bonus);
-  TUNE_INT(convoy_min_load);
-  TUNE_INT(convoy_wait_radius);
-  TUNE_INT(lift_form_radius);
-  TUNE_INT(lift_gather_turns);
-  TUNE_INT(lift_cross_turns);
-  TUNE_INT(lift_op_slots);
-  TUNE_INT(lift_manifest_max);
-  TUNE_DOUBLE(lift_hitch_wait_ratio);
-  TUNE_DOUBLE(boat_idle_damping);
-  TUNE_INT(boat_water_gate);
-  TUNE_INT(boat_gate_at_bid);
-  TUNE_INT(lift_drop_radius);
-  TUNE_INT(lift_hitch_wait_min);
-  TUNE_INT(worker_flee_radius);
-  TUNE_INT(worker_guard_radius);
-  TUNE_DOUBLE(worker_danger_discount);
-  TUNE_DOUBLE(worker_cross_continent_discount);
-  TUNE_DOUBLE(upkeep_gold_weight);
-  TUNE_DOUBLE(upkeep_unit_weight);
-  TUNE_DOUBLE(rotation_power_ratio);
-  TUNE_INT(rotation_want);
-  TUNE_DOUBLE(rotation_finish_relax);
-  TUNE_DOUBLE(survival_target);
-  TUNE_DOUBLE(survival_fear_value);
-  TUNE_INT(survival_horizon);
-  TUNE_DOUBLE(tired_attack_floor);
-  TUNE_DOUBLE(attack_value_weight);
-  TUNE_DOUBLE(sortie_win_floor);
-  TUNE_DOUBLE(op_take_target);
-  TUNE_INT(op_muster_wait);
-  TUNE_DOUBLE(satisfied_fear_discount);
-  TUNE_DOUBLE(colony_lift_weight);
-  TUNE_DOUBLE(invasion_reinforce_rate);
-  TUNE_INT(op_wave_window);
-  TUNE_INT(raid_radius);
-  TUNE_INT(hut_risk_radius);
-  TUNE_DOUBLE(hut_risk_discount);
-  TUNE_DOUBLE(op_abort_floor);
-  TUNE_DOUBLE(barb_reinforce_rate);
-  TUNE_INT(stance_forced);
-  TUNE_INT(stance_source);
-  TUNE_DOUBLE(stance_trait_span);
-  TUNE_DOUBLE(stance_fear_gain);
-  TUNE_DOUBLE(stance_op_gain);
-  TUNE_DOUBLE(stance_growth_gain);
-  TUNE_DOUBLE(stance_expand_gain);
+#define TUNE_DOUBLE(field) \
+  deep_tuning_active.field \
+    = secfile_lookup_float_default(sf, deep_tuning_defaults.field, \
+                                   "tuning." #field);
+#define TUNE_INT(field) \
+  deep_tuning_active.field \
+    = secfile_lookup_int_default(sf, deep_tuning_defaults.field, \
+                                 "tuning." #field);
+  DEEP_TUNING_FIELDS
+#undef TUNE_DOUBLE
+#undef TUNE_INT
 
   secfile_destroy(sf);
 
-  log_normal("deep-tuning file=\"%s\" fear=%f srt=%f cfm=%f eta=%f surv=%f emb=%f hut=%f"
-             " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
-             " wos=%d wot=%d gb=%d gsm=%f sdw=%f gf=%d gs=%d gt=%d tqs=%f dip=%f stream=%f pot=%f"
-             " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f hhealth=%f hcont=%f cmws=%f htech=%f"
-             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d dfv=%d dfr=%d dfrt=%d dpv=%d dpt=%d wfw=%f srw=%f chk=%f cml=%d cwr=%d wfr=%d wgr=%d wdd=%f wxcd=%f ugw=%f uuw=%f rpr=%f rwant=%d rfin=%f svt=%f svf=%f svh=%d taf=%f avw=%f swf=%f ott=%f omw=%d sfd=%f clw=%f irr=%f oww=%d rrad=%d hrr=%d hrd=%f oaf=%f brr=%f lfr=%d lgt=%d lct=%d los=%d lmm=%d lhwr=%f bid=%f bwg=%d bgab=%d ldr=%d lhwm=%d stf=%d sts=%d stsp=%f stfg=%f stog=%f stgg=%f steg=%f",
-             path,
-             deep_tuning_active.settler_fearfulness_mult,
-             deep_tuning_active.settler_risk_tolerance,
-             deep_tuning_active.committed_fear_mult,
-             deep_tuning_active.incoming_defence_eta_weight,
-             deep_tuning_active.incoming_defence_survival,
-             deep_tuning_active.embassy_science_value,
-             deep_tuning_active.explore_hut_value,
-             deep_tuning_active.explore_discovery_value,
-             deep_tuning_active.cm_happy_factor,
-             deep_tuning_active.cm_war_food,
-             deep_tuning_active.cm_war_shield,
-             deep_tuning_active.cm_war_trade,
-             deep_tuning_active.cm_cap_food,
-             deep_tuning_active.cm_cap_shield,
-             deep_tuning_active.cm_cap_trade,
-             deep_tuning_active.cm_wonder_shield,
-             deep_tuning_active.cm_wonder_trade,
-             deep_tuning_active.cm_grow_below,
-             deep_tuning_active.cm_grow_safety_margin,
-             deep_tuning_active.sortie_defence_weight,
-             deep_tuning_active.cm_grow_food,
-             deep_tuning_active.cm_grow_shield,
-             deep_tuning_active.cm_grow_trade,
-             deep_tuning_active.cm_trade_quality_slope,
-             deep_tuning_active.diplomat_defence_value,
-             deep_tuning_active.site_stream_weight,
-             deep_tuning_active.site_potential_discount,
-             deep_tuning_active.site_special_bonus,
-             deep_tuning_active.site_special_cluster,
-             deep_tuning_active.site_claim_bonus,
-             deep_tuning_active.site_pressure_factor,
-             deep_tuning_active.horizon_capacity_weight,
-             deep_tuning_active.horizon_growth_weight,
-             deep_tuning_active.horizon_bundle_weight,
-             deep_tuning_active.horizon_health_weight,
-             deep_tuning_active.horizon_content_weight,
-             deep_tuning_active.cm_war_survival,
-             deep_tuning_active.horizon_tech_weight,
-             deep_tuning_active.overseas_fear,
-             deep_tuning_active.overseas_decay,
-             deep_tuning_active.garrison_floor,
-             deep_tuning_active.garrison_floor_danger,
-             deep_tuning_active.garrison_menace_slope,
-             deep_tuning_active.menace_overseas_weight,
-             deep_tuning_active.barbarian_fear,
-             deep_tuning_active.boat_shadow_fear,
-             deep_tuning_active.density_fear_value,
-             deep_tuning_active.density_fear_radius,
-             deep_tuning_active.density_fear_ramp_turns,
-             deep_tuning_active.density_prior_value,
-             deep_tuning_active.density_prior_tiles,
-             deep_tuning_active.wall_fear_weight,
-             deep_tuning_active.settler_rush_weight,
-             deep_tuning_active.site_choke_bonus,
-             deep_tuning_active.convoy_min_load,
-             deep_tuning_active.convoy_wait_radius,
-             deep_tuning_active.worker_flee_radius,
-             deep_tuning_active.worker_guard_radius,
-             deep_tuning_active.worker_danger_discount,
-             deep_tuning_active.worker_cross_continent_discount,
-             deep_tuning_active.upkeep_gold_weight,
-             deep_tuning_active.upkeep_unit_weight,
-             deep_tuning_active.rotation_power_ratio,
-             deep_tuning_active.rotation_want,
-             deep_tuning_active.rotation_finish_relax,
-             deep_tuning_active.survival_target,
-             deep_tuning_active.survival_fear_value,
-             deep_tuning_active.survival_horizon,
-             deep_tuning_active.tired_attack_floor,
-             deep_tuning_active.attack_value_weight,
-             deep_tuning_active.sortie_win_floor,
-             deep_tuning_active.op_take_target,
-             deep_tuning_active.op_muster_wait,
-             deep_tuning_active.satisfied_fear_discount,
-             deep_tuning_active.colony_lift_weight,
-             deep_tuning_active.invasion_reinforce_rate,
-             deep_tuning_active.op_wave_window,
-             deep_tuning_active.raid_radius,
-             deep_tuning_active.hut_risk_radius,
-             deep_tuning_active.hut_risk_discount,
-             deep_tuning_active.op_abort_floor,
-             deep_tuning_active.barb_reinforce_rate,
-             deep_tuning_active.lift_form_radius,
-             deep_tuning_active.lift_gather_turns,
-             deep_tuning_active.lift_cross_turns,
-             deep_tuning_active.lift_op_slots,
-             deep_tuning_active.lift_manifest_max,
-             deep_tuning_active.lift_hitch_wait_ratio,
-             deep_tuning_active.boat_idle_damping,
-             deep_tuning_active.boat_water_gate,
-             deep_tuning_active.boat_gate_at_bid,
-             deep_tuning_active.lift_drop_radius,
-             deep_tuning_active.lift_hitch_wait_min,
-             deep_tuning_active.stance_forced,
-             deep_tuning_active.stance_source,
-             deep_tuning_active.stance_trait_span,
-             deep_tuning_active.stance_fear_gain,
-             deep_tuning_active.stance_op_gain,
-             deep_tuning_active.stance_growth_gain,
-             deep_tuning_active.stance_expand_gain);
+  buf[0] = '\0';
+#define TUNE_DOUBLE(field) \
+  cat_snprintf(buf, sizeof(buf), " %s=%g", #field, \
+               deep_tuning_active.field);
+#define TUNE_INT(field) \
+  cat_snprintf(buf, sizeof(buf), " %s=%d", #field, \
+               deep_tuning_active.field);
+  DEEP_TUNING_FIELDS
+#undef TUNE_DOUBLE
+#undef TUNE_INT
+
+  log_normal("deep-tuning file=\"%s\"%s", path, buf);
 }
 
 /**********************************************************************//**
