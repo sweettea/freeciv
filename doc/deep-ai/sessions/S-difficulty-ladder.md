@@ -86,6 +86,35 @@ Constraints, each load-bearing:
   stock-similarity); the sampler is deep's own-path replacement for
   fuzzy's role in build choice.
 
+## The tuning jitter (human, 2026-08-05 — the second dial)
+
+Per-player, per-game multiplicative jitter on the tuning values, sigma
+per difficulty level: a weaker deep is a MISCALIBRATED player (it
+systematically over/under-values things this game), where the sampler is
+an ERRATIC one. Two easy AIs in one game then play differently wrong —
+personality-like variety without touching traits. Constraints:
+- **Jitter only continuous competence knobs**: `TUNE_DOUBLE` with a
+  non-degenerate registered range, clamped INSIDE the range (the
+  registry encodes it; H1's caravan_discount endpoint is the cautionary
+  tale). Mode switches, int gates, degenerate-range keys excluded on
+  principle — jittering a mode flips mechanisms, not competence.
+- **Sigma 0 at hard/cheating**; the hard byte-identity guard holds with
+  the jitter code in the tree; benchmark cells stay on the even baseline
+  (standing human call).
+- **Deterministic + persistent**: multipliers drawn once per player per
+  game from the seeded PRNG, saved with deep state (or re-derived from
+  game seed + player id); paired seeds stay paired, save/load
+  round-trips.
+- **Post-v4 by necessity, not just scheduling**: jitter is noise around
+  the RIGHT values; around untuned placeholders it is noise around
+  arbitrary points. State this in the epic's STATUS section.
+- **Calibrate jointly with the sampler**: two dials, one similarity
+  target — decide the split (prior: sampler carries most of the nerf,
+  jitter carries the flavour) and measure it, don't fit both blindly.
+- Log the drawn multipliers (one line per player at game start) so any
+  game's effective values are reconstructable — the H1/tuning-log
+  lesson applied to randomness.
+
 ## Acceptance
 
 - Hard byte-identity pasted (the corpus guard).
