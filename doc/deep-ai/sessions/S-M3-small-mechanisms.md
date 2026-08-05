@@ -36,6 +36,49 @@ evidence per item below.
    supply count includes explorers ON OTHER CONTINENTS that cannot serve
    the local unknown (reachability again). Small fix or measured WONTFIX.
 
+5. **Founder-pool reachability (expansion audit §3.8).** Same law as
+   item 1, applied to `deep_remaining_sites()` (`deepdefence.c:518`):
+   the free-land census is a `whole_map_iterate` with no reachability
+   filter, so island cells hold surplus founders against land they can
+   never reach, inflating the Join City gate. Reuse item 1's reachability
+   test; counter + the founder-pool/join metrics on isolated-150.
+6. **Producer tags for R3's corpus (verified 2026-08-05).** The
+   `deep-want` calibration line's producer field is `"-"` unless
+   `ADV_CHOICE_TRACK` is compiled (`deepwant.c:98-101`) — R3's corpus
+   would arrive missing its key column. Make producer tagging available
+   in benchmark builds: a meson option (`aitiming` precedent) or an
+   always-on cheap tag — smallest behaviour-neutral form wins; prove
+   neutrality byte-identically.
+7. **The health-credit currency (economy audit §3.11, still unfixed).**
+   `deephorizon.c:879-887` pays raw `EFT_HEALTH_PCT` percent points ×
+   weight — a third currency beside tile-sums and gold. Convert to the
+   tile-sum form the other credits use (the catchment machinery is right
+   there), or explicitly re-scope the knob as pile-only with a comment.
+   Small; D2 fixed upkeep's dimension and left this one.
+8. **Two comments that claim honesty the code lacks (census §5.6).**
+   `deepcombat.c:181` ("Real observed units only" — no observation gate
+   exists) and `deepdefence.c:736-743` (`score.units` called public —
+   the historian broadcasts rank+name only). Make them say what is true.
+   Two-line commits; the non-omniscient roadmap lists them as owed now.
+9. **Civil-war splinter arm purity — verify and close.** The 2026-07-31
+   bug-round item 5 ("splinter players inherit the server-default
+   aitype; pin per arm") has no recorded resolution. Check run-game.sh
+   and a splinter-containing save (E34.3's seed with 5 stances is a
+   ready specimen); fix small or close with evidence.
+
+## Deferred OUT of M3 by this analysis (recorded so they are not lost)
+
+- **CM completion** (developed-city state, treasury↔CM solvency state,
+  stance gates for CM/trade — economy audit §3.6/3.7/3.10): a real
+  mechanism session, not a small item; queued separately.
+- **Expected-wait site coupling** (expansion §3.1, the W36 surviving
+  lead): medium, own session.
+- **Air units invisible to the survival wave** (military G5): substrate
+  correctness — moved into M1's brief, where the substrate is open.
+- **Catchment-scan hoisting** (economy §3.15): behaviour-identical perf;
+  fine any time, riding whichever session next touches deephorizon.c
+  with a byte-identity proof.
+
 ## Discipline
 
 Each item: its own commit(s), its own counter, its own before/after

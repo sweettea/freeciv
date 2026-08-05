@@ -49,7 +49,13 @@ flag it in STATUS and ask, do not guess.**
    test (`deep_take_odds_at_arrival` covers the garrison it will face;
    the surviving-attackers output from (1) is what makes "can I hold it
    AFTER taking it" answerable for the first time).
-5. **The two recovered posture notes**, if they fit the epic cleanly:
+5. **Air units are invisible to the survival wave** (military audit G5,
+   moved here from M3): `deep_city_survival_core` drops enemy air on
+   another continent (neither UMT_SEA nor transported). While the
+   substrate is open for the attrition work, add the air term — reach =
+   air move range, the same class test G1's airborne floor class uses.
+   Small, correctness, its own counter.
+6. **The two recovered posture notes**, if they fit the epic cleanly:
    sortie pricing as survival-DELTAS (value = Δsurvival × city worth, not
    just floor-passing), and escort demand scaled from observed sea threat
    (boat-shadow's evidence terms) instead of unconditional. If either
