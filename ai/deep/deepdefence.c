@@ -1028,6 +1028,19 @@ static void deep_melt_surplus_defenders(struct ai_type *ait,
          * stack (human point 2026-07-30). Never melt them here. */
         continue;
       }
+      if (deep_op_claiming(pplayer, punit->id) >= 0) {
+        /* An operation's claim outranks the rotation: an obsolete
+         * Phalanx drafted from the walls and mustering in a quiet
+         * city was meltable, which disbands a unit another intention
+         * is counting on (military audit C3). Not counted in `count`
+         * either -- it is not this garrison's to spend. */
+        log_base(deep_metric_log_level(),
+                 "deep-claimskip turn=%d player=\"%s\" pass=melt"
+                 " unit=%d city=%d op=%d",
+                 game.info.turn, player_name(pplayer), punit->id,
+                 pcity->id, deep_op_claiming(pplayer, punit->id));
+        continue;
+      }
       count++;
       if (worst == NULL || ut->defense_strength < worst_def) {
         worst = punit;
@@ -1134,6 +1147,30 @@ static void deep_melt_surplus_defenders(struct ai_type *ait,
         if (upgraded) {
           continue;   /* Modernised in place; nothing to melt. */
         }
+      }
+    }
+    {
+      double p_without
+        = tune->survival_target > 0.0
+          ? deep_city_stack_survival_without(nmap, pcity,
+                                             tune->survival_horizon,
+                                             worst, NULL)
+          : 1.0;
+
+      /* The question every other leave-the-city decision asks, and
+       * the melt did not (military audit C3). Its own gate is
+       * danger == 0 && urgency == 0 -- presence counts, and with
+       * satisfied_fear_discount at its default a SATISFIED city reads
+       * danger 0 with an observed wave standing outside it. Losing a
+       * body is losing a body whatever the fear lattice says. */
+      if (p_without < tune->survival_target) {
+        log_base(deep_metric_log_level(),
+                 "deep-meltblock turn=%d player=\"%s\" city=%d"
+                 " unit=\"%s\" p=%.3f target=%.3f",
+                 game.info.turn, player_name(pplayer), pcity->id,
+                 unit_rule_name(worst), p_without,
+                 tune->survival_target);
+        continue;
       }
     }
     log_base(deep_metric_log_level(),
