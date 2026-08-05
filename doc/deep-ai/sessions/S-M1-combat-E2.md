@@ -49,6 +49,15 @@ flag it in STATUS and ask, do not guess.**
    test (`deep_take_odds_at_arrival` covers the garrison it will face;
    the surviving-attackers output from (1) is what makes "can I hold it
    AFTER taking it" answerable for the first time).
+4b. **Re-seat the tired-attack hold (D1 hand-off).** D1 proved the hold
+   is dead UPSTREAM of the done flag: it runs in `first_activities`
+   where movement was just restored, so `moves_left < SINGLE_MOVE` is
+   never true — zero firings in all 206 result dirs ever. The correct
+   seat is the attack path itself (the moment after an attack leaves a
+   unit tired, decide hold-vs-press through the odds machinery this
+   epic owns) — D1's report calls it "a combat-E2 item of the same
+   shape as the invade gate". Use `deep_hold_unit()` (D1's new API),
+   never `unit_ai.done` directly.
 5. **Air units are invisible to the survival wave** (military audit G5,
    moved here from M3): `deep_city_survival_core` drops enemy air on
    another continent (neither UMT_SEA nor transported). While the

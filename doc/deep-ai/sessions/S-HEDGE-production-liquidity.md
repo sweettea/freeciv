@@ -1,5 +1,16 @@
 # Session brief — HEDGE: the caravan as a liquid shield bank (SIZE FIRST)
 
+**PRE-VERDICT ON THE PENALTY LEG (2026-08-05, economy-effects sweep):**
+`city_change_production_penalty` EXEMPTS AI players unless `H_PRODCHGPEN`
+is set (`server/citytools.c:3221`), and hard does not set it
+(`ai/difficulty.c:110-131`) — all benchmark cells run hard. **The
+switch-penalty-avoidance leg is therefore worth zero as benchmarked**;
+verify the two cites in step 0 and retire that leg without a batch. The
+Coinage and disband-salvage legs survive and are the session's real
+subject. Related phantom found by the same sweep: stock DOCKS the want by
+`shield_stock × SHIELD_WEIGHTING/15` (`daicity.c:1909`) for a penalty the
+AI never pays — a phantom cost deep should delete (M3 item 10).
+
 Branch `epic/w03-horizon-content`. Read `CLAUDE.md`,
 `doc/deep-ai/00-context.md` (RC1 — nothing in the codebase prices option
 value), `NEXT-SESSION.md` §5, the R2/R2b STATUS tails, and
