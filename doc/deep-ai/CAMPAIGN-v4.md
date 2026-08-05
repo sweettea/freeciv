@@ -45,6 +45,7 @@ each rule cites its receipt.
 | 8d | **GROUND** (fortress want channel, pillage, capture instrumentation, fortify) — pre-v4 | queued |
 | 8e | **HEDGE incl. self-imposed H_PRODCHGPEN** (human call: no AI exemption from the switch cost) — pre-v4; its churn-tax A/B feeds the freeze decision | queued |
 | 8e2 | **TRADE portfolio session** (S-TRADE-routes.md: slot opportunity cost + replacement, partner-aware targeting, ceasefire truncation pricing, transit risk, cross-water caravans) — pre-v4, after PEACE | queued |
+| 8g | **CONSEQ** (defensive tech-wall, sell-before-fall, upkeep rehoming), **WRACE** (wonder races, after R2b), **BALANCE** (gifts + proxy arming, after PEACE) — human call 2026-08-05: all pre-v4 | queued |
 | 8f | INSTR runs LAST of the mechanism sessions (its census rerun must capture all new knobs) | queued |
 | 9 | Binary frozen at a named commit; `meson test` + `tune-audit.py` CLEAN; STATUS quiesced | — |
 | 10 | Human go | — |
