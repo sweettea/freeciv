@@ -21,6 +21,7 @@
 /* common */
 #include "city.h"
 #include "effects.h"
+#include "extras.h"
 #include "game.h"
 #include "improvement.h"
 #include "map.h"
@@ -554,6 +555,7 @@ static adv_want deep_bundle_credit(struct city *pcity,
 {
   const struct deep_tuning *tune = deep_tuning_get();
   const struct civ_map *nmap = &(wld.map);
+  const struct player *pplayer = city_owner(pcity);
   adv_want credit = 0;
 
   for (int etype = 0; etype < EFT_COUNT; etype++) {
@@ -577,14 +579,29 @@ static adv_want deep_bundle_credit(struct city *pcity,
         }
       } requirement_vector_iterate_end;
 
-      if (has_this_building && partner != NULL) {
+      if (has_this_building && partner != NULL
+          /* Somebody has to be able to lay the partner extra down. An
+           * extra that appears from resources, huts or terrain change
+           * is not a bundle this empire can decide to complete. */
+          && is_extra_caused_by_worker_action(partner)) {
         int viable = 0;
 
         city_tile_iterate(nmap, city_map_radius_sq_get(pcity),
                           city_tile(pcity), ptile) {
+          /* A tile counts only if a worker of OURS could actually put
+           * the partner there: terrain that accepts it, the extra's own
+           * requirements (its tech among them) satisfiable, and no
+           * conflicting extra already down. Before this the credit
+           * counted a tile for merely not refusing the extra, which on
+           * a normal catchment is nearly every tile -- so deep paid
+           * effect_value x ~20 x weight for half of a bundle it had no
+           * mechanism and sometimes no technology to finish. The worker
+           * side of the pairing is W30's; the CREDIT was never deferred
+           * with it. */
           if (ptile != city_tile(pcity)
+              && !tile_has_conflicting_extra(ptile, partner)
               && (tile_has_extra(ptile, partner)
-                  || !tile_has_conflicting_extra(ptile, partner))) {
+                  || player_can_build_extra(partner, pplayer, ptile))) {
             viable++;
           }
         } city_tile_iterate_end;
