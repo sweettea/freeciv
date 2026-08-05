@@ -4452,3 +4452,56 @@ lift cluster, on training seeds, reported on holdout), and the two
 ownerless leads are rates (sci/tax/lux from amortized tech value,
 `deephorizon.c:439` reads them and nothing sets them) and trade routes
 on merit.
+
+## W34 designed: the objective layer, and a victory plan deferred (2026-08-04)
+
+`workstreams/W34-victory-plan.md`. The bundle's highest-value undesigned
+gap now has a file, staged into a phase that is buildable today and a
+phase that is deliberately not scheduled.
+
+**Phase A — the objective layer. BUILD THIS.** It absorbs the human
+proposal of 2026-08-01 (`findings/objective-layer.md`), which was
+accepted, never built, and had no owner. Objective enum in
+`struct deep_plr`, forceable from the tuning file, gating four existing
+seams as MULTIPLIERS on existing wants (fear conversion, operation
+formation, growth ladder, expansion) plus an objective bias on tech
+wants. `DEEP_OBJ_BALANCED` at identity weights must be byte-identical
+to today's binary -- that is both the A/B switch and the acceptance
+gate. Ten new tunables, all placeholders, all owed a tuning pass.
+
+Its real purpose is separability: 108 constants against a diagonal ES
+at pop ~6 must be tuned in blocks, but economy and military bid for one
+shield budget, so an economy optimum found under wrong fear knobs is an
+optimum for spending a starved budget. Pinning the objective CREATES
+the separability instead of assuming it. The acceptance criterion is
+written to be falsifiable in both directions: if per-candidate variance
+does not fall when pinned, the premise is wrong and the workstream says
+so instead of proceeding.
+
+**Phase B — the victory plan. DESIGNED, DEFERRED until W04** (human
+call). Two independent reasons, either sufficient. Every input is
+omniscient -- a rival's spaceship state, exact culture, and the city
+counts that make `civil_war_triggered()` computable -- and 00-context
+section 2 says the project is unfalsifiable while being fed the
+answers; a victory planner is the most answer-fed component we could
+build. And it cannot be measured: no victory has ever fired in any cell
+in this project's history, and `get_spaceship_score()` (`score.c:367`)
+pays only at SSHIP_ARRIVED. A victory-enabled cell must be built WITH
+phase B, after W04, so it measures an AI that had to look.
+
+**Found while checking references: `enum winning_strategy` is worse
+than vestigial.** Four values, three assignments
+(`daidata.c:88`, `daidiplomacy.c:880`, `:1125`/`:1128`), and exactly
+ONE read (`daidiplomacy.c:1630`, `!= WIN_SPACE`). `WIN_CAPITAL` -- "we
+cannot win unless we take war_target's capital", set when the target
+leads the space race, which is precisely the decapitation capstone's
+trigger -- is computed and read by nothing at all. A correct inference,
+thrown away. Belongs in 00-context section 3's table of infrastructure
+built and abandoned in place.
+
+Hard ordering added to 00-context section 7: **W04 before W34 phase B.**
+
+Also recorded: under score truncation "maximise score" is nearly
+"pursue an economic objective" (`get_civ_score()`, `score.c:352`), so
+phase A is aligned with the metric we have and phase B is not. That is
+the honest reason phase A is schedulable and phase B is not.

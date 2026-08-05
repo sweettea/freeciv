@@ -1,5 +1,10 @@
 # The objective layer, and why it comes before tuning
 
+**OWNED SINCE 2026-08-04 by `workstreams/W34-victory-plan.md` phase A.**
+This document stays as the reasoning — why the layer comes before
+tuning, and what "the regime must be real" means. The plan of record is
+the workstream file.
+
 Human proposal, 2026-08-01, in response to "the score gap is
 economic": *put the hardness/objective layer on top first, force all
 deep AIs to seek an economic win, tune the economies in that regime,

@@ -39,13 +39,19 @@ Deeper background for each is in `../findings/`. The mapping:
 | W31 naval doctrine | `naval-doctrine.md` |
 | W32 air doctrine | `air-doctrine.md`, `air-doctrine-addendum.md` |
 | W33 operations layer | `operations-layer.md` |
+| W34 victory plan + objective layer | `objective-layer.md`, `decapitation-strike.md` |
 | W35 espionage & intelligence | `espionage.md` |
 | Capstone: decapitation strike | `decapitation-strike.md` |
 
 W31–W35 and the capstone arrived as the military & intelligence bundle
 (imported 2026-07-30; workstream files already extracted, unlike the
-rest of this table). W34 (victory plan) is named by the bundle as the
-highest-value remaining strategic gap but is **not yet designed**.
+rest of this table). **W34 was designed 2026-08-04**
+(`W34-victory-plan.md`) and is staged: phase A, the objective layer, is
+buildable and measurable now and absorbs the accepted-but-unbuilt
+proposal in `findings/objective-layer.md`; phase B, the victory plan
+proper, is designed and DEFERRED until W04, because every input it
+needs is omniscient today and no victory has ever fired in any cell we
+run.
 
 ## Do not skip ahead
 

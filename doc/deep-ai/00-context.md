@@ -192,6 +192,8 @@ per arm. Paired at ρ≈0.8 needs **~110**. Pair everything.
 - W03 before W17 (migration is gated on `city_can_grow_to`)
 - W29 before W12.4 (bridges need chain-aware transform costing)
 - W30 before plan-driven wants in W12, W13, W28
+- W04 before W34 phase B (a victory plan is the most answer-fed component
+  we could build; measuring it under omniscience measures the omniscience)
 
 ---
 
