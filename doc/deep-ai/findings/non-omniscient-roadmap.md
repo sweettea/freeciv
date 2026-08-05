@@ -130,7 +130,16 @@ hysteresis absorbs estimation noise. Then the op formation bar gains an
 intel-age precondition ("scout before you commit"), the raid op doubles as
 the recon executor (an honest raid IS a patrol), and a recon want priced by
 `intel_staleness × planned_action_value / distance` slots into the
-explore-want template. This is where the AI starts *choosing to buy
+explore-want template. **Two shapes, not one (human, 2026-08-05): the
+target-shaped want above, and an AREA-shaped surveillance want — staleness
+of already-explored territory × the probability something changed there
+(rival proximity, expansion rate, contested frontier). A rival's quiet
+fourth city in land you mapped forty turns ago is how an honest AI gets
+strategically surprised; re-scouting the known feeds known_city freshness,
+site-contest pricing, and density fear.** The explore want's structure is
+the intended home: hut term (live today), discovery term (fog-gated,
+dormant), patrol term (fog-gated, dormant) — three terms, one machinery.
+The explorer disposal policy's retention floor exists partly for this day. This is where the AI starts *choosing to buy
 information* — the behaviour honest-information §5.3 called the most
 human-feeling an AI can have.
 
