@@ -4208,3 +4208,67 @@ Commits: `159b914815` geometry read, `73bd3ef440` the gate,
 `9ff747c634` sizing, `70acda4798` tuning-file guard, `97daac1087`
 river/closed-sea split. `meson test -C build` 2/2 OK; `tune-audit.py`
 CLEAN (107/107/107/107).
+
+## The gate confirmed at power: mechanism yes, score no (2026-08-04, evening)
+
+Three cells, one pinned binary per mechanism, tuning-file switches,
+every arm's execution counter read before its score
+(`benchmark/paircmp.py`, committed this session).
+
+**Cell 1 -- isolated-150, 40 paired seeds, gate off -> on.** 40/40 both
+arms, 0 pairing violations.
+
+    metric              OFF       ON      delta     se      t    wins
+    score            201.70   203.52     +1.82   2.71   +0.67   18/40
+    cities            14.25    15.01     +0.76   0.33   +2.26   21/40
+    unitsbuilt        87.33    93.15     +5.82   2.00   +2.91   28/40
+    lift-arrived      18.82    23.25     +4.42   0.97   +4.58   30/40
+    lift-formed       26.48    31.85     +5.38   1.33   +4.03   28/40
+    gate-refusals      0.00    15.75    +15.75   1.81   +8.69   40/40
+
+**The 20-seed +4.65 (t=1.12) is RETIRED. Do not quote it.** At double
+the power it is +1.82 (t=0.67) with 18/40 wins -- under half, and the
+mean halved as n doubled, which is the shape of noise. The mechanism
+went the other way: every proxy is STRONGER at 40 seeds than at 20.
+The off-switch was proven at scale, not assumed: zero deep-watergate
+lines in 40 OFF games.
+
+**Cell 2 -- lategame-80, 20 paired seeds. The gate is worth nothing
+there.** score -0.07 (t=-0.16), arrivals -0.35, everything else flat,
+while the gate fires 10.65/game (t=+4.34, 17/20). Not harmful, inert.
+A verdict inherits its venue, again: this gate's value lives on the
+island cell or nowhere, and averaging the two cells would have hidden
+that.
+
+**Cell 3 -- the refused shields, isolated-150, 20 seeds, gate ON in
+both arms.** The first recovery mechanism (re-ask the domestic advisor
+with founder_want zeroed, `d95aedf67a`) executes 17.15/game in 20/20
+pairs with refusals unchanged (17.25 -> 17.15, a clean isolation):
+score +2.24 (t=0.58, 12/20), landarea +12025 (t=+2.78), cities +0.81,
+arrivals +2.05 (t=+2.05), techs -0.62 (t=-1.61).
+
+**And then the mechanism was replaced, because a probe showed it
+choosing wrong.** The refused ferry at the traced city came from
+deep's own colony-lift want, not the domestic founder's boat, so the
+re-ask zeroed a POSITIVE founder want and handed a Temple (97.6) to a
+city whose best real candidate was Settlers (750.1). `a81d509b4a`
+withdraws the bid where it is FORMED instead -- domestic founder's
+boat via founder_want, deep's colony want via the WHICH-water test
+section 1c named -- leaving the post-hoc gate as a backstop whose
+counter should read zero. Same city, same turns:
+
+    ladder    Settlers 750.1 | Workers  1.0 | Workers  1.0
+    re-ask    Settlers 750.1 | Temple  97.6 | Temple 142.9
+    at_bid    Settlers 750.1 | Settlers750.1| Settlers750.1
+
+`boat_gate_at_bid` replaces `boat_gate_second_best`. Its own A/B on
+isolated-150 is the number cell 3 should be re-read against, since the
+re-ask arm carries a known tech-want double-count that the bid-time
+form does not.
+
+**Standing reading.** Five delivery mechanisms have now worked and the
+aggregate has not followed any of them. This one at least stopped
+costing arrivals -- it is the only fleet change that raised them --
+and the channel that does move is shields refused at the wrong city
+buying other things. That is an argument for placing hulls better, not
+for building more of them (section 2 stands).
