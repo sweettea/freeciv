@@ -75,6 +75,13 @@ from its verified-defect ledger; M1's brief must absorb the
 attrition/cost-of-victory coupling (mechanism-map §3.1); the ~20 stale-doc
 items in its reports are owed a doc-hygiene pass.
 
+## Standing human calls (2026-08-05)
+
+- **Do NOT fold `stance_source = 1` or `traitdistribution EVEN` into
+  defaults or cells.** Both are variance sources; the measurement baseline
+  stays even (identical traits, identity stances). The `*-traits` cells
+  are deliberate probes only. E34.3's machinery stays landed and off.
+
 ## What was descoped, by whom
 
 - **The owed lift-cluster tuning pass** (old NEXT-SESSION §0): deferred to
