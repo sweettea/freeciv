@@ -85,6 +85,7 @@
 #include "deepops.h"
 #include "deeprates.h"
 #include "deepstance.h"
+#include "deeptrade.h"
 #include "deeptuning.h"
 #include "deepwant.h"
 
@@ -3460,6 +3461,15 @@ static void deep_city_choose_build(struct ai_type *ait,
       } else {
         newchoice = domestic_advisor_choose_build(ait, pplayer, pcity);
       }
+      /* Re-price the caravan the domestic advisor just bid for -- or
+       * bid for one it did not. Stock's trade-route producer prices a
+       * caravan on an income estimate with a HARDCODED distance of ten
+       * and no destination, then clamps the want to 0.1 when caravans
+       * pile up; deep has picked real destinations since the trade
+       * epic and never told the build queue. This is the seam where
+       * the two meet: the bid has been formed and nothing has consumed
+       * it yet. See deeptrade.c. */
+      deep_trade_merit_apply(ait, pplayer, pcity, newchoice);
       if (deep_want_cmp(deep_want_from_choice(newchoice),
                         deep_want_from_choice(&city_data->choice)) > 0) {
         adv_choice_copy(&(city_data->choice), newchoice);

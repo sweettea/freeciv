@@ -693,6 +693,40 @@ struct deep_tuning {
   int rates_enabled;
   double rates_science_gain;
   double rates_luxury_gain;
+
+  /* Caravan BUILD want on merit (the trade-merit epic). Deep already
+   * chooses long, foreign destinations with one honest transit
+   * convention (deeptrade.c), but the want that decides whether to
+   * build a caravan at all is still stock's dai_choose_trade_route(),
+   * whose CBS_CLASSIC income estimate is
+   *
+   *   income = (10 + 10) * (1.75 * pcity->surplus[O_TRADE]) / 24
+   *
+   * (daidomestic.c:360) -- a HARDCODED distance of 10, only the
+   * SOURCE city's trade, and no destination at all. It is then
+   * clamped to 0.1 whenever caravans pile up, and the fallback ladder
+   * builds one at want 1 exactly when the city wants nothing. Deep
+   * raised what a caravan is worth and left what it costs to decide
+   * to build one untouched.
+   *
+   * trade_merit != 0 replaces that bid with the discounted stream the
+   * caravan would actually collect: caravan.c's own NPV model run
+   * against the REAL destinations from this city, over the MORT
+   * horizon every other deep credit is summed over, annuitized back
+   * to a per-turn output value (the currency build wants are in) and
+   * amortized over the turns until the caravan is finished. 0 = off =
+   * stock's bid untouched, which is the compiled default.
+   * PLACEHOLDER.
+   *
+   * trade_merit_gain is the honest residue and the thing a tuning
+   * pass must find: the NPV is in raw output points priced by the
+   * advisor's own trade priority, and whether that lands on the same
+   * scale as a Library's want is a CALIBRATION question the rates
+   * epic (R1) already lost once, for the same reason -- W01's want_t
+   * conversion was declared and never built. 1.0 is the untuned
+   * corner, not a claim. PLACEHOLDER. */
+  int trade_merit;
+  double trade_merit_gain;
 };
 
 void deep_tuning_init(void);
