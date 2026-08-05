@@ -688,6 +688,140 @@ static void deep_hitch_census(struct ai_type *ait, struct player *pplayer)
 }
 
 /**********************************************************************//**
+  One line per WAITING PASSENGER per turn: W36 step 0's other two
+  questions, which NEXT-SESSION section 1d has now asked three times.
+
+  The wait -- turns from "first wanted a boat" to enrolled as a lift's
+  core -- is the honest price of the fleet's remaining idleness, and
+  the reason hitching cannot be priced without it: `deep_lift_enroll()`
+  decides on FEASIBILITY ("can I reach the rendezvous") because the
+  COMPARISON ("what would I get by waiting for my own boat") has no
+  number in it. Reconstructed offline as first-seen here against the
+  turn this unit id appears as `psngr` on a `deep-lift-op ... form`
+  line; units that never appear are the censored tail and must be
+  reported as such rather than dropped.
+
+  Claimed passengers are logged too, and that is not noise: the line
+  the wait ENDS on is the one that says it ended, and a claim that
+  dissolves resumes the same wait.
+
+  `boats` sizes the demand that finds no vehicle -- the `lift-noboat`
+  population -- and `wcity`/`pcity` size the demand that finds no
+  PRODUCER, which is the failure W36's award step would have to handle
+  and a different thing entirely: a commission with no candidate city
+  cannot fall through to a next-best one.
+**************************************************************************/
+static void deep_wait_census(struct ai_type *ait, struct player *pplayer)
+{
+  const struct civ_map *nmap = &(wld.map);
+  struct unit_type *boattype;
+  int pcities = 0;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+
+  /* Producers that exist ANYWHERE for this player: a city that can
+   * build a hull today into water that reaches another continent. The
+   * gate's own geometry, asked of the builder rather than the bid. */
+  boattype = best_role_unit_for_player(pplayer, L_FERRYBOAT);
+  if (boattype != NULL) {
+    city_list_iterate(pplayer->cities, pcity) {
+      if (can_city_build_unit_now(nmap, pcity, boattype, RPT_CERTAIN)
+          && deep_city_water_bridges(city_tile(pcity))) {
+        pcities++;
+      }
+    } city_list_iterate_end;
+  }
+
+  unit_list_iterate(pplayer->units, punit) {
+    Continent_id seen[8];
+    int nseen = 0, boats = 0, nearest = -1, wcities = 0;
+
+    if (!deep_lift_wants_boat(ait, punit)
+        || tile_continent(unit_tile(punit))
+           == tile_continent(punit->goto_tile)) {
+      continue;
+    }
+
+    unit_list_iterate(pplayer->units, pferry) {
+      int d;
+
+      if (!dai_is_ferry(pferry, ait)
+          || get_transporter_occupancy(pferry)
+             >= get_transporter_capacity(pferry)
+          || !could_unit_load(punit, pferry)) {
+        continue;
+      }
+      boats++;
+      d = real_map_distance(unit_tile(punit), unit_tile(pferry));
+      if (nearest < 0 || d < nearest) {
+        nearest = d;
+      }
+    } unit_list_iterate_end;
+
+    /* Producers on the passenger's OWN water: the candidate set an
+     * award would draw from if the commission were raised where the
+     * passenger stands. Zero for an inland passenger, which is itself
+     * a finding -- the water that matters is the one it will embark
+     * from, not the one it is beside today. */
+    adjc_iterate(nmap, unit_tile(punit), atile) {
+      Continent_id ac = tile_continent(atile);
+      int si;
+
+      if (ac >= 0) {
+        continue;
+      }
+      for (si = 0; si < nseen; si++) {
+        if (seen[si] == ac) {
+          break;
+        }
+      }
+      if (si < nseen || nseen >= (int) ARRAY_SIZE(seen)) {
+        continue;
+      }
+      seen[nseen++] = ac;
+    } adjc_iterate_end;
+
+    if (boattype != NULL && nseen > 0) {
+      city_list_iterate(pplayer->cities, pcity) {
+        bool shares = FALSE;
+
+        if (!can_city_build_unit_now(nmap, pcity, boattype, RPT_CERTAIN)) {
+          continue;
+        }
+        adjc_iterate(nmap, city_tile(pcity), atile) {
+          int si;
+
+          for (si = 0; si < nseen; si++) {
+            if (seen[si] == tile_continent(atile)) {
+              shares = TRUE;
+              break;
+            }
+          }
+          if (shares) {
+            break;
+          }
+        } adjc_iterate_end;
+        if (shares) {
+          wcities++;
+        }
+      } city_list_iterate_end;
+    }
+
+    log_base(deep_metric_log_level(),
+             "deep-wait turn=%d player=\"%s\" unit=%d type=\"%s\" born=%d"
+             " at=(%d,%d) goto=(%d,%d) claimed=%d boats=%d near=%d"
+             " wcity=%d pcity=%d",
+             game.info.turn, player_name(pplayer), punit->id,
+             unit_rule_name(punit), punit->birth_turn,
+             TILE_XY(unit_tile(punit)), TILE_XY(punit->goto_tile),
+             deep_op_claiming(pplayer, punit->id), boats, nearest,
+             wcities, pcities);
+  } unit_list_iterate_end;
+}
+
+/**********************************************************************//**
   Where a boat and a passenger can physically meet: the passenger's own
   tile if the boat can float there (a coastal city -- the boat docks on
   top of the settler), otherwise the adjacent tile the boat can reach
@@ -1690,6 +1824,7 @@ void deep_manage_units(struct ai_type *ait, struct player *pplayer)
    * who is STILL waiting once the lift has done its best, and was
    * there a crossing they could have joined? */
   deep_hitch_census(ait, pplayer);
+  deep_wait_census(ait, pplayer);
 
   unit_list_iterate(pplayer->units, punit) {
     struct unit_ai *unit_data = def_ai_unit_data(punit, ait);
