@@ -20,6 +20,32 @@ option-value mechanism in the codebase. Nothing needs inventing: the
 probability side is the existing fear/menace terms, the cost side is the
 existing penalty function, the conversion mechanics are ruleset facts.
 
+## Extensions (human, 2026-08-05, same session)
+
+1. **The caravan as a coinage alternative.** R2 killed the UNPRICED
+   fallback caravan; the honest replacement for "this city wants nothing
+   much" is a merit comparison between the three sinks for surplus
+   shields: **Coinage** (shields→gold at the ruleset rate, valued at
+   gold's marginal utility — R1's pricing machinery, and the treasury
+   guard's implied scarcity), **a caravan as a shield bank** (full value
+   on wonder delivery, salvage % on disband-into-build, plus the hedge's
+   option value), and **the best available low-want build**. All three
+   legs are priceable with existing machinery; the session adds the
+   comparison, not a currency.
+2. **Workers join the convertible class.** A worker works tiles now and
+   salvages into a military build later (disband recovery). Its want
+   gains the same option-value term under elevated menace. Note from the
+   W01 corpus: workers are already near the want anchor (median 47), so
+   a small additive salvage term is scale-safe there in a way it is not
+   for settlers.
+
+Step 0's census must therefore also measure: Coinage city-turns and the
+surplus at which cities fall into it; worker/caravan disband-into-build
+events (do they EVER happen today?); and the ruleset conversion rates
+(Coinage rate, disband recovery %, help-wonder %) stated with numbers
+per ruleset. The verdict rule below applies to the whole convertible
+class, leg by leg — any leg with no population is reported and dropped.
+
 ## STEP 0 IS THE SESSION GATE: size the population (W36 discipline)
 
 Before ANY mechanism code, instrument and measure on the current binary:
