@@ -38,6 +38,24 @@ whatever stock leaves them at.
    pre-session binary. Report score direction + proxy metrics (techs,
    gold curve, unhappy city-turns). 20 seeds is direction; say so.
 
+## Celebration (human call, 2026-08-04 — part of this session's scope)
+
+"We should also have a mechanism to have AI cities grow by celebrating
+under suitable govt." The audit (findings/deep-dive-2026-08-04/
+economy-growth.md §4.3) found: `ai/deep` contains zero references to
+celebration or rapture; stock's `dai_manage_taxes` already *computes*
+celebration feasibility (`daihand.c:255-260` builds a `require_happy` CM
+parameter to test it) and deep forwards it untouched; the CM never sets
+`require_happy`. The mechanism is a rates+CM+government coupling, which is
+why it belongs in this session: when the amortized value of celebration
+(rapture growth on classic-rules cells; celebration trade bonuses on
+civ2civ3) beats the alternatives, set the luxury rate AND the affected
+cities' `require_happy` CM state together. Venue note: rapture growth pays
+on the classic cells (`*-classic` configs); measure there, guard on
+civ2civ3. If this half doesn't fit the epic's commit budget, land the rates
+half and leave celebration as a follow-up session with a written design —
+do not half-land it.
+
 ## Rule 7
 
 Any weighting constant is a `struct tuning` PLACEHOLDER registered in all

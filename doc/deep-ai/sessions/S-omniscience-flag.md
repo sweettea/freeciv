@@ -56,6 +56,19 @@ requirements document for the knowledge layer."
    happened; the Tier-3 reads left open; what the knowledge layer would
    have to provide first. This document is goal (b)'s deliverable.
 
+## Predictions to test (added 2026-08-05, from the omniscience census)
+
+`findings/deep-dive-2026-08-04/omniscience-census.md` §0.3 predicts the
+breakage census will show **active self-harm, not just stalls** — deep's
+gates fail dangerously optimistic where stock's fail passive: an unseen
+wave reads as `wave == 0` → survival 1.0 → fear satisfaction → garrison
+melts; an unseen garrison reads as empty → assaults form everywhere;
+expansion halts at the unknown-tile-zero site gate (`deepsite.c:590`).
+Instrument for these specifically (melt events, assault formations vs
+actual garrisons, foundings) and report prediction-vs-observed — the census
+earns its keep if the flag run confirms or falsifies it. Scope unchanged:
+census only, fix nothing.
+
 ## Acceptance
 
 - OFF byte-identity pasted; ON divergence + execution evidence pasted.

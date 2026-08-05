@@ -28,9 +28,13 @@ them; nothing tunes locally.
 | ~~1~~ | ~~W34 E34.1 stance surface~~ | (ran from W34 A.7) | — |
 | **2** | **W34 E34.2 remaining gates** | [S-E34.2-gates.md](S-E34.2-gates.md) | E34.1 |
 | 3 | W34 E34.3 traits | [S-E34.3-traits.md](S-E34.3-traits.md) | E34.2 |
-| 4 | Rates from amortized value | [S-rates.md](S-rates.md) | — |
+| 3a | **D1 defect round: military discipline** — done-flag reset (`deepops.c:1903`, disables tired-holds/convoy-holds/worker-flee/consolidate), sortie claim-discipline, melt survival re-check, triage on probability, barbarian gate mismatch, target anchor (mechanism-map §1 D-A/D-F/D-G) | to write | before any military measurement |
+| 3b | **D2 defect round: credit integrity** — horizon-credit sawtooth, counterfactual ttg, CM/horizon deadlock, one shared threatened verdict, upkeep dimension, bundle reachability, tuning blocks + log completeness, caravan-discount guard (mechanism-map §1 D-B/D-C/D-H) | to write | **before the R3 corpus and before ANY tuning** — both currently measure the sawtooth |
+| 3c | **D3 defect round: site truth** — correct defence bonus in deep (upstream bug #1 imported at `deepsite.c:920`), closed-water naval bonus, held-lift re-validation, enough-result wiring (mechanism-map §1 D-D/D-E) | to write | — |
+| 4 | Rates from amortized value + celebration | [S-rates.md](S-rates.md) | — |
 | 5 | Trade routes on merit | [S-trade-merit.md](S-trade-merit.md) | — |
-| 6 | Class rescale: one scale for city choices | [S-class-rescale.md](S-class-rescale.md) | 4, 5 (fresh corpus after both) |
+| 6 | Class rescale: one scale for city choices | [S-class-rescale.md](S-class-rescale.md) | 3b, 4, 5 (fresh corpus after all three) |
+| 6a | Government valuation via the `gov_value` hook (seam map §4: zero seam cost, RC1 at its purest) | to write | — |
 | 7 | Combat E2: offensive force sizing | to write | combat E1 (landed) |
 | 8 | Naval invasion slice 3: invasion wants + go/no-go | to write | 7 (odds in survival currency) |
 | 9 | Small-mechanism round: density-fear reachability gate (spec'd `0112a65112`), hut-risk awareness, watch items (drop-pick cosmetics, explorer census creep) | to write | — |
@@ -57,6 +61,17 @@ Ordering notes:
   odds, T153 forensics) are the surviving sources — the E2 brief must be
   reconstructed from those, and any posture note not found there is LOST
   and must be re-asked, not guessed.
+
+## The audit that re-cut this ladder (2026-08-04/05)
+
+A five-reader deep dive (four Opus domain readers + a Fable omniscience
+census) produced `findings/mechanism-map.md` (consolidated defects,
+unconsumed signals, ranked couplings/gaps) and
+`findings/non-omniscient-roadmap.md` (the staged de-omniscience path).
+Raw reports: `findings/deep-dive-2026-08-04/`. The D1-D3 rows above come
+from its verified-defect ledger; M1's brief must absorb the
+attrition/cost-of-victory coupling (mechanism-map §3.1); the ~20 stale-doc
+items in its reports are owed a doc-hygiene pass.
 
 ## What was descoped, by whom
 
