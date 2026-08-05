@@ -834,13 +834,21 @@ static unsigned int deep_barbarian_fear(void)
 
 /**********************************************************************//**
   How militarised the players we have actually met are, relative to
-  us, from PUBLIC information only: the units score that the
-  historian's periodic "mightiest civilizations" report broadcasts to
-  everyone (server/report.c, score.units) -- the travellers' report
-  that says keep the gates manned. Ratio of their summed units score
-  to ours, through the tunable slope, capped at 1.0. Unmet players
-  contribute nothing, so a pre-contact empire keeps no insurance
-  garrison at all, and the signal rises BEFORE any war does.
+  us: the ratio of their summed score.units to ours, through the
+  tunable slope, capped at 1.0. Unmet players contribute nothing, so a
+  pre-contact empire keeps no insurance garrison at all, and the
+  signal rises BEFORE any war does.
+
+  This comment used to call score.units PUBLIC information, on the
+  grounds that the historian's "mightiest civilizations" report
+  broadcasts it. It does not. historian_generic() (server/report.c)
+  sorts on score.units but prints only an ORDINAL RANK and a nation
+  name -- never the value -- and it publishes one rotating category at
+  a time, so even the ranking arrives rarely. Reading score.units
+  directly is an omniscient read (RC6), like the rest of this module's
+  inputs. A public-information version would take rank alone, over the
+  players the report has actually named; that is W04's to build, and
+  the analogy is written down here so it is not re-derived.
 
   Each neighbour is weighted by REACHABILITY (the third instance of
   the "no fear before the threat class can exist" law, after the

@@ -178,8 +178,17 @@ static double deep_garrison_vs_stream(const struct civ_map *nmap,
   units that could plausibly reach it within `horizon` turns, resolved
   as sequential duels to the death (deepodds.c). Strongest attackers
   strike first; the garrison presents its best defender until it
-  falls. Real observed units only -- the anticipatory fear terms keep
-  covering what cannot be seen.
+  falls.
+
+  Real units only -- no unit is imagined here, and the anticipatory
+  fear terms keep covering what this pass will not price. But NOT
+  observed: the wave is assembled straight from aplayer->units with no
+  visibility test of any kind, so it sees fogged and never-scouted
+  stacks alike (RC6). The gates that do exist are at-war, contact-made
+  (barbarians excepted, they never make contact), continent or coastal
+  reachability, and arrival inside `horizon`. Making this honest is
+  W04's job; until then every survival probability in this module is
+  computed on ground truth.
 
   wave_out (optional) reports how many attackers qualified; with an
   empty wave the answer is 1.0 and with an empty garrison against any
