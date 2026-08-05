@@ -2601,10 +2601,37 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
   bool overseas;
   double bar;
 
-  city_list_iterate(pplayer->cities, pcity) {
-    home_city = pcity;
-    break;
-  } city_list_iterate_end;
+  /* The anchor everything below is measured from: targets are scored
+   * worth/(1 + distance) from here, the members' continent is this
+   * city's, and "overseas" means not this city's landmass.
+   *
+   * It used to be the FIRST city in pplayer->cities -- an arbitrary
+   * city, in list order, which for most players is wherever the
+   * capital happened to be founded and after a civil war is whatever
+   * survived (military audit C5). Every operation this empire ever
+   * formed was biased toward that one city's neighbourhood.
+   *
+   * The empire's centroid instead, taken as the medoid: the own city
+   * with the smallest total distance to the others. A medoid needs no
+   * arithmetic on wrapped coordinates, is always a real city on real
+   * ground (so the pool and the staging search still mean something),
+   * and on a one-city empire it is that city, which is the old
+   * behaviour exactly. */
+  {
+    int best = FC_INFINITY;
+
+    city_list_iterate(pplayer->cities, pcity) {
+      int total = 0;
+
+      city_list_iterate(pplayer->cities, other) {
+        total += real_map_distance(city_tile(pcity), city_tile(other));
+      } city_list_iterate_end;
+      if (total < best) {
+        best = total;
+        home_city = pcity;
+      }
+    } city_list_iterate_end;
+  }
   if (home_city == NULL) {
     return FALSE;
   }
@@ -2633,6 +2660,29 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
   }
   if (target == NULL) {
     target = deep_op_pick_target(ait, pplayer, city_tile(home_city));
+
+    if (target != NULL
+        && log_do_output_for_level(deep_metric_log_level())) {
+      /* The anchor's own lens: what the list head would have picked
+       * from the same menu. Pure read, metric-log gated, and the only
+       * way to count target choices this change actually moved --
+       * the two arms' games diverge, so a between-arm comparison of
+       * chosen targets answers a different question. */
+      struct city *head = NULL, *alt;
+
+      city_list_iterate(pplayer->cities, pcity) {
+        head = pcity;
+        break;
+      } city_list_iterate_end;
+      alt = head != NULL
+            ? deep_op_pick_target(ait, pplayer, city_tile(head)) : NULL;
+      log_base(deep_metric_log_level(),
+               "deep-anchor turn=%d player=\"%s\" op=%d medoid=%d"
+               " head=%d target=%d alt=%d changed=%d",
+               game.info.turn, player_name(pplayer), oi, home_city->id,
+               head != NULL ? head->id : 0, target->id,
+               alt != NULL ? alt->id : 0, alt != target ? 1 : 0);
+    }
   }
   if (target == NULL) {
     return FALSE;
