@@ -6570,3 +6570,218 @@ knob. It goes to the cloud pile with the deflator range above.
   add the same two-price logging to the producers that do not have it
   -- the wonder caravan first, since section 5 shows it is the one
   that decides most caravan builds.
+
+## D1: military discipline -- one hold revived, two with no population (2026-08-05)
+
+Seven code commits. The six read-verified defects of
+`findings/deep-dive-2026-08-04/military.md` (C1-C5, C7) are fixed, each
+with its own execution counter: `3dafe7fd48` the phase-scoped holds,
+`ae7aff55e0` sortie claim discipline, `fb4654afed` the melt's survival
+question, `321861bd4a` triage on probability, `94f12010fa` the build
+side's barbarian exemption, `9e528aea4f` the op-aware attacker pool,
+`513086bef2` the empire-centroid target anchor.
+
+**The headline is a correction to the audit.** C1 is real and the fix
+works -- proven unit by unit, same seed, same turn -- but of the "three
+landed mechanisms" the done-flag reset was said to disable, only ONE has
+any population at all. **The tired-attack hold and the convoy HOLD have
+never fired in a single benchmark game this project has ever run** --
+zero `deep-tired` and zero `deep-convoy` lines across all 206 result
+directories under `benchmark/results/` -- and the reason sits UPSTREAM
+of the done flag in both cases. No done-flag fix could have revived
+them. Score is flat on both cells and three of the six fixes are
+isolated against their own probe binaries; none of them is the cause of
+anything.
+
+### 1. The three binaries the evidence needed
+
+    BEFORE   6ed0814108   aca9e506d839   the pre-session tip
+    AFTER    513086bef2   3852a5004c83   this session's tip
+    PROBE    (uncommitted) 8d36ca4734c4  AFTER with hold preservation
+                                         disabled and the census kept
+    PROBE2   (uncommitted) 37a9d863dfae  AFTER with the two sortie
+                                         claim checks disabled
+    PROBE3   (uncommitted) 11e1e1f57960  AFTER with the list-head anchor
+
+All pinned to scratch dirs with `libfreeciv.so` beside them, `--server`,
+`--arms deep`, tuning=none, 20 paired seeds per arm. PROBE exists
+because the BEFORE binary has no census: "the counter fired and the
+behaviour was absent" is a claim about individual units, and only a
+binary that keeps the census while dropping the fix can make it.
+
+### 2. Dead, then alive: the worker flee, unit by unit
+
+`deep-hold` is emitted from `last_activities`, i.e. after BOTH drivers
+have had their chance at the unit -- the manage loop and
+`auto_workers_player()`. lategame-80, 20 games each:
+
+    arm      why     holds   alive   same tile   spent no moves
+    PROBE    flee    16821   16545    6295 (37.4%)   6533 (38.8%)
+    AFTER    flee    14298   14168   14156 (99.0%)  14287 (99.9%)
+    AFTER    (contested)  9091  9035   9009 (99.1%)   9068 (99.7%)
+
+Six of every ten fled workers were moved again in the same turn they
+were logged as fleeing. The same unit, the same seed, the same turn:
+
+    seed 3, P2 unit 140, turn 18
+      PROBE   deep-hold ... why=flee alive=1 same_tile=0 moved=1 spent=10
+      AFTER   deep-hold ... why=flee alive=1 same_tile=1 moved=0 spent=0
+
+The second, independent driver mattered: `auto_workers_player()` reaches
+every worker of an AI player at end of phase and never reads the flag,
+so the fix needed a consumer in `deep_auto_settler_run()` as well as in
+the manage loop.
+
+**The flee mark count falls when the hold holds** -- 785.5 -> 636.9 per
+game (t -4.26), and 841.2 -> 636.9 against PROBE (t -4.72). A worker
+that stays fled does not have to decide to flee again next turn.
+
+**The consolidate garrison is real but rare**: 0.10 holds per game on
+lategame-80 (2 events in 20 games), 0 on contested. It is not evidence
+either way at that volume, and it is not a reason to doubt the fix.
+
+### 3. The two mechanisms with no population, and why
+
+**The tired-attack hold cannot fire at the seam it runs in.**
+`deep_hold_tired_attackers()` requires `moves_left < SINGLE_MOVE`, and
+it runs in `first_activities` -- where `update_unit_activities()`
+(`server/srv_main.c:1336`, which calls `unit_restore_movepoints`) has
+just given every unit its full movement back. A unit becomes tired
+DURING the manage loop, not before it. Zero firings in 206 result
+directories is what that predicts. `tired_attack = TRUE` in civ2civ3, so
+the ruleset gate is not the cause.
+
+**The convoy HOLD cannot fire either**, for the reason STATUS already
+published on 2026-08-01 about the port-scan invade gate: stock's ferry
+system boards and sails within one manage pass, so a loaded transport
+resting in port at phase time does not exist. The escort half of the
+same pass has never logged a line either.
+
+Both fixes are still correct and both stay: they are the behaviour the
+code says it wants, and they cost nothing. But **the audit's C1 prize
+-- "three landed mechanisms go from zero to live for ~5 lines" -- is one
+mechanism, not three.**
+
+### 4. The A/B: flat on both cells, and no fix owns a regression
+
+20 paired seeds, `--arms deep`, pinned, tuning=none.
+
+    cell            score BEFORE   AFTER    delta     se      t   wins
+    lategame-80          174.15   172.93    -1.23   1.36  -0.90   6/20
+    contested             80.88    79.54    -1.34   1.52  -0.89   8/20
+
+Neither is outside noise, and both point the same small way, so three
+fixes were isolated against a probe binary that differs from the tip in
+exactly one of them (the E34.2b technique: pin everything, disable one
+thing, pair on seeds -- the se comes down by half or more):
+
+    isolation                     cell         delta     se      t   wins
+    fix 1  phase holds            lategame-80  -0.32   1.19  -0.27   8/20
+    fix 2  sortie claim checks    contested    +0.72   0.63  +1.14   9/20
+    fix 6  centroid anchor        lategame-80  +0.36   1.32  +0.27  12/20
+
+**The two largest behaviour changes are the two that look mildly
+positive.** Fix 2 on contested also moves what it should:
+
+    metric              no claim check   with it    delta     se      t
+    sorties                     62.00      56.40    -5.60   2.78  -2.02
+    unitskilled                 20.08      18.79    -1.29   0.70  -1.83
+    unitslost                   29.06      27.84    -1.22   0.85  -1.44
+    unitsbuilt                  61.86      60.96    -0.90   0.67  -1.34
+
+and fix 6 forms more operations (11.95 -> 14.65 against BEFORE, t +1.65;
+12.15 -> 14.65 against PROBE3, t +1.86, 14/20). The bundle's -1.2 is not
+attributable to any of the three isolated fixes, and the three
+un-isolated ones (melt, triage, barbarian gate) have populations one to
+three orders of magnitude smaller. **Twenty seeds are direction.**
+
+### 5. Every fix's own counter, per game, all seats
+
+    counter                lategame-80 (B -> A)     contested (B -> A)
+    hold lines             0 -> 715.00  20/20       0 -> 454.55  20/20
+      of which flee        0 -> 714.90              0 -> 454.55
+      of which garrison    0 -> 0.10    2/20        0 -> 0
+    claimskip pass=kill    0 -> 7.45   17/20        0 -> 120.05  20/20
+    claimskip pass=cover   0 -> 2.70   12/20        0 -> 12.95   20/20
+    claimskip pass=melt    0 -> 11.20  10/20        0 -> 20.75   13/20
+    meltblock              0 -> 0.05    1/20        0 -> 0.10     2/20
+    anchor decisions       0 -> 358.40 20/20        0 -> 801.35  20/20
+      target changed       0 -> 181.60 (50.7%)      0 -> 212.00 (26.5%)
+    deep-kill barb=1       0 -> 0                   0 -> 4.65     1/20
+
+**The anchor is the biggest single decision change in the round.** The
+medoid differs from the list head on 89.7% of formations (lategame-80) /
+55.9% (contested), and the target it picks differs from what the list
+head would have picked on **50.7% / 26.5%** of them. Every military
+measurement this project has ever taken was taken with target scoring
+anchored at an arbitrary city.
+
+**The op-aware pool is wider than it looks**: over 46 182 build-side
+assault evaluations on lategame-80, 16.3% now exclude at least one
+attacker committed elsewhere, mean 3.39 excluded when any are, max 14.
+
+**The barbarian gate has almost no population on our cells**: zero
+barbarian-held cities in 20 lategame-80 games, and 93 want evaluations
+on 1 of 20 contested seeds (`deep-kill turn=127 ... target=442 barb=1
+... p1=0.737 type="Legion" want=82.58` -- a target the build side could
+not see before). The T160 Europe state (47 empty barbarian cities)
+remains the motivating case and it is not in either cell.
+
+**The melt's survival gate fires rarely and correctly** when it does:
+`deep-meltblock turn=57 player="P6" city=240 unit="Musketeers" p=0.392
+target=0.500` -- a disband that would have left the city below its own
+survival bar. The claim check is the melt's bigger fix: 11-21 claimed
+units per game were meltable garrison fodder.
+
+### 6. Which past claims this voids
+
+- **`findings/mechanism-map.md` D-A and military.md C1, "three landed
+  mechanisms go from zero to live".** One does. The tired hold and the
+  convoy hold have zero population in every cell this project runs, for
+  reasons upstream of the flag.
+- **D-A's "the convoy HOLD (boat sails regardless -- STATUS's 'verified
+  inert' has this second, independent cause)".** There is no second
+  cause. The hold never executes. STATUS 2026-07-31's "convoy hold+
+  escort (verified inert)" stands, and its cause is the one STATUS
+  2026-08-01 already published for the port-scan invade gate.
+- **military.md stale-plan note 4** (`deepdefence.c:1410-1414`
+  "describes a hold that does not hold") is right about the symptom and
+  wrong about the cause: it is the seam, not the done flag.
+- **Anything about deep's military behaviour measured before this
+  round** carries a list-head target anchor that moved half the
+  formations' targets on lategame-80. That does not invalidate a score,
+  but no claim about WHICH targets deep picks survives.
+
+### 7. What M3 and G1 must know
+
+- **Do not count the tired-attack hold or the convoy hold as live
+  mechanisms.** Force sizing that assumes deep declines tired attacks is
+  assuming something that has never happened. Re-seating the tired hold
+  means putting it where the unit becomes tired -- inside the attack
+  path -- exactly the fix shape #16's invade gate needed. That is a
+  combat-E2 design item, not a defect.
+- **The two remaining presence-count gates are G1's**, and both are
+  marked in-file: the severe-danger attacker cutoff
+  (`deepdefence.c`, `w.tier == DWT_EMERGENCY && grave_danger > 0`) and
+  the veteran-building guard (`grave_danger == 0`). Both sit on the
+  garrison BUILD ladder, so swapping them for a survival threshold moves
+  how much army a quiet city buys, which is the floor sizing itself.
+- **The build side's assault want changed shape**: `deep-kill` now
+  carries `barb=` and `elsewhere=`, and the marginal attacker is priced
+  against the force that will actually fight for that target. Any floor
+  or want A/B must take its baseline on a post-D1 binary.
+- **Respecting op claims in the sortie passes costs 5.6 sorties per game
+  on contested and kills 1.3 fewer enemy units** -- the first measured
+  trade between the sortie pass and the operation layer. If M1 wants
+  those blades back, that is a priority question, not a bug.
+- **The hold registry is the place to put any future "this unit stands
+  still" decision.** `deep_hold_unit(ait, punit, "why")` is phase-scoped,
+  survives the manage loop, is honoured by the settler driver, and
+  reports itself in `deep-hold`. Writing `unit_ai.done` directly is the
+  bug this round fixed.
+- **73% of military production still happens where stock's raw danger is
+  zero** (E34.2b). Nothing here touches it.
+
+`meson test -C build` **3/3 OK** and `python3 benchmark/tune-audit.py`
+**CLEAN 121/121/121/121** before and after; this round adds no tunable
+and changes no value.
