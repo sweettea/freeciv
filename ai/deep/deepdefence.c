@@ -1279,6 +1279,19 @@ static void deep_kill_sorties(struct ai_type *ait, struct player *pplayer)
           || adv_unit_att_rating(u) <= 0) {
         continue;
       }
+      if (deep_op_claiming(pplayer, u->id) >= 0) {
+        /* Every other unit-claiming pool asks this first; the two
+         * sortie passes were the only ones that did not (military
+         * audit C2), so a mustering or marching op member could be
+         * spent on a duel outside the walls of the city it was
+         * passing through. */
+        log_base(deep_metric_log_level(),
+                 "deep-claimskip turn=%d player=\"%s\" pass=kill"
+                 " unit=%d city=%d op=%d",
+                 game.info.turn, player_name(pplayer), u->id, pcity->id,
+                 deep_op_claiming(pplayer, u->id));
+        continue;
+      }
       adjc_iterate(nmap, city_tile(pcity), atile) {
         struct unit *pdef = get_defender(nmap, u, atile, NULL);
         double chance;
@@ -1377,6 +1390,17 @@ static void deep_cover_sorties(struct ai_type *ait, struct player *pplayer)
           || rating <= 0
           || def_ai_unit_data(g, ait)->done
           || aiguard_has_charge(ait, g)) {
+        continue;
+      }
+      if (deep_op_claiming(pplayer, g->id) >= 0) {
+        /* C2 again, and the sharper half: a MARCH member walks under
+         * stock's leash and is not held, so without this check it can
+         * be handed a worker to escort in the middle of a crossing. */
+        log_base(deep_metric_log_level(),
+                 "deep-claimskip turn=%d player=\"%s\" pass=cover"
+                 " unit=%d city=%d op=%d",
+                 game.info.turn, player_name(pplayer), g->id, pcity->id,
+                 deep_op_claiming(pplayer, g->id));
         continue;
       }
       if (lend != NULL && rating >= lend_rating) {
