@@ -89,6 +89,11 @@ option('aitiming',
        value: false,
        description: 'Compile in the AI timing buckets (TIMING_LOG) and log their totals, independently of a full debug build')
 
+option('advchoicetrack',
+       type: 'boolean',
+       value: false,
+       description: 'Compile in adv_choice producer tags (ADV_CHOICE_TRACK), so build-want logs can say which advisor made each bid, independently of a full debug build')
+
 option('appimage',
        type: 'boolean',
        value: false,

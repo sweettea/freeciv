@@ -201,6 +201,22 @@ if get_option('aitiming')
   priv_conf_data.set('FREECIV_AI_TIMING', 1)
 endif
 
+# advchoice.h ships ADV_CHOICE_TRACK commented out, so `struct
+# adv_choice::use` -- the tag naming WHICH advisor produced a build bid
+# -- does not exist in any normal build, and ai/deep's `deep-want`
+# calibration line prints producer="-" for every decision. R3's
+# calibration corpus needs that column. Allow the tracking to be turned
+# on without editing a header or taking a full debug build.
+#
+# A global argument rather than an fc_config.h entry on purpose: the
+# macro changes the LAYOUT of struct adv_choice, so every translation
+# unit that sees the header must see the macro, whatever its include
+# order. Default false leaves the preprocessor state, and therefore the
+# binary, exactly as it was.
+if get_option('advchoicetrack')
+  add_global_arguments('-DADV_CHOICE_TRACK', language : ['c', 'cpp'])
+endif
+
 if host_system == 'windows'
   def_storage_dir = '~\\\\.freeciv'
 else
