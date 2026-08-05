@@ -5700,3 +5700,145 @@ Unchanged and still owed: `stance_fear_gain`, `stance_op_gain`,
   binary: build the pre-change commit, pin both binaries (server AND
   `libfreeciv.so`) to scratch dirs, `--server`, `--arms deep`,
   tuning=none, compare scorelog sha256 per seed.
+
+## H1: the tuning loader keeps its doubles, and a guard says so (2026-08-05)
+
+E34.3's FINDING 2 -- loading ANY tuning file quantises every double
+tunable to float, including the keys the file never mentions -- is
+fixed, guarded in the unit suite, and its blast radius on the archived
+files is measured. Two code commits and this one:
+
+    288cc3bfce  ai/deep: keep the compiled double for a tuning key the
+                file omits
+    c66eafca68  test: guard that a zero-key tuning file loads as no
+                tuning file
+
+### The fix
+
+`secfile_lookup_float_default()` takes its default as a `float`
+(`utility/registry_ini.h:457`), so `TUNE_DOUBLE` handed it a double and
+got back a float-rounded value *even when the file had no such key*.
+`deep_tuning_init()` now asks whether the entry exists before reading
+it:
+
+    if (secfile_entry_lookup(sf, "tuning." #field) != NULL) {
+      deep_tuning_active.field = secfile_lookup_float_default(...);
+    }
+
+`utility/` is untouched, so no other caller of the registry changes.
+Keys the file DOES set still go through the float lookup, which is what
+keeps every archived ini meaning what it meant.
+
+### The demonstration, before and after
+
+Smoke cell, 10 paired seeds, `--arms deep`, pinned server +
+`libfreeciv.so`, `--server`; the treatment is
+`benchmark/tuning/identity.ini` (a `[tuning]` header and zero keys)
+versus `tuning=none`. Scorelog sha256 per seed:
+
+    pre-fix binary dc4803b8 (63169f041c)
+      seed  1 file=049c418203d2 none=1dd20000f0d8 DIFFER
+      seed  2 file=d41abd7e9bdd none=eb8019912f64 DIFFER
+      seed  3 file=624c62cce147 none=624c62cce147 SAME
+      seed  4 file=727bbf617388 none=727bbf617388 SAME
+      seed  5 file=e55f2b3288be none=24f768bc20c9 DIFFER
+      seed  6 file=2a737017ce87 none=435241a98f26 DIFFER
+      seed  7 file=5ecad53c072e none=5ecad53c072e SAME
+      seed  8 file=c08b4a727226 none=c08b4a727226 SAME
+      seed  9 file=c220108bf842 none=2d08dec74ab2 DIFFER
+      seed 10 file=64344ee8f0e8 none=64344ee8f0e8 SAME
+      => 5/10 games diverge on a file that sets NOTHING
+
+    post-fix binary 48944ee2 (288cc3bfce)
+      seeds 1..10 file == none, 10/10 byte-identical
+
+**No behaviour change under `tuning=none`**: the same 10 seeds run on
+the pre-fix and post-fix binaries with no tuning file give identical
+scorelogs 10/10 (1dd20000f0d8, eb8019912f64, 624c62cce147,
+727bbf617388, 24f768bc20c9, 435241a98f26, 5ecad53c072e, c08b4a727226,
+2d08dec74ab2, 64344ee8f0e8 -- and note these are exactly the post-fix
+file-arm hashes). The fix moves the file path onto the no-file path,
+not the other way round.
+
+### The guard
+
+`tests/deeptuning_test.c` (`meson test -C build`, third test) loads
+three ways -- no file, zero-key file, one-key file -- and requires the
+first two to be byte-identical structs and the third to differ in
+exactly its own key. It also asserts the witness default
+(`site_travel_discount`) does not survive a float round trip, so the
+check cannot go quietly vacuous if that value is ever tuned to
+something dyadic. Against the pre-fix loader, same test:
+
+    FAIL: a tuning file with zero keys changed the active tuning;
+          site_travel_discount 0.90000000000000002 -> 0.89999997615814209
+    FAIL: a one-key tuning file moved something besides its own key
+
+`benchmark/tuning/identity.ini` is the benchmark-side twin: the correct
+control arm for a one-key A/B, now that it is provably identity.
+
+### What the fix changes in the archived tuning files: nothing they set
+
+Every ini under `benchmark/tuning/` (20 files) was loaded under both
+loaders and all 116 fields dumped at 17 significant digits. **In all 20
+files the set of fields whose value changed is disjoint from the set of
+keys the file mentions** -- the change is entirely in unmentioned keys
+falling back to their compiled double. The archived values were written
+as decimal text and re-parse through the same float lookup as before,
+verified rather than assumed.
+
+Exactly **17** double defaults are non-dyadic and were therefore being
+perturbed by any file load:
+
+    founder_pool_per_site      0.059999998658895493 -> 0.06
+    incoming_defence_survival  0.89999997615814209  -> 0.9
+    explore_discovery_value    0.05000000074505806  -> 0.05
+    site_pressure_factor       0.30000001192092896  -> 0.3
+    site_travel_discount       0.89999997615814209  -> 0.9
+    site_boat_cost_weight      0.33333298563957214  -> 0.333333
+    site_rival_crowding        0.89999997615814209  -> 0.9
+    expansion_war_survival     0.89999997615814209  -> 0.9
+    caravan_discount           0.94999998807907104  -> 0.95
+    cm_war_survival            0.89999997615814209  -> 0.9
+    overseas_decay             0.20000000298023224  -> 0.2
+    wall_fear_weight           0.30000001192092896  -> 0.3
+    tired_attack_floor         0.89999997615814209  -> 0.9
+    sortie_win_floor           0.85000002384185791  -> 0.85
+    op_take_target             0.69999998807907104  -> 0.7
+    invasion_reinforce_rate    0.34000000357627869  -> 0.34
+    op_abort_floor             0.34999999403953552  -> 0.35
+
+A file that sets many of them sees few: `a6-best.ini` (93 keys) moves 2
+fields, the `liftsweep` files 1, and the one-key sweep files all 17.
+
+Two consequences for old numbers, both benign:
+
+- The sweeps that compared a one-key file against
+  `sitesweep/base.ini` -- which is itself a zero-key `[tuning]` file,
+  i.e. the same broken control this session names -- were **file vs
+  file with the same quantisation in both arms**, so their deltas are
+  clean. That was luck, not design.
+- Comparisons that ran `tuning=none` as the control against a file
+  (E34.1/E34.2/E34.2b pinned arms) carried this perturbation alongside
+  the treatment. Their byte-identity results stand; their
+  pinned-vs-free deltas keep a small quantisation component that is
+  now unmeasurable going forward because it no longer exists.
+
+### Housekeeping
+
+`meson test -C build` **3/3 OK** before and after (the third test is
+the new one; 2/2 before it existed). `python3 benchmark/tune-audit.py`
+**CLEAN 116/116/116/116** before and after -- this session adds no
+tunable and changes no value. `NEXT-SESSION.md` §5's interim rule
+("compare file-vs-file, never file-vs-none") is retired and replaced
+with the fix and its evidence.
+
+### What this unblocks
+
+- `tuning=none` is a valid control again, so an A/B may use it.
+  `identity.ini` remains the better habit when the treatment arm is a
+  file: it keeps both arms on the same code path.
+- The cloud tuning campaign inherits a loader whose defaults are the
+  defaults. Any tuned value it reports is now a value the compiled
+  default can be replaced with directly, with no float round trip
+  hiding in between.

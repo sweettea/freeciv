@@ -131,19 +131,28 @@ bit-identical across the two binaries built on 2026-08-04.
 - Background batches are reaped at ~70 minutes (measured, D2 2026-08-05);
   `setsid nohup` dies immediately. Plan long cells as relaunches of
   `run.sh` — the DONE cache makes the resume free.
-- **Loading ANY tuning file quantises every double tunable to float**
-  (E34.3 2026-08-05: `secfile_lookup_float_default` takes a `float def`,
-  so keys the file never mentions shift too; two identity arms differing
-  only in file-vs-none diverged 12/20 games). Until the precision fix
-  lands (session H1): **compare file-vs-file with identical unrelated
-  keys, never file-vs-none.** E34.1/2/2b pinned arms carried this; their
-  byte-identity results are unaffected (both arms same treatment), their
-  pinned-vs-free deltas have a small quantisation component.
+- **FIXED 2026-08-05 (session H1, `288cc3bfce`): loading a tuning file
+  no longer quantises the tunables it does not mention.** The loader
+  now checks the entry exists before reading it, so 17 non-dyadic
+  double defaults keep their compiled value; `benchmark/tuning/
+  identity.ini` (a `[tuning]` header, zero keys) is byte-identical to
+  `tuning=none`, 10/10 smoke seeds, and `tests/deeptuning_test.c`
+  guards it in `meson test`. **file-vs-none is a valid control again.**
+  The old rule and what it still means for old numbers: keys the file
+  never mentioned used to shift too (`secfile_lookup_float_default`
+  takes a `float def`), and two identity arms differing only in
+  file-vs-none diverged 12/20 games (E34.3) / 5/10 (H1, zero-key file).
+  E34.1/2/2b pinned arms carried this; their byte-identity results are
+  unaffected (both arms same treatment), their pinned-vs-free deltas
+  have a small quantisation component. Every archived ini under
+  `benchmark/tuning/` is unaffected in the keys it sets: the fix
+  changed no value any of the 20 files mentions.
 - **Measured 2026-08-04: isolated-150 is ~12 min for a 20-game arm at
   12-way, lategame-80 ~9.** Earlier per-game estimates were inflated by
   probe games competing for cores. Budget from this.
-- `meson test -C build` is the suite; `python3 benchmark/tune-audit.py`
-  must print CLEAN (108/108/108/108 as of 2026-08-04).
+- `meson test -C build` is the suite (3 tests as of 2026-08-05);
+  `python3 benchmark/tune-audit.py` must print CLEAN (116/116/116/116
+  as of 2026-08-05).
 - Both campaign boxes are STOPPED, not terminated (a6 us-east-1
   i-0e9a257ef3b781349, b6 us-east-2 i-05162168cf393cb20 -- DIFFERENT
   REGIONS). EBS caches preserved. NEVER terminate.
