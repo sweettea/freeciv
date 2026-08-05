@@ -255,3 +255,37 @@ exhausted). Not fixed in place per rule 2's spirit for common/.
     made things worse (§8), because the stock ferry manager parks an
     empty boat rather than fetching anyone. Recorded rather than fixed
     per rule 2. Measured 2026-08-02.
+
+34. **`actres_possible()` dereferences a null `goods_type` for a
+    speculative trade route** — `common/actres.c:927`:
+
+    ```c
+    struct goods_type *pgood = unit_current_goods(actor->unit, homecity);
+
+    if (!can_establish_trade_route(homecity, target->city,
+                                   pgood->replace_priority)) {
+    ```
+
+    `unit_current_goods()` (`common/traderoutes.c:779`) returns
+    `punit->carrying` unexamined whenever `game.info.goods_selection`
+    is not `GSM_ARRIVAL` — civ2civ3 sets `"Leaving"`
+    (`data/civ2civ3/game.ruleset:634`) — and under `GSM_ARRIVAL` it
+    returns `goods_from_city_to_unit()`, which is documented to return
+    `nullptr` when the city can provide nothing. Neither result is
+    checked before `pgood->replace_priority`.
+
+    In a normal game `carrying` is set when the server creates the
+    unit, so the null never appears. It appears the moment anyone asks
+    `action_speculate_unit_on_city(ACTION_TRADE_ROUTE, ...)` about a
+    **virtual** unit — which is the documented way to price a unit
+    before building it, and is what `dai_wonder_city_distance()`
+    already does for the wonder-caravan distance map. **Measured**:
+    `ai/deep`'s trade-merit build want, isolated-150 seed 1, turn 127,
+    SIGSEGV at `actres_possible+0x259`, via `caravan.c:514`.
+
+    A one-line upstream fix is `if (pgood == nullptr) { return TRI_NO; }`
+    — a unit carrying nothing cannot establish a route, which is what
+    the surrounding code already means. Per rule 2 deep does not fix it
+    in place: `deeptrade.c` sets the virtual caravan's `carrying` from
+    the city before the speculation and refuses the valuation when the
+    city can provide no goods at all. Measured 2026-08-05.

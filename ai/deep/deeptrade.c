@@ -331,6 +331,47 @@ static int deep_committed_caravans(const struct city *pcity)
 }
 
 /**********************************************************************//**
+  What a caravan built in this city would be CARRYING.
+
+  A virtual caravan carries nothing, and on any ruleset whose
+  goods_selection is "Leaving" -- which is civ2civ3's, i.e. every
+  economy cell this project runs -- that is fatal rather than merely
+  inaccurate: actres.c:927 reads unit_current_goods(), which returns
+  punit->carrying unexamined, and dereferences it one line later. A
+  speculative ACTION_TRADE_ROUTE against a unit that was not created by
+  the server therefore segfaults. Measured, not reasoned: isolated-150
+  seed 1, turn 127, actres_possible + 0x259. Filed in
+  findings/upstream-bugs.md; deep does not fix it in place, it stops
+  handing the function a unit it cannot cope with.
+
+  The pick is goods_from_city_to_unit()'s, minus its fc_rand() tie-
+  break between goods of equal select_priority. A PLANNER must not
+  consume the game's random state -- an evaluation that moves the RNG
+  is an evaluation that changes the game it is evaluating -- and on the
+  rulesets in use the tie-break has nothing to break: civ2civ3 defines
+  exactly one goods type. Where a ruleset defines several at equal
+  priority the real unit may leave with a different one, whose
+  replace_priority could differ; that is a valuation inaccuracy and is
+  the correct trade for determinism.
+**************************************************************************/
+static struct goods_type *deep_ghost_goods(const struct city *pcity,
+                                           const struct unit *ghost)
+{
+  struct goods_type *best = NULL;
+  int prio = -1;
+
+  goods_type_iterate(pgood) {
+    if (goods_can_be_provided(pcity, pgood, ghost)
+        && pgood->select_priority > prio) {
+      prio = pgood->select_priority;
+      best = pgood;
+    }
+  } goods_type_iterate_end;
+
+  return best;
+}
+
+/**********************************************************************//**
   What a caravan built here would be worth, as a build want.
 
   The valuation is caravan.c's, run against the REAL destinations
@@ -410,6 +451,14 @@ static adv_want deep_trade_merit_want(struct ai_type *ait,
   *slots = max_trade_routes(pcity) - city_num_trade_routes(pcity);
 
   ghost = unit_virtual_create(pplayer, pcity, utype, 0);
+  ghost->carrying = deep_ghost_goods(pcity, ghost);
+  if (ghost->carrying == NULL) {
+    /* Nothing this city could load. The speculation below would read
+     * the null straight through actres.c:927, and a caravan that can
+     * carry nothing is worth nothing anyway. */
+    unit_virtual_destroy(ghost);
+    return 0;
+  }
   caravan_parameter_init_from_unit(&parameter, ghost);
   parameter.horizon = MORT;
   parameter.consider_wonders = FALSE;
