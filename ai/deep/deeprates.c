@@ -83,20 +83,58 @@
  * BUYS, in deep's existing want currency and with deep's existing
  * prices:
  *
- *  - a bulb advances the current research, whose value is the tech
- *    want the empire has for what that research leads to, amortized
- *    over the turns until it arrives. More bulbs, fewer turns, less
- *    discount -- and the term saturates, because a tech cannot arrive
- *    sooner than next turn.
- *  - a gold is worth upkeep_gold_weight over the MORT horizon, which
- *    is exactly the price deep already charges a building's upkeep at
- *    (deephorizon.c). One price, both directions.
+ *  - a bulb is worth adv->science_priority per turn, DISCOUNTED by how
+ *    far the current research still has to run. The discount is the
+ *    part stock never applies: bulbs bought twenty turns from the next
+ *    advance buy a twenty-turn-away advance.
+ *  - a gold is worth adv->gold_priority per turn.
  *  - a luxury point buys happiness, and happiness hands citizens back
- *    to the tiles: deep_pacification_load() counts the citizens a
- *    city currently spends on order and deep_unworked_tile_value()
- *    says what one of them earns, at horizon_content_weight -- the
- *    same pair deep_content_credit() uses to price a Temple.
+ *    to the tiles: deep_pacification_load() counts the citizens a city
+ *    currently spends on order and deep_unworked_tile_value() says
+ *    what one of them earns -- the same pair deep_content_credit()
+ *    prices a Temple with. The term SATURATES at the load, because an
+ *    already-content empire gets nothing more from luxury. That
+ *    saturation is also where celebration would take over, which is a
+ *    threshold and not a slope, and is why the celebration branch is
+ *    left to stock.
+ *
+ * WHY THOSE PRICES, and the one that was tried first. All three terms
+ * have to be in ONE currency or the comparison is theatre. The
+ * advisor's *_priority family is that currency: deep_unworked_tile_
+ * value() -- and therefore per_citizen, and therefore every horizon
+ * credit -- is literally a sum of tile outputs times those very
+ * numbers, so pricing gold and science with them makes the three
+ * commensurable by construction. Their own source comment says "They
+ * are all WAGs" (advdata.c:508) and that is a real weakness, recorded
+ * rather than hidden.
+ *
+ * The first cut priced gold at deep's own upkeep_gold_weight instead
+ * and left science on stock's tech_want[]. It measured a degenerate
+ * all-luxury split in every game: upkeep_gold_weight values a gold at
+ * 3 want where a freed citizen is worth 1300, a 170x disagreement
+ * about what one trade point is worth. tech_want[] has the same
+ * problem from the other side -- it is the ONLY place in the codebase
+ * a tech is priced, but it lives in stock's want currency, and the
+ * conversion to deep's is W01's `want_t`, which was declared and
+ * never built. So tech_want gates the override (no price, no opinion)
+ * and is logged every turn, and does not scale the science term.
+ * Naming that missing conversion is the finding; guessing it would be
+ * rule 7.
  */
+
+/**********************************************************************//**
+  Output per rate point: what the empire really produced last turn,
+  divided by the rate that produced it. Falls back to the trade share
+  when there is no measurement to divide -- a rate that was zero, or an
+  output that came back zero anyway.
+**************************************************************************/
+static double deep_rate_slope(double measured, int rate, int trade)
+{
+  if (rate > 0 && measured > 0.0) {
+    return measured / rate;
+  }
+  return trade / 100.0;
+}
 
 /**********************************************************************//**
   Score one legal triple.
@@ -108,46 +146,40 @@ static double deep_rate_value(const struct deep_rate_model *m,
 {
   double bulbs = m->bulb_slope * sci;
   double gold = m->gold_slope * tax - m->expenses;
-  double luxury = m->lux_slope * lux;
-  double freed;
 
-  /* Science: how long until the current research lands, and what it
-   * is worth once discounted for that wait. amortize() is the same
-   * discount every other deep credit uses. */
-  if (m->tech_want > 0.0 && m->bulbs_needed > 0.0) {
-    int wait;
-
-    if (bulbs <= 0.0) {
-      /* Never, at this rate. Not "very slowly": with zero bulbs the
-       * research does not advance at all, so the term is zero rather
-       * than a large discount. */
-      *v_sci = 0.0;
-    } else {
-      wait = (int) ceil(m->bulbs_needed / bulbs);
-      *v_sci = amortize(m->tech_want, wait) * m->sci_gain;
-    }
-  } else {
+  /* Science: the bulb stream at the advisor's price for it, discounted
+   * by how long the current research still has to run. amortize() is
+   * the same discount every other deep credit uses. With zero bulbs
+   * the research does not advance at all, so the term is zero rather
+   * than a deeply discounted something. */
+  if (bulbs <= 0.0) {
     *v_sci = 0.0;
+  } else {
+    int wait = (m->bulbs_needed > 0.0
+                ? (int) ceil(m->bulbs_needed / bulbs) : 0);
+
+    *v_sci = amortize(bulbs * m->sci_priority, wait) * MORT * m->sci_gain;
   }
 
-  /* Gold: a per-turn stream against the same horizon the upkeep
-   * charge is netted over. Expenses are the same in every triple, so
-   * they shift all scores equally and are kept only to make the
-   * logged number mean "net gold". */
-  *v_gold = gold * MORT * m->gold_weight;
+  /* Gold: the net stream at the advisor's price for it, over the same
+   * MORT horizon. Expenses are the same in every triple, so they shift
+   * all scores equally and are kept only so the logged number means
+   * "net gold". */
+  *v_gold = gold * m->gold_priority * MORT;
 
-  /* Luxury: each happy_cost of luxury buys back one citizen, up to
-   * the number that are actually bought off the tiles today. Beyond
-   * that the empire is content and further luxury is worth nothing --
-   * which is exactly where CELEBRATION would take over, and why the
-   * celebration branch is not this model's to make. */
-  freed = luxury / m->happy_cost;
-  if (freed > m->free_cap) {
-    freed = m->free_cap;
-  }
-  *v_lux = freed * m->per_citizen * MORT * m->content_weight * m->lux_gain;
+  /* Luxury: read off the per-city table, which already saturated each
+   * city at its own entertainer count. */
+  *v_lux = m->lux_by_rate[lux / 10] * MORT * m->lux_gain;
 
   *feasible = (gold >= 0.0 || m->treasury + gold >= m->reserve);
+  if (*feasible && m->tech_upkeep > 0.0) {
+    /* Same shape as the gold test: a shortfall is allowed only while
+     * the bank covers it. Losing a tech to buy a luxury point is not
+     * a trade this comparison is allowed to make. */
+    double bulb_balance = bulbs - m->tech_upkeep;
+
+    *feasible = (bulb_balance >= 0.0 || m->bulb_bank + bulb_balance >= 0.0);
+  }
 
   return *v_sci + *v_gold + *v_lux;
 }
@@ -295,6 +327,9 @@ static bool deep_rates_model(struct ai_type *ait, struct player *pplayer,
   int s0 = pplayer->economic.science;
   int t0 = pplayer->economic.tax;
   int l0 = pplayer->economic.luxury;
+  /* The rates that PRODUCED last turn's outputs: the ones deep left in
+   * place, not the ones stock has just re-chosen this turn. */
+  int lux_rate = dp->rates_applied ? dp->rates_last_lux : l0;
 
   if (adv == NULL || presearch == NULL || city_list_size(pplayer->cities) < 1) {
     return FALSE;
@@ -305,19 +340,35 @@ static bool deep_rates_model(struct ai_type *ait, struct player *pplayer,
     return FALSE;
   }
 
+  memset(m->lux_by_rate, 0, sizeof(m->lux_by_rate));
   city_list_iterate(pplayer->cities, pcity) {
-    int load = deep_pacification_load(pcity);
-    double steps;
-
-    lux_now += pcity->prod[O_LUXURY];
-    steps = (double) pcity->prod[O_LUXURY] / MAX(1, game.info.happy_cost);
+    /* Entertainers, NOT the whole pacification load. An unhappy
+     * citizen is still on a tile and still producing; only the
+     * specialists the arrangement made to keep order are output that
+     * luxury could hand back. Counting the unhappy ones too priced a
+     * citizen that was already working as if it were idle, and the
+     * first measurement of that put every empire on 0 science and 60
+     * luxury from the moment any city went unhappy. */
+    int load = deep_entertainer_load(pcity);
+    int cur = pcity->prod[O_LUXURY];
+    double steps = (double) cur / MAX(1, game.info.happy_cost);
     /* The citizens luxury could still hand back to the tiles, plus the
      * ones the luxury already flowing is holding: the model has to
      * value the CURRENT luxury rate too, or it would price its own
      * status quo at zero. */
-    load_total += load + steps;
-    worth_total += (load + steps)
-                   * deep_unworked_tile_value(pcity, adv, 3, NULL);
+    double cap = load + steps;
+    double worth = deep_unworked_tile_value(pcity, adv, 3, NULL);
+    double slope = deep_rate_slope(cur, lux_rate, pcity->surplus[O_TRADE]);
+    int i;
+
+    lux_now += cur;
+    load_total += cap;
+    worth_total += cap * worth;
+    for (i = 0; i <= 10; i++) {
+      double freed = slope * 10 * i / MAX(1, game.info.happy_cost);
+
+      m->lux_by_rate[i] += MIN(freed, cap) * worth;
+    }
   } city_list_iterate_end;
 
   m->maxrate = (has_handicap(pplayer, H_RATES)
@@ -328,21 +379,23 @@ static bool deep_rates_model(struct ai_type *ait, struct player *pplayer,
   m->maxrate = CLIP(34, m->maxrate, 100);
   m->step = 10;
 
-  /* Measured yields per rate point, with the trade-share estimate as
-   * the fallback for a rate that is currently zero. */
-  m->bulb_slope = (s0 > 0 ? (double) pplayer->server.bulbs_last_turn / s0
-                          : trade / 100.0);
-  m->gold_slope = (t0 > 0 ? (double) income / t0 : trade / 100.0);
-  m->lux_slope = (l0 > 0 ? (double) lux_now / l0 : trade / 100.0);
-  if (m->bulb_slope < 0.0) {
-    m->bulb_slope = 0.0;
-  }
-  if (m->gold_slope <= 0.0) {
-    m->gold_slope = trade / 100.0;
-  }
-  if (m->lux_slope < 0.0) {
-    m->lux_slope = 0.0;
-  }
+  /* Measured yields per rate point: last turn's real output divided by
+   * the rate that PRODUCED it, which is the rate deep left in place at
+   * the end of last turn and not the one stock has just re-chosen this
+   * turn. Getting that wrong is a trap and not a rounding error: the
+   * first cut divided last turn's bulbs by this turn's science rate,
+   * so one turn at science 0 made the bulb slope 0, which made science
+   * worthless, which set science to 0 again -- every game pinned at
+   * zero research from turn 5. A rate that was zero has no measurement
+   * to divide, and falls back to the trade-share estimate stock's
+   * distribute() makes. */
+  m->bulb_slope = deep_rate_slope(pplayer->server.bulbs_last_turn,
+                                  dp->rates_applied ? dp->rates_last_sci : s0,
+                                  trade);
+  m->gold_slope = deep_rate_slope(income,
+                                  dp->rates_applied ? dp->rates_last_tax : t0,
+                                  trade);
+  m->lux_slope = deep_rate_slope(lux_now, lux_rate, trade);
 
   m->expenses = expenses;
   m->treasury = pplayer->economic.gold;
@@ -353,15 +406,18 @@ static bool deep_rates_model(struct ai_type *ait, struct player *pplayer,
     MAX(0, research_total_bulbs_required(presearch, presearch->researching,
                                          FALSE)
            - presearch->bulbs_researched);
+  m->sci_priority = adv->science_priority;
   m->sci_gain = tune->rates_science_gain;
+  m->tech_upkeep = (game.info.tech_upkeep_style != TECH_UPKEEP_NONE
+                    ? player_tech_upkeep(pplayer) : 0);
+  m->bulb_bank = presearch->bulbs_researched;
 
   m->free_cap = load_total;
   m->per_citizen = (load_total > 0.0 ? worth_total / load_total : 0.0);
   m->happy_cost = MAX(1, game.info.happy_cost);
-  m->content_weight = tune->horizon_content_weight;
   m->lux_gain = tune->rates_luxury_gain;
 
-  m->gold_weight = tune->upkeep_gold_weight;
+  m->gold_priority = adv->gold_priority;
 
   return m->tech_want > 0.0;
 }
@@ -379,6 +435,19 @@ static bool deep_rates_model(struct ai_type *ait, struct player *pplayer,
   is the whole feature: with rates_enabled == 0 this function is
   dai_manage_taxes and nothing else.
 **************************************************************************/
+static void deep_rates_remember(struct player *pplayer)
+{
+  struct deep_plr *dp = deep_plr_data(pplayer);
+
+  /* Whatever is in effect when this function ends is the split that
+   * will PRODUCE next turn's bulbs, gold and luxury -- which is what
+   * next turn's slopes have to divide by. */
+  dp->rates_last_sci = pplayer->economic.science;
+  dp->rates_last_tax = pplayer->economic.tax;
+  dp->rates_last_lux = pplayer->economic.luxury;
+  dp->rates_applied = TRUE;
+}
+
 void deep_manage_taxes(struct ai_type *ait, struct player *pplayer)
 {
   const struct deep_tuning *tune = deep_tuning_get();
@@ -410,6 +479,7 @@ void deep_manage_taxes(struct ai_type *ait, struct player *pplayer)
              game.info.turn, player_name(pplayer),
              pplayer->economic.science, pplayer->economic.tax,
              pplayer->economic.luxury);
+    deep_rates_remember(pplayer);
     return;
   }
 
@@ -421,6 +491,7 @@ void deep_manage_taxes(struct ai_type *ait, struct player *pplayer)
              game.info.turn, player_name(pplayer),
              pplayer->economic.science, pplayer->economic.tax,
              pplayer->economic.luxury);
+    deep_rates_remember(pplayer);
     return;
   }
 
@@ -464,4 +535,6 @@ void deep_manage_taxes(struct ai_type *ait, struct player *pplayer)
            m.tech_want, m.bulb_slope, m.gold_slope, m.lux_slope,
            m.free_cap, m.per_citizen, m.bulbs_needed, m.treasury,
            m.reserve, pick.feasible, pick.considered, m.maxrate);
+
+  deep_rates_remember(pplayer);
 }

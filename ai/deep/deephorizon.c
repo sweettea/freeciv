@@ -287,7 +287,20 @@ static adv_want deep_capacity_credit(struct city *pcity,
 **************************************************************************/
 int deep_pacification_load(const struct city *pcity)
 {
-  int load = pcity->feel[CITIZEN_UNHAPPY][FEELING_FINAL];
+  return pcity->feel[CITIZEN_UNHAPPY][FEELING_FINAL]
+         + deep_entertainer_load(pcity);
+}
+
+/**********************************************************************//**
+  The half of that load which is actually OFF THE TILES: citizens the
+  arrangement turned into entertainer-equivalent specialists to keep
+  order. An unhappy citizen still works its tile and still produces --
+  it costs disorder RISK, not output -- so anything pricing "what
+  luxury hands back to the land" wants this number and not the sum.
+**************************************************************************/
+int deep_entertainer_load(const struct city *pcity)
+{
+  int load = 0;
 
   normal_specialist_type_iterate(sp) {
     if (get_specialist_output(pcity, sp, O_LUXURY) >= game.info.happy_cost) {

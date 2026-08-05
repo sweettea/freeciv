@@ -42,24 +42,58 @@ struct deep_rate_model {
   double treasury;              /* Gold on hand */
   double reserve;               /* dai_gold_reserve(): the buy float */
 
-  /* Science: what one research STEP is worth, and how far away the
-   * current one is. tech_want is deep's own read of stock's
-   * tech_want[] array, which is the only place a tech is priced at
-   * all. */
+  /* Science: what a bulb is worth per turn, and how long the current
+   * research still has to run. sci_priority is the advisor's own
+   * price of a trade point spent on research -- a WAG by its own
+   * source comment, and used here because it is the price the REST of
+   * deep already pays for a bulb (deep_multiplier_credit values a
+   * Library's science with exactly it). The amortization is the part
+   * stock never does: bulbs bought a long way from the next advance
+   * buy a discounted advance.
+   *
+   * tech_want is last turn's read of stock's tech_want[] array, which
+   * is the only place in the codebase a TECH is priced. It gates the
+   * override (no price, no opinion) and is logged, but it does not
+   * scale the term: tech_want lives in stock's want currency and
+   * every other term here lives in the advisor's tile-output
+   * currency, and the conversion between them is W01's `want_t`,
+   * which was declared and never built. Naming that gap is the
+   * honest answer; guessing the ratio would be rule 7. */
   double tech_want;
   double bulbs_needed;
+  double sci_priority;
   double sci_gain;
+  /* Research solvency, the mirror of the gold constraint: bulbs the
+   * ruleset charges every turn to KEEP what we know, and the bank
+   * that can absorb a shortfall. Stock guards this with its own
+   * rate_sci_min scan; deep guards it as a feasibility test so the
+   * merit comparison cannot trade a tech away for luxury. */
+  double tech_upkeep;
+  double bulb_bank;
 
-  /* Luxury: how many citizens are currently bought off the tiles by
-   * unhappiness (plus those the luxury already flowing is paying
-   * for), and what one of them earns back per turn. */
-  double free_cap;
-  double per_citizen;
+  /* Luxury, pre-summed PER CITY for each of the eleven luxury rates.
+   * It has to be per city: a city that is already content gets
+   * nothing from more luxury while its neighbour is paying three
+   * entertainers, and pooling the empire's luxury against the
+   * empire's entertainers credits the content city's share to the
+   * unhappy one. Entry i is the freed-citizen value per turn at
+   * luxury rate 10*i, summed over cities, each city's own
+   * entertainer count saturating its own term. */
+  double lux_by_rate[11];
+  double free_cap;              /* Empire entertainer-equivalents (log) */
+  double per_citizen;           /* Their mean tile value (log) */
   double happy_cost;            /* Luxury per happiness step (ruleset) */
-  double content_weight;
   double lux_gain;
 
-  double gold_weight;           /* upkeep_gold_weight */
+  /* Gold: the advisor's price of a trade point taken as gold. Same
+   * family as sci_priority and same currency as per_citizen (which is
+   * a sum of tile outputs times these very priorities), so the three
+   * terms are commensurable BY CONSTRUCTION. The first cut priced
+   * gold at upkeep_gold_weight instead -- deep's own gold price --
+   * and measured a degenerate all-luxury split, because that knob
+   * values a gold at 3 want against a freed citizen's 1300. One
+   * empire cannot hold two prices for a trade point. */
+  double gold_priority;
 };
 
 struct deep_rate_pick {

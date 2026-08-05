@@ -108,6 +108,15 @@ struct deep_plr {
    * the benchmark reads, and a reload that resets the tallies costs a
    * partial count of an already-logged stream. */
   double rates_tech_want;
+  /* The split deep actually LEFT IN PLACE last turn: last turn's
+   * bulbs, gold and luxury were produced by these rates, not by the
+   * ones stock has just re-chosen this turn, and dividing the
+   * measurement by the wrong rate is a self-reinforcing trap rather
+   * than a rounding error (see deeprates.c). */
+  bool rates_applied;
+  int rates_last_sci;
+  int rates_last_tax;
+  int rates_last_lux;
   int rates_set;
   int rates_agreed;
   int rates_celebrate;
