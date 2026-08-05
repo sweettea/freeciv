@@ -4340,3 +4340,115 @@ and that is where to measure it if anyone wants a verdict.
 Method note this earns: when a change fires on a minority of seeds,
 report the fired-on subset and the tie count, or the paired statistic
 will quietly claim a precision the experiment does not have.
+
+## W36 step 0: the sizing retires the commission (2026-08-04, night)
+
+The handoff's job was to size W36 step 0 before writing any
+commissioning code, on the explicit understanding that it might retire
+half the file. It retires the spine. Numbers, caveats and definitions:
+`findings/commission-sizing.md`; the verdict block is now at the top of
+`workstreams/W36-build-commissioning.md`.
+
+**What was built to answer it.** Two censuses, both instrumentation
+only. `deep-hull-order` fires where the build choice COMMITS (not where
+production stands: a bought hull is ordered and delivered inside one
+turn, and the production vantage saw only 229 of 1359 hulls), carrying
+the ordering city's completion ETA against the best a rival on the same
+water could offer. `deep-wait` fires once per waiting cross-continent
+passenger per turn. `benchmark/commission.py` reconstructs orders and
+waiting spells offline as consecutive-turn runs, so no state is stored
+and nothing goes stale across a save/load.
+
+**Behaviour-neutrality was proven, not assumed.** The wait census is
+bit-identical across the two binaries built this session -- 3291 lines,
+1031 spells, every quantile equal -- and the second added the
+choice-site log.
+
+**Cells.** isolated-150 and lategame-80, 20 seeds each, `--arms deep`,
+one pinned binary, 20/20 DONE both, 0 pairing violations.
+
+### 1. The award buys banked shields, not a better shipyard
+
+                                       isolated-150   lategame-80
+    hull orders                        1563 (78/gm)   1074 (54/gm)
+    rival advantage, switch penalty: median   2             3
+      ... >= 2 turns                       56.0%         60.4%
+      ... >= 5 turns                       30.4%         35.1%
+    rival advantage, standing start: median  -1            -1
+      ... >= 2 turns                       27.3%         31.1%
+    ordering city best-or-tied on capability 65.4%        61.7%
+
+The first cut of this number was WRONG and its own output said so: it
+credited a rival with its entire shield stock, so a city holding 200
+shields toward a wonder scored as a 0-turn producer of a 20-shield
+hull, and the median "advantage" was 4 turns of that. Rivals are now
+charged `city_change_production_penalty()`, and `bestfresh` -- cost
+over surplus, no stock at all -- is logged beside it as the floor.
+
+Read the two together: ranked on production capability alone, the city
+that placed the order is already best or equal-best about two-thirds of
+the time and the median rival is a turn SLOWER. The 2-3 turn median win
+is the rival's SAVINGS, an accounting transfer whose cost the ETA does
+not show and W36 did not price.
+
+### 2. The fall-through cascade handles an empty population
+
+A commission with no candidate producer at all: 12 waiting unit-turns
+in 20 games on the island cell, ZERO in 20 on lategame. `lift-noboat`
+is an order of magnitude bigger than the brief carried (7.30
+spells/game island, 2.10 lategame, against "7-10 per 20 games") and
+matters less, not more: those spells end WITHIN A TURN and never enrol.
+A passenger with no boat stops wanting one rather than waiting for a
+producer to appear.
+
+Not the same as a commission REFUSED by the city it lands on, which is
+what the cascade is really for -- that one cannot be measured without
+building it. What can be said is that its stated justification is gone.
+
+### 3. The wait, finally measured (section 1d asked three times)
+
+                                   isolated-150      lategame-80
+    waiting spells                  1031 (52/gm)     166 (8/gm)
+    enrolled as a lift core            42.6%            35.5%
+    censored (never enrolled)          57.4%            64.5%
+      ... still waiting at game end       36               19
+    wait to enrolment: median            0                0
+                       mean             2.28             0.98
+                       p75 / p90       3 / 7            2 / 3
+    spells >= 5 turns                  19.8%             5.4%
+      ... share of all waiting turns    61.4%            29.4%
+
+**Half of all passengers enrol the same turn they first want a boat**,
+and the censored majority stops wanting one rather than waiting
+forever. So hitch-versus-wait does not bind in the median case at all
+-- and all of its room is in a fifth of spells holding three-fifths of
+the waiting. Anything built there is built for the tail, where an ETA
+estimate is least reliable, so it must be measured rather than assumed.
+
+### What this leaves
+
+Retired: raise, award, fall-through, cancel. Cancellation goes too --
+an order lives a median of 2 turns (island) / 1 turn (lategame) and 85%
+of production runs already end without producing a hull, so build churn
+is de facto cancellation and there is barely a window for a demand to
+evaporate between order and delivery.
+
+Surviving: the passenger's own ETA for the tail, and the two censuses.
+
+Method note this earns: **size the machinery against the population it
+would act on, and check that the population is not already handling
+itself.** Three of W36's four steps target populations that are empty
+(no-producer), self-resolving (noboat spells end in a turn), or already
+handled by an existing mechanism (churn cancels orders).
+
+Commits: `d575264247` order census, `874083ecd7` wait census,
+`5c21b26813` commit-time vantage + switch-penalty ETA, `619a77b77a`
+findings, `9afdb8a8d6` W36 verdict, plus `benchmark/commission.py`.
+`meson test -C build` 2/2 OK; `tune-audit.py` CLEAN (108/108/108/108).
+
+**Next**: nothing in W36. The open leads are unchanged and now
+unblocked of it -- TUNING is still owed (NEXT-SESSION section 4: the
+lift cluster, on training seeds, reported on holdout), and the two
+ownerless leads are rates (sci/tax/lux from amortized tech value,
+`deephorizon.c:439` reads them and nothing sets them) and trade routes
+on merit.
