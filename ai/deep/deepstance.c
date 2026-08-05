@@ -287,6 +287,15 @@ void deep_stance_refresh(struct player *pplayer)
   project has already lost a 40-game batch to a switch nobody
   verified: a pinned arm must show one distinct stance across all
   seats, a free arm four.
+
+  The four TRAIT values the axes are seeded from are on the line too,
+  because "the seats still behave alike" has a third cause besides the
+  two the design names (span too small, gates not reading the axes):
+  the source itself may be constant. It is, by default --
+  'traitdistribution FIXED' gives every player the ruleset's defaults
+  -- and only the raw values distinguish that from a span that failed
+  to move anything. src reports what the FREE path resolved; mode says
+  whether the pin then overrode it.
 **************************************************************************/
 void deep_stance_log(struct player *pplayer)
 {
@@ -297,6 +306,7 @@ void deep_stance_log(struct player *pplayer)
   log_base(deep_metric_log_level(),
            "deep-stance turn=%d player=\"%s\" econ=%.3f mil=%.3f"
            " cult=%.3f src=%s mode=%s preset=%s identity=%d"
+           " trait_exp=%d trait_bld=%d trait_trd=%d trait_agg=%d"
            " fear_gate=%d op_gate=%d growth_gate=%d expand_gate=%d"
            " assault_gate=%d",
            game.info.turn, player_name(pplayer),
@@ -306,6 +316,13 @@ void deep_stance_log(struct player *pplayer)
            pinned ? "PINNED" : "FREE",
            pinned ? deep_stance_preset_name(tune->stance_forced) : "-",
            deep_stance_is_identity(&plr_data->stance) ? 1 : 0,
+           /* The source values themselves, unnormalised: what the
+            * ruleset and the trait distribution actually handed this
+            * player. */
+           ai_trait_get_value(TRAIT_EXPANSIONIST, pplayer),
+           ai_trait_get_value(TRAIT_BUILDER, pplayer),
+           ai_trait_get_value(TRAIT_TRADER, pplayer),
+           ai_trait_get_value(TRAIT_AGGRESSIVE, pplayer),
            /* Cumulative, so the last line of a game is the total and
             * a difference between consecutive lines is the turn's
             * firing rate. Zero on every line is the identity arm's
