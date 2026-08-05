@@ -1372,10 +1372,13 @@ static bool deep_settler_join_city(struct ai_type *ait,
      * an empty map and goes to zero as the world fills. */
     log_base(deep_metric_log_level(),
              "deep-pool turn=%d player=\"%s\" founders=%d homed=%d"
-             " cities=%d freeshare=%.3f sites=%.1f target=%.1f",
+             " cities=%d freeshare=%.3f freetiles=%d reachtiles=%d"
+             " sites=%.1f target=%.1f",
              game.info.turn, player_name(pplayer), founders, homed,
              city_list_size(pplayer->cities),
              deep_free_land_share(pplayer),
+             deep_plr_data(pplayer)->free_land_tiles,
+             deep_reachable_free_land(pplayer),
              deep_remaining_sites(pplayer),
              deep_tuning_get()->founder_pool_per_site
              * deep_remaining_sites(pplayer));

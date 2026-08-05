@@ -468,13 +468,44 @@ double deep_free_land_share(const struct player *pplayer)
 {
   struct deep_plr *dp = deep_plr_data(pplayer);
   bool omniscient = !has_handicap(pplayer, H_MAP);
-  int land = 0, free_land = 0;
+  int land = 0, free_land = 0, free_reach = 0;
+  Continent_id ours[64];
+  int nours = 0, i;
 
   if (dp->free_land_turn == game.info.turn) {
     return dp->free_land_permille / 1000.0;
   }
 
   int own_land = 0;
+
+  /* Landmasses this player has feet on -- the same set
+   * deep_explore_want() builds, and for the same reason: a founder
+   * walks, so free land on a continent we do not stand on is not a
+   * site until a hull exists to carry one there. */
+  city_list_iterate(pplayer->cities, pcity) {
+    Continent_id c = tile_continent(city_tile(pcity));
+
+    for (i = 0; i < nours; i++) {
+      if (ours[i] == c) {
+        break;
+      }
+    }
+    if (i == nours && c > 0 && nours < 64) {
+      ours[nours++] = c;
+    }
+  } city_list_iterate_end;
+  unit_list_iterate(pplayer->units, punit) {
+    Continent_id c = tile_continent(unit_tile(punit));
+
+    for (i = 0; i < nours; i++) {
+      if (ours[i] == c) {
+        break;
+      }
+    }
+    if (i == nours && c > 0 && nours < 64) {
+      ours[nours++] = c;
+    }
+  } unit_list_iterate_end;
 
   whole_map_iterate(&(wld.map), ptile) {
     if (!omniscient && tile_get_known(ptile, pplayer) == TILE_UNKNOWN) {
@@ -485,7 +516,15 @@ double deep_free_land_share(const struct player *pplayer)
     }
     land++;
     if (tile_owner(ptile) == NULL) {
+      Continent_id c = tile_continent(ptile);
+
       free_land++;
+      for (i = 0; i < nours; i++) {
+        if (ours[i] == c) {
+          free_reach++;
+          break;
+        }
+      }
     } else if (tile_owner(ptile) == pplayer) {
       own_land++;
     }
@@ -493,6 +532,7 @@ double deep_free_land_share(const struct player *pplayer)
 
   dp->free_land_permille = (land > 0 ? 1000 * free_land / land : 0);
   dp->free_land_tiles = free_land;
+  dp->free_land_reach = free_reach;
   dp->own_land_tiles = own_land;
   dp->free_land_turn = game.info.turn;
 
@@ -516,6 +556,12 @@ double deep_free_land_share(const struct player *pplayer)
   objective actually produce. Before we have a city there is nothing to
   calibrate from, so the answer is 0 and the caller falls back to its
   own floor.
+
+  The free-land census is a whole-map count, so on an archipelago it
+  priced sites on islands this player has no way to reach, and the
+  founder pool held settlers against them (expansion audit 3.8). The
+  REACHABILITY law the fear lattice applies to threats applies to
+  opportunities too -- deep_reachable_free_land() below.
 **************************************************************************/
 double deep_remaining_sites(const struct player *pplayer)
 {
@@ -530,7 +576,37 @@ double deep_remaining_sites(const struct player *pplayer)
   }
   per_city = (double) dp->own_land_tiles / cities;
 
-  return dp->free_land_tiles / MAX(per_city, 1.0);
+  return deep_reachable_free_land(pplayer) / MAX(per_city, 1.0);
+}
+
+/**********************************************************************//**
+  Unowned land a founder of this player could actually stand on: all of
+  it on the landmasses we already occupy, plus the rest of the world
+  only while we own something that floats a founder to it.
+
+  No new constant: the gate is the existence of sea lift, which is
+  exactly the test deep_density_fear() runs against a RIVAL's lift,
+  pointed at our own. Before the first hull, overseas land is not a
+  site; after it, it is, and the pool may hold settlers for it again.
+**************************************************************************/
+int deep_reachable_free_land(const struct player *pplayer)
+{
+  struct deep_plr *dp = deep_plr_data(pplayer);
+
+  (void) deep_free_land_share(pplayer);     /* Refreshes the cache. */
+
+  if (dp->free_land_reach >= dp->free_land_tiles) {
+    return dp->free_land_tiles;             /* Nothing is overseas. */
+  }
+  unit_list_iterate(pplayer->units, punit) {
+    const struct unit_type *ut = unit_type_get(punit);
+
+    if (ut->transport_capacity > 0 && utype_move_type(ut) == UMT_SEA) {
+      return dp->free_land_tiles;
+    }
+  } unit_list_iterate_end;
+
+  return dp->free_land_reach;
 }
 
 /**********************************************************************//**

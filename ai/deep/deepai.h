@@ -97,6 +97,7 @@ struct deep_plr {
   int free_land_permille;
   int free_land_turn;
   int free_land_tiles;          /* Unowned known land, absolute */
+  int free_land_reach;          /* ... of it, on landmasses we stand on */
   int own_land_tiles;           /* Land we own, absolute */
   /* Rates (deeprates.c). rates_tech_want is last turn's price of one
    * research step, snapshotted before dai_clear_tech_wants() wipes the

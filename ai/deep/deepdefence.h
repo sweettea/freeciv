@@ -32,6 +32,11 @@ double deep_free_land_share(const struct player *pplayer);
  * own packing density. Sites remaining, not cities owned. */
 double deep_remaining_sites(const struct player *pplayer);
 
+/* Unowned land tiles a founder of this player could actually stand on:
+ * own landmasses always, the rest of the world only while sea lift
+ * exists. Exposed for the founder-pool census. */
+int deep_reachable_free_land(const struct player *pplayer);
+
 /* Land pressure: land_pressure_tiles / (land_pressure_tiles +
  * land-per-player). Same evidence as deep_map_crowding() and the same
  * direction, but it never saturates, so it keeps discriminating below
