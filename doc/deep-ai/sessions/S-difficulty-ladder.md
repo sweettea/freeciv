@@ -64,6 +64,28 @@ difficulty setting.
    deep disproportionately; do not quietly weaken deep's handicap
    compliance to buy the win back.
 
+## The build-choice sampler (human, 2026-08-05 — part of this epic)
+
+Replace blind fuzzy for deep's BUILD CHOICES with want-proportional
+sampling: softmax over the city's candidate builds, temperature set per
+difficulty level. A weaker deep picks a plausible-but-not-best build —
+legible weaker play — instead of coin-flipping arbitrary decisions.
+Constraints, each load-bearing:
+- **Temperature 0 at hard/cheating = exact argmax = byte-identical to
+  today** (the hard guard above must pass WITH the sampler in the tree).
+- **Tiers are sacred**: sample within/below the normal tier only; the
+  emergency tier's ordering is untouched (a grave-danger defender never
+  loses a roll).
+- **Determinism**: draw from `fc_rand` (the seeded server PRNG fuzzy
+  already uses) so paired seeds stay paired.
+- **Per-level temperatures are calibrated, not invented**: choose them so
+  deep's level-to-level nerf profile lands in the same ballpark as
+  stock's (the similarity check below is the measuring stick); register
+  as placeholders like everything else.
+- Stock's `ai_fuzzy` sites that deep inherits stay as they are (that IS
+  stock-similarity); the sampler is deep's own-path replacement for
+  fuzzy's role in build choice.
+
 ## Acceptance
 
 - Hard byte-identity pasted (the corpus guard).
