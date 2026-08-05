@@ -26,8 +26,10 @@ them; nothing tunes locally.
 | # | Session | Brief | Depends on |
 |---|---|---|---|
 | ~~1~~ | ~~W34 E34.1 stance surface~~ | (ran from W34 A.7) | — |
-| **2** | **W34 E34.2 remaining gates** | [S-E34.2-gates.md](S-E34.2-gates.md) | E34.1 |
-| 3 | W34 E34.3 traits | [S-E34.3-traits.md](S-E34.3-traits.md) | E34.2 |
+| ~~2~~ | ~~W34 E34.2 remaining gates~~ — **regime check FAILED informatively** (STATUS `138ba12b2b`): no gate prices the offensive build; gates 3+4 collide at equal gains on incommensurable scales (RC4); 73% of military city-turns are floor, not fear | [S-E34.2-gates.md](S-E34.2-gates.md) | — |
+| **2a** | **D2 defect round: credit integrity — IN FLIGHT.** Moved ahead of everything: the sawtooth multiplies exactly the credits gate 3 scales, so the regime re-check and all tuning wait on it | [S-D2-credit-integrity.md](S-D2-credit-integrity.md) | — |
+| 2b | E34.2b: the fifth gate (`deep_assault_want` gain, same shape, reconquest-exempt) + regime re-check post-D2. OPEN DESIGN CALL for the human: fifth gate (W34 A.2 amendment) vs rewriting the separability claim around the civilian split the axes demonstrably control (civilian share t=−4.31 under pin) | to write | D2 |
+| 3 | W34 E34.3 traits | [S-E34.3-traits.md](S-E34.3-traits.md) | 2b |
 | 3a | **D1 defect round: military discipline** — done-flag reset (`deepops.c:1903`, disables tired-holds/convoy-holds/worker-flee/consolidate), sortie claim-discipline, melt survival re-check, triage on probability, barbarian gate mismatch, target anchor (mechanism-map §1 D-A/D-F/D-G) | to write | before any military measurement |
 | 3b | **D2 defect round: credit integrity** — horizon-credit sawtooth, counterfactual ttg, CM/horizon deadlock, one shared threatened verdict, upkeep dimension, bundle reachability, tuning blocks + log completeness, caravan-discount guard (mechanism-map §1 D-B/D-C/D-H) | to write | **before the R3 corpus and before ANY tuning** — both currently measure the sawtooth |
 | 3c | **D3 defect round: site truth** — correct defence bonus in deep (upstream bug #1 imported at `deepsite.c:920`), closed-water naval bonus, held-lift re-validation, enough-result wiring (mechanism-map §1 D-D/D-E) | to write | — |
