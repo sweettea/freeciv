@@ -142,34 +142,123 @@ static adv_want deep_unworked_tile_value(struct city *pcity,
 }
 
 /**********************************************************************//**
+  Descending integer order, for the counterfactual food arrangement.
+**************************************************************************/
+static int deep_int_desc(const void *a, const void *b)
+{
+  return *(const int *) b - *(const int *) a;
+}
+
+/**********************************************************************//**
+  How many turns this city would take to grow IF the ruleset's size gate
+  were lifted -- the question the capacity credit needs answered, and
+  the one city_turns_to_grow() structurally cannot answer for a capped
+  city.
+
+  In a capped city the observed ttg is not a growth rate, it is an
+  artefact of the cap. city_increase_size() refills the food box to
+  granary x (1 - aqueductloss...) and GAME_DEFAULT_AQUEDUCTLOSS is 0,
+  which no benchmark config overrides, so the box stays pinned exactly
+  full and city_turns_to_grow() returns 0 by integer division forever.
+  Independently, deep's own CM runs its capped state (food factor
+  cm_cap_food against shield and trade at cm_cap_*) with a food floor
+  of 0 once the box is full, so the arrangement correctly sheds food it
+  cannot spend, the surplus goes to 0, and ttg becomes FC_INFINITY. The
+  credit then read back "the cap is not the binding constraint" in
+  exactly the city whose only binding constraint was the cap -- and
+  because the whole city is skipped when threatened && cap_credit <= 0,
+  a long-capped city under any threat got no horizon credits at all.
+  That is two of the three causes of the Europe T106 evidence (17 of 19
+  cities at the cap, zero Aqueducts) that STATUS attributed wholly to
+  the war gate.
+
+  The counterfactual is computed from the CATCHMENT rather than from
+  the arrangement, which is what breaks the deadlock: it cannot be
+  zeroed by the CM's decision to stop collecting food, so the CM's cap
+  state needs no change and keeps shedding food the capped city genuinely
+  cannot use. The city's own workers -- the citizens it has on tiles
+  today, so a city that must run entertainers is not credited with
+  their labour -- are placed on its best food tiles, and its live food
+  usage (citizens plus unit upkeep) is charged against the total. If
+  that surplus is still not positive the cap really is not what is
+  stopping this city, and the credit stays zero.
+
+  Returns the growth interval in turns, or 0 for "would not grow".
+**************************************************************************/
+static int deep_counterfactual_ttg(struct city *pcity)
+{
+  const struct civ_map *nmap = &(wld.map);
+  int radius_sq = city_map_radius_sq_get(pcity);
+  int food[city_map_tiles(radius_sq)];
+  int n = 0, i, workers, surplus;
+  int total = city_tile_output(pcity, city_tile(pcity), FALSE, O_FOOD);
+
+  workers = MAX(1, city_size_get(pcity) - city_specialists(pcity));
+
+  city_tile_iterate(nmap, radius_sq, city_tile(pcity), ptile) {
+    if (ptile == city_tile(pcity) || !city_can_work_tile(pcity, ptile)) {
+      continue;
+    }
+    food[n++] = city_tile_output(pcity, ptile, FALSE, O_FOOD);
+  } city_tile_iterate_end;
+
+  qsort(food, n, sizeof(food[0]), deep_int_desc);
+  for (i = 0; i < n && i < workers; i++) {
+    total += food[i];
+  }
+
+  surplus = total - pcity->usage[O_FOOD];
+  if (surplus <= 0) {
+    return 0;
+  }
+
+  /* A full growth cycle at that surplus. The box of a capped city is
+   * pinned full, so the FIRST citizen would arrive the turn the gate
+   * lifted; this is the rate at which the ones after it arrive, which
+   * is what the horizon is counting. */
+  return MAX(1, (city_granary_size(city_size_get(pcity)) + surplus - 1)
+                / surplus);
+}
+
+/**********************************************************************//**
   Credit for a building that lifts this city's growth ceiling: the
   blocked growth curve over the planning horizon (H = MORT, the
   documented amortize horizon), valued at what new citizens would earn
-  from the best unworked tiles, amortized by time-to-grow.
+  from the best unworked tiles, amortized by the time-to-grow the city
+  would have if the ceiling were lifted.
 **************************************************************************/
 static adv_want deep_capacity_credit(struct city *pcity,
                                      struct adv_data *adv)
 {
   const struct deep_tuning *tune = deep_tuning_get();
-  int ttg = city_turns_to_grow(pcity);
+  int ttg;
   int steps;
-  adv_want per_citizen;
+  adv_want per_citizen, credit = 0;
 
   if (city_can_grow_to(pcity, city_size_get(pcity) + 1)) {
     /* Not currently capped; the cap-lifter earns only anticipation. */
     return 0;
   }
-  if (ttg <= 0) {
-    /* Not growing at all (no food surplus): the cap is not the
-     * binding constraint. */
-    return 0;
+
+  /* Capped. One census line per capped city per turn, credit or no
+   * credit: "the mechanism fired" and "the mechanism paid" are
+   * different claims and only the counter tells them apart. */
+  ttg = deep_counterfactual_ttg(pcity);
+  if (ttg > 0) {
+    steps = MAX(1, MORT / ttg);
+    per_citizen = deep_unworked_tile_value(pcity, adv, 3, NULL);
+    credit = amortize(per_citizen * steps * tune->horizon_capacity_weight,
+                      ttg);
   }
 
-  steps = MAX(1, MORT / MAX(ttg, 1));
-  per_citizen = deep_unworked_tile_value(pcity, adv, 3, NULL);
+  log_base(deep_metric_log_level(),
+           "deep-capacity turn=%d player=\"%s\" city=%d size=%d"
+           " obsttg=%d cfttg=%d credit=%.1f",
+           game.info.turn, player_name(city_owner(pcity)), pcity->id,
+           city_size_get(pcity), city_turns_to_grow(pcity), ttg,
+           (double) credit);
 
-  return amortize(per_citizen * steps * tune->horizon_capacity_weight,
-                  ttg);
+  return credit;
 }
 
 /**********************************************************************//**
