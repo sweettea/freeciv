@@ -881,8 +881,21 @@ void deep_adjust_building_wants(struct ai_type *ait,
          * itself on exactly that bill, gold ratio 0.13-0.55 vs
          * stock). Charge the ruleset's own upkeep figure against the
          * credit -- never below zero, so stock's base want keeps its
-         * pricing. */
-        add -= city_improvement_upkeep(pcity, pimprove)
+         * pricing.
+         *
+         * Over the SAME horizon the credit is summed over. Every
+         * credit above counts a per-turn value across MORT turns
+         * (steps = MORT/ttg) and discounts once for the delay; the
+         * bill is a per-turn cost across the same MORT turns, and
+         * subtracting a single turn of it from a MORT-horizon value
+         * was a dimensional error that made the ruleset's bill
+         * roughly twenty-four times too cheap. upkeep_gold_weight's
+         * default and registered range are divided by MORT in the
+         * same commit, so the charge LANDS unchanged and this fix
+         * does not smuggle a 24x tightening into the round's A/B;
+         * the knob now means "gold per turn against the horizon" and
+         * owes the tuning pile a value. */
+        add -= city_improvement_upkeep(pcity, pimprove) * MORT
                * deep_tuning_get()->upkeep_gold_weight;
         add = MAX(add, 0);
       }

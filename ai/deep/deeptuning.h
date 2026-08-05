@@ -452,7 +452,11 @@ struct deep_tuning {
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).
    * upkeep_gold_weight charges a building's gold upkeep against its
-   * horizon credit; upkeep_unit_weight discounts the injected fear
+   * horizon credit, over the MORT horizon the credit itself is summed
+   * over (charging ONE turn of gold against a MORT-horizon value made
+   * the ruleset's bill ~24x too cheap; the default and the registered
+   * range were divided by MORT when that was corrected, so the landed
+   * charge did not move and the knob owes a tuning pass); upkeep_unit_weight discounts the injected fear
    * terms by the cheapest buildable defender's gold+food upkeep:
    * discount = 1 / (1 + weight * upkeep). */
   double upkeep_gold_weight;
