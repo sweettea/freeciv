@@ -210,10 +210,13 @@ have no way to price.
 
 ### A.2 The gates
 
-Four, taken from `findings/objective-layer.md` §4, in the order the
-code already offers seams. **Each gate is a multiplier on an existing
-want, never a new scale** — RC4 says do not add another incommensurable
-currency, and this workstream is not permitted to invent one.
+**Five.** Four were taken from `findings/objective-layer.md` §4, in
+the order the code already offers seams; the fifth was added in E34.2b
+because E34.2's regime check named it missing, which is the design
+working rather than failing. **Each gate is a multiplier on an
+existing want, never a new scale** — RC4 says do not add another
+incommensurable currency, and this workstream is not permitted to
+invent one.
 
 Each gate reads the axes as a ratio, not as a name. The shape is
 `want *= f(stance)`, where `f` is identity when the axes are equal —
@@ -231,6 +234,14 @@ so a player with balanced traits plays today's game exactly.
 4. **Expansion** (`settler_rush_weight`, `colony_lift_weight`). High
    `econ` expands while land remains; high `mil` converts land pressure
    into targets.
+5. **The offensive build** (`deep_assault_want`, `deepdefence.c`).
+   Added E34.2b. Gate 2 decides whether blades that already EXIST are
+   committed; nothing priced BUYING them, and E34.2 measured offence
+   share *rising* under an economic pin because the defenders gate 1
+   discouraged stopped competing for the slot. Reads `(mil/econ)^gain`
+   like gate 1, not `(econ/mil)` like gates 2-4, because it prices a
+   military want. Its exemption is gate 2's own
+   `deep_op_target_threatens()` — one test, two gates.
 
 **A high `econ` weight means minimise military spend subject to
 survival, not "no army".** A trader-natured player on a contested map
@@ -296,10 +307,11 @@ stance_fear_gain      gate 1: sensitivity of fear to the econ:mil ratio
 stance_op_gain        gate 2
 stance_growth_gain    gate 3
 stance_expand_gain    gate 4
+stance_assault_gain   gate 5 (added E34.2b)
 stance_tech_gain      A.3
 ```
 
-**Eight, not ten, and none of them per-named-objective.** That is the
+**Nine, not eleven, and none of them per-named-objective.** That is the
 axis form paying for itself: a gate is one gain against a ratio, so
 adding an axis or a corner does not add constants. Identity for every
 gain is 0.0 (no sensitivity) or 1.0 (no scaling) as the gate's shape
@@ -327,6 +339,47 @@ guessing: placeholder, then tuned.
   the army ratio toward baseline's. **If it does not, a gate is
   missing** — this is a falsifiable claim about the gates being
   complete, and it is the point of the phase.
+
+  **MEASURED TWICE, AND THE CLAIM IS FALSE AS WRITTEN** (E34.2 at
+  four gates, E34.2b at five, both 20 paired seeds on isolated-150).
+  Military share of build decisions was 0.204 -> 0.211 (t +0.37) with
+  four gates and 0.201 -> 0.205 (t +0.21) with five. The fifth gate
+  did what it was added for — the offence-share RISE, +0.019 (t +1.27)
+  at four gates, is gone at +0.002 (t +0.14), and gate 5 fires 964.8
+  times a game on 20/20 seeds — but removing the rise is not a fall,
+  and the remaining mass is not a gate at all:
+
+  **73% of military city-turns happen where stock's own pre-injection
+  danger is exactly ZERO** (0.726 free / 0.744 pinned, delta +0.017
+  t +0.57 — the pin cannot move it). That is the GARRISON FLOOR, and
+  it is reached by `garrison_floor`, `garrison_floor_danger`,
+  `garrison_menace_slope` and `menace_overseas_weight`, every one of
+  them an untuned placeholder in the S/MIL blocks. **It is a
+  tuning-pile question, not a sixth gate.** A sixth gate on the floor
+  would be a stance talking a player out of garrisoning cities it
+  cannot see a threat to, which is precisely the "subject to survival"
+  line A.2 draws — and it would be tuning by mechanism, which rule 7
+  exists to prevent.
+
+- **What the axes DO control, and what separability should therefore
+  be claimed on.** Restated on E34.2b's evidence, per the session
+  brief's step 4. The pin does not move the military/civilian split;
+  it moves the split WITHIN the civilian budget, hard and repeatably:
+
+      civilian share      0.375 -> 0.331   t -3.55   5/20
+      improvement share   0.424 -> 0.464   t +2.00  16/20
+      founder want / city-turn  337 -> 975  t +12.26  20/20
+
+  (E34.2 measured the same direction before D2's credit fix: civilian
+  t -4.31, improvement t +1.98.) So the separability premise
+  `objective-layer.md` §2 rests on is **half true, and it is the half
+  the economy campaign needs**: pinning stabilises what the civilian
+  budget buys — settlers against buildings against growth credits —
+  which is the ECON block. It does NOT stabilise the shield split
+  between economy and army, because three quarters of the army is
+  bought below the stance layer entirely. An economy pass may be run
+  pinned and reported as separable; a pass that claims to have held
+  military spend constant may not.
 - **Traits must actually differentiate.** In FREE mode, seat-level
   variance in military share must RISE against the identity arm while
   the fleet mean moves little. If the seats still behave alike, either
@@ -357,6 +410,13 @@ counter, gate 1 executing under a pinned corner.
 **E34.2 — the remaining gates (6-8 commits).** Gates 2, 3, 4, each with
 its own counter and its own A/B, plus the regime-reality check. Still
 identity in FREE mode: everything so far is only reachable by pinning.
+
+**E34.2b — the fifth gate (3-5 commits).** Not planned: added
+because E34.2's regime check named a missing gate. Gate 5 on
+`deep_assault_want`, its counter, and the regime check re-taken on the
+post-D2 binary. Acceptance: byte-identity again, all five counters
+firing under the pin, and A.6's regime bullet rewritten to say what
+the measurement supports.
 
 **E34.3 — the players become different (4-6 commits).** A.1a: seed the
 axes from traits, `stance_source = 1`. **This is the first commit in
@@ -483,6 +543,7 @@ ai/deep: scale anticipatory fear by the stance
 ai/deep: gate operation formation on the stance
 ai/deep: weight the growth ladder by the stance
 ai/deep: weight expansion by the stance
+ai/deep: price the offensive build by stance
 ai/deep: seed a player's stance from its traits
 ai/deep: bias tech wants along the stance
 ai/deep: modulate the stance by what the position offers
