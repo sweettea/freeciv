@@ -176,10 +176,13 @@ void deep_choose_trade_targets(struct ai_type *ait, struct player *pplayer)
   const char *dests[DEEP_TRADE_BRIEF_MAX];
   int ndest = 0, maxeta = 0, ntrade = 0;
 
-  if (tune->caravan_discount <= 0.0 || tune->caravan_discount > 1.0) {
-    /* Out of range for caravan_parameter_is_legal(); leave stock to it. */
-    return;
-  }
+  /* Legality is caravan.c's own test, not a re-derivation of it. The
+   * re-derived guard admitted exactly 1.0 -- which
+   * caravan_parameter_is_legal() rejects, because an infinite horizon
+   * with no discount is an infinite reward: perpetuity() divides by
+   * (1 - discount) and every destination scores inf or NaN, making the
+   * choice arbitrary. 1.0 was inside the registered tuner range, so a
+   * campaign could draw it. */
 
   unit_list_iterate_safe(pplayer->units, punit) {
     struct caravan_parameter parameter;
@@ -219,6 +222,12 @@ void deep_choose_trade_targets(struct ai_type *ait, struct player *pplayer)
     parameter.discount = tune->caravan_discount;
 
     parameter.allow_foreign_trade = deep_caravan_reach();
+
+    if (!caravan_parameter_is_legal(&parameter)) {
+      /* Leave this unit to stock rather than evaluate destinations
+       * against a divergent NPV. */
+      continue;
+    }
 
     caravan_result_init_zero(&result);
     caravan_find_best_destination(nmap, punit, &parameter, &result,
