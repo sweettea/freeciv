@@ -41,7 +41,9 @@
 #include "daidata.h"
 #include "daiplayer.h"
 
+#include "deepai.h"
 #include "deepcombat.h"
+#include "deepstance.h"
 #include "deeptuning.h"
 
 #include "deephorizon.h"
@@ -515,6 +517,12 @@ void deep_adjust_building_wants(struct ai_type *ait,
 {
   struct adv_data *adv = adv_data_get(pplayer, NULL);
   const struct deep_tuning *tune = deep_tuning_get();
+  /* Gate 3 (W34 A.2): what growth is worth to THIS player, as
+   * (econ/mil)^stance_growth_gain -- exactly 1.0 at identity axes.
+   * These credits are the growth ladder, and the shields they bid for
+   * are the same ones barracks and walls want, so this is the gate
+   * where "build up rather than out, or arm" is actually decided. */
+  double gmult = deep_stance_growth_mult(pplayer);
 
   if (adv == NULL) {
     return;
@@ -575,6 +583,11 @@ void deep_adjust_building_wants(struct ai_type *ait,
          * advance that would solve its problem (the horizon stopped
          * at the tech wall; findings 2026-07-29). Route the capacity
          * credit into the gating advance's tech want instead. */
+        /* Gate 3 deliberately does NOT reach this branch: the credit
+         * that leaves the build queue and lands in tech_want is tech
+         * DIRECTION, which is W34 A.3's gate and E34.4's to build.
+         * Scaling it here would mean two gates on one quantity, and
+         * "do not let the axis compensate for a scale gap" (A.3). */
         if (cap_credit > 0
             && (building_has_effect(pimprove, EFT_SIZE_ADJ)
                 || building_has_effect(pimprove, EFT_SIZE_UNLIMIT))
@@ -632,6 +645,19 @@ void deep_adjust_building_wants(struct ai_type *ait,
         }
       }
 
+      if (add > 0 && gmult != 1.0) {
+        adv_want scaled = add * gmult;
+
+        /* A THREATENED city's only surviving credit is the structural
+         * cap-lifter, and that one is a floor rather than a taste: a
+         * city at the ruleset's size gate stays there for the rest of
+         * the game, and in a permanent-war world the gate never
+         * reopens. A military weight may decline the growth ladder;
+         * it may not talk the empire into a permanent size cap. An
+         * economic weight still raises it. */
+        add = threatened ? MAX(add, scaled) : scaled;
+        deep_plr_data(pplayer)->stance_growth_gated++;
+      }
       if (add > 0) {
         /* The credit imagines the building's future yields, but the
          * ruleset may charge gold every turn to keep it (civ2civ3:
