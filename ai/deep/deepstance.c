@@ -201,7 +201,8 @@ void deep_stance_log(struct player *pplayer)
   log_base(deep_metric_log_level(),
            "deep-stance turn=%d player=\"%s\" econ=%.3f mil=%.3f"
            " cult=%.3f src=%s mode=%s preset=%s identity=%d"
-           " fear_gate=%d op_gate=%d growth_gate=%d expand_gate=%d",
+           " fear_gate=%d op_gate=%d growth_gate=%d expand_gate=%d"
+           " assault_gate=%d",
            game.info.turn, player_name(pplayer),
            plr_data->stance.econ, plr_data->stance.mil,
            plr_data->stance.cult,
@@ -218,7 +219,39 @@ void deep_stance_log(struct player *pplayer)
             * "did anything execute" for the whole layer. */
            plr_data->stance_op_gated,
            plr_data->stance_growth_gated,
-           plr_data->stance_expand_gated);
+           plr_data->stance_expand_gated,
+           plr_data->stance_assault_gated);
+}
+
+/**********************************************************************//**
+  The shape gates 1 and 5 share: (mil / econ) ^ gain.
+
+  These two price MILITARY wants -- what a threat is worth being
+  frightened of, and what a target is worth buying blades for -- so an
+  economic weight must LOWER them. Gates 2-4 price things an economic
+  weight raises and read the ratio the other way up. Exactly 1.0
+  whenever the axes are equal, whatever the gain, which is what the
+  byte-identity gate rests on: x * 1.0 == x for every finite x in
+  IEEE 754. A zero gain disables its gate outright without touching
+  the axes, which is the per-gate off-switch an A/B needs.
+**************************************************************************/
+static double deep_stance_mil_mult(const struct player *pplayer,
+                                   double gain)
+{
+  const struct deep_plr *plr_data = deep_plr_data(pplayer);
+  const struct deep_stance *st;
+
+  if (plr_data == NULL) {
+    return 1.0;
+  }
+  st = &plr_data->stance;
+  if (st->econ <= 0.0 || st->mil <= 0.0
+      || deep_stance_is_identity(st)
+      || gain == 0.0) {
+    return 1.0;
+  }
+
+  return pow(st->mil / st->econ, gain);
 }
 
 /**********************************************************************//**
@@ -240,21 +273,34 @@ void deep_stance_log(struct player *pplayer)
 **************************************************************************/
 double deep_stance_fear_mult(const struct player *pplayer)
 {
-  const struct deep_plr *plr_data = deep_plr_data(pplayer);
-  const struct deep_stance *st;
-  const struct deep_tuning *tune = deep_tuning_get();
+  return deep_stance_mil_mult(pplayer,
+                              deep_tuning_get()->stance_fear_gain);
+}
 
-  if (plr_data == NULL) {
-    return 1.0;
-  }
-  st = &plr_data->stance;
-  if (st->econ <= 0.0 || st->mil <= 0.0
-      || deep_stance_is_identity(st)
-      || tune->stance_fear_gain == 0.0) {
-    return 1.0;
-  }
+/**********************************************************************//**
+  Gate 5 (W34 A.2, added in E34.2b): the multiplier on the OFFENSIVE
+  BUILD -- deep_assault_want()'s marginal-take-odds attacker demand,
+  the want that turns a target's worth into shields spent on blades.
 
-  return pow(st->mil / st->econ, tune->stance_fear_gain);
+  E34.2's regime check failed with offence share RISING under an
+  economic pin, and the census named why: gate 2 governs whether
+  blades that already EXIST are committed, and no gate priced buying
+  them, so the defenders gate 1 discouraged simply stopped competing
+  for the slot. This is that gate. It reads (mil/econ)^gain, gate 1's
+  direction, because it prices a military want.
+
+  Its floor is gate 2's, and deliberately the SAME test rather than a
+  second one: a target that THREATENS us -- a barbarian holding, or a
+  hostile city on a landmass where we hold cities -- keeps the
+  unscaled want. Reconquest of what menaces us is survival, not
+  ambition, and "minimise military spend SUBJECT TO SURVIVAL" has to
+  mean that on the offensive side too. The caller owns the exemption
+  because only it knows the target.
+**************************************************************************/
+double deep_stance_assault_mult(const struct player *pplayer)
+{
+  return deep_stance_mil_mult(pplayer,
+                              deep_tuning_get()->stance_assault_gain);
 }
 
 /**********************************************************************//**

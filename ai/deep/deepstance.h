@@ -61,13 +61,16 @@ const char *deep_stance_source_name(int source);
 void deep_stance_refresh(struct player *pplayer);
 void deep_stance_log(struct player *pplayer);
 
-/* The four gates (W34 A.2), each a multiplier on an EXISTING want or
- * bar and each exactly 1.0 whenever the axes are equal. Gate 1 reads
- * (mil/econ) because fear is what a military weight raises; gates 2-4
- * read (econ/mil). No gate may push a want below a survival floor. */
+/* The five gates (W34 A.2), each a multiplier on an EXISTING want or
+ * bar and each exactly 1.0 whenever the axes are equal. Gates 1 and 5
+ * read (mil/econ) because they price MILITARY wants -- anticipated
+ * threat, and the attacker demand a target's worth creates -- which a
+ * military weight raises; gates 2-4 read (econ/mil). No gate may push
+ * a want below a survival floor. */
 double deep_stance_fear_mult(const struct player *pplayer);
 double deep_stance_op_mult(const struct player *pplayer);
 double deep_stance_growth_mult(const struct player *pplayer);
 double deep_stance_expand_mult(const struct player *pplayer);
+double deep_stance_assault_mult(const struct player *pplayer);
 
 #endif /* FC__DEEPSTANCE_H */

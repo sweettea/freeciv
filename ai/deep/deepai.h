@@ -58,6 +58,10 @@ struct deep_plr {
   int stance_op_gated;
   int stance_growth_gated;
   int stance_expand_gated;
+  /* And for gate 5 (W34 E34.2b): offensive build wants actually
+   * scaled -- the assault wants NOT exempted as reconquest of a
+   * target that threatens us. Same contract as the other four. */
+  int stance_assault_gated;
   /* Operation slots (W33); DEEP_OP_NONE marks a free slot. Saved
    * (W33 phase 4): a mid-march wave that dissolved on every reload
    * cost human-game players their assaults; member ids are
