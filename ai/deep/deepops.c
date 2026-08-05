@@ -54,6 +54,7 @@
 #include "deepai.h"
 #include "deepcombat.h"
 #include "deepdefence.h"
+#include "deepstance.h"
 #include "deeptuning.h"
 
 /* server */
@@ -2364,10 +2365,50 @@ static void deep_op_drive_raid(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Does this target THREATEN us, in the sense gate 2 exempts from the
+  raised formation bar?
+
+  Two classes, both read from data already at hand and neither needing
+  a constant:
+
+  - A barbarian holding. Barbarians make no contact, keep no border
+    and negotiate nothing: their cities on the map ARE the evidence,
+    the same reading deep_city_survival_core() already applies to
+    their units.
+  - A city on a landmass where we hold cities. This is deep's own
+    REACHABILITY law, the one deep_garrison_menace() uses to weight a
+    neighbour ("an army that shares a continent with any of our cities
+    counts in full"), applied to the owner of a city we are already at
+    war with. A hostile neighbour who can march is not an ambition,
+    it is a threat, and gate 2 must not talk an economy-weighted
+    player out of answering it.
+
+  This is gate 1's survival-floor precedent pointed outward: the floor
+  is not "keep attacking", it is "keep the war you are already in
+  answerable".
+**************************************************************************/
+static bool deep_op_target_threatens(const struct player *pplayer,
+                                     const struct city *target)
+{
+  Continent_id tc = tile_continent(city_tile(target));
+
+  if (is_barbarian(city_owner(target))) {
+    return TRUE;
+  }
+  city_list_iterate(pplayer->cities, pcity) {
+    if (tile_continent(city_tile(pcity)) == tc) {
+      return TRUE;
+    }
+  } city_list_iterate_end;
+
+  return FALSE;
+}
+
+/**********************************************************************//**
   Try to form a new operation in slot `oi`: is there a met, unclaimed
   target our free attackers could actually take? required = the
   smallest strongest-first prefix of the unclaimed pool that clears
-  op_take_target. Returns TRUE if the slot went live.
+  the formation bar. Returns TRUE if the slot went live.
 **************************************************************************/
 static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
                          struct deep_operation *op, int oi)
@@ -2380,6 +2421,7 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
   int required = 0, drafted = 0;
   int n, i, eta;
   bool overseas;
+  double bar;
 
   city_list_iterate(pplayer->cities, pcity) {
     home_city = pcity;
@@ -2420,6 +2462,28 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
 
   overseas = tile_continent(city_tile(target))
              != tile_continent(city_tile(home_city));
+
+  /* Gate 2 (W34 A.2): what this player's stance charges for an
+   * assault. The bar is the odds the smallest force must clear before
+   * blades are committed; scaling it by (econ/mil)^stance_op_gain
+   * means an economy-weighted player forms only where the take is
+   * near-certain -- the OPPORTUNISTIC half of "low mil forms assaults
+   * only against opportunistic or threatening targets" -- while a
+   * force-weighted one forms freely. Exactly 1.0 at identity axes.
+   *
+   * Capped at 1.0 because it is a probability: however far the corner
+   * or the gain is pushed, a certain take still forms. That cap is
+   * the gate's floor, and the threatening exemption is the other one:
+   * neither may be scaled away. */
+  bar = tune->op_take_target;
+  {
+    double omult = deep_stance_op_mult(pplayer);
+
+    if (omult != 1.0 && !deep_op_target_threatens(pplayer, target)) {
+      bar = MIN(1.0, bar * omult);
+      dp->stance_op_gated++;
+    }
+  }
 
   /* Staging: nearest own city on the target's continent for a land
    * assault; for an amphibious one, the nearest own COASTAL city on
@@ -2471,8 +2535,7 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
                            tile_continent(city_tile(home_city)),
                            pool, DEEP_OP_MEMBERS);
   for (i = 1; i <= n; i++) {
-    if (deep_take_odds_at_arrival(nmap, target, pool, i, eta)
-        >= tune->op_take_target) {
+    if (deep_take_odds_at_arrival(nmap, target, pool, i, eta) >= bar) {
       required = i;
       break;
     }
@@ -2522,8 +2585,7 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
     } city_list_iterate_end;
     if (drafted > 0) {
       for (i = 1; i <= n; i++) {
-        if (deep_take_odds_at_arrival(nmap, target, pool, i, eta)
-            >= tune->op_take_target) {
+        if (deep_take_odds_at_arrival(nmap, target, pool, i, eta) >= bar) {
           required = i;
           break;
         }
