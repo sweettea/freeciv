@@ -4,8 +4,58 @@
 `findings/plans-commission.md`. Root cause: RC2 (no shared plan),
 with RC4 in the arbitration.**
 
-**SIZE IT BEFORE BUILDING IT.** The sizing pass is step 0 below and it
-may retire half of this file.
+**SIZED 2026-08-04, AND MOSTLY RETIRED.** Step 0 ran on two cells, 20
+seeds each; the numbers are in `findings/commission-sizing.md` and the
+verdict is in "What the sizing decided" immediately below. **Read that
+before the Design section, which is now a record of what was proposed
+rather than a plan to execute.**
+
+## What the sizing decided (2026-08-04)
+
+Full numbers and caveats: `findings/commission-sizing.md`. Two cells,
+20 paired seeds each, one pinned binary, 20/20 DONE, instrumentation
+proven behaviour-neutral (the wait census is bit-identical across both
+binaries built that session).
+
+**RETIRED — do not build:**
+
+- **The award by ETA (Design 2).** On production capability alone the
+  ordering city is already the best or equal-best producer on its water
+  65.4% (isolated-150) / 61.7% (lategame-80) of the time, and the
+  median rival is a turn SLOWER. The 2-3 turn median advantage that
+  appears once a rival is credited with its shield stock is that
+  rival's SAVINGS, not a better shipyard — an accounting transfer whose
+  cost (the wonder or settler those shields were for) the ETA does not
+  show and the design does not price.
+- **The fall-through cascade (Design 3), as motivated.** The failure it
+  was justified by — a commission with no producer — is 12 waiting
+  unit-turns in 20 games on the island cell and zero on lategame. The
+  population is empty. (A commission REFUSED by the city it lands on is
+  a different case and remains unmeasurable without building it.)
+- **Cancellation (Design 4) as a large recovery.** An order lives a
+  median of 2 turns (island) / 1 turn (lategame), and 85% of production
+  runs already end without producing a hull. Build churn is de facto
+  cancellation; there is almost no window for a demand to evaporate
+  between order and delivery.
+
+**SURVIVES:**
+
+- **The passenger's ETA (Design 5), for the tail only.** The wait is 0
+  at the median in both cells (mean 2.28 / 0.98, p90 7 / 3), so the
+  hitch-versus-wait comparison does not bind in the median case at all.
+  It binds in a fifth of spells, which hold three-fifths of all waiting
+  turns. Anything built here is built for that tail — and the tail is
+  where an ETA estimate is least reliable, so it must be measured, not
+  assumed.
+- **The two censuses.** `deep-hull-order` and `deep-wait` are cheap and
+  behaviour-neutral, and they answer what the hull census cannot.
+
+**The `lift-noboat` correction.** The population is an order of
+magnitude larger than the brief carried (7.30 spells/game on the island
+cell, 2.10 on lategame, against "7-10 per 20 games") and it matters
+less, not more: those spells END WITHIN A TURN and never enrol. A
+passenger with no boat anywhere stops wanting one rather than waiting
+for a producer to appear.
 
 ## Problem
 
@@ -72,7 +122,12 @@ struct deep_commission {
 The useful-water gate retires into step 2: a city on a closed sea is
 never a candidate producer, so there is nothing to veto.
 
-## Step 0 — the sizing pass, before any of the above
+## Step 0 — the sizing pass, DONE 2026-08-04
+
+**Answered. See "What the sizing decided" above and
+`findings/commission-sizing.md`.** Kept below as the question that was
+asked, because the third bullet's phrasing is what the instrumentation
+was built to satisfy.
 
 The census already records the water each hull touches and the demand
 on it. Add the order-time shield stock and answer:
@@ -146,14 +201,31 @@ comparison, so no runner-up ever needs reconstructing.
 - Score: report it, do not promise it. The honest prior from five
   predecessors is flat.
 
-## Commits (sketch)
+## Commits
+
+Landed 2026-08-04 (step 0):
 
 ```
 ai/deep: log the turn a hull order is placed and its shield stock
-doc: size the commissioning gap from the hull census
+ai/deep: log each turn a passenger waits for a lift
+benchmark: size W36 step 0 from the order and wait censuses
+ai/deep: measure the hull order where its build choice commits
+doc: size the commissioning gap from the order and wait censuses
+```
+
+Sketched and now RETIRED by that sizing — raise, award, fall-through
+and cancel all target populations the measurement found empty or
+already handled:
+
+```
 ai/deep: raise a commission when a lift needs a hull
 ai/deep: award a commission to the best-ETA city on its water
 ai/deep: let a refused commission fall through to the next producer
 ai/deep: cancel a hull order when its demand is gone
-ai/deep: price hitching against the awarded ETA
+```
+
+The one survivor, and only if someone takes the tail seriously:
+
+```
+ai/deep: price hitching against the waiting passenger's own ETA
 ```
