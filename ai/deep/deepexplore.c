@@ -182,16 +182,52 @@ adv_want deep_explore_want(struct player *pplayer, int queued)
 
   /* queued = explorer builds already claimed by other cities in this
    * same management pass, so one global want cannot order a fleet
-   * (25 cities x one number was the other half of the pump). */
-  want = (hut_weight * tune->explore_hut_value
-          + unknown * tune->explore_discovery_value)
-         / (1 + explorers + queued);
+   * (25 cities x one number was the other half of the pump).
+   *
+   * The MARGINAL explorer, not the average one. Dividing the whole
+   * visible prize by the fleet is a hyperbola: it approaches zero and
+   * never arrives, so a city whose own best build want is 0 keeps
+   * taking explorers at a printed want of 0 for the rest of the game,
+   * and nothing ever disbands them. Measured on isolated-150 before
+   * this change: standing fleets of 51, 37 and 21 explorers with two
+   * to six huts in sight, want printing 0 from T120 while claims
+   * continued to T150 -- an equilibrium, not a transient, and it
+   * survived the reachability filter above because that filter is
+   * already in force.
+   *
+   * So price what is LEFT: each explorer already fielded or on order
+   * is expected to work explore_explorer_claim huts' worth of the
+   * prize, and only the uncovered remainder creates demand. The want
+   * then reaches exactly zero once the fleet covers the prizes, which
+   * is the property the hyperbola lacked, and the fleet's ceiling is
+   * a ratio of two measured quantities rather than a cap. The
+   * discovery term rides the same subtraction on purpose: when W04
+   * makes `unknown` live again it must not pump under fog either.
+   *
+   * Claim is denominated in hut-equivalents rather than raw want, so
+   * tuning explore_hut_value rescales the prize and the claim
+   * together and the saturation point stays where it was put. */
+  {
+    double prize = hut_weight * tune->explore_hut_value
+                   + unknown * tune->explore_discovery_value;
+    double claimed = (explorers + queued)
+                     * tune->explore_explorer_claim
+                     * tune->explore_hut_value;
+    double left = prize - claimed;
 
-  log_base(deep_metric_log_level(),
-           "deep-explore turn=%d player=\"%s\" want=%d huts_vis=%d"
-           " unknown=%d explorers=%d queued=%d",
-           game.info.turn, player_name(pplayer), (int) want,
-           huts_visible, unknown, explorers, queued);
+    if (left < 0.0) {
+      left = 0.0;
+    }
+    want = left / (1 + explorers + queued);
+
+    log_base(deep_metric_log_level(),
+             "deep-explore turn=%d player=\"%s\" want=%d huts_vis=%d"
+             " unknown=%d explorers=%d queued=%d hutw=%.2f prize=%.2f"
+             " claimed=%.2f saturated=%d",
+             game.info.turn, player_name(pplayer), (int) want,
+             huts_visible, unknown, explorers, queued, hut_weight,
+             prize, claimed, left <= 0.0 ? 1 : 0);
+  }
 
   return want;
 }

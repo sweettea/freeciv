@@ -480,10 +480,18 @@ struct deep_tuning {
   double embassy_science_value;
 
   /* Explorer production want (W06): build-want units per visible
-   * unclaimed hut and per unknown tile, divided by (1 + explorers
-   * owned). Zero-gated when the map was generated without huts. */
+   * unclaimed hut and per unknown tile, spread over the fleet.
+   * Zero-gated when the map was generated without huts. */
   double explore_hut_value;
   double explore_discovery_value;
+  /* How much of the visible prize one explorer already fielded or on
+   * order is expected to collect, in HUTS (so it rescales with
+   * explore_hut_value rather than fighting it). Subtracted from the
+   * prize before the fleet divides it, which is what lets the want
+   * reach exactly zero -- the old average-per-explorer form was a
+   * hyperbola and equilibrated at fleets of 20-51 on island maps.
+   * 0 restores that behaviour. */
+  double explore_explorer_claim;
   /* City manager factors by city state (W09-lite); the stock
    * hardcoded default is food 10-20, shield 5, trade 0, happy 0. */
   int cm_happy_factor;
