@@ -278,6 +278,18 @@ static bool deep_tuning_loaded = FALSE;
   Load tuning overrides from $FREECIV_DEEP_TUNING, if set. Called once
   from module setup; unknown keys in the file are ignored by lookup,
   absent keys keep their compiled defaults.
+
+  Absent keys keep their compiled defaults EXACTLY, which is why the
+  double path asks whether the entry exists before reading it.
+  secfile_lookup_float_default() takes its default as a `float`
+  (utility/registry_ini.h), so passing a double default through it
+  quantises the value even when the file never mentions the key:
+  0.9 came back as 0.8999999761581421. That made loading any tuning
+  file a second, uncontrolled treatment -- a file with zero keys
+  diverged from tuning=none in 5 of 10 smoke seeds (session H1;
+  W34 E34.3 FINDING 2 measured 12/20 on smoke-traits). Keys the file
+  DOES set still go through the float lookup, so every archived ini
+  under benchmark/tuning keeps the value it has always had.
 **************************************************************************/
 void deep_tuning_init(void)
 {
@@ -300,9 +312,11 @@ void deep_tuning_init(void)
   }
 
 #define TUNE_DOUBLE(field) \
-  deep_tuning_active.field \
-    = secfile_lookup_float_default(sf, deep_tuning_defaults.field, \
-                                   "tuning." #field);
+  if (secfile_entry_lookup(sf, "tuning." #field) != NULL) { \
+    deep_tuning_active.field \
+      = secfile_lookup_float_default(sf, deep_tuning_defaults.field, \
+                                     "tuning." #field); \
+  }
 #define TUNE_INT(field) \
   deep_tuning_active.field \
     = secfile_lookup_int_default(sf, deep_tuning_defaults.field, \
