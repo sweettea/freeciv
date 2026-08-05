@@ -105,6 +105,8 @@ static const struct deep_tuning deep_tuning_defaults = {
   .explore_hut_value = 15.0,            /* PLACEHOLDER, untuned */
   .explore_discovery_value = 0.05,      /* PLACEHOLDER, untuned */
   .explore_explorer_claim = 1.0,        /* PLACEHOLDER, untuned */
+  .explore_salvage_gap = 1.0,           /* PLACEHOLDER, untuned */
+  .explore_retain_floor = 1,            /* PLACEHOLDER, untuned */
   .cm_happy_factor = 1,                 /* PLACEHOLDER, untuned */
   .cm_war_food = 10,                    /* PLACEHOLDER, untuned */
   .cm_war_shield = 12,                  /* PLACEHOLDER, untuned */
@@ -175,6 +177,8 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(explore_hut_value) \
   TUNE_DOUBLE(explore_discovery_value) \
   TUNE_DOUBLE(explore_explorer_claim) \
+  TUNE_DOUBLE(explore_salvage_gap) \
+  TUNE_INT(explore_retain_floor) \
   TUNE_INT(cm_happy_factor) \
   TUNE_INT(cm_war_food) \
   TUNE_INT(cm_war_shield) \

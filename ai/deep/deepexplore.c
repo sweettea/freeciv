@@ -44,26 +44,42 @@
  * that forfeits one of the strongest early investments. */
 
 /**********************************************************************//**
-  How much this player should currently want to build explorers, in
-  build-want units: visible unclaimed huts plus unexplored area, with
-  diminishing returns per explorer already owned. Zero when the map was
-  generated without huts, so hut-free behaviour stays stock (the
-  discovery term is deliberately inside the gate for now; widening it
-  is a W08-era decision).
+  The visible prize an explorer fleet exists to collect, as a SUM OF
+  PER-PURPOSE TERMS, each with its own gate. Shared by the build side
+  and the salvage side, so acquisition and disposal are keyed to the
+  same quantity and cannot disagree.
+
+  Deliberately a sum rather than one fused formula.
+  findings/non-omniscient-roadmap.md stage 5 puts THREE terms here:
+
+    hut       -- a real object on the map. Live today. No fog gate:
+                 popping a hut is worth the same whether or not we
+                 could have seen it coming.
+    discovery -- unexplored area. Fog-gated and dormant: `unknown` is
+                 forced to 0 for a player without H_MAP, which is
+                 every difficulty anyone plays (RC6). Returns when
+                 W04 makes deep honest.
+    patrol    -- NOT YET WRITTEN. An AREA-shaped surveillance term:
+                 staleness of territory we already mapped, times the
+                 chance something changed there. A rival's quiet
+                 fourth city in land we mapped forty turns ago is how
+                 an honest AI gets strategically surprised. Also
+                 fog-gated, also zero today.
+
+  Adding the third must be adding a term and a gate here, not
+  redesigning the shape. The raw components come back through the out
+  parameters for the census line; the return value is the summed
+  prize, so there is exactly one place where the terms are added.
 **************************************************************************/
-adv_want deep_explore_want(struct player *pplayer, int queued)
+static double deep_explore_prize(struct player *pplayer, double *hutw_out,
+                                 int *unknown_out, int *huts_out)
 {
   const struct deep_tuning *tune = deep_tuning_get();
-  int huts_visible = 0, unknown = 0, explorers = 0;
+  int huts_visible = 0, unknown = 0;
   double hut_weight = 0.0;
   bool hut_risk;
   Continent_id ours[64];
   int nours = 0, i;
-  adv_want want;
-
-  if (wld.map.server.huts <= 0) {
-    return 0;
-  }
 
   /* Hut-risk awareness (task #18; human rule 2026-07-31: exploring
    * away from home, the worst case is a lost explorer -- a fine
@@ -144,6 +160,51 @@ adv_want deep_explore_want(struct player *pplayer, int queued)
     }
   } whole_map_iterate_end;
 
+  /* Discovery pays only for a player that cannot already see through
+   * the fog. At every level a human actually plays, H_MAP is unset
+   * (ai/difficulty.c:127 -- hard has "no actual handicaps"), so deep's
+   * own settler routing runs parameter.omniscience = TRUE
+   * (deepsettler.c:258,305,412,456,535) and its site evaluator scores
+   * terrain the explorer would be "revealing". Paying to uncover a map
+   * the planner already reads is RC6 billing itself twice.
+   *
+   * Europe T94 measured the cost exactly: want=31 from unknown=6461
+   * with huts_vis=0 -- an entire explorer programme, in four cities at
+   * once, buying information deep was already acting on. This does not
+   * touch the hut term, which is a real prize either way, and the
+   * discovery term returns in full the moment W04 makes deep honest. */
+  if (!has_handicap(pplayer, H_MAP)) {
+    unknown = 0;
+  }
+
+  *hutw_out = hut_weight;
+  *unknown_out = unknown;
+  *huts_out = huts_visible;
+
+  /* The sum. One line per purpose; a fourth purpose is a fourth line. */
+  return hut_weight * tune->explore_hut_value          /* huts */
+         + unknown * tune->explore_discovery_value;    /* discovery */
+         /* + patrol: roadmap stage 5, fog-gated, not written */
+}
+
+/**********************************************************************//**
+  How much this player should currently want to build explorers, in
+  build-want units. Zero when the map was generated without huts, so
+  hut-free behaviour stays stock.
+**************************************************************************/
+adv_want deep_explore_want(struct player *pplayer, int queued)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int huts_visible = 0, unknown = 0, explorers = 0;
+  double hut_weight = 0.0, prize;
+  adv_want want;
+
+  if (wld.map.server.huts <= 0) {
+    return 0;
+  }
+
+  prize = deep_explore_prize(pplayer, &hut_weight, &unknown, &huts_visible);
+
   unit_list_iterate(pplayer->units, punit) {
     if (unit_has_type_role(punit, L_EXPLORER)) {
       explorers++;
@@ -162,23 +223,6 @@ adv_want deep_explore_want(struct player *pplayer, int queued)
       explorers++;
     }
   } city_list_iterate_end;
-
-  /* Discovery pays only for a player that cannot already see through
-   * the fog. At every level a human actually plays, H_MAP is unset
-   * (ai/difficulty.c:127 -- hard has "no actual handicaps"), so deep's
-   * own settler routing runs parameter.omniscience = TRUE
-   * (deepsettler.c:258,305,412,456,535) and its site evaluator scores
-   * terrain the explorer would be "revealing". Paying to uncover a map
-   * the planner already reads is RC6 billing itself twice.
-   *
-   * Europe T94 measured the cost exactly: want=31 from unknown=6461
-   * with huts_vis=0 -- an entire explorer programme, in four cities at
-   * once, buying information deep was already acting on. This does not
-   * touch the hut term, which is a real prize either way, and the
-   * discovery term returns in full the moment W04 makes deep honest. */
-  if (!has_handicap(pplayer, H_MAP)) {
-    unknown = 0;
-  }
 
   /* queued = explorer builds already claimed by other cities in this
    * same management pass, so one global want cannot order a fleet
@@ -208,8 +252,6 @@ adv_want deep_explore_want(struct player *pplayer, int queued)
    * tuning explore_hut_value rescales the prize and the claim
    * together and the saturation point stays where it was put. */
   {
-    double prize = hut_weight * tune->explore_hut_value
-                   + unknown * tune->explore_discovery_value;
     double claimed = (explorers + queued)
                      * tune->explore_explorer_claim
                      * tune->explore_hut_value;
@@ -230,4 +272,69 @@ adv_want deep_explore_want(struct player *pplayer, int queued)
   }
 
   return want;
+}
+
+/**********************************************************************//**
+  Explorers this player owns beyond what the visible prize can employ:
+  the DISPOSAL side of the same marginal quantity the build side reads.
+
+  The old disband hack (deepdefence.c) was gated on the explore want
+  being zero, and the want was a hyperbola that never reached zero, so
+  in a hut game it never fired -- which is exactly how a fleet of 51
+  became an equilibrium. Now that the want has a real zero, the loop
+  can close.
+
+  Three properties the bare hack lacked:
+
+  - HYSTERESIS. The build point is "the prize can employ another
+    explorer"; the salvage point is that plus explore_salvage_gap
+    explorers of slack. Without the gap, build and disband alternate
+    on the same turn's arithmetic and the empire churns shields.
+  - A RETENTION FLOOR. explore_retain_floor explorers are never
+    salvaged: island hut supply reopens as new landmasses are reached
+    (the seed-205 observation that opened this item), and the two
+    dormant terms of deep_explore_prize() land on this same fleet the
+    day W04 makes them live -- the floor keeps a scout alive for the
+    day re-scouting matters (roadmap stage 5).
+  - It is keyed to the same prize, so a hut appearing rebuilds and a
+    hut consumed retires, on one number.
+
+  Returns how many may be salvaged now, never negative.
+**************************************************************************/
+int deep_explore_surplus(struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int huts_visible = 0, unknown = 0, explorers = 0;
+  double hut_weight = 0.0, employable;
+  int surplus;
+
+  if (wld.map.server.huts <= 0
+      || tune->explore_explorer_claim <= 0.0
+      || tune->explore_hut_value <= 0.0) {
+    return 0;   /* No prize, or the saturation shape is switched off. */
+  }
+
+  unit_list_iterate(pplayer->units, punit) {
+    if (unit_has_type_role(punit, L_EXPLORER)) {
+      explorers++;
+    }
+  } unit_list_iterate_end;
+  if (explorers <= tune->explore_retain_floor) {
+    return 0;
+  }
+
+  /* Explorers the whole prize can employ, in the build side's own
+   * units: the SAME summed prize, divided by what one explorer is
+   * deemed to collect. A dormant term waking up raises this and the
+   * salvage stops, with no second formula to keep in step. */
+  employable = deep_explore_prize(pplayer, &hut_weight, &unknown,
+                                  &huts_visible)
+               / (tune->explore_explorer_claim * tune->explore_hut_value);
+
+  surplus = explorers - (int) (employable + tune->explore_salvage_gap);
+  if (surplus > explorers - tune->explore_retain_floor) {
+    surplus = explorers - tune->explore_retain_floor;
+  }
+
+  return MAX(surplus, 0);
 }

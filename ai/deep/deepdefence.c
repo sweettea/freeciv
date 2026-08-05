@@ -3412,13 +3412,12 @@ static int deep_emergency_cmp(const void *a_, const void *b_)
 
 /**********************************************************************//**
   Buy and upgrade stuff. Derived from dai_spend_gold(); the difference
-  is that the disband-explorers-at-home hack is gated on exploration
-  not being wanted (W06) -- stock scraps every explorer that returns
-  home, which in hut games destroys the units the new explorer want
-  just paid for.
+  is what happens to explorers standing in a city. Stock scraps every
+  one that returns home, which in hut games destroys the units the new
+  explorer want just paid for; deep salvages only the ones the visible
+  prize can no longer employ (deep_explore_surplus()).
 **************************************************************************/
-static void deep_spend_gold(struct ai_type *ait, struct player *pplayer,
-                            adv_want explore_want)
+static void deep_spend_gold(struct ai_type *ait, struct player *pplayer)
 {
   struct adv_choice bestchoice;
   int cached_limit = dai_gold_reserve(pplayer);
@@ -3433,21 +3432,54 @@ static void deep_spend_gold(struct ai_type *ait, struct player *pplayer,
     cached_limit -= player_get_expected_income(pplayer);
   }
 
-  if (explore_want <= 0) {
-    /* Disband explorers that are at home but don't serve a purpose. */
+  {
+    /* Salvage, not scrapping. Stock disbands every explorer that walks
+     * home; deep's first version gated that on the explore want being
+     * zero, and the want was a hyperbola that never reached zero, so
+     * the gate never opened and fleets equilibrated at 20-51 units
+     * (STATUS M3). deep_explore_surplus() closes the loop on the same
+     * marginal quantity the build want reads, with a hysteresis gap so
+     * the two cannot churn against each other and a retention floor so
+     * a reopened island (or W04's recon value) still has feet.
+     *
+     * unit_do_disband_trad() is the convertible-asset form already:
+     * it tries Help Wonder (100% of the shields) and then Disband Unit
+     * Recover (50%) against the city on the unit's tile, and only
+     * falls back to plain disbanding if the ruleset refuses both. The
+     * unit therefore has to BE in one of our cities, which is also
+     * where an idle explorer ends up. */
+    int surplus = deep_explore_surplus(pplayer);
+    int salvaged = 0;
+
     city_list_iterate(pplayer->cities, pcity) {
       struct tile *ptile = pcity->tile;
 
+      if (surplus <= 0) {
+        break;
+      }
       unit_list_iterate_safe(ptile->units, punit) {
+        if (surplus <= 0) {
+          break;
+        }
         if (unit_has_type_role(punit, L_EXPLORER)
-            && pcity->id == punit->homecity
+            && unit_owner(punit) == pplayer
             && def_ai_city_data(pcity, ait)->urgency == 0) {
-          CITY_LOG(LOG_BUY, pcity, "disbanding %s to increase production",
+          int before = pcity->shield_stock;
+
+          CITY_LOG(LOG_BUY, pcity, "salvaging %s: fleet above the prize",
                    unit_rule_name(punit));
           unit_do_disband_trad(pplayer, punit, ACT_REQ_PLAYER);
+          log_base(deep_metric_log_level(),
+                   "deep-salvage turn=%d player=\"%s\" city=%d"
+                   " surplus=%d recovered=%d",
+                   game.info.turn, player_name(pplayer), pcity->id,
+                   surplus, pcity->shield_stock - before);
+          surplus--;
+          salvaged++;
         }
       } unit_list_iterate_safe_end;
     } city_list_iterate_end;
+    (void) salvaged;
   }
 
   dai_calc_data(pplayer, NULL, &expenses, NULL);
@@ -4043,7 +4075,7 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
     deep_city_choose_build(ait, pplayer, pcity);
   } city_list_iterate_end;
 
-  deep_spend_gold(ait, pplayer, explore_want);
+  deep_spend_gold(ait, pplayer);
 
   /* Every decision that reads building_want[] this turn has now been
    * made -- the choose loop above, the wall and wonder paths inside

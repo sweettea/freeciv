@@ -18,4 +18,9 @@
 
 adv_want deep_explore_want(struct player *pplayer, int queued);
 
+/* Explorers owned beyond what the visible prize can employ, after the
+ * hysteresis gap and the retention floor. The disposal half of the
+ * build want, keyed to the same quantity. */
+int deep_explore_surplus(struct player *pplayer);
+
 #endif /* FC__DEEPEXPLORE_H */
