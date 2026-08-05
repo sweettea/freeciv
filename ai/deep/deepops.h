@@ -134,6 +134,14 @@ void deep_manage_units(struct ai_type *ait, struct player *pplayer);
 void deep_hull_order_choice(struct ai_type *ait, struct player *pplayer,
                             struct city *pcity,
                             const struct unit_type *ptype);
+/* Gate 2's exemption test, shared with gate 5 (deepdefence.c): a
+ * barbarian holding, or a hostile city on a landmass where we hold
+ * cities, threatens us and keeps the unscaled bar and the unscaled
+ * want. One test, two gates -- a second one would be a second law
+ * about the same question. */
+bool deep_op_target_threatens(const struct player *pplayer,
+                              const struct city *target);
+
 struct unit *deep_op_poach_defender(struct ai_type *ait,
                                     struct player *pplayer,
                                     struct city *pcity,

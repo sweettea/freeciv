@@ -2365,8 +2365,9 @@ static void deep_op_drive_raid(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
-  Does this target THREATEN us, in the sense gate 2 exempts from the
-  raised formation bar?
+  Does this target THREATEN us, in the sense gates 2 and 5 exempt
+  from the stance -- the raised formation bar, and the scaled
+  offensive build want?
 
   Two classes, both read from data already at hand and neither needing
   a constant:
@@ -2380,15 +2381,16 @@ static void deep_op_drive_raid(struct ai_type *ait, struct player *pplayer,
     neighbour ("an army that shares a continent with any of our cities
     counts in full"), applied to the owner of a city we are already at
     war with. A hostile neighbour who can march is not an ambition,
-    it is a threat, and gate 2 must not talk an economy-weighted
-    player out of answering it.
+    it is a threat, and the stance must not talk an economy-weighted
+    player out of answering it -- neither out of committing the
+    blades it has, nor out of buying the ones it needs.
 
   This is gate 1's survival-floor precedent pointed outward: the floor
   is not "keep attacking", it is "keep the war you are already in
   answerable".
 **************************************************************************/
-static bool deep_op_target_threatens(const struct player *pplayer,
-                                     const struct city *target)
+bool deep_op_target_threatens(const struct player *pplayer,
+                              const struct city *target)
 {
   Continent_id tc = tile_continent(city_tile(target));
 

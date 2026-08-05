@@ -3132,6 +3132,27 @@ static void deep_assault_want(struct ai_type *ait,
     } unit_type_iterate_end;
   }
 
+  /* Gate 5 (W34 A.2, E34.2b): what this player's stance charges for
+   * BUYING a blade, as against gate 2's charge for committing one.
+   * Applied after the snap-up sweep on purpose: a positive scalar
+   * does not move an argmax, so the sweep still picks the type whose
+   * own arithmetic wins the price/speed race, and the stance then
+   * says how much this player wants the winner. Exactly 1.0 at
+   * identity axes.
+   *
+   * The exemption is gate 2's own test, not a second one: reconquest
+   * of what menaces us is survival rather than ambition, so a
+   * barbarian holding or a hostile city on a landmass where we hold
+   * cities keeps the unscaled want however deep the corner. */
+  {
+    double amult = deep_stance_assault_mult(pplayer);
+
+    if (amult != 1.0 && !deep_op_target_threatens(pplayer, target)) {
+      want = (adv_want) (want * amult);
+      deep_plr_data(pplayer)->stance_assault_gated++;
+    }
+  }
+
   log_base(deep_metric_log_level(),
            "deep-kill turn=%d player=\"%s\" city=%d target=%d"
            " worth=" ADV_WANT_PRINTF " pool=%d p0=%.3f p1=%.3f ck=%d"
