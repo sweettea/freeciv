@@ -358,6 +358,160 @@ static void deep_hull_census(struct ai_type *ait, struct player *pplayer)
   } unit_list_iterate_end;
 }
 
+/**********************************************************************//**
+  Turns from now until this city finishes `ptype`, from its CURRENT
+  shield stock and surplus. -1 when it never finishes (no surplus) and
+  -2 when it cannot build the type at all.
+
+  Deliberately the crudest possible ETA -- stock plus surplus, no
+  growth, no waste, no buy -- because that is exactly the estimate
+  W36's award step would have to make at order time, and sizing the
+  award on a better estimate than the award could use would overstate
+  what the machinery is worth.
+**************************************************************************/
+static int deep_build_eta(const struct civ_map *nmap, struct city *pcity,
+                          const struct unit_type *ptype)
+{
+  int cost, left;
+
+  if (!can_city_build_unit_now(nmap, pcity, ptype, RPT_CERTAIN)) {
+    return -2;
+  }
+  cost = utype_build_shield_cost(pcity, NULL, ptype);
+  left = cost - pcity->shield_stock;
+  if (left <= 0) {
+    return 0;
+  }
+  if (pcity->surplus[O_SHIELD] <= 0) {
+    return -1;
+  }
+
+  return (left + pcity->surplus[O_SHIELD] - 1) / pcity->surplus[O_SHIELD];
+}
+
+/**********************************************************************//**
+  One line per CITY BUILDING A HULL per turn -- W36 step 0's first
+  question, and the one thing the hull census cannot answer.
+
+  The census reconstructs a hull's life from its birth; the order that
+  produced it is older than that, and nothing has ever logged it. Two
+  things follow that the birth turn cannot give: whether the demand the
+  order answered still existed when the hull appeared, and -- the
+  question here -- whether the city that placed it was the RIGHT
+  producer.
+
+  So each line carries the ordering city's own completion ETA and the
+  best ETA available at any other city of this player that shares a
+  body of water with it and could build the same hull today. If those
+  two are usually equal, W36's award step is ceremony: the order would
+  land at the same city anyway, and only cancellation and the ETA
+  handed to the passenger are worth building.
+
+  No per-city state is kept, deliberately. A line is emitted every turn
+  production stands on a hull, so an ORDER is the first line of a
+  consecutive run for one (city, type) and the run length is how long
+  the order stood -- which offline reconstruction gets for free and
+  which cannot go stale across a save/load the way a stored order turn
+  would.
+
+  `best` is scored against the same type the ordering city chose rather
+  than each candidate's own best ferry role: the question is who should
+  have built THIS hull, and a candidate that can only build a lesser
+  hull is not the same offer.
+**************************************************************************/
+static void deep_order_census(struct ai_type *ait, struct player *pplayer)
+{
+  const struct civ_map *nmap = &(wld.map);
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+
+  city_list_iterate(pplayer->cities, pcity) {
+    const struct unit_type *ptype;
+    struct tile *ptile = city_tile(pcity);
+    Continent_id seen[8];
+    int nseen = 0, ncand = 0, best_eta = -3, best_city = 0;
+    int bridge = 0;
+
+    if (pcity->production.kind != VUT_UTYPE) {
+      continue;
+    }
+    ptype = pcity->production.value.utype;
+    if (!dai_is_ferry_type(ptype, ait)) {
+      continue;
+    }
+
+    /* The waters this city can launch into, deduplicated: the same
+     * adjacency the gate and the hull census use. */
+    adjc_iterate(nmap, ptile, atile) {
+      Continent_id ac = tile_continent(atile);
+      int si;
+
+      if (ac >= 0) {
+        continue;
+      }
+      for (si = 0; si < nseen; si++) {
+        if (seen[si] == ac) {
+          break;
+        }
+      }
+      if (si < nseen || nseen >= (int) ARRAY_SIZE(seen)) {
+        continue;
+      }
+      seen[nseen++] = ac;
+      if (deep_water_bridges(ac)) {
+        bridge = 1;
+      }
+    } adjc_iterate_end;
+
+    city_list_iterate(pplayer->cities, other) {
+      bool shares = FALSE;
+      int eta;
+
+      if (other == pcity) {
+        continue;
+      }
+      adjc_iterate(nmap, city_tile(other), atile) {
+        int si;
+
+        for (si = 0; si < nseen; si++) {
+          if (seen[si] == tile_continent(atile)) {
+            shares = TRUE;
+            break;
+          }
+        }
+        if (shares) {
+          break;
+        }
+      } adjc_iterate_end;
+      if (!shares) {
+        continue;
+      }
+      eta = deep_build_eta(nmap, other, ptype);
+      if (eta < 0) {
+        continue;               /* Cannot build it, or never finishes. */
+      }
+      ncand++;
+      if (best_eta < 0 || eta < best_eta) {
+        best_eta = eta;
+        best_city = other->id;
+      }
+    } city_list_iterate_end;
+
+    log_base(deep_metric_log_level(),
+             "deep-hull-order turn=%d player=\"%s\" city=%d type=\"%s\""
+             " stock=%d surplus=%d cost=%d eta=%d waters=%d bridge=%d"
+             " ncand=%d best=%d besteta=%d",
+             game.info.turn, player_name(pplayer), pcity->id,
+             utype_rule_name(ptype), pcity->shield_stock,
+             pcity->surplus[O_SHIELD],
+             utype_build_shield_cost(pcity, NULL, ptype),
+             deep_build_eta(nmap, pcity, ptype), nseen, bridge,
+             ncand, best_city, best_eta);
+  } city_list_iterate_end;
+}
+
 /* Defined below, with the rest of the operation lifecycle. */
 static void deep_op_dissolve(struct deep_operation *op, int oi,
                              const char *why, struct player *pplayer);
@@ -1530,6 +1684,7 @@ void deep_manage_units(struct ai_type *ait, struct player *pplayer)
 
   deep_lift_census(ait, pplayer);
   deep_hull_census(ait, pplayer);
+  deep_order_census(ait, pplayer);
   /* After deep_run_operations() has already formed and driven every
    * lift it could this turn, which is the vantage the question needs:
    * who is STILL waiting once the lift has done its best, and was
