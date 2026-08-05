@@ -56,6 +56,7 @@
 #include "daitools.h"
 #include "daiunit.h"
 
+#include "deepcombat.h"
 #include "deepdefence.h"
 #include "deepsettler.h"
 #include "deepsite.h"
@@ -454,6 +455,12 @@ static void dpai_data_phase_begin(struct player *pplayer, bool is_new_phase)
   struct ai_type *deftype = deep_ai_get_self();
 
   dai_data_phase_begin(deftype, pplayer, is_new_phase);
+
+  /* The phase is the unit of coherence for "will this city hold": the
+   * citizen arrangement asks at the top of it and the growth ladder at
+   * the bottom, and they must get the same answer. Clearing here also
+   * means no verdict can outlive the phase it was taken in. */
+  deep_survival_cache_clear();
 
   if (is_new_phase) {
     struct deep_plr *plr_data = deep_plr_data(pplayer);

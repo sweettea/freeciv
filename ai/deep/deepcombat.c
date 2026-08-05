@@ -193,6 +193,82 @@ double deep_city_stack_survival(const struct civ_map *nmap,
                                           wave_out);
 }
 
+/* One remembered verdict per city per phase. */
+struct deep_survival_memo {
+  int city_id;
+  int horizon;
+  double surv;
+  int wave;
+};
+
+static struct deep_survival_memo *deep_survival_cache = NULL;
+static int deep_survival_n = 0;
+static int deep_survival_cap = 0;
+
+/**********************************************************************//**
+  Forget every remembered verdict. Called at the start of each player
+  phase, which is what makes "once per city per turn" true and what
+  keeps a verdict from a previous game in the same server process from
+  ever being read.
+**************************************************************************/
+void deep_survival_cache_clear(void)
+{
+  deep_survival_n = 0;
+}
+
+/**********************************************************************//**
+  The city's survival verdict for THIS phase -- computed on the first
+  question and remembered for the rest of them.
+
+  "Will this city hold" is asked by the citizen arrangement at the top
+  of the turn (deepcm.c, threshold cm_war_survival) and by the growth
+  ladder at the bottom (deephorizon.c, threshold survival_target), and
+  the two used to run the model independently against a map that had
+  moved in between. Two thresholds are a defensible disagreement about
+  what the answer is worth -- being wrong about a citizen costs food,
+  being wrong about a garrison costs the city -- but two computations
+  are a coin flip: the same city could be arranged for a siege and
+  credited for growth in the same turn, which is a variance source in
+  every ECON tuning cell and not a decision anyone made.
+
+  Same call, same probability, thresholds intact and separate. The
+  price is that the ladder reads a verdict taken before this turn's
+  movement; the phase is the unit of coherence, deliberately.
+**************************************************************************/
+double deep_city_survival_verdict(const struct civ_map *nmap,
+                                  struct city *pcity, int horizon,
+                                  int *wave_out)
+{
+  int i;
+  struct deep_survival_memo *e;
+
+  for (i = 0; i < deep_survival_n; i++) {
+    e = &deep_survival_cache[i];
+    if (e->city_id == pcity->id && e->horizon == horizon) {
+      if (wave_out != NULL) {
+        *wave_out = e->wave;
+      }
+      return e->surv;
+    }
+  }
+
+  if (deep_survival_n >= deep_survival_cap) {
+    deep_survival_cap = MAX(64, deep_survival_cap * 2);
+    deep_survival_cache = fc_realloc(deep_survival_cache,
+                                     deep_survival_cap
+                                     * sizeof(*deep_survival_cache));
+  }
+  e = &deep_survival_cache[deep_survival_n++];
+  e->city_id = pcity->id;
+  e->horizon = horizon;
+  e->surv = deep_city_stack_survival(nmap, pcity, horizon, &(e->wave));
+  if (wave_out != NULL) {
+    *wave_out = e->wave;
+  }
+
+  return e->surv;
+}
+
 /**********************************************************************//**
   As deep_city_stack_survival(), with one garrison unit left out of
   the stack -- what the night costs if that blade sorties or is lent.

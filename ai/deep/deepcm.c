@@ -159,8 +159,8 @@ static bool deep_cm_survival_ok(struct city *pcity)
   if (tune->survival_target <= 0.0) {
     return TRUE;
   }
-  surv = deep_city_stack_survival(&(wld.map), pcity,
-                                  tune->survival_horizon, &wave);
+  surv = deep_city_survival_verdict(&(wld.map), pcity,
+                                    tune->survival_horizon, &wave);
   return wave == 0 || surv >= tune->survival_target;
 }
 
@@ -208,8 +208,13 @@ void deep_set_city_manager_params(struct ai_type *ait,
      * only when the gate is switched off entirely. */
     if (tune->cm_war_survival > 0.0) {
       int wave = 0;
-      double surv = deep_city_stack_survival(&(wld.map), pcity,
-                                             tune->survival_horizon, &wave);
+      /* One verdict per city per phase (deepcombat.c): the growth
+       * ladder at the end of this turn reads this same probability
+       * against survival_target. The thresholds stay separate for the
+       * reason argued above; the COMPUTATION does not. */
+      double surv = deep_city_survival_verdict(&(wld.map), pcity,
+                                               tune->survival_horizon,
+                                               &wave);
 
       threatened = wave > 0 && surv < tune->cm_war_survival;
     } else {

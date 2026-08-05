@@ -22,6 +22,10 @@ struct civ_map;
 double deep_city_stack_survival(const struct civ_map *nmap,
                                 struct city *pcity, int horizon,
                                 int *wave_out);
+double deep_city_survival_verdict(const struct civ_map *nmap,
+                                  struct city *pcity, int horizon,
+                                  int *wave_out);
+void deep_survival_cache_clear(void);
 double deep_city_stack_survival_without(const struct civ_map *nmap,
                                         struct city *pcity, int horizon,
                                         const struct unit *except,

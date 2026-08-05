@@ -739,9 +739,12 @@ void deep_adjust_building_wants(struct ai_type *ait,
      * the stock flags only when the survival model is switched off. */
     if (tune->survival_target > 0.0) {
       int wave = 0;
-      double surv = deep_city_stack_survival(&(wld.map), pcity,
-                                             tune->survival_horizon,
-                                             &wave);
+      /* The SAME verdict the citizen arrangement read at the top of
+       * this turn (deepcm.c), with this layer's own threshold: one
+       * probability, two prices. */
+      double surv = deep_city_survival_verdict(&(wld.map), pcity,
+                                               tune->survival_horizon,
+                                               &wave);
 
       threatened = wave > 0 && surv < tune->survival_target;
     } else {
