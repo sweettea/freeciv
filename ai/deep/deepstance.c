@@ -22,7 +22,12 @@
 
 /* common */
 #include "game.h"
+#include "nation.h"
 #include "player.h"
+#include "traits.h"
+
+/* ai */
+#include "aitraits.h"
 
 #include "deepai.h"
 #include "deeptuning.h"
@@ -103,17 +108,17 @@ const char *deep_stance_source_name(int source)
 
 /**********************************************************************//**
   The source actually in force, which is not always the one the tuning
-  file asked for: sources 1 (traits, W34 A.1a) and 2 (position, A.4
-  step 3) are E34.3 and E34.4 and are not built. A file that asks for
-  one of them gets identity and says so out loud, once -- a switch
-  nobody verified has already cost this project a 40-game batch.
+  file asked for: source 2 (position, A.4 step 3) is E34.4 and is not
+  built. A file that asks for it gets identity and says so out loud,
+  once -- a switch nobody verified has already cost this project a
+  40-game batch.
 **************************************************************************/
 static int deep_stance_source_effective(void)
 {
   int want = deep_tuning_get()->stance_source;
 
-  if (want == 0) {
-    return 0;
+  if (want == 0 || want == 1) {
+    return want;
   }
   if (want > 0 && want < 3) {
     static bool warned = FALSE;
@@ -129,19 +134,108 @@ static int deep_stance_source_effective(void)
 }
 
 /**********************************************************************//**
+  Where one trait sits inside the range its RULESET allows, mapped to
+  [-1, +1]: -1 at the nation's minimum for that trait, +1 at its
+  maximum, 0 at the midpoint.
+
+  The value itself is read with ai_trait_get_value() -- the same
+  accessor the stock AI uses at all seven of its trait sites, so the
+  preference source is READ rather than invented (W34 A.1a).
+
+  The normalisation is against the nation's own [min, max] rather than
+  against TRAIT_DEFAULT_VALUE (stock's divisor) for one reason that is
+  about measurement rather than taste: E34.1 pinned the corners at
+  (1 +- stance_trait_span) and recorded that a pinned corner must be
+  exactly the extreme a trait-driven player can reach, so that a
+  constant tuned pinned means the same thing free. Only a ruleset-
+  relative index has that property; dividing by 50 would make the span
+  mean a different amount of differentiation in every ruleset, and
+  would leave the corner unreachable in all of them.
+
+  A ruleset that gives a trait no range at all (min == max, which is
+  what civ1/civ2 do) returns 0: there is nothing here to read, and the
+  player stays at identity rather than being assigned a personality we
+  made up.
+**************************************************************************/
+static double deep_stance_trait_index(struct player *pplayer,
+                                      enum trait tr)
+{
+  const struct trait_limits *lim;
+  int val, min, max;
+
+  if (pplayer->nation == NULL
+      || pplayer->nation->server.traits == NULL) {
+    return 0.0;
+  }
+  lim = &pplayer->nation->server.traits[tr];
+  min = lim->min;
+  max = lim->max;
+  if (max <= min) {
+    return 0.0;
+  }
+
+  /* The accessor adds the scripted modifier and clips to
+   * [1, TRAIT_MAX_VALUE], so a Lua-modified trait can sit outside the
+   * ruleset's range; clip it back rather than letting one script push
+   * an axis past the corner. */
+  val = CLIP(min, ai_trait_get_value(tr, pplayer), max);
+
+  return ((double)(val - min) / (double)(max - min)) * 2.0 - 1.0;
+}
+
+/**********************************************************************//**
+  Source 1 (W34 A.1a): the axes seeded from this player's TRAITS.
+
+      econ <- EXPANSIONIST / BUILDER / TRADER
+      mil  <- AGGRESSIVE
+      cult <- no trait exists; stays inert (A.1c)
+
+  Each axis is 1.0 + span * (mean trait index), so a player at every
+  relevant maximum with the opposite trait at its minimum reaches
+  exactly the corner stance_forced pins to, and a player at the
+  midpoint of every trait is exactly identity.
+
+  The two axes are INDEPENDENT rather than two ends of one slider,
+  which is what "axes, not a menu" means: an aggressive builder gets
+  both weights raised, the gates read the ratio, and it plays today's
+  game -- which is right, because nothing about that player prefers
+  one budget to the other.
+
+  The military index is summed three times rather than used directly
+  so that four traits at the same relative position give EXACTLY equal
+  axes: 2x is exact in IEEE 754, so (x + x) + x and 3 * x round
+  identically, and the identity test (econ == mil) is then a real test
+  rather than one that a rounding difference of one ulp can fail. It
+  matters because the shipping rulesets set every trait's default to
+  the same value: under 'traitdistribution FIXED' every player draws
+  the same four numbers and this source must therefore be inert.
+**************************************************************************/
+static void deep_stance_seed_from_traits(struct player *pplayer,
+                                         double span,
+                                         struct deep_stance *st)
+{
+  double agg = deep_stance_trait_index(pplayer, TRAIT_AGGRESSIVE);
+  double esum = deep_stance_trait_index(pplayer, TRAIT_EXPANSIONIST)
+    + deep_stance_trait_index(pplayer, TRAIT_BUILDER)
+    + deep_stance_trait_index(pplayer, TRAIT_TRADER);
+  double msum = agg + agg + agg;
+
+  st->econ = 1.0 + span * (esum / 3.0);
+  st->mil = 1.0 + span * (msum / 3.0);
+}
+
+/**********************************************************************//**
   Set a player's axes for this turn.
 
-  E34.1 resolves exactly two things: IDENTITY (what ships, and what
-  the byte-identity gate is taken against) and a PINNED corner. The
-  ladder that makes players differ from each other -- traits, then
-  position -- lands in E34.3/E34.4 deliberately after every gate has
-  an execution counter, so a behaviour change there is attributable to
-  the trait mapping rather than to a gate nobody exercised.
+  Three things resolve here, in the order A.4 lands them: IDENTITY
+  (what ships, and what the byte-identity gate is taken against),
+  TRAITS (source 1, E34.3), and a PINNED corner, which overrides both
+  because a pin is what makes a tuning block separable.
 
   The corner depth is stance_trait_span, shared with the traits step
-  on purpose: a pinned corner is then exactly the extreme a
-  trait-driven player will be able to reach, so a constant tuned
-  pinned means the same thing free.
+  on purpose: a pinned corner is exactly the extreme a trait-driven
+  player can reach, so a constant tuned pinned means the same thing
+  free.
 **************************************************************************/
 void deep_stance_refresh(struct player *pplayer)
 {
@@ -150,17 +244,19 @@ void deep_stance_refresh(struct player *pplayer)
   double span;
 
   plr_data->stance = deep_stance_identity();
-  (void) deep_stance_source_effective();
-
-  if (!deep_stance_pinned()) {
-    return;
-  }
 
   /* Clamped short of 1.0: an axis of zero is a ratio nothing can be
    * read from, and "a high econ weight means minimise military spend
    * SUBJECT TO SURVIVAL, not no army" (W34 A.2). The survival floor
    * is enforced separately -- gate 1 never scales it. */
   span = MIN(MAX(tune->stance_trait_span, 0.0), 0.9);
+
+  if (!deep_stance_pinned()) {
+    if (deep_stance_source_effective() == 1) {
+      deep_stance_seed_from_traits(pplayer, span, &plr_data->stance);
+    }
+    return;
+  }
 
   switch (tune->stance_forced) {
   case DEEP_STANCE_ECONOMIC:
