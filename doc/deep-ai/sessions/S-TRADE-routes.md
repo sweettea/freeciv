@@ -88,6 +88,13 @@ and `common/traderoutes.c` (`city_trade_removable`, `max_trade_routes`).
 `ai/default` changes beyond existing visibility. The upstream dead-branch
 guard bug gets FILED (upstream-bugs.md), not fixed in place.
 
+## Watch item (from M3, 2026-08-05)
+
+The ferry drop-pick cycling was WONTFIX'd at 0.37 events/game — but
+`lift_carry_caravans` adds a new passenger class to the very protocol
+that produced it. Re-read the drop-pick census in this session's A/Bs;
+if caravan traffic re-inflates it, the WONTFIX reopens here, not in M3.
+
 ## Stop conditions
 
 The lift-eligibility change destabilizes settler lifts (the manifest is
