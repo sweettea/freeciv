@@ -4312,3 +4312,31 @@ transport for a needy attacker set inside
 boat and suppressible the same way, at its input rather than after it
 wins. Domestic withdrawals ran 113 over 20 games (5.65/game); deep's
 own colony bids fell 4827 -> 4448.
+
+### Cell 5: the attacker ferry closed, and a score line that means nothing
+
+`eb6ac2e4aa` against cell 4's ON arm, same 20 seeds, isolated-150,
+differing only in the attacker path.
+
+    backstop vetoes        28 -> 0     attacker withdrawals  0 -> 18
+    domestic withdrawals  113 -> 101
+    score              203.21 -> 202.35   -0.86 (t=-0.78)
+
+**The mechanism is complete**: the backstop reads zero over 20 games,
+so all three producers of a ferry bid -- domestic founder's boat,
+deep's colony want, stock's attacker transport -- now withdraw at
+formation. W36's award step can assume one path.
+
+**The score line is not a result and must not be quoted as one.** The
+change fires on 6 of 20 seeds (18 withdrawals, 11 of them in one
+seed); 15 seeds are bit-identical. Among the 5 seeds whose score moved
+at all: mean -3.45, se 4.55, 2 of 5 up. The tight-looking paired se
+(1.10) is an artifact of fifteen zeros, not precision. **The attacker
+path is RARE on this cell and its effect is unmeasured, not
+measured-flat.** If it matters it is on a war-heavy cell --
+lategame-80 or contested -- where attackers actually want transports,
+and that is where to measure it if anyone wants a verdict.
+
+Method note this earns: when a change fires on a minority of seeds,
+report the fired-on subset and the tie count, or the paired statistic
+will quietly claim a precision the experiment does not have.

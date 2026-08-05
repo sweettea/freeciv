@@ -46,6 +46,15 @@ bid wins -- and it is a small, self-contained commit that belongs
 BEFORE W36, because W36's award step assumes every ferry bid comes
 through the commission path.
 
+## 0b. The attacker ferry is CLOSED, its score UNMEASURED
+
+`eb6ac2e4aa`: backstop 28 -> 0 over 20 seeds, attacker withdrawals 18,
+so every ferry bid now withdraws at formation. But it fires on 6 of 20
+seeds with 15 bit-identical, so the -0.86 (t=-0.78) is fifteen zeros
+and four samples, NOT a flat verdict. If a verdict is wanted, take it
+on a war-heavy cell (lategame-80, contested) where attackers actually
+want transports.
+
 ## 1. What was settled this session, do not redo
 
 - **The useful-water gate is CONFIRMED as a mechanism and FLAT on
@@ -153,6 +162,10 @@ itself.
   session added a cell where a working mechanism is worth exactly zero.
 - **Read the execution counter before the score.** Four changes have
   now measured as "no effect" while never executing.
+- **When a change fires on a minority of seeds, report the fired-on
+  subset and the tie count.** A paired se computed over mostly
+  identical games looks precise and is not: cell 5's se of 1.10 came
+  from fifteen zeros.
 - **Twenty seeds are direction; forty are a claim.** Three estimates
   have now moved under power (rendezvous +29.90 -> +11.28, slots
   +22.30 -> -13.50, this gate +4.65 -> +1.82).
