@@ -3518,7 +3518,26 @@ static void deep_city_choose_build(struct ai_type *ait,
     CITY_LOG(LOG_DEBUG, pcity, "Falling back - didn't want to build"
              " soldiers, workers, caravans, settlers, or buildings!");
     city_data->choice.want = 1;
-    if (best_role_unit(pcity, action_id_get_role(ACTION_TRADE_ROUTE))) {
+    /* The ladder's first rung is a caravan at want 1, built exactly
+     * when the city wants nothing -- which is to say, on no argument
+     * at all. Under trade_merit the caravan already had its argument
+     * made, by name, a few lines above: a want of 0 here means the
+     * amortized value of every route reachable from this city did not
+     * beat what the shields would otherwise buy. Letting the ladder
+     * put one in the queue anyway would silently overrule the price.
+     *
+     * The rung is skipped rather than deleted: with trade_merit off
+     * this is stock's ladder, unchanged, and the counter below says
+     * which. */
+    if (deep_tuning_get()->trade_merit > 0
+        && best_role_unit(pcity, action_id_get_role(ACTION_TRADE_ROUTE))) {
+      log_base(deep_metric_log_level(),
+               "deep-trade-fallback turn=%d player=\"%s\" city=%d"
+               " skipped=1",
+               game.info.turn, player_name(pplayer), pcity->id);
+    }
+    if (deep_tuning_get()->trade_merit <= 0
+        && best_role_unit(pcity, action_id_get_role(ACTION_TRADE_ROUTE))) {
       city_data->choice.value.utype
         = best_role_unit(pcity, action_id_get_role(ACTION_TRADE_ROUTE));
       city_data->choice.type = CT_CIVILIAN;
