@@ -201,7 +201,7 @@ void deep_stance_log(struct player *pplayer)
   log_base(deep_metric_log_level(),
            "deep-stance turn=%d player=\"%s\" econ=%.3f mil=%.3f"
            " cult=%.3f src=%s mode=%s preset=%s identity=%d"
-           " fear_gate=%d",
+           " fear_gate=%d op_gate=%d growth_gate=%d expand_gate=%d",
            game.info.turn, player_name(pplayer),
            plr_data->stance.econ, plr_data->stance.mil,
            plr_data->stance.cult,
@@ -213,7 +213,12 @@ void deep_stance_log(struct player *pplayer)
             * a difference between consecutive lines is the turn's
             * firing rate. Zero on every line is the identity arm's
             * proof that the gate is inert, not merely quiet. */
-           plr_data->stance_fear_gated);
+           plr_data->stance_fear_gated,
+           /* One field per gate on ONE line, so a single grep answers
+            * "did anything execute" for the whole layer. */
+           plr_data->stance_op_gated,
+           plr_data->stance_growth_gated,
+           plr_data->stance_expand_gated);
 }
 
 /**********************************************************************//**
@@ -250,4 +255,78 @@ double deep_stance_fear_mult(const struct player *pplayer)
   }
 
   return pow(st->mil / st->econ, tune->stance_fear_gain);
+}
+
+/**********************************************************************//**
+  The shape every gate after the first shares: (econ / mil) ^ gain.
+
+  Gate 1 reads the ratio the other way round because fear is the one
+  quantity a MILITARY weight should raise; gates 2-4 all price things
+  an ECONOMIC weight should raise (or, for the formation bar, should
+  make harder to clear). Exactly 1.0 whenever the axes are equal,
+  whatever the gain, which is what the byte-identity gate rests on:
+  x * 1.0 == x for every finite x in IEEE 754.
+
+  A zero gain disables its gate outright without touching the axes,
+  which is the per-gate off-switch an A/B needs.
+**************************************************************************/
+static double deep_stance_econ_mult(const struct player *pplayer,
+                                    double gain)
+{
+  const struct deep_plr *plr_data = deep_plr_data(pplayer);
+  const struct deep_stance *st;
+
+  if (plr_data == NULL) {
+    return 1.0;
+  }
+  st = &plr_data->stance;
+  if (st->econ <= 0.0 || st->mil <= 0.0
+      || deep_stance_is_identity(st)
+      || gain == 0.0) {
+    return 1.0;
+  }
+
+  return pow(st->econ / st->mil, gain);
+}
+
+/**********************************************************************//**
+  Gate 2 (W34 A.2): the multiplier on the ODDS BAR an assault must
+  clear before an operation forms. Above 1.0 -- an economy-weighted
+  player -- the bar rises toward certainty, so blades are committed
+  only where the take is near-certain; below 1.0 the bar falls and
+  operations form freely. The caller caps the scaled bar at 1.0 and
+  exempts targets that threaten us: that exemption is gate 1's
+  survival-floor precedent pointed outward.
+**************************************************************************/
+double deep_stance_op_mult(const struct player *pplayer)
+{
+  return deep_stance_econ_mult(pplayer, deep_tuning_get()->stance_op_gain);
+}
+
+/**********************************************************************//**
+  Gate 3 (W34 A.2): the multiplier on the horizon growth credits --
+  the growth ladder that bids against barracks and walls for the same
+  shields. The credits are additive on top of stock's own base want
+  and are floored at zero by their caller, so this gate can raise what
+  growth is worth to this player and can withdraw deep's credit, but
+  it can never price a building below stock's valuation of it.
+**************************************************************************/
+double deep_stance_growth_mult(const struct player *pplayer)
+{
+  return deep_stance_econ_mult(pplayer,
+                               deep_tuning_get()->stance_growth_gain);
+}
+
+/**********************************************************************//**
+  Gate 4 (W34 A.2): the multiplier on EXPANSION -- the settler want
+  and the colony lift that carries it across water. "High econ expands
+  WHILE LAND REMAINS": whether land remains is already asked, by the
+  site machinery that produced the want in the first place, so this
+  gate says only how much this player wants what is left. It does not
+  scale the military lift demand that shares the same want site.
+**************************************************************************/
+double deep_stance_expand_mult(const struct player *pplayer)
+{
+  return deep_stance_econ_mult(pplayer,
+                               deep_tuning_get()->stance_expand_gain);
 }

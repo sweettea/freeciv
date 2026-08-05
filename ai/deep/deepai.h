@@ -49,6 +49,15 @@ struct deep_plr {
    * executing, so a gate that cannot be shown firing is not
    * evidence. Saved, so a reload does not reset the census. */
   int stance_fear_gated;
+  /* The same census for gates 2-4 (W34 E34.2): assault formations
+   * whose odds bar was actually moved, buildings whose horizon credit
+   * was actually scaled, and expansion wants (settler or colony lift)
+   * actually scaled. All cumulative, all saved, all zero in the
+   * identity arm -- "executed" and "effective" are different claims
+   * and only the counter tells them apart. */
+  int stance_op_gated;
+  int stance_growth_gated;
+  int stance_expand_gated;
   /* Operation slots (W33); DEEP_OP_NONE marks a free slot. Saved
    * (W33 phase 4): a mid-march wave that dissolved on every reload
    * cost human-game players their assaults; member ids are
