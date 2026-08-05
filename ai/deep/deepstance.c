@@ -19,6 +19,7 @@
 #include "log.h"
 
 /* common */
+#include "game.h"
 #include "player.h"
 
 #include "deepai.h"
@@ -174,4 +175,35 @@ void deep_stance_refresh(struct player *pplayer)
      * path and must still be byte-identical. */
     break;
   }
+}
+
+/**********************************************************************//**
+  One line per player per turn: the weights themselves, the source and
+  the mode.
+
+  The weights are on the line rather than just a preset name because
+  the two ways this layer can fail are "the gates are not reading the
+  axes" and "the axes never moved", and only the numbers tell them
+  apart. The mode is on the line because a tuning result taken FREE
+  and reported as PINNED is a wasted campaign (W34 A.1b), and this
+  project has already lost a 40-game batch to a switch nobody
+  verified: a pinned arm must show one distinct stance across all
+  seats, a free arm four.
+**************************************************************************/
+void deep_stance_log(struct player *pplayer)
+{
+  const struct deep_plr *plr_data = deep_plr_data(pplayer);
+  const struct deep_tuning *tune = deep_tuning_get();
+  bool pinned = deep_stance_pinned();
+
+  log_base(deep_metric_log_level(),
+           "deep-stance turn=%d player=\"%s\" econ=%.3f mil=%.3f"
+           " cult=%.3f src=%s mode=%s preset=%s identity=%d",
+           game.info.turn, player_name(pplayer),
+           plr_data->stance.econ, plr_data->stance.mil,
+           plr_data->stance.cult,
+           deep_stance_source_name(deep_stance_source_effective()),
+           pinned ? "PINNED" : "FREE",
+           pinned ? deep_stance_preset_name(tune->stance_forced) : "-",
+           deep_stance_is_identity(&plr_data->stance) ? 1 : 0);
 }

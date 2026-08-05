@@ -399,6 +399,7 @@ static void dpai_data_phase_begin(struct player *pplayer, bool is_new_phase)
     /* Before anything reads it: every gate this turn asks the same
      * axes the log line reports. */
     deep_stance_refresh(pplayer);
+    deep_stance_log(pplayer);
 
     plr_data->dv_turns_logged++;
     log_base(LOG_VERBOSE,

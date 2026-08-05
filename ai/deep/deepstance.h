@@ -59,5 +59,6 @@ const char *deep_stance_preset_name(int preset);
 const char *deep_stance_source_name(int source);
 
 void deep_stance_refresh(struct player *pplayer);
+void deep_stance_log(struct player *pplayer);
 
 #endif /* FC__DEEPSTANCE_H */
