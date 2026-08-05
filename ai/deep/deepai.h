@@ -20,6 +20,7 @@
 #include "daidata.h"
 
 #include "deepops.h"
+#include "deepstance.h"
 
 struct ai_type;
 struct section_file;
@@ -35,6 +36,13 @@ struct deep_plr {
   /* Deep-only state below. Everything here must either be saved in
    * dpai_player_save() or be recomputable. */
   int dv_turns_logged;          /* Decision-vector lines emitted */
+  /* What this player is trying to win, as a weight per axis (W34
+   * phase A). Refreshed every phase from the tuning file, and saved:
+   * a save carries what the player's stance WAS, and a reload with a
+   * different tuning file re-resolves it, which is the right
+   * behaviour for a control surface. Identity (every axis 1.0) is
+   * today's game exactly. */
+  struct deep_stance stance;
   /* Operation slots (W33); DEEP_OP_NONE marks a free slot. Saved
    * (W33 phase 4): a mid-march wave that dissolved on every reload
    * cost human-game players their assaults; member ids are

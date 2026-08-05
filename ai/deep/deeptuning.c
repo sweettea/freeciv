@@ -137,6 +137,10 @@ static const struct deep_tuning deep_tuning_defaults = {
   .hut_risk_discount = 0.25,            /* PLACEHOLDER, untuned */
   .op_abort_floor = 0.35,               /* PLACEHOLDER, untuned */
   .barb_reinforce_rate = 0.0,           /* PLACEHOLDER; T160 observed 0 */
+  .stance_forced = -1,                  /* FREE: what ships */
+  .stance_source = 0,                   /* Identity; E34.3 adds traits */
+  .stance_trait_span = 0.5,             /* PLACEHOLDER, untuned */
+  .stance_fear_gain = 1.0,              /* PLACEHOLDER, untuned */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -283,6 +287,10 @@ void deep_tuning_init(void)
   TUNE_DOUBLE(hut_risk_discount);
   TUNE_DOUBLE(op_abort_floor);
   TUNE_DOUBLE(barb_reinforce_rate);
+  TUNE_INT(stance_forced);
+  TUNE_INT(stance_source);
+  TUNE_DOUBLE(stance_trait_span);
+  TUNE_DOUBLE(stance_fear_gain);
 
   secfile_destroy(sf);
 
@@ -290,7 +298,7 @@ void deep_tuning_init(void)
              " disc=%f happy=%d wf=%d ws=%d wt=%d cf=%d cs=%d ct=%d"
              " wos=%d wot=%d gb=%d gsm=%f sdw=%f gf=%d gs=%d gt=%d tqs=%f dip=%f stream=%f pot=%f"
              " spb=%f spc=%f claim=%f press=%f hcap=%f hgrow=%f hbun=%f hhealth=%f hcont=%f cmws=%f htech=%f"
-             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d dfv=%d dfr=%d dfrt=%d dpv=%d dpt=%d wfw=%f srw=%f chk=%f cml=%d cwr=%d wfr=%d wgr=%d wdd=%f wxcd=%f ugw=%f uuw=%f rpr=%f rwant=%d rfin=%f svt=%f svf=%f svh=%d taf=%f avw=%f swf=%f ott=%f omw=%d sfd=%f clw=%f irr=%f oww=%d rrad=%d hrr=%d hrd=%f oaf=%f brr=%f lfr=%d lgt=%d lct=%d los=%d lmm=%d lhwr=%f bid=%f bwg=%d bgab=%d ldr=%d lhwm=%d",
+             " osf=%f osd=%f gfl=%d gfd=%d gms=%f mow=%f bfear=%d bshadow=%d dfv=%d dfr=%d dfrt=%d dpv=%d dpt=%d wfw=%f srw=%f chk=%f cml=%d cwr=%d wfr=%d wgr=%d wdd=%f wxcd=%f ugw=%f uuw=%f rpr=%f rwant=%d rfin=%f svt=%f svf=%f svh=%d taf=%f avw=%f swf=%f ott=%f omw=%d sfd=%f clw=%f irr=%f oww=%d rrad=%d hrr=%d hrd=%f oaf=%f brr=%f lfr=%d lgt=%d lct=%d los=%d lmm=%d lhwr=%f bid=%f bwg=%d bgab=%d ldr=%d lhwm=%d stf=%d sts=%d stsp=%f stfg=%f",
              path,
              deep_tuning_active.settler_fearfulness_mult,
              deep_tuning_active.settler_risk_tolerance,
@@ -384,7 +392,11 @@ void deep_tuning_init(void)
              deep_tuning_active.boat_water_gate,
              deep_tuning_active.boat_gate_at_bid,
              deep_tuning_active.lift_drop_radius,
-             deep_tuning_active.lift_hitch_wait_min);
+             deep_tuning_active.lift_hitch_wait_min,
+             deep_tuning_active.stance_forced,
+             deep_tuning_active.stance_source,
+             deep_tuning_active.stance_trait_span,
+             deep_tuning_active.stance_fear_gain);
 }
 
 /**********************************************************************//**

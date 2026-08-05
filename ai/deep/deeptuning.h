@@ -584,6 +584,47 @@ struct deep_tuning {
    * against garrisoning their takes -- 47/52 cities empty). 0 prices
    * a barb city exactly as it stands today. */
   double barb_reinforce_rate;
+
+  /* --- The stance layer (W34 phase A). ---
+   *
+   * These are the control surface, not a mechanism: at identity axes
+   * every gate multiplies by exactly 1.0 and the binary is
+   * byte-identical to one built without them. */
+
+  /* Which corner every deep seat is clamped to, or -1 for FREE.
+   * 0 = balanced (identity), 1 = economic, 2 = military
+   * (enum deep_stance_preset). FREE is what ships and what self-play
+   * should exercise; PINNED is what makes a tuning block separable,
+   * because economy and military bid for one shield budget
+   * (findings/objective-layer.md section 1). A run must LOG which
+   * mode it was in: a tuning result taken free and reported as
+   * pinned is a wasted campaign. NOT a magnitude -- the campaign
+   * sets it by hand per pass, so its registered range is degenerate
+   * and the optimiser cannot move it. */
+  int stance_forced;
+
+  /* Where a FREE player's axes come from: 0 identity, 1 traits,
+   * 2 traits+position (W34 A.4's ladder). Only 0 is implemented;
+   * E34.3 and E34.4 own the rest, and a file that asks for one of
+   * them gets identity plus a loud log line rather than a silent
+   * pretence. */
+  int stance_source;
+
+  /* How far off identity an axis may be moved -- by a pinned corner
+   * today, by a trait in E34.3. Shared on purpose: a pinned corner
+   * is then exactly the extreme a trait-driven player can reach, so
+   * a constant tuned pinned means the same thing free. It is the one
+   * number that decides how DIFFERENT players are allowed to be, and
+   * exactly the kind rule 7 forbids guessing. PLACEHOLDER. */
+  double stance_trait_span;
+
+  /* Gate 1: sensitivity of the ANTICIPATORY fear terms to the
+   * mil:econ ratio, as (mil/econ)^gain. Identity axes give identity
+   * behaviour at any gain; 0.0 disables the gate outright. Does not
+   * touch the survival deficit or the garrison floor -- gate 1
+   * scales anticipation TOWARD the survival floor, never below it.
+   * PLACEHOLDER. */
+  double stance_fear_gain;
 };
 
 void deep_tuning_init(void);

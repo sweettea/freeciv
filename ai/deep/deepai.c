@@ -59,6 +59,7 @@
 #include "deepdefence.h"
 #include "deepsettler.h"
 #include "deepsite.h"
+#include "deepstance.h"
 #include "deeptuning.h"
 
 #include "autoworkers.h"
@@ -128,6 +129,9 @@ static void dpai_player_alloc(struct player *pplayer)
   /* struct deep_plr embeds struct ai_plr as its first member, so the
    * forwarded default AI finds its data in the same slot. */
   player_set_ai_data(pplayer, deftype, plr_data);
+  /* Identity until the first phase resolves it: a zeroed stance is a
+   * ratio nothing can be read from. */
+  plr_data->stance = deep_stance_identity();
   dai_data_init(deftype, pplayer);
 }
 
@@ -391,6 +395,10 @@ static void dpai_data_phase_begin(struct player *pplayer, bool is_new_phase)
 
   if (is_new_phase) {
     struct deep_plr *plr_data = deep_plr_data(pplayer);
+
+    /* Before anything reads it: every gate this turn asks the same
+     * axes the log line reports. */
+    deep_stance_refresh(pplayer);
 
     plr_data->dv_turns_logged++;
     log_base(LOG_VERBOSE,
