@@ -66,13 +66,10 @@ evidence per item below.
    and a splinter-containing save (E34.3's seed with 5 stances is a
    ready specimen); fix small or close with evidence.
 
-10. **Delete the phantom switch-penalty dock (economy-effects sweep,
-    2026-08-05).** Stock docks build wants by `shield_stock ×
-    SHIELD_WEIGHTING/15` (`daicity.c:1909`) to model a production-switch
-    penalty that AI players at hard are EXEMPT from
-    (`citytools.c:3221`, no `H_PRODCHGPEN` at hard). Deep inherits the
-    dock through the domestic advisor. Neutralize it at deep's seam
-    (verify the exemption cites first); counter + A/B direction.
+10. **SUPERSEDED (human call 2026-08-05)** — do not delete the dock. The
+    decision went the other way: deep will self-impose `H_PRODCHGPEN`
+    (no AI exemption from the switch cost), making the dock true
+    pricing. Moved to the HEDGE session, which owns the penalty leg.
 
 ## Deferred OUT of M3 by this analysis (recorded so they are not lost)
 

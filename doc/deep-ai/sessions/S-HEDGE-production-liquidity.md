@@ -1,15 +1,30 @@
 # Session brief — HEDGE: the caravan as a liquid shield bank (SIZE FIRST)
 
-**PRE-VERDICT ON THE PENALTY LEG (2026-08-05, economy-effects sweep):**
-`city_change_production_penalty` EXEMPTS AI players unless `H_PRODCHGPEN`
-is set (`server/citytools.c:3221`), and hard does not set it
-(`ai/difficulty.c:110-131`) — all benchmark cells run hard. **The
-switch-penalty-avoidance leg is therefore worth zero as benchmarked**;
-verify the two cites in step 0 and retire that leg without a batch. The
-Coinage and disband-salvage legs survive and are the session's real
-subject. Related phantom found by the same sweep: stock DOCKS the want by
-`shield_stock × SHIELD_WEIGHTING/15` (`daicity.c:1909`) for a penalty the
-AI never pays — a phantom cost deep should delete (M3 item 10).
+**THE PENALTY LEG, REDIRECTED (human call 2026-08-05):** the economy
+sweep found `city_change_production_penalty` EXEMPTS AI players unless
+`H_PRODCHGPEN` (`server/citytools.c:3221`; hard never sets it). The human
+call is the opposite of exploiting that: **deep should not be exempt —
+self-impose `H_PRODCHGPEN` on deep seats** (the honest-info flag pattern:
+deep ORs the handicap onto itself in its own hook; zero `ai/default` or
+server changes). Consequences this session owns:
+- Stock's want dock (`shield_stock × SHIELD_WEIGHTING/15`,
+  `daicity.c:1909`) becomes TRUE pricing instead of phantom — keep it.
+- The hedge's penalty leg comes back to life with a REAL population:
+  step 0's census now also measures what the imposed penalty would have
+  cost per game at current churn (production switches are endemic —
+  oscillation ~2.4 changes/city/10 turns in old measurements, and W36
+  showed 85% of hull production runs end without a hull).
+- **The big risk is the finding**: imposing the penalty taxes existing
+  churn immediately, before any mechanism learns to avoid it. Measure the
+  A/B expecting a short-term cost; if score drops, the verdict is "churn
+  is expensive and commitment discipline is the follow-up" — do NOT
+  revert the honesty to buy the score back. The hedge (liquid caravan
+  instead of an about-to-be-abandoned build) is exactly that discipline's
+  first piece.
+- Behind a tuning switch (`pay_switch_penalty`, default off) with
+  byte-identity at off, per the standing off-switch discipline; the fold
+  decision is the human's with the numbers.
+The Coinage and disband-salvage legs proceed as written below.
 
 Branch `epic/w03-horizon-content`. Read `CLAUDE.md`,
 `doc/deep-ai/00-context.md` (RC1 — nothing in the codebase prices option

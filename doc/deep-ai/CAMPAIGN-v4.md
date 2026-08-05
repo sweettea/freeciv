@@ -39,6 +39,12 @@ each rule cites its receipt.
 | 7 | **Knob-coverage census** (§4) CLEAN: every searched knob fires on ≥1 training cell | **RED, measured 2026-08-05** (`findings/knob-coverage.md`): 54 LIVE / 53 NO-INSTRUMENT / 36 cleanly searchable of 121. The INSTR session (S-INSTR-observability.md) is the remediation; census reruns at freeze per its §7 |
 | 7a | Stage-1 arms must pin `rates_enabled=1` (census: the rates model has never executed in any archived run); stage 3's venue pin is isolated-150 (lift family fires 60-100× more there) | folded into §3 by the census |
 | 8 | **Separability pilot** (§5) passed | to run |
+| 8a | **PEACE** (cease-fire trap + embassy pricing + trade population) — human call 2026-08-05: pre-v4 | queued |
+| 8b | **ENDGAME** (endturn awareness / late-game score mode; MORT interaction) — pre-v4 | queued |
+| 8c | **DARKFX** (gov-center, Player-range effects, MAX_RATES, buy-per-gold, specialist type, disaster risk) — pre-v4 | queued |
+| 8d | **GROUND** (fortress want channel, pillage, capture instrumentation, fortify) — pre-v4 | queued |
+| 8e | **HEDGE incl. self-imposed H_PRODCHGPEN** (human call: no AI exemption from the switch cost) — pre-v4; its churn-tax A/B feeds the freeze decision | queued |
+| 8f | INSTR runs LAST of the mechanism sessions (its census rerun must capture all new knobs) | queued |
 | 9 | Binary frozen at a named commit; `meson test` + `tune-audit.py` CLEAN; STATUS quiesced | — |
 | 10 | Human go | — |
 
