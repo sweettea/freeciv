@@ -34,6 +34,24 @@ live in this game, and is zero otherwise:
    say which in the commit.
 2. **Sea-landing class** — live only while a war-capable rival can float
    transports (the boat-shadow test). Same one-owner rule vs F2.
+   Three refinements (human, 2026-08-05):
+   - **Same-continent rivals with boats count.** The landing threat is
+     not only trans-oceanic — a same-continent enemy can coastal-hop
+     around visible borders. Gate on "any war-capable rival floats
+     transports", not on continent difference.
+   - **Per-city geometry weight: interior cities barely carry this
+     class; exterior ones carry it fully.** "Exterior" = coastal on
+     water that LEADS anywhere — reuse the `deep_water_bridges` /
+     `get_lake_surrounder` geometry (the water-gate machinery) so a
+     city on a closed lake counts as interior. No new geometry test.
+   - **Marines escalation.** Before attack-from-boat tech exists
+     anywhere, a landing must disembark first — one turn of visible
+     warning, so the class is mild. Once any met, non-allied rival's
+     known tech can build a Marines-class unit (ruleset capability
+     flag, not a named-unit list), a coastal city can be struck
+     straight off the hull with no warning: the coastal weight
+     escalates and the coastal/interior split sharpens. Tech-gated
+     like the airborne class; its own counter.
 3. **Airborne class (NEW)** — live once any met, non-allied rival's known
    tech can build a paradrop- or helicopter-class unit; a quiet city can
    then be struck with no visible approach. Until then, zero. Capability
