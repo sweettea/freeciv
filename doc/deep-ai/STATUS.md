@@ -4691,3 +4691,173 @@ pinned regime something to be measured by.
 - **Axes stay at identity in FREE mode through E34.2.** E34.3 is the
   first commit in the workstream that changes an unpinned game, and it
   only earns that after every gate has been proven by pinning.
+
+## W34 E34.2: the remaining gates, and the regime that did not appear (2026-08-05)
+
+Gates 2, 3 and 4 are built, proven firing, and proven inert at
+identity. The falsifiable claim the epic existed to test -- "pin every
+deep seat to the econ corner and military spend must fall toward the
+survival floor; if it does not, a gate is missing" -- **fails, and the
+missing gate is now named.** Five commits: `7f72f5c8ba` the gains,
+`1303e0f6c7` the multipliers, counters and log fields, `236e0fe813`
+gate 2, `7a06200351` gate 3, `88aacc3cbc` gate 4.
+
+**What landed.** All three copy gate 1's shape exactly -- `want *=
+f(ratio)`, 1.0 at econ == mil at any gain -- but read `(econ/mil)`
+where gate 1 reads `(mil/econ)`.
+
+- **Gate 2, assault formation** (`deep_op_form`, `deepops.c`). The
+  odds bar the smallest strongest-first prefix of the free pool must
+  clear is scaled by `(econ/mil)^stance_op_gain`, capped at 1.0. An
+  economy-weighted player commits blades only where the take is
+  near-certain; a force-weighted one forms freely. Two floors, neither
+  scalable: the cap, so a certain take always forms, and an exemption
+  for targets that THREATEN us -- barbarian holdings and cities on a
+  landmass where we hold cities, which is `deep_garrison_menace()`'s
+  own reachability law read against a war we are already in.
+- **Gate 3, the growth ladder** (`deep_adjust_building_wants`,
+  `deephorizon.c`). The horizon credits are scaled before the ruleset's
+  gold upkeep is charged against them. In a THREATENED city, where the
+  only surviving credit is the structural cap-lifter, the gate may
+  raise but never lower it: declining growth is a stance, accepting a
+  permanent size cap is not. The tech-wall branch is deliberately
+  untouched -- that is tech DIRECTION, A.3's gate and E34.4's to build.
+- **Gate 4, expansion** (`deepdefence.c`). `founder_want` on the FRESH
+  path only, so a cached want never compounds, and the COLONY half of
+  the lift demand only -- the amphibious muster's berth shortfall shares
+  that want site but is military lift.
+
+### Acceptance
+
+**1. Byte-identity still holds, 20/20, two cells.** E34.1 tip
+(`66e0a57517`, built in `.worktrees/bench`) against this tip, both
+pinned to scratch dirs, `--server`, `--arms deep`, tuning=none:
+
+    smoke         scorelogs IDENTICAL 10/10
+    isolated-150  scorelogs IDENTICAL 10/10
+
+Identical sha256 per seed, not "no significant difference".
+
+**2. Every gate fires under the pin and none fires free.** Pinned
+economic corner (`stance_forced = 1`, span 0.5, so econ 1.500 /
+mil 0.500), isolated-150, 20 seeds, gate applications per game summed
+over the four deep seats:
+
+    gate            mean      range      seeds firing    FREE arm
+    fear_gate      3536   1957 .. 4583       20/20           0
+    op_gate          57      1 ..  134       20/20           0
+    growth_gate   19957  12995 .. 27383      20/20           0
+    expand_gate     395    252 ..  568       20/20           0
+
+Every `deep-stance` line in the pinned arm reads `econ=1.500 mil=0.500
+cult=1.000 src=identity mode=PINNED preset=economic identity=0`, one
+distinct stance across all seats; every line in the free arm reads
+identity with all four counters at zero, on all 20 games.
+
+**3. The regime-reality check FAILS, and cleanly.** 20 paired seeds,
+isolated-150, same binary, the pin as the only difference. Build
+decisions are classified from the `deep-want` line's pick against the
+ruleset's NonMil flag and attack-vs-defence values:
+
+    metric              FREE   PIN-ECON     delta     se      t   wins
+    military share     0.204      0.211    +0.007  0.020  +0.37   9/20
+      offence share    0.069      0.089    +0.019  0.015  +1.27  13/20
+      defence share    0.134      0.122    -0.012  0.010  -1.19   7/20
+    civilian share     0.351      0.308    -0.042  0.010  -4.31   4/20
+    improvement share  0.445      0.481    +0.035  0.018  +1.98  13/20
+    score            201.83     194.73     -7.10   4.58   -1.55   8/20
+    pop               92.46      85.50     -6.96   2.17   -3.21   5/20
+    mean_city_size     7.08       6.45     -0.62   0.15   -4.30   4/20
+    munits            29.00      32.18     +3.18   2.66   +1.19  12/20
+    unitsbuilt        96.98      87.11     -9.86   3.76   -2.62   6/20
+    unitslost         10.95       7.08     -3.88   2.39   -1.62   4/20
+
+**The military share of production does not move.** The pin moves the
+CIVILIAN/IMPROVEMENT split instead, and the standing army gets
+BIGGER -- because gate 2 stops spending it (unitslost -3.88,
+unitskilled -2.38, unitsused -2.10), not because more is bought.
+
+### The missing gate, named
+
+Splitting the pinned corner into its halves (two more 20-seed arms,
+same binary, gains zeroed per half) says which gate owns which effect:
+
+    vs FREE            gates 1+2 only        gates 3+4 only
+    score                -0.50  t -0.21        -7.33  t -1.68
+    military share      +0.011  t +1.04       +0.003  t +0.16
+      offence share     +0.006  t +0.95       +0.021  t +1.20
+      defence share     +0.005  t +0.82       -0.017  t -1.91
+    civilian share      -0.008  t -1.34       -0.040  t -4.57
+    improvement share   -0.003  t -0.31       +0.037  t +2.05
+    munits              +3.275  t +2.24       +1.875  t +0.73
+    mean_city_size      -0.226  t -1.63       -0.580  t -4.01
+
+Three things follow, and none of them is "raise the gains".
+
+- **No gate in W34 A.2 prices the OFFENSIVE BUILD.**
+  `deep_assault_want()` (`deepdefence.c:2924`, `attack_value_weight`)
+  turns a target's worth into attacker demand and nothing in the
+  stance layer touches it: gate 2 governs whether existing blades are
+  COMMITTED, not whether new ones are BOUGHT. Measured, offence share
+  *rises* under an economic pin (+0.019 all gates, +0.021 gates 3+4
+  alone) because the defenders gate 1 discouraged stop competing for
+  the slot. That is the missing gate, and it is a gate rather than a
+  floor.
+- **What is left of DEFENSIVE spend is floor, not anticipation.**
+  73% of military city-turns happen where stock's own pre-injection
+  danger is exactly ZERO (720.8 of 990.3 per game free, 779.3 of
+  1014.2 pinned, delta +58.5 t +0.81; 77% pinned). Gate 1 scales anticipation and refuses
+  to scale the survival deficit or the garrison floor, so the pin can
+  only reach the quarter of military production that anticipation
+  drives. Lowering the floor is a `survival_*`/`garrison_*` tuning
+  question, not a stance question -- exactly the sharpened claim E34.1
+  handed forward.
+- **Gates 3 and 4 fight each other at the placeholder gains.** Gate 4
+  raised `founder_want` per city-turn from 320.7 to 1009.7 (+689,
+  t +17.07, 20/20) -- a 3.15x on the want -- and expansion city-turns
+  FELL by 239 (t -5.27), because gate 3's 3x landed on a credit
+  measured on a different scale and improvements outbid settlers. Two
+  gates with the SAME gain on two incommensurable wants do not
+  preserve their ratio. That is RC4 caught in the act, it is the whole
+  of the -7.33 score cost, and it is an argument for tuning these two
+  together rather than for either gain's current value.
+
+### Owed to the tuning pile
+
+Three new tunables, all PLACEHOLDER at 1.0, none hand-tuned:
+
+    stance_op_gain      1.0   gate 2. Registered in M and MIL.
+                              Cheap: gates 1+2 pinned cost -0.50
+                              score (t -0.21) and are the half that
+                              can be turned on early.
+    stance_growth_gain  1.0   gate 3. Registered in G and ECON.
+    stance_expand_gain  1.0   gate 4. Registered in X and ECON.
+                              These two MUST be tuned as a pair -- at
+                              1.0 each they cost -7.33 score by
+                              fighting over the civilian budget.
+
+`tune-audit.py` CLEAN, **115/115/115/115** (was 112).
+`meson test -C build` 2/2 OK.
+
+### What E34.3 needs to know
+
+- **The gates are proven inert and proven live; the trait step is now
+  attributable.** Every behaviour change E34.3 measures in FREE mode
+  belongs to the trait mapping, because the four gates have each been
+  shown firing under a pin and shown silent at identity.
+- **Do not turn on all four gains at once in FREE mode.** The pinned
+  split says gates 1+2 are nearly free and gates 3+4 carry the entire
+  cost at their placeholder values. A trait span that reaches the same
+  corner reaches the same collision.
+- **The regime premise (`objective-layer.md` section 2) is not proven
+  by phase A as designed.** An economic stance cannot lower military
+  spend while the offensive build want has no gate and three quarters
+  of defensive spend sits on an unscaled floor. Either A.2 grows a
+  fifth gate on `deep_assault_want` -- one gain, same shape, and the
+  survival-floor precedent says it must not scale the reconquest of
+  our own cities -- or the claim gets rewritten to be about the
+  civilian split, which is the part the axes demonstrably do control.
+- **Byte-identity is re-run per epic** against the previous epic's
+  binary, same recipe: build the pre-change commit in
+  `.worktrees/bench`, pin both binaries to scratch dirs, `--server`,
+  `--arms deep`, compare scorelog sha256 per seed.
