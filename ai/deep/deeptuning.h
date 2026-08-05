@@ -652,6 +652,17 @@ struct deep_tuning {
    * site machinery; this only says how much this player wants what
    * remains. PLACEHOLDER. */
   double stance_expand_gain;
+
+  /* Gate 5: sensitivity of the OFFENSIVE BUILD -- deep_assault_want's
+   * marginal-take-odds attacker demand -- to the mil:econ ratio, as
+   * (mil/econ)^gain. It reads the ratio the way gate 1 does, and for
+   * gate 1's reason: this prices a military want, so an economy
+   * weight must lower it. Gate 2 governs whether blades that EXIST
+   * are committed; nothing priced what they cost to buy, and E34.2
+   * measured offence share RISING under an economic pin because of
+   * it. Targets that THREATEN us keep the unscaled want, by the same
+   * test gate 2 uses. PLACEHOLDER. */
+  double stance_assault_gain;
 };
 
 void deep_tuning_init(void);

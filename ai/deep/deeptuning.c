@@ -144,6 +144,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .stance_op_gain = 1.0,                /* PLACEHOLDER, untuned */
   .stance_growth_gain = 1.0,            /* PLACEHOLDER, untuned */
   .stance_expand_gain = 1.0,            /* PLACEHOLDER, untuned */
+  .stance_assault_gain = 1.0,           /* PLACEHOLDER, untuned */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -270,7 +271,8 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(stance_fear_gain) \
   TUNE_DOUBLE(stance_op_gain) \
   TUNE_DOUBLE(stance_growth_gain) \
-  TUNE_DOUBLE(stance_expand_gain)
+  TUNE_DOUBLE(stance_expand_gain) \
+  TUNE_DOUBLE(stance_assault_gain)
 
 /**********************************************************************//**
   Load tuning overrides from $FREECIV_DEEP_TUNING, if set. Called once
