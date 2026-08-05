@@ -9,8 +9,15 @@ for provenance: correct when written, NOT to be followed now.
 
 ## 0. THE JOB: the tuning pass that is owed
 
-Human call 2026-08-04, still unspent: **tune, regardless of what score
-says about any one mechanism.** The lift cluster is untuned and now
+**DEFERRED TO THE CLOUD PILE — human call, later on 2026-08-04:** "we can
+tune on cloud machines, later, as one of a pile." Do not run this pass
+locally. The parameter list below stays correct and goes into the cloud
+campaign when it runs. The current arc is the session ladder in
+`doc/deep-ai/sessions/README.md`: W34 phase A (tuning separability), the
+omniscient-AI flag, and the difficulty ladder.
+
+Original call, kept for the campaign design: **tune, regardless of what
+score says about any one mechanism.** The lift cluster is untuned and now
 finally binding. `boat_water_gate`/`boat_gate_at_bid` are 0/1 and not
 tunable; these are:
 
