@@ -662,6 +662,14 @@ static unsigned int deep_density_fear(struct city *pcity)
   const struct deep_tuning *tune = deep_tuning_get();
   struct player *pplayer = city_owner(pcity);
   double fear = 0.0;
+  /* Census (knob-coverage 4a: the whole fear lattice is invisible
+   * because deep_log_defence() runs before the injection pass). `raw`
+   * is what the term would be with no reachability gate at all, so
+   * raw - fear IS the gate's effect, and a cell where everyone is
+   * reachable reports discounted=0 -- a measured no-op rather than an
+   * argument. */
+  double raw = 0.0;
+  int n_near = 0, n_cross = 0, n_disc = 0;
 
   if (tune->density_fear_value <= 0) {
     return 0;
@@ -684,8 +692,11 @@ static unsigned int deep_density_fear(struct city *pcity)
         continue;
       }
       w = tune->density_fear_value / (1.0 + d);
+      n_near++;
+      raw += w;
       if (tile_continent(city_tile(acity))
           != tile_continent(city_tile(pcity))) {
+        n_cross++;
         /* Reachability gate (task #18, spec'd 0112a65112 from the
          * Europe playtest: Hannibal hedgehogged against neighbours
          * across a strait none of them could cross). A land army
@@ -706,11 +717,22 @@ static unsigned int deep_density_fear(struct city *pcity)
         }
         if (floats == 0) {
           w *= tune->menace_overseas_weight;
+          n_disc++;
         }
       }
       fear += w;
     } city_list_iterate_end;
   } players_iterate_alive_end;
+
+  if (n_near > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-density turn=%d player=\"%s\" city=%d near=%d"
+             " cross=%d discounted=%d raw=%.2f gated=%.2f ramp=%.2f"
+             " fear=%u",
+             game.info.turn, player_name(pplayer), pcity->id, n_near,
+             n_cross, n_disc, raw, fear, deep_anticipation_ramp(),
+             (unsigned int) (fear * deep_anticipation_ramp()));
+  }
 
   return (unsigned int) (fear * deep_anticipation_ramp());
 }
