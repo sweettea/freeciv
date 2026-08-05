@@ -4551,3 +4551,143 @@ Two modes of one switch, and a run must log which it was in: FREE
 (traits; ships, and what self-play should exercise) and PINNED (all
 seats one corner; what makes a tuning block separable). A tuning result
 taken free and reported as pinned is a wasted campaign.
+
+## W34 E34.1: the stance surface, and identity proved inert (2026-08-04)
+
+The control surface phase A rests on is built and measured. Four
+commits: `f5e6300352` the axes and the pin, `00da5c415a` the log line,
+`2d6bd815b4` save/load, `b2090a62b6` gate 1.
+
+**What landed.** `struct deep_stance { econ, mil, cult }` in
+`struct deep_plr` (`ai/deep/deepstance.[ch]`), refreshed at phase
+begin and saved with the rest of deep state. `stance_forced` in the
+tuning file clamps every deep seat to a named corner -- balanced
+(identity), economic `(1+span, 1-span)`, military `(1-span, 1+span)`
+-- and -1, the shipping default, leaves every player at identity. The
+corner depth is `stance_trait_span`, deliberately the SAME constant
+the trait step will use in E34.3, so a pinned corner is exactly the
+extreme a trait-driven player will be able to reach and a constant
+tuned pinned means the same thing free. One `deep-stance` line per
+player per turn carries the three weights, the source, FREE vs
+PINNED, the corner name and gate 1's cumulative counter. Gate 1
+multiplies the ANTICIPATORY fear terms -- overseas danger, boat
+shadow, density fear, the pre-contact prior, barbarian onset -- by
+`(mil/econ)^stance_fear_gain` at both injection sites, and scales
+nothing that prices an observed threat: the survival deficit and the
+garrison floor keep full weight, which is what makes "minimise
+military spend SUBJECT TO SURVIVAL" true rather than decreed.
+
+### Acceptance
+
+**Byte-identity at identity axes: 20/20, two cells.** Pre-E34.1
+binary (`364f9719b8`, built in the bench worktree) against this one,
+both pinned to scratch dirs, `--arms deep`, tuning=none, 10 paired
+seeds each:
+
+    smoke        scorelogs IDENTICAL 10/10
+    lategame-80  scorelogs IDENTICAL 10/10
+
+Not "no significant difference" -- identical sha256 per seed. The
+gate's arithmetic is `x * 1.0` at identity and IEEE 754 makes that
+exact; the fear terms were hoisted into locals so the counter could
+exist without changing evaluation order, and none of those functions
+reads `city_data->danger` or the RNG.
+
+**The pin executes, and the counter says so.**
+
+    cell         seeds diverging   gate applications / game   FREE arm
+    smoke              9/10          636 .. 2313 (mean 1362)      0
+    lategame-80       10/10         2660 .. 4842 (mean 4050)      0
+
+with the pinned arm reading, on every line of every seat,
+
+    deep-stance turn=80 player="P2" econ=1.500 mil=0.500 cult=1.000
+      src=identity mode=PINNED preset=economic identity=0 fear_gate=1075
+
+against the free arm's `econ=1.000 mil=1.000 ... mode=FREE preset=-
+identity=1 fear_gate=0`. `sort -u` over a pinned game's stance lines
+returns exactly ONE distinct stance across all seats, which is the
+A.6 criterion for a pinned arm.
+
+**Smoke seed 10 is the honest exception and worth keeping.** 1440
+gate applications and a byte-identical scorelog: the danger moved and
+no build decision crossed a boundary all game. Executed is not
+effective, and the counter is the only thing that tells those apart.
+
+**Save/load round trip.** T8 pinned game, saves kept:
+`deep_state.stance_econ=1.500000 / _mil=0.500000 / _cult=1.000000` on
+all four deep seats; on reload `deep-stance-load plr=0..3 econ=1.500
+mil=0.500`, and plr=4 (no deep state written) defaults to identity
+rather than to a zeroed stance. Reloaded WITHOUT the tuning file the
+first phase re-resolves to FREE identity -- a pin belongs to the run,
+not to the position.
+
+**The regime, reported and not promised.** Gate 1 alone, pinned
+economic at the placeholder gain, moves nothing measurable:
+
+    lategame-80, 10 paired seeds, deep arm, fleet totals
+    metric        FREE    PIN-ECON     delta     se      t    wins
+    score      1049.40     1043.80     -5.60  16.94  -0.33    3/10
+    munits      100.20      100.90     +0.70   5.05  +0.14    5/10
+    unitsbuilt  252.70      252.50     -0.20   6.03  -0.03    5/10
+    unitslost    98.90       92.20     -6.70   7.63  -0.88    3/10
+    cities       46.70       47.70     +1.00   1.56  +0.64    6/10
+    (smoke, 4 seats: score +3.30 t=+0.66, munits -1.80 t=-0.35)
+
+This is expected and is NOT the A.6 regime-reality check failing: that
+check ("military spend must fall toward the survival floor, and if it
+does not, a gate is missing") is written against ALL FOUR gates, and
+three of them are E34.2. What the numbers do say is that scaling
+anticipatory fear by itself does not move the shield split -- the
+fears it scales are already discounted by satisfaction and upkeep, and
+the survival floor it must not cross is doing most of the work. E34.2
+inherits a sharpened version of the claim: if gates 2-4 also fail to
+move military spend under a pinned corner, the missing mechanism is
+not a gate but the floor's height, and that is a finding to report
+rather than a licence to raise the gain.
+
+**Housekeeping.** `meson test -C build` 2/2 OK. `tune-audit.py` CLEAN,
+**112/112/112/112** (was 108).
+
+### Owed to the tuning pile
+
+Four new tunables, all PLACEHOLDER, none hand-tuned:
+
+    stance_forced      -1   mode switch; degenerate range on purpose,
+                            a campaign pins it by hand per pass
+    stance_source       0   A.4's ladder; only 0 (identity) is built,
+                            1/2 log an error and fall back
+    stance_trait_span 0.5   how different players are allowed to be.
+                            Pinned range until E34.3 makes it live in
+                            FREE mode -- if the optimiser could move it
+                            during a pinned pass, the pin would not be
+                            a pin
+    stance_fear_gain  1.0   gate 1's sensitivity. Registered in S and
+                            MIL, searchable; identity axes give
+                            identity behaviour at ANY value of it
+
+`stance_fear_gain` and `stance_trait_span` are the two that want a
+pass, and neither can be tuned meaningfully until E34.2 gives the
+pinned regime something to be measured by.
+
+### What E34.2 needs to know
+
+- **The shape is fixed: `want *= f(ratio)`, identity at econ==mil.**
+  Gates 2-4 copy gate 1's form -- read `deep_stance_fear_mult()`'s
+  guard clause. One gain constant per gate, no per-corner constants;
+  that is the axis form paying for itself.
+- **Every gate needs its own counter on the stance line.** `fear_gate`
+  is cumulative per player and zero in the free arm; add
+  `op_gate`/`growth_gate`/`expand_gate` beside it rather than a new
+  log line, so one grep answers "did anything execute".
+- **Do not raise the gains to make the regime appear.** If four gates
+  still leave military spend flat under a pinned economic corner, say
+  so; `objective-layer.md` section 2's premise is falsifiable and this
+  is where it gets tested.
+- **The byte-identity gate must be re-run per epic**, against the
+  previous epic's binary, with the same recipe: build the pre-change
+  commit in `.worktrees/bench`, pin both binaries to scratch dirs,
+  `--server`, `--arms deep`, compare scorelog sha256 per seed.
+- **Axes stay at identity in FREE mode through E34.2.** E34.3 is the
+  first commit in the workstream that changes an unpinned game, and it
+  only earns that after every gate has been proven by pinning.
