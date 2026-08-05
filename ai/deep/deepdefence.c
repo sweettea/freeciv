@@ -111,6 +111,9 @@ static void deep_assault_want(struct ai_type *ait,
                               struct player *pplayer, struct city *pcity,
                               struct unit_type *punittype,
                               struct adv_choice *choice);
+static bool deep_boat_choice_refused(struct ai_type *ait,
+                                     const struct adv_choice *choice,
+                                     const struct city *pcity);
 
 static void deep_log_defence(struct ai_type *ait, struct player *pplayer)
 {
@@ -2667,10 +2670,40 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
   punittype = dai_choose_attacker(ait, nmap, pcity, TC_LAND,
                                   allow_gold_upkeep);
   if (punittype) {
+    /* The third producer of ferry bids, and the one the water gate's
+     * backstop caught at 1.4 per game: when the victim is across
+     * water, kill_something_with() substitutes a TRANSPORT for the
+     * attacker it wanted (daimilitary.c:1687). There is no scalar to
+     * zero the way founder_want withdraws the domestic bid -- the
+     * decision is taken inside a frozen function on a ferry_map it
+     * builds itself -- so the withdrawal happens at that producer's
+     * boundary instead: keep the choice as it stood going in, and put
+     * it back if what comes out is a hull for water that reaches no
+     * other continent. That is not reconstructing a discarded
+     * runner-up; it is an alternative we are still holding.
+     *
+     * Scoped to the LAND call deliberately. The sea-attacker call
+     * above can also return a ferry-typed hull, but as a WARSHIP, and
+     * the gate's claim says nothing about fighting on a closed sea --
+     * only about carrying a passenger off this continent. */
+    struct adv_choice pre_attacker;
+
+    adv_init_choice(&pre_attacker);
+    adv_choice_copy(&pre_attacker, choice);
     virtualunit = unit_virtual_create(pplayer, pcity, punittype, 1);
     choice = kill_something_with(ait, nmap, pplayer, pcity, virtualunit,
                                  choice);
     unit_virtual_destroy(virtualunit);
+    if (deep_tuning_get()->boat_gate_at_bid > 0
+        && deep_boat_choice_refused(ait, choice, pcity)) {
+      log_base(deep_metric_log_level(),
+               "deep-watergate-attack turn=%d player=\"%s\" city=%d"
+               " type=\"%s\" want=" ADV_WANT_PRINTF,
+               game.info.turn, player_name(pplayer), pcity->id,
+               utype_rule_name(choice->value.utype), choice->want);
+      adv_choice_copy(choice, &pre_attacker);
+    }
+    adv_deinit_choice(&pre_attacker);
     /* Deep's own pricing runs beside the stock evaluation and the
      * larger want wins; distributions of the two are compared via
      * the deep-kill/deep-want tripwires before stock is cut out. */
