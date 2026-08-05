@@ -98,6 +98,20 @@ struct deep_plr {
   int free_land_turn;
   int free_land_tiles;          /* Unowned known land, absolute */
   int own_land_tiles;           /* Land we own, absolute */
+  /* Rates (deeprates.c). rates_tech_want is last turn's price of one
+   * research step, snapshotted before dai_clear_tech_wants() wipes the
+   * array the rates decision needs; the four counters are the
+   * execution census, one per outcome of the override -- rates
+   * actually changed, deep agreed with stock, stock was celebrating,
+   * and no price was available. Recomputable and cumulative-within-a-
+   * run rather than saved: the per-turn deep-rates line is the census
+   * the benchmark reads, and a reload that resets the tallies costs a
+   * partial count of an already-logged stream. */
+  double rates_tech_want;
+  int rates_set;
+  int rates_agreed;
+  int rates_celebrate;
+  int rates_unpriced;
 };
 
 static inline struct deep_plr *deep_plr_data(const struct player *pplayer)

@@ -335,6 +335,7 @@ else
       'ai/deep/deephorizon.c',
       'ai/deep/deepodds.c',
       'ai/deep/deepops.c',
+      'ai/deep/deeprates.c',
       'ai/deep/deepsite.c',
       'ai/deep/deepstance.c',
       'ai/deep/deeptrade.c',

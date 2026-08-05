@@ -663,6 +663,36 @@ struct deep_tuning {
    * it. Targets that THREATEN us keep the unscaled want, by the same
    * test gate 2 uses. PLACEHOLDER. */
   double stance_assault_gain;
+
+  /* Tax/science/luxury rates (the rates epic). Stock's
+   * dai_manage_taxes() is a SOLVENCY ladder: it finds the minimum tax
+   * that balances the books, the minimum science that avoids tech
+   * loss, tests celebration, and dumps whatever is left into science
+   * by a fixed preference order. No tech is ever priced, so science
+   * is a residual rather than a decision -- and deep READS the
+   * resulting rates when it values a multiplier building
+   * (deephorizon.c), i.e. it reads a solvency artefact as a statement
+   * of strategic value.
+   *
+   * rates_enabled != 0 lets deep re-choose the split by comparing the
+   * amortized value of what each point BUYS, using prices that
+   * already exist elsewhere in deep: a bulb is priced by the tech
+   * want the research advances, a gold by upkeep_gold_weight (the
+   * same gold-per-turn-over-the-horizon price the upkeep charge
+   * pays), a luxury point by the freed citizen's tile value at
+   * horizon_content_weight. 0 = off = stock's ladder untouched, which
+   * is the compiled default. PLACEHOLDER.
+   *
+   * The two gains are the honest residue: deep's credit currency is
+   * loose enough that a tech want, a gold stream and a freed citizen
+   * are not guaranteed commensurable, and gold is the numeraire here
+   * only because it is the one of the three deep already had a price
+   * for. Both PLACEHOLDER 1.0 and both owed a tuning pass; a
+   * degenerate all-science or all-tax split is what a wrong gain
+   * looks like. */
+  int rates_enabled;
+  double rates_science_gain;
+  double rates_luxury_gain;
 };
 
 void deep_tuning_init(void);
