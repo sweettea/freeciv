@@ -3016,7 +3016,7 @@ static void deep_assault_want(struct ai_type *ait,
   double best_score = 0.0, p0, p1, marginal;
   Continent_id home = tile_continent(city_tile(pcity));
   struct unit *pool[32];      /* deep_take_odds caps the stream anyway */
-  int n_pool = 0, eta, rate, csize;
+  int n_pool = 0, n_elsewhere = 0, eta, rate, csize;
   struct unit *vunit;
   adv_want tworth, want;
 
@@ -3082,9 +3082,14 @@ static void deep_assault_want(struct ai_type *ait,
   }
   tworth = def_ai_city_data(target, ait)->worth;
 
-  /* The committed pool: own attackers on this continent not tied to
-   * home defence. Counting them all as one assault is exactly the
-   * simultaneity assumption documented above. */
+  /* The pool that will actually fight for THIS target: own attackers
+   * on this continent, not tied to home defence, and not committed to
+   * a different intention. Counting every free attacker as one stream
+   * across concurrent operations priced the marginal blade against a
+   * force that never assembles -- with four ops running, p1 - p0 goes
+   * to zero and the build side stops funding attackers exactly when
+   * the campaigns need them (military audit C4). Members of the op
+   * aimed at this city stay in: they are the wave. */
   unit_list_iterate(pplayer->units, punit) {
     if (n_pool >= (int) ARRAY_SIZE(pool) - 1) {
       break;
@@ -3094,6 +3099,10 @@ static void deep_assault_want(struct ai_type *ait,
         || adv_unit_att_rating(punit) <= 0
         || tile_continent(unit_tile(punit)) != home
         || def_ai_unit_data(punit, ait)->task == AIUNIT_DEFEND_HOME) {
+      continue;
+    }
+    if (deep_op_claimed_elsewhere(pplayer, punit->id, target->id)) {
+      n_elsewhere++;
       continue;
     }
     pool[n_pool++] = punit;
@@ -3236,12 +3245,12 @@ static void deep_assault_want(struct ai_type *ait,
 
   log_base(deep_metric_log_level(),
            "deep-kill turn=%d player=\"%s\" city=%d target=%d barb=%d"
-           " worth=" ADV_WANT_PRINTF " pool=%d p0=%.3f p1=%.3f ck=%d"
-           " type=\"%s\" want=" ADV_WANT_PRINTF,
+           " worth=" ADV_WANT_PRINTF " pool=%d elsewhere=%d p0=%.3f"
+           " p1=%.3f ck=%d type=\"%s\" want=" ADV_WANT_PRINTF,
            game.info.turn, player_name(pplayer), pcity->id, target->id,
            is_barbarian(city_owner(target)) ? 1 : 0,
-           tworth, n_pool, p0, p1, csize, utype_rule_name(punittype),
-           want);
+           tworth, n_pool, n_elsewhere, p0, p1, csize,
+           utype_rule_name(punittype), want);
 
   if (want > choice->want) {
     choice->value.utype = punittype;

@@ -98,6 +98,33 @@ int deep_op_claiming(const struct player *pplayer, int unit_id)
 }
 
 /**********************************************************************//**
+  Is this unit committed to an intention OTHER than taking `city_id`?
+
+  The build side prices the marginal attacker against a stream of
+  units, and its stream was every free attacker on the continent
+  regardless of what any of them was already doing -- so with four
+  concurrent operations the marginal blade was priced against a force
+  that will never assemble anywhere, P(take) already looked high, and
+  attacker production stopped exactly when the campaigns ran
+  (military audit C4). The stream that WILL fight for a given city is
+  the unclaimed attackers plus the members of the operation aimed at
+  it; a raider, a lift passenger or another op's wave is not in it.
+
+  No constant: the claim registry already knows.
+**************************************************************************/
+bool deep_op_claimed_elsewhere(const struct player *pplayer, int unit_id,
+                               int city_id)
+{
+  int oi = deep_op_claiming(pplayer, unit_id);
+
+  if (oi < 0) {
+    return FALSE;
+  }
+
+  return deep_plr_data(pplayer)->ops[oi].target_city != city_id;
+}
+
+/**********************************************************************//**
   Does an operation hold this unit against the manage loop? TRUE for
   members whose phase the op itself drives: an assault mustering,
   striking or consolidating. Marching members are deliberately NOT

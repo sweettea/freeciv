@@ -128,6 +128,11 @@ struct deep_operation {
 void deep_run_operations(struct ai_type *ait, struct player *pplayer);
 
 int deep_op_claiming(const struct player *pplayer, int unit_id);
+/* Claimed by a live operation aimed at something other than this
+ * city: not part of the force that will take it, so the build side
+ * must not price its marginal attacker against it. */
+bool deep_op_claimed_elsewhere(const struct player *pplayer, int unit_id,
+                               int city_id);
 bool deep_op_release_member(const struct player *pplayer, int unit_id);
 bool deep_op_holds(const struct player *pplayer, int unit_id);
 /* Non-operation holds, scoped to one phase (mechanism-map D-A). A pass
