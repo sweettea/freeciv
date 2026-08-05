@@ -6227,3 +6227,346 @@ size the machinery against the population it would act on.
   measurement of RC4, not a bug to patch. Either both prices are
   right for their own purpose, or one of them is wrong -- and the way
   to find out is a tuning pass, not an argument.
+
+## R2: the caravan gets a price, and the venue turns out to be the finding (2026-08-05)
+
+Five code commits and this one. `ai/deep` prices a caravan by the
+route it would actually walk -- caravan.c's own NPV against the real
+destinations reachable from the city -- behind `trade_merit`, compiled
+default 0, stock's bid untouched, off arm byte-identical to the
+pre-session binary.
+
+    3efa5ba78c  ai/default: expose dai_choose_trade_route for deep to
+                read its bid
+    62e0548987  ai/deep: price a caravan by the route it would
+                actually walk
+    b741702c2f  ai/deep: stop the fallback ladder injecting an
+                unpriced caravan
+    8c5c573d29  ai/deep: load the virtual caravan before asking
+                whether it may trade
+    0a1f73494f  ai/deep: discount the build delay instead of gating
+                on it
+
+**Headline: the mechanism executes 3682 times per game, doubles the
+trade routes the empire actually establishes (10.0 -> 19.6 endpoints,
+t +4.58, 17/20) at unchanged caravan cost, and moves the score by
+-1.06 +/- 1.10 (t -0.96, 10/20).** A sixth mechanism that provably
+works and is worth zero. The calibration answer is a NUMBER this time
+rather than a shrug: deep's amortized want is a median **0.114** of
+stock's bid, and a gain of 7 -- which puts it at 0.770 of stock -- is
+where the routes appear. `trade_merit` stays 0.
+
+### 1. The venue is the first finding, and it retired the brief's cell
+
+The brief named garden2b-150 or isolated-150. Both are **civ2civ3**,
+and civ2civ3 sets
+
+    "National",   0,   "Cancel", "None"
+    "NationalIC", 0,   "Cancel", "None"
+
+(`data/civ2civ3/game.ruleset:612-613`). A pct of 0 means the route
+**cannot be established at all**, so on every economy cell this
+project runs, a domestic trade route is illegal by ruleset and the
+only legal partner is a foreign city -- which needs contact, peace
+(`Enemy` is also 0) and reachability.
+
+Measured before anything was benchmarked, 2 games per cell:
+
+    cell                 seam lines   with a legal destination
+    isolated-150 (c2c3)         290                          0
+    primary-120  (c2c3)         134                          0
+    smoke        (c2c3)           0                          0
+    primary-120-classic        6726                       6458
+
+**Zero.** Not "small" -- zero legal trade destinations in six
+civ2civ3 games, deep's price and stock's alike. `classic` pays 100%
+national / 200% intercontinental with a `Both` bonus and the
+population is alive. The A/B therefore ran on **primary-120-classic**,
+and the civ2civ3 cells became the guard.
+
+`findings/trade-routes.md` section 7 flagged the ruleset spread as a
+caution ("any distance weight is ruleset-scoped until shown
+otherwise"). It is not a caution. It is the binding fact: **the entire
+trade-route subsystem is dead code on this project's default
+ruleset**, and every conclusion the project has drawn about caravans
+from a civ2civ3 cell was drawn from an empty population.
+
+### 2. Where the want forms, and how deep intercepted it
+
+`dai_choose_trade_route()` (`daidomestic.c:172`), one of five producers
+inside `domestic_advisor_choose_build()`, whose result deep receives
+at `deepdefence.c:3458` and merges through `deep_want_cmp`. That is
+deep-owned, so the brief's stop condition does not fire -- but the
+merge is a MAX over producers, so intercepting only the returned
+winner cannot tell a trade caravan from a **wonder** caravan (same
+unit type, and `ADV_CHOICE_TRACK`'s producer tag is compiled out).
+
+So `dai_choose_trade_route` became non-static (rule 2's exception,
+`3efa5ba78c`) and deep probes it directly with `plr_data->tech_want[]`
+snapshotted and restored. That is the only side effect the function
+has, and restoring it is what makes the probe inert -- re-running
+`domestic_advisor_choose_build()` instead would have doubled the tech
+want of every producer in it.
+
+Three outcomes, all counted:
+
+- **replace** -- stock's bid is the returned winner; its want is
+  overwritten. When that LOWERS the bid the runner-up must come back
+  or the city builds a caravan deep just said is not worth it;
+  `building_advisor_choose()` is provably side-effect-free (it reads
+  `building_want[]` and calls the AI's `choose_building` hook, which
+  is `dai_build_adv_override`, also pure), so the improvement
+  runner-up is recovered exactly. Worker, founder and wonder runners-up
+  are not recoverable without tech-want side effects; that censoring is
+  logged as `recover=partial` and measured at **1.65 of 242 replaces
+  per game (0.7%)**.
+- **promote** -- stock's bid lost but deep's price beats the winner.
+- **keep** -- neither, logged anyway because that is most of the
+  calibration corpus.
+
+### 3. The price, and the one constant it needed
+
+`caravan_find_best_destination()` on a **virtual** caravan homed in the
+city: same evaluator, same `caravan_discount`, same
+`deep_caravan_reach()` the unit will get the moment it exists, so the
+price and the plan cannot disagree (RC5). Three deliberate departures:
+
+- `horizon = MORT` instead of `FC_INFINITY` -- every other deep credit
+  is summed over MORT, an infinite horizon turns the route into
+  `perpetuity()`'s 20x, and it makes the pathfinder walk the whole map
+  instead of stopping at the planning horizon.
+- `consider_wonders = FALSE` -- the wonder caravan is a separate
+  producer this epic does not touch.
+- `consider_trade = FALSE` when every route slot this city holds is
+  already claimed by a caravan in the field. That is the honest
+  marginal value of the Nth caravan and it replaces stock's
+  `if (unassigned_caravans * 10 > want) want = 0.1`. It fired on 97 of
+  71166 seam lines at gain 1 and **1722 of 71807 at gain 7**, i.e. it
+  does real work exactly when more caravans exist.
+
+Two conversions, no new constant: divide the NPV by **MORT** (which is
+exactly `amortize()`'s own annuity factor -- its discount is
+1 - 1/MORT, so a perpetual per-turn flow of x is worth x*MORT and this
+is the inverse) to turn a stock into the per-turn flow build wants are
+denominated in; and price an output point at `adv->science_priority`,
+what `deep_unworked_tile_value()` already pays for tile trade. Then
+`amortize()` over the turns to BUILD, the way the horizon credits
+amortize over time-to-grow -- the walk is already discounted inside
+the NPV and is not charged twice.
+
+`trade_merit_gain` (PLACEHOLDER 1.0) is the honest residue and is
+section 6's whole subject.
+
+**One upstream bug was found by building this** (upstream-bugs.md #34):
+`action_speculate_unit_on_city(ACTION_TRADE_ROUTE)` -- the documented
+way to price a unit before building it -- **segfaults on a virtual
+unit**, because `actres.c:927` reads `unit_current_goods()`, which
+returns `punit->carrying` unexamined on any ruleset with
+`goods_selection = "Leaving"` (civ2civ3's), and dereferences it one
+line later. Measured: isolated-150 seed 1, turn 127. Deep gives the
+ghost the goods its city would load it with, without
+`goods_from_city_to_unit()`'s `fc_rand()` tie-break -- a planner must
+not consume the game's random state.
+
+### 4. The A/B: routes double, score does not move
+
+Cell **primary-120-classic** (6 players, FRACTAL, 400 tiles/player,
+classic ruleset, 120 turns), **20 paired seeds**, `--arms deep`,
+binary pinned (`ac74b9367d3a`, server + `libfreeciv.so`, `--server`).
+All three arms load a tuning FILE; control is
+`benchmark/tuning/identity.ini` (zero keys, provably identity since
+H1). Twenty seeds are direction.
+
+Execution census first (per game, 20/20 seeds, off arm in every case
+exactly 0):
+
+    metric                    OFF    ON g=1    ON g=7
+    seam evaluations         0.00   3682.35   3717.35
+    mode=replace             0.00    242.50    234.05
+    mode=promote             0.00      0.45    165.95
+    mode=keep                0.00   3439.40   3317.35
+    recover=yes              0.00    240.45    145.75
+    recover=partial          0.00      1.65      7.00
+    ladder rung refused      0.00      2.15      1.70
+
+Mechanism metrics:
+
+    metric                    OFF    ON g=1  delta      t   wins
+    caravans built          354.00   217.35 -136.65  -7.51   2/20
+    trade dispatches          6.10     1.45   -4.65  -6.37   2/20
+    wonder dispatches         9.20     8.15   -1.05  -1.09   8/20
+    ROUTE ENDPOINTS          10.00     3.50   -6.50  -6.54   1/20
+    ladder injections         3.50     0.00   -3.50    --    0/20
+
+    metric                    OFF    ON g=7  delta      t   wins
+    caravans built          354.00   363.15   +9.15  +0.38  12/20
+    trade dispatches          6.10    21.95  +15.85  +3.59  19/20
+    wonder dispatches         9.20    10.30   +1.10  +0.94  11/20
+    ROUTE ENDPOINTS          10.00    19.60   +9.60  +4.58  17/20
+    ladder injections         3.50     0.00   -3.50    --    0/20
+
+Route endpoints are counted from the FINAL SAVE (`traderouteN` columns
+of each player's city table), not from an intention log: an endpoint is
+a route that exists, and each domestic route contributes two.
+
+Score:
+
+    metric                    OFF    ON g=1     delta      se      t   wins
+    score                  138.40   137.78     -0.63    1.31  -0.48   9/20
+    cities                  20.97    20.58     -0.38    0.22  -1.71   6/20
+    techs                   29.16    28.97     -0.19    0.30  -0.63   7/20
+    unitsbuilt              94.73    92.22     -2.52    1.25  -2.02   4/20
+    landarea            265550.00 259775.00 -5775.00 2600.47  -2.22   5/20
+
+    metric                    OFF    ON g=7     delta      se      t   wins
+    score                  138.40   137.34     -1.06    1.10  -0.96  10/20
+    cities                  20.97    20.76     -0.21    0.39  -0.53   9/20
+    techs                   29.16    28.82     -0.34    0.27  -1.25   6/20
+    unitsbuilt              94.73    95.28     +0.54    1.20  +0.45  13/20
+    munits                  34.12    31.73     -2.40    0.88  -2.72   4/20
+
+**Both arms are flat on score and both are unambiguous on mechanism.**
+At gain 1 the price halves route formation; at gain 7 it doubles it,
+at the same caravan count -- so the gain is not buying MORE caravans,
+it is buying caravans that go and open routes instead of helping
+wonders or idling. And 20 games of that is worth about a point.
+
+### 4a. The off switch, proven
+
+Smoke cell, 10 paired seeds, both arms loading the same identity-shaped
+file; the only difference is the binary. Scorelog sha256 per seed:
+
+    seed  1 new=1dd20000f0d8 pre=1dd20000f0d8 SAME
+    seed  2 new=eb8019912f64 pre=eb8019912f64 SAME
+    seed  3 new=624c62cce147 pre=624c62cce147 SAME
+    seed  4 new=727bbf617388 pre=727bbf617388 SAME
+    seed  5 new=24f768bc20c9 pre=24f768bc20c9 SAME
+    seed  6 new=435241a98f26 pre=435241a98f26 SAME
+    seed  7 new=5ecad53c072e pre=5ecad53c072e SAME
+    seed  8 new=c08b4a727226 pre=c08b4a727226 SAME
+    seed  9 new=2d08dec74ab2 pre=2d08dec74ab2 SAME
+    seed 10 new=64344ee8f0e8 pre=64344ee8f0e8 SAME
+    => 10/10 byte-identical
+
+(`new` = this session's tip `ac74b9367d3a`; `pre` = the R1 tip
+`3cf68458da` built in the bench worktree, `305e3eed09b8`. Those are the
+SAME ten hashes H1 and R1 published, a third independent check that no
+session has moved the no-tuning path -- and, since `3efa5ba78c` touched
+`ai/default`, the demonstration rule 2 requires for the visibility
+change.)
+
+Execution counter, same ten seeds: **0 `deep-trade-merit` lines and 0
+`deep-trade-fallback` lines in the off arm.** Non-execution and
+byte-identity are different claims and both are made.
+
+**Smoke guard, 10 paired seeds, off vs on** -- deliberately a civ2civ3
+cell, i.e. the population section 1 measured as empty:
+
+    metric              OFF       ON    delta     se      t   wins
+    score             82.00    81.97    -0.03   0.06  -0.43   1/10
+    cities             8.50     8.50    +0.00   0.00    nan   0/10
+    techs             16.02    16.00    -0.03   0.02  -1.00   0/10
+
+    seam evaluations   0.00     1.10   (all at merit 0 AND stock 0)
+    replaces           0.00     0.00
+    promotes           0.00     0.00
+    ladder refusals    0.00     0.00
+
+The seam fires and finds nothing, exactly as the ruleset says it must.
+Nothing crashed; no game timed out; `meson test -C build` 3/3 and
+`tune-audit.py` CLEAN 121/121/121/121 before and after.
+
+### 5. The fallback ladder, and where caravans actually come from
+
+The ladder's first rung built a caravan at want 1 whenever a city
+wanted nothing else. Measured on the off arm: **3.50 per game**, and 0
+on both on-arms -- the rung is unreachable under `trade_merit` and the
+refusal is counted (2.15 and 1.70 per game respectively, i.e. the
+ladder DID reach it and was turned away).
+
+The `deep-want` line answers a question the project had not asked. Of
+354 caravan build decisions per game on the off arm, the winning want
+distribution is **p10 68.5, p50 197.3, p90 609.7** -- while deep's
+trade price is a median 8.3 and stock's trade bid a median 70.9. **The
+caravan build queue is dominated by the WONDER producer, not the trade
+producer**, by roughly an order of magnitude in want. That reframes
+the epic: pricing trade routes properly moves a minority of caravan
+builds, which is a large part of why doubling the routes is worth a
+point.
+
+### 6. The calibration verdict: the amortized want needs an ~8x deflator
+
+The corpus, over 71166 (gain 1) and 71807 (gain 7) seam evaluations
+with a legal destination -- 96.6% of all seam lines on this cell:
+
+    term                mean     p10     p50     p90     max
+    npv (output pts)   28.02   12.80   27.90   41.70  101.20
+    eta (turns)         9.59    6.00    8.00   17.00   24.00
+    build (turns)      36.21    7.00   19.00   49.00      --
+    stock's bid        77.80   66.40   70.90   79.30 1654.30
+    merit, gain 1.0     9.66    0.20    8.30   20.70   63.40
+    merit, gain 7.0    65.96    1.30   54.90  142.50  531.00
+
+    merit / stock, gain 1.0:  p50 = 0.114   mean = 0.195
+    merit / stock, gain 7.0:  p50 = 0.770   mean = 8.75
+
+**Answer to the brief's question: no, the amortized want does not land
+on the building scale at gain 1.0 -- it lands about an eighth of the
+way up it, and R3's deflator is ~7-9x** (7 / 0.770 = 9.1 to sit
+exactly on stock's median; 7 is where the route count doubles). Unlike
+R1 this is not a guess read off a log: both ends were run and the
+mechanism responded monotonically in the right direction at both.
+
+Where the eighth goes is decomposable and is not a mystery:
+
+- **the build delay is the largest single term.** Median build 19
+  turns, `amortize(.,19)` = `(23/24)^19` = 0.446. Stock charges
+  nothing for it at all.
+- the walk costs another `0.95^8` = 0.66 inside the NPV.
+- dividing by MORT converts a 24-turn stock into a per-turn flow.
+
+And stock's bid is, on inspection, **mostly not a valuation**: its p10
+and p50 are 66.4 and 70.9 against an interquartile spread of ~13,
+because `want += trader_trait` adds a flat 50 whenever the city has no
+route. The two valuations proper -- stock's income term and deep's
+amortized NPV -- are within a small factor of each other; the gap is
+the constant.
+
+**Verdict: `trade_merit` ships 0.** Not because the mechanism is
+wrong -- it moves the quantity it targets, in the right direction,
+monotonically in its own gain -- but because the only cell where it
+can act at all is a `-classic` cell that is not in the tuning
+campaign, and one point of score is not worth turning on an untuned
+knob. It goes to the cloud pile with the deflator range above.
+
+### 7. What the next session must know
+
+- **`trade_merit` and `trade_merit_gain` ship at 0 and 1.0.** Both are
+  registered PLACEHOLDERs in ALL / G / ECON. The gain's useful range
+  is **5-10**, read off two measured arms, not one log.
+- **civ2civ3 makes domestic trade routes illegal** (`National` pct 0).
+  Before any further caravan, trade or `caravan_*` work: the economy
+  cells cannot see it. Either the work is scoped to `-classic` cells,
+  or a civ2civ3 cell with real foreign contact has to be built and its
+  population counted FIRST. Section 1's table is the template; it cost
+  six games.
+- **`action_speculate_unit_on_city` segfaults on virtual units for
+  trade actions** (upstream bug 34). Anyone pricing an unbuilt unit
+  through the action system will hit it. The workaround is three lines
+  in `deeptrade.c`.
+- **The caravan build queue belongs to the wonder producer.** p50 want
+  197 against the trade producer's 71. `dai_choose_help_wonder`
+  (`daidomestic.c:66`) is untouched by this epic and is the larger
+  claimant; whether IT should be amortized is now the open question,
+  and the seam and the census are already built.
+- **What R3's corpus must include from here.** The `deep-trade-merit`
+  line is the first place in this project where deep's price and
+  stock's price for the SAME decision are logged side by side, per
+  city, per turn: 145k paired evaluations over 40 games. That is the
+  W01 conversion table's first real data. It says that for the trade
+  producer the ratio is 0.114 with the build delay explaining 0.45 of
+  it, and it says stock's number is 70% a constant. Any `want_t` work
+  should start from this file rather than from an argument, and should
+  add the same two-price logging to the producers that do not have it
+  -- the wonder caravan first, since section 5 shows it is the one
+  that decides most caravan builds.
