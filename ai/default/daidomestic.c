@@ -169,9 +169,9 @@ static void dai_choose_help_wonder(struct ai_type *ait,
   If pplayer is not advanced enough to build caravans, the corresponding
   tech will be stimulated.
 ***************************************************************************/
-static void dai_choose_trade_route(struct ai_type *ait, struct city *pcity,
-                                   struct adv_choice *choice,
-                                   struct adv_data *ai)
+void dai_choose_trade_route(struct ai_type *ait, struct city *pcity,
+                            struct adv_choice *choice,
+                            struct adv_data *ai)
 {
   struct player *pplayer = city_owner(pcity);
   struct unit_type *unit_type;
