@@ -128,6 +128,9 @@ bit-identical across the two binaries built on 2026-08-04.
   $games ]`. "No freeciv-server running" is not a completion test.
 - `pgrep -x`, not `pgrep -f`; `ps` inside the tool sandbox sees an empty
   PID namespace and is not evidence a batch died.
+- Background batches are reaped at ~70 minutes (measured, D2 2026-08-05);
+  `setsid nohup` dies immediately. Plan long cells as relaunches of
+  `run.sh` — the DONE cache makes the resume free.
 - **Measured 2026-08-04: isolated-150 is ~12 min for a 20-game arm at
   12-way, lategame-80 ~9.** Earlier per-game estimates were inflated by
   probe games competing for cores. Budget from this.
