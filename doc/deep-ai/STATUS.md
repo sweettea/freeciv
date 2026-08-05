@@ -5424,3 +5424,279 @@ their own sake rather than to defuse a collision.
   zero share 0.726 vs 0.728, founder want per city-turn 337 vs 321) on
   a DIFFERENT binary, which is why the two sessions' tables can be
   compared in shape even though D2 moved the magnitudes.
+
+## W34 E34.3: the players become different, and the cells could not see it (2026-08-05)
+
+The trait step is built and lands with two findings that matter more
+than the mechanism. Four commits: `ad94fbdb30` the trait seeding,
+`f1bbf7b543` the trait values on the stance line, `fc1f107cc3` and
+`9bca4b86df` the two cells that randomise traits at all.
+
+**What landed.** `stance_source = 1` seeds each deep player's axes from
+its own traits -- `econ <- EXPANSIONIST/BUILDER/TRADER`,
+`mil <- AGGRESSIVE`, `cult` inert (A.1c) -- read through
+`ai_trait_get_value()`, the accessor stock uses at all seven of its
+trait sites. Each trait is normalised against the range ITS RULESET
+allows it (`nation->server.traits[tr].min/max`, mapped to [-1, +1]),
+not against `TRAIT_DEFAULT_VALUE`, because E34.1 chose
+`stance_trait_span` so that a pinned corner is exactly the extreme a
+trait player can reach; only a ruleset-relative index has that
+property. The two axes are independent, so an aggressive builder gets
+both weights raised and the gates -- which read a ratio -- leave it
+playing today's game. The compiled default stays `stance_source = 0`.
+
+### FINDING 1: our cells had no traits to read
+
+`traitdistribution` defaults to **FIXED**
+(`GAME_DEFAULT_TRAIT_DIST_MODE`, `common/game.h:517`), no shipping
+nation overrides its trait limits (575 files under `data/nation/`,
+none with a `trait_` key), and civ2civ3's `[default_traits]` set all
+four defaults to 50. **Every AI player in every cell this project has
+ever run drew 50/50/50/50** -- confirmed in a savegame's trait block
+(`trait={"val","mod"} 50,0 x4`, `"traitdistribution","FIXED"`) and on
+the `deep-stance` line.
+
+So A.1a's source is the right source and it is constant here. The
+mapping is written to be exactly inert in that case: the military index
+is summed three times rather than used directly, because 2x is exact in
+IEEE 754 and `(x + x) + x` and `3 * x` round identically, so four
+traits at the same relative position give EXACTLY equal axes. Measured:
+on the FIXED smoke cell, `stance_source = 1` against `stance_source = 0`
+is **20/20 scorelogs byte-identical**, with every line reading
+`econ=0.833 mil=0.833 ... identity=1` and all five gates at zero.
+
+The two new cells (`isolated-150-traits.conf`, `smoke-traits.conf`) are
+their parents plus `set traitdistribution EVEN`, which draws each trait
+uniformly from the nation's own [min, max] -- the distribution the
+ruleset ships. EVEN calls `fc_rand()` per trait per player at init, so
+these cells pair arm-to-arm and do NOT compare to their parents'
+absolute levels.
+
+### Acceptance
+
+**1. Determinism guard: 20/20, two cells.** HEAD's binary
+(`136f1882e3`, doc-only above the E34.2b tip `80a01a8fb9`) against this
+tip, both pinned to scratch dirs with `libfreeciv.so` beside them,
+`--server`, `--arms deep`, tuning=none:
+
+    smoke         scorelogs IDENTICAL 10/10
+    isolated-150  scorelogs IDENTICAL 10/10
+
+Plus the stronger claim above: at `stance_source = 1` on a FIXED cell,
+20/20 identical.
+
+**2. Four distinct stances free, one under identity.** Both cells,
+20 games each, from the `deep-stance` line:
+
+    arm                        distinct stances/game   identity=1 lines
+    isolated-150-traits src=1        4 (one game 5)        0 / 12005
+    isolated-150-traits src=0        1                 12019 / 12019
+    smoke-traits        src=1        4                     0 / 8000
+    smoke-traits        src=0        1                  8000 / 8000
+
+(the seed with five is a civil-war splinter seated on deep). A sample
+line, unpinned:
+
+    deep-stance turn=100 player="P4" econ=1.128 mil=1.167 cult=1.000
+      src=traits mode=FREE preset=- identity=0 trait_exp=80
+      trait_bld=86 trait_trd=37 trait_agg=70 fear_gate=158 op_gate=19
+      growth_gate=1060 expand_gate=61 assault_gate=239
+
+against the identity arm's `econ=1.000 mil=1.000 ... src=identity
+identity=1` with five zero counters. **All five gates fire in FREE
+mode for the first time**, isolated-150-traits, applications per game
+over four seats:
+
+    gate            mean       range        games firing
+    fear_gate      3880.4   2781 .. 5227       20/20
+    op_gate          54.4      0 ..  145       18/20
+    growth_gate   22637.5  14752 .. 30629      20/20
+    expand_gate     424.8    285 ..  610       20/20
+    assault_gate    981.0      0 .. 2170       19/20
+
+which is pin-like volume (E34.2b pinned: 3858 / 48.8 / 21956 / 379.6 /
+964.8) reached with nobody pinned.
+
+**3. Differentiation: the axes move, the SEATS do not separate, and
+the FLEET does.** 20 paired seeds, isolated-150-traits, same binary,
+both arms on a tuning file (see finding 2), `stance_source` the only
+difference. Shares are of build decisions, classified as E34.2b did;
+`sd` is the population SD across the four seats of one game.
+
+    metric               IDENT   TRAITS    delta      se      t   wins
+    axis econ sd        0.0000   0.1467  +0.1467  0.0128 +11.47  20/20
+    axis mil  sd        0.0000   0.2134  +0.2134  0.0139 +15.38  20/20
+    civ_share  sd       0.0748   0.0872  +0.0124  0.0075  +1.66  13/20
+    civ_share  mean     0.3736   0.3815  +0.0080  0.0084  +0.94  11/20
+    off_share  sd       0.0925   0.0403  -0.0522  0.0105  -4.98   3/20
+    off_share  mean     0.0801   0.0402  -0.0400  0.0081  -4.95   4/20
+    def_share  mean     0.1319   0.1266  -0.0053  0.0083  -0.63   6/20
+    mil_share  mean     0.2120   0.1668  -0.0452  0.0085  -5.32   3/20
+    impr_share mean     0.4144   0.4517  +0.0373  0.0139  +2.67  15/20
+
+The civilian criterion is met weakly and in the predicted direction:
+seat dispersion rises, fleet mean does not move. **The offence
+criterion fails in an informative way**: its dispersion falls because
+its MEAN falls -- a share bounded below by zero carries its spread
+with its level, and the relative dispersion is flat (sd/mean 1.15 ->
+1.00).
+
+**Why offence falls is a GAME effect, not a seat effect, and the
+evidence says so.** Sorting all 80 seats by their own `mil/econ` and
+taking the paired delta by quartile:
+
+    quartile   ratio    d_off     d_def    d_civ   d_impr  assault_gate
+    Q1          0.59  -0.0296  +0.0247  +0.0008  +0.0041      256
+    Q2          0.87  -0.0406  -0.0247  -0.0009  +0.0662      283
+    Q3          1.18  -0.0847  -0.0214  +0.0374  +0.0686      264
+    Q4          1.43  -0.0050  +0.0003  -0.0054  +0.0101      178
+
+    corr(mil/econ, delta off_share) = +0.028
+
+Every quartile buys fewer attackers, including the most militarised
+one. A within-game correlation between a seat's trait tilt (econ index
+minus mil index) and its build shares is null in BOTH arms -- and note
+that the identity arm already contains stock's own trait reads:
+
+    within-game corr, trait tilt vs share    IDENTITY   TRAITS
+      civ_share                               -0.080    -0.023
+      off_share                               -0.021    -0.000
+      mil_share                               -0.081    +0.009
+      impr_share                              +0.110    +0.009   (n=80)
+
+At 80 seats the 95% band is about +-0.22, so **a seat's own stance does
+not predict its own build mix at this power, in either arm.** What
+does move is the whole cell: fewer attackers bought, fewer units built
+and lost, more improvements. The mechanism most consistent with that
+is gate 2's odds bar -- raising a bar toward certainty removes
+operations outright while lowering it only admits marginally worse
+odds, so a symmetric spread of stances produces asymmetrically less
+war, and war is mutual: the seats that did not change their own
+posture still face fewer assaults.
+
+**4. Score: reported, not promised.** Same 20 paired seeds.
+
+    isolated-150-traits            IDENT    TRAITS    delta     se      t   wins
+    score                         190.21    195.95   +5.74   4.67  +1.23  13/20
+    mean_city_size                  6.41      6.73   +0.32   0.15  +2.18  12/20
+    techs                          28.52     29.49   +0.96   0.71  +1.36  13/20
+    unitsbuilt                    103.40     95.78   -7.62   2.38  -3.20   4/20
+    munits                         32.21     27.95   -4.26   1.81  -2.36   5/20
+    unitslost                       9.84      6.06   -3.77   1.50  -2.52   7/20
+    unitskilled                     3.69      2.66   -1.02   0.64  -1.60   8/20
+
+    smoke-traits (guard cell)
+    score                          79.22     78.78   -0.45   1.33  -0.34  10/20
+    munits                         17.71     19.10   +1.39   0.74  +1.87  14/20
+    off_share mean                 0.0896    0.1110 +0.0214 0.0077  +2.79  14/20
+    off_share sd                   0.0593    0.0778 +0.0185 0.0100  +1.84  13/20
+
+**The two cells disagree on the sign of the offence effect** (+0.021 on
+smoke, -0.040 on isolated-150). A verdict inherits its venue, again.
+Twenty seeds are direction; forty are a claim. Nothing here is a claim.
+
+**5. Housekeeping and the save.** `meson test -C build` 2/2 OK.
+`tune-audit.py` CLEAN **116/116/116/116**, before and after -- this
+epic adds no tunable. Save/load: a T101 EVEN game saved four distinct
+stances (`deep_state.stance_econ=1.094444 / _mil=0.600000`, etc.),
+reloaded as `deep-stance-load plr=0..3` with the same values and
+plr=4 (no deep state) at identity, and the first phase re-resolved the
+same axes from the traits. Reloaded WITHOUT the tuning file it
+re-resolves to identity: a source belongs to the run, not the position,
+exactly as the pin does.
+
+### FINDING 2: a tuning file at all changes the game
+
+Discovered while the smoke inertness check came back 12/20 DIFFERENT
+with an identity stance and every gate at zero. The cause is not the
+stance layer:
+
+    float secfile_lookup_float_default(const struct section_file *,
+                                       float def, const char *path, ...)
+    (utility/registry_ini.h:457)
+
+`deeptuning.c`'s `TUNE_DOUBLE` passes a **double** compiled default
+through that **float** parameter, so loading ANY tuning file quantises
+every double tunable to float precision -- including every key the file
+does not mention. `site_travel_discount` 0.9 becomes
+0.8999999761581421, `site_boat_cost_weight` 0.333333 becomes
+0.33333298563957214, and so on for every non-dyadic default.
+
+Measured, two identity arms differing ONLY in whether a tuning file was
+loaded (smoke-traits, 20 paired seeds): **12/20 games diverge**, score
+79.74 -> 79.22 (-0.51, se 0.43, t -1.20, 4/20). Small, but it is a
+second uncontrolled treatment.
+
+**What this means for method: `tuning=none` is not the control for a
+one-key tuning file.** Every A/B in this project that compared
+tuning=none against a file -- which includes E34.1/E34.2/E34.2b's
+pinned arms, all of which read "FREE runs tuning=none, which is
+identity" -- carried this perturbation alongside the pin. The pin's
+effects are an order of magnitude larger than 0.5 score, so the
+qualitative findings stand, but the numbers are not clean. **Both arms
+of this epic's comparisons use a tuning FILE** (`stance_source = 0`
+versus `= 1`), which is why they are trustworthy. The fix -- a
+double-precision lookup for the tuning loader -- is a one-commit change
+that this session deliberately did not make, because it changes the
+meaning of every existing tuning file and belongs in its own epic with
+its own guard.
+
+### The fold decision, for the human
+
+`stance_source` stays **0** in the compiled defaults, as the brief
+requires. The numbers a decision would rest on:
+
+- On the only cell where traits vary and where score is measured,
+  turning it on is **+5.74 score (se 4.67, t +1.23, 13/20)** with a
+  markedly less militarised, more improvement-heavy game.
+- On the guard cell it is **-0.45 (se 1.33, t -0.34, 10/20)**.
+- On every cell as currently configured (`traitdistribution FIXED`) it
+  is **exactly nothing** -- byte-identical, 20/20. Folding
+  `stance_source = 1` therefore changes no existing benchmark unless
+  `traitdistribution EVEN` is also folded into the cells, which is the
+  larger half of the decision.
+- Nothing here is significant at n=20. A 40-seed pass on
+  isolated-150-traits would make it a claim.
+
+### Owed to the tuning pile
+
+    stance_trait_span  0.5  PLACEHOLDER, and now MEASURED against what
+                            it buys: over 80 seats the realised axes
+                            span econ 0.656..1.356, mil 0.500..1.483,
+                            ratio 0.47..2.03 -- a mean |log ratio| that
+                            is 27% of the pinned corner's, best seat
+                            68%, only 9/80 seats past half the corner.
+                            A uniform trait draw rarely puts all four
+                            traits at their extremes, so traits reach
+                            about a quarter of the pin. If more
+                            differentiation is wanted this is the knob;
+                            it is a tuning number and this session did
+                            not touch it (rule 7).
+
+Unchanged and still owed: `stance_fear_gain`, `stance_op_gain`,
+`stance_growth_gain` + `stance_expand_gain` (as a pair),
+`stance_assault_gain`, and the `garrison_*` floor constants that own
+73% of military production.
+
+### What E34.4 needs to know
+
+- **Position modulation (A.4 step 3) has the same problem traits had,
+  and worse.** Traits at least vary once `traitdistribution EVEN` is
+  set; before building position, check what the cell actually offers
+  and whether it varies across seats on an ISLAND generator where every
+  seat gets a similar island by construction.
+- **Measure at the fleet, not the seat, until power improves.** 20
+  games is 80 seats, and 80 seats cannot resolve a per-seat correlation
+  below about 0.22. The fleet-level differences (military share
+  -0.045, t -5.32; unitsbuilt -7.62, t -3.20) were resolvable on the
+  same data.
+- **Use a tuning FILE in both arms.** Finding 2. `stance_source = 0` in
+  a `[tuning]` file is the correct identity control.
+- **The trait step is attributable.** All five gates were proven inert
+  at identity and live under a pin before this epic, and this epic
+  proved them live in FREE mode; so the fleet-level shift measured here
+  belongs to the trait mapping.
+- **Byte-identity is re-run per epic** against the previous epic's
+  binary: build the pre-change commit, pin both binaries (server AND
+  `libfreeciv.so`) to scratch dirs, `--server`, `--arms deep`,
+  tuning=none, compare scorelog sha256 per seed.
