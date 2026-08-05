@@ -2792,6 +2792,19 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
       lift_demand
         = (int) (dp->colony_want
                  / (1.0 + deep_tuning_get()->boat_idle_damping * idle));
+      {
+        /* Gate 4's other half: a settler that cannot cross is not an
+         * expansion, so the hull the colony needs is priced by the
+         * same appetite as the settler itself. Applied to the COLONY
+         * demand only -- the amphibious muster's berth shortfall
+         * below is military lift and belongs to no economic gate. */
+        double emult = deep_stance_expand_mult(pplayer);
+
+        if (emult != 1.0 && lift_demand > 0) {
+          lift_demand = (int) (lift_demand * emult);
+          deep_plr_data(pplayer)->stance_expand_gated++;
+        }
+      }
     }
     {
       /* An amphibious muster short on hulls is lift demand too
@@ -3702,6 +3715,23 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
           (city_data->founder_want
            * (1.0 + deep_tuning_get()->settler_rush_weight
                     * deep_map_crowding()));
+      }
+      if (fresh && city_data->founder_want > 0) {
+        /* Gate 4 (W34 A.2): how much THIS player wants the land that
+         * is left, as (econ/mil)^stance_expand_gain, exactly 1.0 at
+         * identity axes. Whether any land remains was already asked
+         * -- by the site machinery that produced this want, and by
+         * the crowding term above -- so the gate prices appetite, not
+         * opportunity. On the FRESH path only, for the same reason
+         * the rush weight is: a want cached across recalc turns must
+         * never compound. */
+        double emult = deep_stance_expand_mult(pplayer);
+
+        if (emult != 1.0) {
+          city_data->founder_want
+            = (int) (city_data->founder_want * emult);
+          deep_plr_data(pplayer)->stance_expand_gated++;
+        }
       }
     }
     TIMING_LOG(AIT_CITY_SETTLERS, TIMER_STOP);
