@@ -36,7 +36,8 @@ each rule cites its receipt.
 | 5 | R2 verdict banked (done: deflator 7-9× measured); **R2b wonder-caravans reformed** (the larger claimant — the corpus must see it); R3 class-rescale corpus + deflators shipped | R2 done; R2b, R3 queued |
 | 5a | HEDGE step-0 census (production-switch penalty mass). NOT a gate unless its population is fat — then its step-1 mechanism joins the gates (it moves build wants) | queued, cheap |
 | 6 | M1 combat E2 (cost-of-victory) + E4 aggregation swap (STATUS pins E4 pre-v4 explicitly) | queued |
-| 7 | **Knob-coverage census** (§4) CLEAN: every searched knob fires on ≥1 training cell | to build |
+| 7 | **Knob-coverage census** (§4) CLEAN: every searched knob fires on ≥1 training cell | **RED, measured 2026-08-05** (`findings/knob-coverage.md`): 54 LIVE / 53 NO-INSTRUMENT / 36 cleanly searchable of 121. The INSTR session (S-INSTR-observability.md) is the remediation; census reruns at freeze per its §7 |
+| 7a | Stage-1 arms must pin `rates_enabled=1` (census: the rates model has never executed in any archived run); stage 3's venue pin is isolated-150 (lift family fires 60-100× more there) | folded into §3 by the census |
 | 8 | **Separability pilot** (§5) passed | to run |
 | 9 | Binary frozen at a named commit; `meson test` + `tune-audit.py` CLEAN; STATUS quiesced | — |
 | 10 | Human go | — |
