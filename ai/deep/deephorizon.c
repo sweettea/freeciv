@@ -177,24 +177,33 @@ static int deep_int_desc(const void *a, const void *b)
   the arrangement, which is what breaks the deadlock: it cannot be
   zeroed by the CM's decision to stop collecting food, so the CM's cap
   state needs no change and keeps shedding food the capped city genuinely
-  cannot use. The city's own workers -- the citizens it has on tiles
-  today, so a city that must run entertainers is not credited with
-  their labour -- are placed on its best food tiles, and its live food
-  usage (citizens plus unit upkeep) is charged against the total. If
-  that surplus is still not positive the cap really is not what is
-  stopping this city, and the credit stays zero.
+  cannot use. The city's citizens are placed on its best food tiles and
+  its live food usage (citizens plus unit upkeep) is charged against the
+  total. If that surplus is still not positive the cap really is not what
+  is stopping this city, and the credit stays zero.
 
-  Returns the growth interval in turns, or 0 for "would not grow".
+  Returns the growth interval in turns, or 0 for "would not grow";
+  surplus_out (optional) reports the counterfactual food surplus.
 **************************************************************************/
-static int deep_counterfactual_ttg(struct city *pcity)
+static int deep_counterfactual_ttg(struct city *pcity, int *surplus_out)
 {
   const struct civ_map *nmap = &(wld.map);
   int radius_sq = city_map_radius_sq_get(pcity);
   int food[city_map_tiles(radius_sq)];
-  int n = 0, i, workers, surplus;
+  int n = 0, i, surplus;
   int total = city_tile_output(pcity, city_tile(pcity), FALSE, O_FOOD);
-
-  workers = MAX(1, city_size_get(pcity) - city_specialists(pcity));
+  /* Every citizen on a tile. Reading city_specialists() back would
+   * reimport the very state this function exists to see past: the cap
+   * state weights food at cm_cap_food against shield and trade at
+   * cm_cap_*, so a specialist beats a food tile and the CM parks
+   * citizens off the land BECAUSE the city is capped. Measured on
+   * isolated-150, that read the credit back to zero in 29 of the 34
+   * capped city-turns where the CM had shed its food -- the exact
+   * deadlock. The happiness ceiling is real, but it is the SOFT cap
+   * and it has its own credit (deep_content_credit); charging it here
+   * as well would price it twice and would leave the hard cap unpriced
+   * in every unhappy city. */
+  int workers = city_size_get(pcity);
 
   city_tile_iterate(nmap, radius_sq, city_tile(pcity), ptile) {
     if (ptile == city_tile(pcity) || !city_can_work_tile(pcity, ptile)) {
@@ -209,6 +218,9 @@ static int deep_counterfactual_ttg(struct city *pcity)
   }
 
   surplus = total - pcity->usage[O_FOOD];
+  if (surplus_out != NULL) {
+    *surplus_out = surplus;
+  }
   if (surplus <= 0) {
     return 0;
   }
@@ -232,7 +244,7 @@ static adv_want deep_capacity_credit(struct city *pcity,
                                      struct adv_data *adv)
 {
   const struct deep_tuning *tune = deep_tuning_get();
-  int ttg;
+  int ttg, cfsurplus = 0;
   int steps;
   adv_want per_citizen, credit = 0;
 
@@ -244,7 +256,7 @@ static adv_want deep_capacity_credit(struct city *pcity,
   /* Capped. One census line per capped city per turn, credit or no
    * credit: "the mechanism fired" and "the mechanism paid" are
    * different claims and only the counter tells them apart. */
-  ttg = deep_counterfactual_ttg(pcity);
+  ttg = deep_counterfactual_ttg(pcity, &cfsurplus);
   if (ttg > 0) {
     steps = MAX(1, MORT / ttg);
     per_citizen = deep_unworked_tile_value(pcity, adv, 3, NULL);
@@ -254,10 +266,12 @@ static adv_want deep_capacity_credit(struct city *pcity,
 
   log_base(deep_metric_log_level(),
            "deep-capacity turn=%d player=\"%s\" city=%d size=%d"
-           " obsttg=%d cfttg=%d credit=%.1f",
+           " spec=%d obsttg=%d obssurplus=%d cfttg=%d cfsurplus=%d"
+           " credit=%.1f",
            game.info.turn, player_name(city_owner(pcity)), pcity->id,
-           city_size_get(pcity), city_turns_to_grow(pcity), ttg,
-           (double) credit);
+           city_size_get(pcity), city_specialists(pcity),
+           city_turns_to_grow(pcity), pcity->surplus[O_FOOD], ttg,
+           cfsurplus, (double) credit);
 
   return credit;
 }
