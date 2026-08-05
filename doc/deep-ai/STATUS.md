@@ -5220,3 +5220,207 @@ unqualified again.**
 
 `meson test -C build` 2/2 OK. `python3 benchmark/tune-audit.py` CLEAN,
 **115/115/115/115**, before and after.
+
+## W34 E34.2b: the fifth gate, and the floor underneath it (2026-08-05)
+
+The gate E34.2's regime check named is built, fires on 20/20 seeds and
+does exactly what it was added to do -- and the regime STILL does not
+appear, because what is left is not a gate. Four commits:
+`54d71c9545` the constant, `241c9a039f` the multiplier and its
+counter, `80a01a8fb9` the gate, `9ee6dff9ea` the W34 amendment.
+
+**What landed.** `deep_assault_want()`'s amortized attacker want --
+the one that turns a target's worth into demand for blades -- is
+scaled by `(mil/econ)^stance_assault_gain`. It reads the ratio gate
+1's way round, not gates 2-4's, because it prices a MILITARY want: an
+economy weight must lower the offensive build, not raise it. Applied
+after the snap-up sweep, where a positive scalar cannot move an
+argmax, so the type the sweep picks is unchanged and only the want it
+carries into the auction moves. The exemption is gate 2's own
+`deep_op_target_threatens()` -- now non-static -- rather than a second
+test: a barbarian holding, or a hostile city on a landmass where we
+hold cities, keeps the unscaled want, because reconquest of what
+menaces us is survival and not ambition.
+
+### Acceptance
+
+**1. Byte-identity holds at identity axes, 20/20, two cells.** The D2
+tip (this session's HEAD `a78b075477`, doc-only above `bf44341570`)
+against `80a01a8fb9`, both binaries pinned to scratch dirs with
+`libfreeciv.so` beside them, `--server`, `--arms deep`, tuning=none:
+
+    smoke         scorelogs IDENTICAL 10/10
+    isolated-150  scorelogs IDENTICAL 10/10
+
+Identical sha256 per seed, and `assault_gate=0` on every `deep-stance`
+line of every free game.
+
+**2. All five gates fire under the pin; none fires free.** Pinned
+economic corner (`stance_forced = 1`, span 0.5, econ 1.500 / mil
+0.500), isolated-150, 20 seeds, applications per game summed over the
+four deep seats:
+
+    gate            mean       range        seeds firing   FREE arm
+    fear_gate      3858.0   2511 .. 4908       20/20           0
+    op_gate          48.8      3 ..  138       20/20           0
+    growth_gate   21956.0  15345 .. 30138      20/20           0
+    expand_gate     379.6    193 ..  592       20/20           0
+    assault_gate    964.8     82 .. 2270       20/20           0
+
+One distinct stance across all seats in the pinned arm (`econ=1.500
+mil=0.500 cult=1.000 src=identity mode=PINNED preset=economic
+identity=0`), identity with five zero counters in the free arm, on all
+20 games.
+
+**How much of the offensive build gate 5 actually reaches: 53%.**
+1812.5 `deep-kill` lines per game, 964.8 of them scaled; the other 47%
+are exempt as threatening. That is the exemption doing its job on an
+island cell where barbarian holdings and shared-continent neighbours
+are most of what is at war with us, and it is worth knowing before
+anyone reads the gain's effect size.
+
+**3. The regime re-check, on the post-D2 binary. Military share still
+does not fall.** 20 paired seeds, isolated-150, same binary, the pin
+as the only difference (FREE runs tuning=none, which is identity).
+Build decisions classified from the `deep-want` pick against
+`units.ruleset`: NonMil or attack 0 is CIVILIAN, attack > defense is
+OFFENCE, other units DEFENCE, everything else IMPROVEMENT. Shares are
+of build decisions; the rest are per-seat means.
+
+    metric              FREE   PIN-ECON     delta     se      t   wins
+    military share     0.201      0.205    +0.004  0.018  +0.21   9/20
+      offence share    0.065      0.067    +0.002  0.014  +0.14   9/20
+      defence share    0.137      0.138    +0.002  0.010  +0.18  10/20
+    civilian share     0.375      0.331    -0.044  0.012  -3.55   5/20
+    improvement share  0.424      0.464    +0.040  0.020  +2.00  16/20
+    score             193.79     196.16    +2.370  5.395  +0.44   9/20
+    pop                89.41      88.96    -0.450  2.984  -0.15   9/20
+    mean_city_size      6.914      6.490   -0.424  0.255  -1.66   7/20
+    munits             29.04      29.62    +0.582  2.321  +0.25   9/20
+    unitsbuilt         97.82      92.40    -5.417  3.068  -1.77   5/20
+    unitslost           8.92       9.39    +0.467  1.883  +0.25   8/20
+
+Twenty seeds are direction, not a claim. The direction is: **the pin
+moves the civilian/improvement split and leaves the
+military/civilian split alone**, which is what E34.2 measured with
+four gates and what E34.2b measures with five.
+
+**The one thing the fifth gate did change is the one it was built
+for.** The offence-share RISE is gone:
+
+    offence share vs FREE      four gates        five gates
+    E34.2 (pre-D2 binary)    +0.019  t +1.27          --
+    E34.2b (post-D2)         +0.009  t +0.62    +0.002  t +0.14
+
+and isolated properly -- PIN5 against the same pin with
+`stance_assault_gain = 0`, so gate 5 is the only difference and the
+pairing is tight:
+
+    metric            gates 1-4      +gate 5     delta     se      t   wins
+    offence share         0.073        0.067    -0.007  0.003  -1.87   4/20
+    defence share         0.133        0.138    +0.006  0.005  +1.07  11/20
+    military share        0.206        0.205    -0.001  0.007  -0.15   7/20
+    munits                31.00        29.62    -1.375  1.163  -1.18   5/20
+    unitsbuilt            94.24        92.40    -1.837  1.411  -1.30   4/20
+    unitslost             10.99         9.39    -1.600  0.885  -1.81   3/20
+    score                194.82       196.16    +1.337  1.383  +0.97   9/20
+
+Sixteen of twenty seeds bought a smaller share of attackers. **And the
+shields did not leave the army -- they moved from offence to
+defence.** Military share is unchanged to three decimals.
+
+### 4. The remaining mass is the garrison floor, and it is a REPORT
+
+Where the freed shields go is where E34.2 said the rest of the army
+already was:
+
+    military city-turns at stock's RAW danger == 0
+      FREE          690.2 of 974.1   (0.726)
+      PIN-ECON      751.1 of 1019.0  (0.744)   delta +0.017  t +0.57
+      gates 1-4     751.4 of 1028.9  (0.736)
+
+73-74% of military production happens in cities where stock's own
+pre-injection danger is exactly zero. **No stance gate can reach it**:
+gate 1 refuses to scale the survival deficit or the garrison floor by
+construction, and gate 5 only prices a want that needs a target. The
+constants that DO reach it -- `garrison_floor`,
+`garrison_floor_danger`, `garrison_menace_slope`,
+`menace_overseas_weight` -- are untuned placeholders in the S/MIL
+blocks.
+
+**That is a tuning-pile item, not a sixth gate.** A gate on the floor
+would be a stance talking a player out of garrisoning cities it cannot
+see a threat to, which is the exact line "minimise military spend
+SUBJECT TO SURVIVAL" draws, and it would be tuning by mechanism.
+W34 A.6 is amended accordingly: the regime claim as written is false
+(measured twice, at four gates and at five), and the separability the
+workstream is FOR is restated on the split the axes demonstrably
+control -- the civilian budget.
+
+### 5. Gates 3+4 re-measured: D2's prediction holds
+
+Same pin, `stance_fear_gain = stance_op_gain = stance_assault_gain =
+0`, 20 paired seeds against FREE. E34.2 found these two fighting hard
+enough to cost the whole of the pinned score delta; with honest credit
+delivery they no longer do:
+
+    vs FREE                E34.2 (pre-D2)        E34.2b (post-D2)
+    score                 -7.33  t -1.68        -0.38  t -0.07
+    founder want/city-turn +689  t +17.07 20/20  +650  t +12.37 20/20
+    expansion city-turns   -239  t -5.27         -27.8 t -0.46   8/20
+    civilian share        -0.040 t -4.57        -0.038 t -2.99
+    improvement share     +0.037 t +2.05        +0.038 t +1.72
+
+**The founder want still triples and expansion city-turns now barely
+move.** The collision was real and it was mostly the sawtooth: gate 3
+was scaling a credit that stock's array then multiplied by a random
+1-9x, so the growth side of the fight was several times larger than
+the gain said. The qualitative warning survives -- two gates with one
+gain on two incommensurable wants do not preserve their ratio -- but
+the pair no longer costs score at the placeholder values, and
+`stance_growth_gain`/`stance_expand_gain` should be tuned together for
+their own sake rather than to defuse a collision.
+
+### Owed to the tuning pile
+
+    stance_assault_gain  1.0  gate 5. PLACEHOLDER, registered in M,
+                              MIL and ALL. Its measured effect at 1.0
+                              under a pinned corner is -0.007 offence
+                              share (t -1.87) for +1.34 score
+                              (t +0.97) -- cheap, and the direction
+                              the axis intends.
+
+    garrison_floor, garrison_floor_danger, garrison_menace_slope,
+    menace_overseas_weight -- NOT new, but newly implicated: they own
+    73% of military production and no gate can reach them. The MIL
+    block's most valuable unexplored dimensions.
+
+`python3 benchmark/tune-audit.py` CLEAN, **116/116/116/116** (was
+115), before and after. `meson test -C build` 2/2 OK.
+
+### What E34.3 needs to know
+
+- **All five gates are proven inert at identity and live under a pin**,
+  so every behaviour change the trait step measures in FREE mode
+  belongs to the trait mapping. That property is now worth more than
+  it was: gate 5 is the first gate whose OWN effect has been isolated
+  against an otherwise identical pinned arm, and the technique (pin
+  everything, zero one gain, pair on seeds) has se an order of
+  magnitude smaller than pinning against FREE. Use it.
+- **A trait-driven econ player will buy fewer attackers and about as
+  many defenders.** That is what the axes do today. If E34.3 expects
+  trait differentiation to show up in military SHARE, it will measure
+  nothing; seat-level variance should be looked for in the
+  civilian/improvement split and in offence-vs-defence composition.
+- **Do not turn on all five gains at once in FREE mode.** Unchanged
+  from E34.2, and gates 3+4 remain the pair that moves the most.
+- **Byte-identity is re-run per epic** against the previous epic's
+  binary: build the pre-change commit, pin both binaries (server AND
+  `libfreeciv.so`) to scratch dirs, `--server`, `--arms deep`,
+  tuning=none, compare scorelog sha256 per seed.
+- **The isolated-150 metric definitions are reproducible**: this
+  session's classifier reproduced E34.2's FREE arm to within noise on
+  the pre-injection-danger census (mil city-turns 974 vs 990, danger-
+  zero share 0.726 vs 0.728, founder want per city-turn 337 vs 321) on
+  a DIFFERENT binary, which is why the two sessions' tables can be
+  compared in shape even though D2 moved the magnitudes.
