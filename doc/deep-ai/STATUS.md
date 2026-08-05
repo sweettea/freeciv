@@ -4505,3 +4505,49 @@ Also recorded: under score truncation "maximise score" is nearly
 "pursue an economic objective" (`get_civ_score()`, `score.c:352`), so
 phase A is aligned with the metric we have and phase B is not. That is
 the honest reason phase A is schedulable and phase B is not.
+
+### W34 phase A corrected the same day: axes, not a menu (human review)
+
+The first draft made the objective a three-valued enum. Wrong twice:
+it contradicted `findings/doctrine-architecture.md`, which had already
+established these are **not values of one variable** but simultaneous
+axes, and it threw away the property that matters -- each player having
+its OWN preference rather than picking from a menu of three.
+
+Phase A is now `struct deep_stance { econ, mil, cult }`, a weight per
+axis per player, and the enum survives only as named presets for
+logging. Gates read a RATIO, so a gate is one gain constant rather than
+one per named objective: **eight constants instead of ten, and adding
+an axis or a corner adds none.**
+
+**The per-player preference is READ, not invented.** The game already
+randomises a personality vector -- TRAIT_EXPANSIONIST, TRAIT_TRADER,
+TRAIT_AGGRESSIVE, TRAIT_BUILDER (`common/traits.h:21-29`) -- and the
+stock AI already multiplies wants by it in seven places
+(`daidomestic.c:417`, `:558`, `:620`, `daicity.c:2042`,
+`daimilitary.c:1778`, `:1914`, `daidiplomacy.c:1703`). Seeding the axes
+from traits gives four deep seats that behave like four different
+players, deterministically, without a second personality system to
+disagree with the first.
+
+**Culture is DECLARED and INERT**, with a stated un-defer condition,
+because the reasons are measurement facts rather than taste:
+`VC_CULTURE` is off in every cell we run (`game.h:589` defaults to
+spacerace + allied; the check is `srv_main.c:592-612`), culture is
+`culture / 50` in `get_civ_score()` (`score.c:361`), and the lever is
+already priced by stock (`daieffects.c:632-644`). An active culture
+axis today would re-scale an existing term chasing points our metric
+barely counts. It goes live when a victory-enabled cell exists -- which
+is phase B's condition anyway.
+
+Ordering consequence inside phase A: the axes stay at IDENTITY through
+E34.1 and E34.2, so every gate is proven by PINNING first. E34.3 is
+where players become different, and it is the first commit in the
+workstream that changes an unpinned game -- deliberately after every
+gate has an execution counter, so a behaviour change is attributable to
+the trait mapping rather than to a gate nobody exercised.
+
+Two modes of one switch, and a run must log which it was in: FREE
+(traits; ships, and what self-play should exercise) and PINNED (all
+seats one corner; what makes a tuning block separable). A tuning result
+taken free and reported as pinned is a wasted campaign.

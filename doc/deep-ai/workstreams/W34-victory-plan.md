@@ -12,8 +12,10 @@ everything in phase B.
 
 **This file is staged, and the stages have different statuses.**
 
-- **Phase A — the objective layer. BUILD THIS.** Measurable in the
-  cells we already run, and it unblocks the tuning campaign.
+- **Phase A — the stance layer. BUILD THIS.** Three axes with a weight
+  each, per player, seeded from the traits the game already randomises.
+  Measurable in the cells we already run, and it unblocks the tuning
+  campaign.
 - **Phase B — the victory plan proper. DESIGNED, NOT SCHEDULED.**
   Deferred until W04 (human call, 2026-08-04). Every input it needs is
   omniscient today; see §B.0 for why that is disqualifying rather than
@@ -112,24 +114,99 @@ is aligned with the metric we have and phase B is not.
 
 ## Phase A — the objective layer (BUILD THIS)
 
-### A.1 The object
+### A.1 The object — AXES, not a menu
+
+**Corrected 2026-08-04 after human review.** The first draft made this
+a three-valued enum; that was wrong twice over. It contradicts
+`findings/doctrine-architecture.md`, which had already established that
+these are **not values of one variable** but simultaneous axes, and it
+throws away the thing that makes AIs interesting against each other:
+each player having its **own** preference rather than picking from a
+menu of three.
 
 ```c
-enum deep_objective {
-  DEEP_OBJ_BALANCED = 0,        /* identity: every gate is 1.0 */
-  DEEP_OBJ_ECONOMIC,
-  DEEP_OBJ_MILITARY
+struct deep_stance {
+  double econ;      /* growth, infrastructure, trade, expansion */
+  double mil;       /* force: garrison, deterrence, campaigns */
+  double cult;      /* culture and prestige — DECLARED, INERT: see A.1c */
 };
 ```
 
-Lives in `struct deep_plr`, saved with the rest of deep state (or
-recomputable — `deepai.h` requires one or the other), and **forceable
-from the tuning file**, which is the property the whole tuning plan
-rests on. Build the forcing first.
+A weight per axis, held in `struct deep_plr`, saved with the rest of
+deep state (or recomputable — `deepai.h` requires one or the other).
+The old enum survives only as **named presets** for logging and for
+talking about behaviour, exactly as doctrine-architecture.md put it:
+"economic" is the corner `(hi, lo, ·)`, "military" is `(lo, hi, ·)`,
+"balanced" is identity. **The code branches on the axes, never on the
+name.**
 
-`DEEP_OBJ_BALANCED` with every gate weight at its identity value must
-be **byte-identical** to today's binary. That is the A/B switch and the
-acceptance gate; W01 set the precedent (byte-identity 20/20).
+#### A.1a Where a player's own preference comes from: TRAITS
+
+Do not invent a preference source. The game already gives every player
+a randomised personality vector and the stock AI already respects it:
+`TRAIT_EXPANSIONIST`, `TRAIT_TRADER`, `TRAIT_AGGRESSIVE`,
+`TRAIT_BUILDER` (`common/traits.h:21-29`), read via
+`ai_trait_get_value()` at `daidomestic.c:417`, `:558`, `:620`,
+`daicity.c:2042`, `daimilitary.c:1778`, `:1914`, `daidiplomacy.c:1703`.
+
+So the axes are **seeded from traits**, per player, per game:
+
+    econ  <- EXPANSIONIST / BUILDER / TRADER
+    mil   <- AGGRESSIVE
+    cult  <- no trait exists; see A.1c
+
+This gets the property you actually want — four deep seats in one game
+behaving like four different players, deterministically, from a source
+the ruleset and the nation already control — **without inventing a
+personality system and without inventing constants**. It also means the
+axes vary across our benchmark seats for free, which is a self-play
+diversity win the enum could never give.
+
+#### A.1b Two modes, and why both are needed
+
+The per-player variation the design wants is in direct tension with the
+reason phase A is scheduled first (tuning separability: pin the fleet,
+stabilise the shield budget, tune one block). Resolve it as two modes
+of the **same** forcing key, not as a compromise on either:
+
+- **FREE** (shipping default): every player's axes come from its own
+  traits. Players differ. This is the behaviour we actually want to
+  ship and the one self-play should exercise.
+- **PINNED** (`stance_forced`): every deep seat is clamped to the
+  same named corner, which is what makes a tuning block separable.
+  Tuning passes run pinned; acceptance and headline numbers run free.
+
+A run must log which mode it was in. A tuning result taken free and
+reported as if pinned — or the reverse — is a wasted campaign, and this
+project has already lost one 40-game batch to a switch nobody verified.
+
+#### A.1c The culture axis is declared and INERT, on purpose
+
+You asked whether culture is one of the axes. It should be *declared*,
+because leaving it out would mean retrofitting a third axis later
+through every gate. It should not be *active* yet, and the reasons are
+measurement facts rather than taste:
+
+- **Culture victory is off in every cell we run.**
+  `GAME_DEFAULT_VICTORY_CONDITIONS` is spacerace + allied
+  (`game.h:589`); `VC_CULTURE` (`fc_types.h:970`) is checked at
+  `srv_main.c:592-612` against `culture_vic_points` and a
+  `culture_vic_lead` percentage over second place, and nothing in our
+  configs enables it.
+- **Culture is worth almost nothing to our metric.** `get_civ_score()`
+  counts `culture / 50` (`score.c:361`). At our horizons that is noise
+  against citizens and techs.
+- **The lever already exists and is already priced.** The stock AI
+  values `EFT_HISTORY` / `EFT_NATION_HISTORY` at `amount * 5` and
+  performance effects at `amount / 10 + 1` (`daieffects.c:632-644`), so
+  a culture axis today would only re-scale a term that is already
+  there, chasing points our scoring barely counts.
+
+So: `cult` exists in the struct, is carried through every gate, and is
+**pinned at identity until a victory-enabled cell exists** — which is
+phase B's condition anyway. Un-defer it exactly when culture victory is
+enabled in a cell, not before. Anything else is building a mechanism we
+have no way to price.
 
 ### A.2 The gates
 
@@ -138,44 +215,73 @@ code already offers seams. **Each gate is a multiplier on an existing
 want, never a new scale** — RC4 says do not add another incommensurable
 currency, and this workstream is not permitted to invent one.
 
+Each gate reads the axes as a ratio, not as a name. The shape is
+`want *= f(stance)`, where `f` is identity when the axes are equal —
+so a player with balanced traits plays today's game exactly.
+
 1. **Fear → want** (`deep_credit_incoming_defence` and the injected
-   fear terms in `deepdefence.c`). ECONOMIC scales anticipatory fear
-   toward — **never below** — the existing survival floor
-   (`survival_fear_value`). MILITARY leaves it.
-2. **Operation formation** (`deep_op_form*` in `deepops.c`). ECONOMIC
+   fear terms in `deepdefence.c`). A high `econ`-to-`mil` ratio scales
+   anticipatory fear toward — **never below** — the existing survival
+   floor (`survival_fear_value`).
+2. **Operation formation** (`deep_op_form*` in `deepops.c`). Low `mil`
    forms assaults only against opportunistic or threatening targets;
-   MILITARY forms freely.
+   high `mil` forms freely.
 3. **Build wants** (`deepwant`, the `horizon_*` credits). The growth
    ladder against barracks/walls.
-4. **Expansion** (`settler_rush_weight`, `colony_lift_weight`).
-   ECONOMIC expands while land remains; MILITARY converts land pressure
+4. **Expansion** (`settler_rush_weight`, `colony_lift_weight`). High
+   `econ` expands while land remains; high `mil` converts land pressure
    into targets.
 
-**"Economic" means minimise military spend subject to survival, not "no
-army".** A pinned-ECONOMIC player on a contested map still gets
-attacked; if it refuses to build defenders it dies and the economy
-constants get tuned in a world that never occurs.
+**A high `econ` weight means minimise military spend subject to
+survival, not "no army".** A trader-natured player on a contested map
+still gets attacked; if it refuses to build defenders it dies, and the
+economy constants get tuned in a world that never occurs.
+
+**Identity is the acceptance gate.** With every axis equal and every
+scale at 1.0, the binary must be **byte-identical** to today's. W01 set
+that precedent (byte-identity 20/20), and it is the only way to prove a
+control surface this wide is inert when it should be.
 
 ### A.3 Tech direction
 
 The one place phase A touches victory at all, because it is where the
-objective has somewhere obvious to go and no dependency on knowing
-anything about rivals: bias `plr_data->tech_want` toward the objective
-before `dai_select_tech()` maximises over it. ECONOMIC weights
-trade/growth/science unlocks; MILITARY weights the unlocks its doctrine
-consumes.
+axes have somewhere obvious to go and no dependency on knowing anything
+about rivals: bias `plr_data->tech_want` along the axes before
+`dai_select_tech()` maximises over it. High `econ` weights
+trade/growth/science unlocks; high `mil` weights the unlocks its
+doctrine consumes.
+
+Note this is where traits and the axes will interact with a scale
+problem already measured: W01's calibration corpus found settler wants
+are *already* trait-rigged (median 311) against building wants near the
+anchor (10-48). Biasing tech along an axis is safe because tech_want is
+one scale; biasing builds is what W01's founder deflation is for. **Do
+not let the axis compensate for a scale gap** — that is how the two
+mechanisms would fight.
 
 This is a **want multiplier on an existing scale**, not a goal-seeking
 search. Real goal-seeking (a path to a named tech with a deadline) is
 phase B, because a deadline needs a rival.
 
-### A.4 Choosing, when not forced
+### A.4 Where the axes come from, in landing order
 
-Until an objective is chosen from position, the default is
-`DEEP_OBJ_BALANCED` — identity — so an unforced game is today's game.
-Choice from position (land available, neighbour militarisation, which
-victory conditions the ruleset even enables) lands last in the phase
-and is the only part that changes an unpinned game's behaviour.
+Three sources, each strictly later than the last, and the ordering is
+what keeps the phase measurable:
+
+1. **Identity** — every axis equal. Today's game, byte-identical. This
+   is what ships until a later step is proven.
+2. **Traits** (A.1a) — each player's own preference, from the vector
+   the game already randomises and the stock AI already reads. This is
+   the first step that makes deep seats differ from each other, and it
+   is measured as such: seat-level variance in military share should
+   RISE while the fleet mean moves little.
+3. **Position** — land available, neighbour militarisation, and which
+   victory conditions the ruleset actually enables (`victory_enabled()`,
+   `common/victory.c:26`), modulating the trait-given prior rather than
+   replacing it. A trait prior says who this player *is*; position says
+   what the map is offering. Lands last.
+
+Under PINNED mode all three are overridden, which is the point.
 
 ### A.5 Constants (rule 7 — all PLACEHOLDERS, none invented here)
 
@@ -183,61 +289,84 @@ Add to `struct tuning` with placeholder values, register in all four
 places `tune-audit.py` checks, and flag in STATUS for a tuning pass:
 
 ```
-objective_forced        -1 = AI chooses, 0/1/2 = pinned   (switch)
-obj_econ_fear_scale     gate 1 under ECONOMIC
-obj_mil_fear_scale      gate 1 under MILITARY
-obj_econ_op_scale       gate 2 under ECONOMIC
-obj_mil_op_scale        gate 2 under MILITARY
-obj_econ_growth_scale   gate 3 under ECONOMIC
-obj_mil_growth_scale    gate 3 under MILITARY
-obj_econ_expand_scale   gate 4 under ECONOMIC
-obj_mil_expand_scale    gate 4 under MILITARY
-obj_tech_bias           A.3
+stance_forced        -1 = free (traits/position), 0..n = pinned corner
+stance_source         0 identity, 1 traits, 2 traits+position (A.4 ladder)
+stance_trait_span     how far a trait may move an axis off identity
+stance_fear_gain      gate 1: sensitivity of fear to the econ:mil ratio
+stance_op_gain        gate 2
+stance_growth_gain    gate 3
+stance_expand_gain    gate 4
+stance_tech_gain      A.3
 ```
 
-Identity for every scale is 1.0, and BALANCED uses identity
-unconditionally. No new survival floor: gate 1 reuses
-`survival_fear_value`.
+**Eight, not ten, and none of them per-named-objective.** That is the
+axis form paying for itself: a gate is one gain against a ratio, so
+adding an axis or a corner does not add constants. Identity for every
+gain is 0.0 (no sensitivity) or 1.0 (no scaling) as the gate's shape
+requires, and identity axes give identity behaviour at any gain — which
+is what makes the byte-identity gate provable rather than argued.
+
+No new survival floor: gate 1 reuses `survival_fear_value`.
+`stance_trait_span` is the one that decides how *different* players are
+allowed to be, and it is exactly the kind of number rule 7 forbids
+guessing: placeholder, then tuned.
 
 ### A.6 Acceptance
 
-- **Byte-identity** at `DEEP_OBJ_BALANCED` with identity weights, 20
-  paired seeds across two cells. Not "no significant difference" —
-  identity.
-- **The forcing is proven by its execution counter, not assumed.** One
-  `deep-objective` line per player per turn naming the objective and
-  whether it was forced; a pinned arm shows zero lines of the other
-  objective. Four changes in this project have measured as "no effect"
-  while never executing.
-- **The regime must be real.** Pin every deep player ECONOMIC on
-  `isolated`: military spend must fall toward the survival floor and
+- **Byte-identity** at identity axes, 20 paired seeds across two cells.
+  Not "no significant difference" — identity.
+- **The mode and the axes are proven by an execution counter, not
+  assumed.** One `deep-stance` line per player per turn carrying the
+  three axis weights, the source (identity / traits / position) and the
+  mode (free / pinned); a pinned arm shows one distinct stance across
+  all seats, a free arm shows four. Four changes in this project have
+  measured as "no effect" while never executing, and one 40-game batch
+  was lost to a switch nobody verified.
+- **The regime must be real.** Pin every deep seat to the econ corner
+  on `isolated`: military spend must fall toward the survival floor and
   the army ratio toward baseline's. **If it does not, a gate is
   missing** — this is a falsifiable claim about the gates being
   complete, and it is the point of the phase.
+- **Traits must actually differentiate.** In FREE mode, seat-level
+  variance in military share must RISE against the identity arm while
+  the fleet mean moves little. If the seats still behave alike, either
+  `stance_trait_span` is too small or the gates are not reading the
+  axes — and the difference between those two is why the stance line
+  carries the weights themselves.
 - **Separability, the thing this is for:** re-run one economy-block
   tuning pass pinned ECONOMIC and show the per-candidate objective
   variance falls against the same pass unpinned. If it does not fall,
   the premise in `objective-layer.md` §2 is wrong and this workstream
   should say so rather than proceed to phases 3-5 of that plan.
 - **Score: report it, do not promise it.** Phase A is a control
-  surface, not a mechanism; the honest prior for the unpinned default
-  (BALANCED, identity) is *exactly zero* by construction.
+  surface, not a mechanism; at identity its prior is *exactly zero* by
+  construction, and in FREE mode there is no prior at all — four
+  differentiated players may beat four identical ones or may not, and
+  that is a genuine open question rather than a hoped-for win.
 
 ### A.7 Epics
 
 Roughly three, in this order. Do not bundle.
 
-**E34.1 — the surface (5-7 commits).** Enum, `deep_plr` field, save,
-tuning key, `deep-objective` log line, gate 1. Acceptance: byte-identity
-at BALANCED, forcing proven by counter, gate 1's execution counter
-nonzero under ECONOMIC.
+**E34.1 — the surface (5-7 commits).** `struct deep_stance` in
+`deep_plr`, saved; the pinning key and its corners; the `deep-stance`
+log line; gate 1. Axes stay at IDENTITY throughout this epic — no
+trait reading yet. Acceptance: byte-identity, pinning proven by the
+counter, gate 1 executing under a pinned corner.
 
 **E34.2 — the remaining gates (6-8 commits).** Gates 2, 3, 4, each with
-its own counter and its own A/B, plus the regime-reality check.
+its own counter and its own A/B, plus the regime-reality check. Still
+identity in FREE mode: everything so far is only reachable by pinning.
 
-**E34.3 — tech direction and self-selection (5-7 commits).** A.3, then
-A.4. A.4 is the first commit in the whole workstream that changes an
-unforced game, and it lands last on purpose.
+**E34.3 — the players become different (4-6 commits).** A.1a: seed the
+axes from traits, `stance_source = 1`. **This is the first commit in
+the workstream that changes an unpinned game**, and it lands only after
+every gate is proven by pinning, so a behaviour change here can be
+attributed to the trait mapping rather than to a gate nobody exercised.
+Acceptance is the differentiation criterion above.
+
+**E34.4 — tech direction and position (5-7 commits).** A.3, then A.4
+step 3. Position modulates the trait prior; it does not replace it.
 
 ---
 
@@ -332,22 +461,31 @@ estimated by feel.
   changes nothing by construction; its value is that it makes the
   tuning campaign separable and gives every later "it depends what
   we're trying to win" question somewhere to be answered.
-- **Not W08.** Doctrine is *how* we fight; the objective is *what we
-  are playing for*. W08 consumes this.
+- **Not W08.** Doctrine is *how* we fight — and specifically, per
+  `findings/doctrine-architecture.md`, the per-RIVAL diplomatic stance
+  (`DIP_HOSTILE`/`NEUTRAL`/`COURT`/`SUE`) which cannot be a global
+  value because you may be begging Persia while steamrolling Egypt.
+  W34 owns the *global* axis weights; W08 owns the per-rival stance and
+  the named presets on top. W08 consumes this.
+- **Not a personality system.** The per-player variation is read from
+  `common/traits.h`, which the ruleset and the nation already control.
+  Inventing a second source of personality beside it would be two
+  systems disagreeing about who a player is.
 
 ---
 
 ## Commits (sketch, phase A only)
 
 ```
-ai/deep: give a player an objective and a way to force it
-ai/deep: log the objective and whether it was forced
-ai/deep: scale anticipatory fear by the objective
-ai/deep: gate operation formation on the objective
-ai/deep: weight the growth ladder by the objective
-ai/deep: weight expansion by the objective
-ai/deep: bias tech wants toward the objective
-ai/deep: choose an objective from position when none is forced
+ai/deep: give a player a stance on three axes and a way to pin it
+ai/deep: log a player's stance, its source and its mode
+ai/deep: scale anticipatory fear by the stance
+ai/deep: gate operation formation on the stance
+ai/deep: weight the growth ladder by the stance
+ai/deep: weight expansion by the stance
+ai/deep: seed a player's stance from its traits
+ai/deep: bias tech wants along the stance
+ai/deep: modulate the stance by what the position offers
 ```
 
 Phase B's commits are deliberately not sketched: they depend on W04's
