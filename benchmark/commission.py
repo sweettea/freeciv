@@ -34,13 +34,13 @@ from pathlib import Path
 
 ORDER = re.compile(
     r"deep-hull-order turn=(\d+) player=\"([^\"]+)\" city=(\d+) "
-    r"type=\"([^\"]+)\" stock=(-?\d+) surplus=(-?\d+) cost=(\d+) "
-    r"eta=(-?\d+) waters=(\d+) bridge=(\d+) ncand=(\d+) best=(\d+) "
-    r"besteta=(-?\d+)"
+    r"type=\"([^\"]+)\" when=(\w+) stock=(-?\d+) surplus=(-?\d+) "
+    r"cost=(\d+) eta=(-?\d+) waters=(\d+) bridge=(\d+) ncand=(\d+) "
+    r"best=(\d+) besteta=(-?\d+) bestfresh=(-?\d+)"
 )
-ORDER_FIELDS = ["turn", "player", "city", "type", "stock", "surplus",
-                "cost", "eta", "waters", "bridge", "ncand", "best",
-                "besteta"]
+ORDER_FIELDS = ["turn", "player", "city", "type", "when", "stock",
+                "surplus", "cost", "eta", "waters", "bridge", "ncand",
+                "best", "besteta", "bestfresh"]
 
 WAIT = re.compile(
     r"deep-wait turn=(\d+) player=\"([^\"]+)\" unit=(\d+) type=\"([^\"]+)\" "
@@ -55,7 +55,7 @@ FORM = re.compile(
     r"psngr=(\d+)"
 )
 
-STRS = {"player", "type"}
+STRS = {"player", "type", "when"}
 
 
 def parse(paths):
@@ -156,37 +156,51 @@ def main(paths):
           f"wait lines: {len(waits)}")
 
     # ---------------- 1. the award ----------------
-    rs = runs(orders)
-    print(f"\n=== 1. THE AWARD: {len(rs)} hull orders "
-          f"({len(rs)/ngames:.2f}/game) ===")
-    if rs:
-        placed = [r[0] for r in rs]
-        held = [len(r) for r in rs]
-        # The comparison the award step would make, at the turn the
-        # order was placed. besteta < 0 means no candidate at all.
+    # The COMMITTED choice is the order event, and the only vantage
+    # that sees a hull the city buys outright. The production vantage
+    # is kept for one thing the choice cannot give: how long the order
+    # stood, and therefore how long the demand behind it had to last.
+    chosen = runs([r for r in orders if r["when"] == "choice"])
+    standing = runs([r for r in orders if r["when"] == "prod"])
+    print(f"\n=== 1. THE AWARD: {len(chosen)} hull orders "
+          f"({len(chosen)/ngames:.2f}/game) ===")
+    if standing:
+        held = [len(r) for r in standing]
+        print(f"  order stood in production    "
+              f"mean={sum(held)/len(held):.2f} turns  max={max(held)}  "
+              f"({len(standing)} standing spells)")
+    if chosen:
+        placed = [r[0] for r in chosen]
         nocand = sum(1 for r in placed if r["besteta"] < 0)
         withcand = [r for r in placed if r["besteta"] >= 0]
         gains = [r["eta"] - r["besteta"] for r in withcand
                  if r["eta"] >= 0]
+        # The same comparison against a rival credited with NO stock:
+        # the floor of what an award could buy, since it borrows
+        # nothing from what the rival was already building.
+        fresh = [r["eta"] - r["bestfresh"] for r in placed
+                 if r["bestfresh"] >= 0 and r["eta"] >= 0]
         never = [r for r in placed if r["eta"] < 0]
-        print(f"  order stood (turns)          "
-              f"mean={sum(held)/len(held):.2f}  max={max(held)}")
         print(f"  no other producer on water   {nocand:5d}  "
               f"{pct(nocand, len(placed))}")
         print(f"  ordering city never finishes {len(never):5d}  "
               f"{pct(len(never), len(placed))}  (no shield surplus)")
-        if gains:
-            for k in (0, 1, 2, 3, 5, 10):
-                n = sum(1 for g in gains if g >= k)
-                print(f"  rival faster by >= {k:2d} turns  {n:5d}  "
-                      f"{pct(n, len(gains))}")
-            show_q("rival ETA advantage", quantiles(gains))
-            show_q("ordering city's own ETA",
-                   quantiles([r["eta"] for r in withcand if r["eta"] >= 0]))
-            byc = defaultdict(int)
-            for r in placed:
-                byc[(r["game"], r["player"], r["city"])] += 1
-            print(f"  distinct ordering cities     {len(byc):5d}")
+        for label, xs in (("after switch penalty", gains),
+                          ("from a standing start", fresh)):
+            if not xs:
+                continue
+            print(f"  -- rival ETA advantage, {label} --")
+            for k in (1, 2, 3, 5, 10):
+                n = sum(1 for g in xs if g >= k)
+                print(f"     rival faster by >= {k:2d}    {n:5d}  "
+                      f"{pct(n, len(xs))}")
+            show_q("     distribution", quantiles(xs))
+        show_q("ordering city's own ETA",
+               quantiles([r["eta"] for r in placed if r["eta"] >= 0]))
+        byc = defaultdict(int)
+        for r in placed:
+            byc[(r["game"], r["player"], r["city"])] += 1
+        print(f"  distinct ordering cities     {len(byc):5d}")
         closed = sum(1 for r in placed if r["bridge"] == 0)
         print(f"  ordered into closed water    {closed:5d}  "
               f"{pct(closed, len(placed))}  (gate backstop)")

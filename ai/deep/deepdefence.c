@@ -82,6 +82,7 @@
 #include "deephorizon.h"
 #include "deepsite.h"
 #include "deepcm.h"
+#include "deepops.h"
 #include "deeptuning.h"
 #include "deepwant.h"
 
@@ -3494,6 +3495,13 @@ static void deep_city_choose_build(struct ai_type *ait,
     case CT_DEFENDER:
       build_new.kind = VUT_UTYPE;
       build_new.value.utype = city_data->choice.value.utype;
+      /* The order event proper, and the only vantage that sees a hull
+       * the city then BUYS: bought production is ordered and delivered
+       * inside one turn and never stands in production when the
+       * per-turn census runs. Measured over 20 games on isolated-150,
+       * that vantage saw only 229 of 1359 hulls. */
+      deep_hull_order_choice(ait, pplayer, pcity,
+                             city_data->choice.value.utype);
       break;
     case CT_BUILDING:
       build_new.kind = VUT_IMPROVEMENT;

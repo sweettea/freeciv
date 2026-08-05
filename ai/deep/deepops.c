@@ -359,26 +359,55 @@ static void deep_hull_census(struct ai_type *ait, struct player *pplayer)
 }
 
 /**********************************************************************//**
-  Turns from now until this city finishes `ptype`, from its CURRENT
-  shield stock and surplus. -1 when it never finishes (no surplus) and
-  -2 when it cannot build the type at all.
+  Turns from now until this city finishes `ptype`. -1 when it never
+  finishes (no shield surplus) and -2 when it cannot build the type at
+  all.
 
-  Deliberately the crudest possible ETA -- stock plus surplus, no
-  growth, no waste, no buy -- because that is exactly the estimate
-  W36's award step would have to make at order time, and sizing the
-  award on a better estimate than the award could use would overstate
-  what the machinery is worth.
+  Deliberately the crudest possible estimate -- stock plus surplus, no
+  growth, no waste, no buy -- because that is exactly what W36's award
+  step would have at order time, and sizing the award on a better
+  estimate than the award could use would overstate the machinery.
+
+  `mode` picks which stock the candidate is credited with, and the
+  three answers are genuinely different questions:
+
+    DEEP_ETA_STOCK    everything in the box. Right for the city that
+                      is ALREADY building the hull.
+    DEEP_ETA_SWITCH   what survives switching production to it, via
+                      city_change_production_penalty(). Right for a
+                      rival, and the correction that matters: a city
+                      holding 200 shields for a wonder shows an ETA of
+                      0 for a 20-shield hull under DEEP_ETA_STOCK, and
+                      awarding the commission there spends a wonder.
+    DEEP_ETA_FRESH    no stock at all, cost/surplus. The floor: how
+                      fast this city PRODUCES, with nothing borrowed
+                      from what it was already doing.
 **************************************************************************/
+enum deep_eta_mode { DEEP_ETA_STOCK, DEEP_ETA_SWITCH, DEEP_ETA_FRESH };
+
 static int deep_build_eta(const struct civ_map *nmap, struct city *pcity,
-                          const struct unit_type *ptype)
+                          const struct unit_type *ptype,
+                          enum deep_eta_mode mode)
 {
-  int cost, left;
+  struct universal target = { .kind = VUT_UTYPE, .value.utype = ptype };
+  int cost, stock, left;
 
   if (!can_city_build_unit_now(nmap, pcity, ptype, RPT_CERTAIN)) {
     return -2;
   }
   cost = utype_build_shield_cost(pcity, NULL, ptype);
-  left = cost - pcity->shield_stock;
+  switch (mode) {
+  case DEEP_ETA_STOCK:
+    stock = pcity->shield_stock;
+    break;
+  case DEEP_ETA_SWITCH:
+    stock = city_change_production_penalty(pcity, &target);
+    break;
+  default:
+    stock = 0;
+    break;
+  }
+  left = cost - stock;
   if (left <= 0) {
     return 0;
   }
@@ -387,6 +416,125 @@ static int deep_build_eta(const struct civ_map *nmap, struct city *pcity,
   }
 
   return (left + pcity->surplus[O_SHIELD] - 1) / pcity->surplus[O_SHIELD];
+}
+
+/**********************************************************************//**
+  Log one hull order with the award comparison W36 step 0 needs: this
+  city's own completion ETA against the best a rival on the SAME water
+  could offer, both as it would arrive after a production switch and as
+  a fresh build.
+
+  `when` separates the two vantages, because they answer different
+  halves of the question and neither alone is enough:
+
+    choice   the turn the build decision was COMMITTED. The order
+             event proper, and the only vantage that sees a hull the
+             city buys outright -- which the production census cannot,
+             since a bought hull is ordered and delivered inside one
+             turn and never stands in production when units are
+             managed.
+    prod     production is standing on a hull this turn. Gives the
+             order a LENGTH: how long it stood, and therefore how long
+             the demand behind it had to survive.
+**************************************************************************/
+static void deep_hull_order_log(struct ai_type *ait, struct player *pplayer,
+                                struct city *pcity,
+                                const struct unit_type *ptype,
+                                const char *when)
+{
+  const struct civ_map *nmap = &(wld.map);
+  struct tile *ptile = city_tile(pcity);
+  Continent_id seen[8];
+  int nseen = 0, ncand = 0, best_eta = -1, best_fresh = -1, best_city = 0;
+  int bridge = 0;
+
+  /* The waters this city can launch into, deduplicated: the same
+   * adjacency the gate and the hull census use. */
+  adjc_iterate(nmap, ptile, atile) {
+    Continent_id ac = tile_continent(atile);
+    int si;
+
+    if (ac >= 0) {
+      continue;
+    }
+    for (si = 0; si < nseen; si++) {
+      if (seen[si] == ac) {
+        break;
+      }
+    }
+    if (si < nseen || nseen >= (int) ARRAY_SIZE(seen)) {
+      continue;
+    }
+    seen[nseen++] = ac;
+    if (deep_water_bridges(ac)) {
+      bridge = 1;
+    }
+  } adjc_iterate_end;
+
+  city_list_iterate(pplayer->cities, other) {
+    bool shares = FALSE;
+    int eta, fresh;
+
+    if (other == pcity) {
+      continue;
+    }
+    adjc_iterate(nmap, city_tile(other), atile) {
+      int si;
+
+      for (si = 0; si < nseen; si++) {
+        if (seen[si] == tile_continent(atile)) {
+          shares = TRUE;
+          break;
+        }
+      }
+      if (shares) {
+        break;
+      }
+    } adjc_iterate_end;
+    if (!shares) {
+      continue;
+    }
+    eta = deep_build_eta(nmap, other, ptype, DEEP_ETA_SWITCH);
+    fresh = deep_build_eta(nmap, other, ptype, DEEP_ETA_FRESH);
+    if (eta < 0) {
+      continue;                 /* Cannot build it, or never finishes. */
+    }
+    ncand++;
+    if (best_eta < 0 || eta < best_eta) {
+      best_eta = eta;
+      best_city = other->id;
+    }
+    if (fresh >= 0 && (best_fresh < 0 || fresh < best_fresh)) {
+      best_fresh = fresh;
+    }
+  } city_list_iterate_end;
+
+  log_base(deep_metric_log_level(),
+           "deep-hull-order turn=%d player=\"%s\" city=%d type=\"%s\""
+           " when=%s stock=%d surplus=%d cost=%d eta=%d waters=%d"
+           " bridge=%d ncand=%d best=%d besteta=%d bestfresh=%d",
+           game.info.turn, player_name(pplayer), pcity->id,
+           utype_rule_name(ptype), when, pcity->shield_stock,
+           pcity->surplus[O_SHIELD],
+           utype_build_shield_cost(pcity, NULL, ptype),
+           deep_build_eta(nmap, pcity, ptype, DEEP_ETA_STOCK), nseen,
+           bridge, ncand, best_city, best_eta, best_fresh);
+}
+
+/**********************************************************************//**
+  The order log at its committing vantage: called from the build
+  choice once the winner is known, so a hull the city then BUYS is
+  still on the record.
+**************************************************************************/
+void deep_hull_order_choice(struct ai_type *ait, struct player *pplayer,
+                            struct city *pcity,
+                            const struct unit_type *ptype)
+{
+  if (!log_do_output_for_level(deep_metric_log_level())
+      || !dai_is_ferry_type(ptype, ait)) {
+    return;
+  }
+  deep_hull_order_log(ait, pplayer, pcity, ptype, "choice");
 }
 
 /**********************************************************************//**
@@ -421,94 +569,16 @@ static int deep_build_eta(const struct civ_map *nmap, struct city *pcity,
 **************************************************************************/
 static void deep_order_census(struct ai_type *ait, struct player *pplayer)
 {
-  const struct civ_map *nmap = &(wld.map);
-
   if (!log_do_output_for_level(deep_metric_log_level())) {
     return;
   }
 
   city_list_iterate(pplayer->cities, pcity) {
-    const struct unit_type *ptype;
-    struct tile *ptile = city_tile(pcity);
-    Continent_id seen[8];
-    int nseen = 0, ncand = 0, best_eta = -3, best_city = 0;
-    int bridge = 0;
-
-    if (pcity->production.kind != VUT_UTYPE) {
-      continue;
+    if (pcity->production.kind == VUT_UTYPE
+        && dai_is_ferry_type(pcity->production.value.utype, ait)) {
+      deep_hull_order_log(ait, pplayer, pcity,
+                          pcity->production.value.utype, "prod");
     }
-    ptype = pcity->production.value.utype;
-    if (!dai_is_ferry_type(ptype, ait)) {
-      continue;
-    }
-
-    /* The waters this city can launch into, deduplicated: the same
-     * adjacency the gate and the hull census use. */
-    adjc_iterate(nmap, ptile, atile) {
-      Continent_id ac = tile_continent(atile);
-      int si;
-
-      if (ac >= 0) {
-        continue;
-      }
-      for (si = 0; si < nseen; si++) {
-        if (seen[si] == ac) {
-          break;
-        }
-      }
-      if (si < nseen || nseen >= (int) ARRAY_SIZE(seen)) {
-        continue;
-      }
-      seen[nseen++] = ac;
-      if (deep_water_bridges(ac)) {
-        bridge = 1;
-      }
-    } adjc_iterate_end;
-
-    city_list_iterate(pplayer->cities, other) {
-      bool shares = FALSE;
-      int eta;
-
-      if (other == pcity) {
-        continue;
-      }
-      adjc_iterate(nmap, city_tile(other), atile) {
-        int si;
-
-        for (si = 0; si < nseen; si++) {
-          if (seen[si] == tile_continent(atile)) {
-            shares = TRUE;
-            break;
-          }
-        }
-        if (shares) {
-          break;
-        }
-      } adjc_iterate_end;
-      if (!shares) {
-        continue;
-      }
-      eta = deep_build_eta(nmap, other, ptype);
-      if (eta < 0) {
-        continue;               /* Cannot build it, or never finishes. */
-      }
-      ncand++;
-      if (best_eta < 0 || eta < best_eta) {
-        best_eta = eta;
-        best_city = other->id;
-      }
-    } city_list_iterate_end;
-
-    log_base(deep_metric_log_level(),
-             "deep-hull-order turn=%d player=\"%s\" city=%d type=\"%s\""
-             " stock=%d surplus=%d cost=%d eta=%d waters=%d bridge=%d"
-             " ncand=%d best=%d besteta=%d",
-             game.info.turn, player_name(pplayer), pcity->id,
-             utype_rule_name(ptype), pcity->shield_stock,
-             pcity->surplus[O_SHIELD],
-             utype_build_shield_cost(pcity, NULL, ptype),
-             deep_build_eta(nmap, pcity, ptype), nseen, bridge,
-             ncand, best_city, best_eta);
   } city_list_iterate_end;
 }
 

@@ -131,6 +131,9 @@ int deep_op_claiming(const struct player *pplayer, int unit_id);
 bool deep_op_release_member(const struct player *pplayer, int unit_id);
 bool deep_op_holds(const struct player *pplayer, int unit_id);
 void deep_manage_units(struct ai_type *ait, struct player *pplayer);
+void deep_hull_order_choice(struct ai_type *ait, struct player *pplayer,
+                            struct city *pcity,
+                            const struct unit_type *ptype);
 struct unit *deep_op_poach_defender(struct ai_type *ait,
                                     struct player *pplayer,
                                     struct city *pcity,
