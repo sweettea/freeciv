@@ -186,6 +186,19 @@ static void dpai_player_save(struct player *pplayer,
   secfile_insert_int(file, plr_data->dv_turns_logged,
                      "player%d.deep_state.dv_turns_logged", plrno);
 
+  /* The stance (W34 phase A). A save carries what this player's axes
+   * WERE; the next phase re-resolves them from the tuning file in
+   * force at load time, which is the right behaviour for a control
+   * surface -- a pin belongs to the run, not to the position. Stored
+   * as floats: every value the layer can hold today (1.0, 1 +/- span)
+   * is exact in binary32. */
+  secfile_insert_float(file, plr_data->stance.econ,
+                       "player%d.deep_state.stance_econ", plrno);
+  secfile_insert_float(file, plr_data->stance.mil,
+                       "player%d.deep_state.stance_mil", plrno);
+  secfile_insert_float(file, plr_data->stance.cult,
+                       "player%d.deep_state.stance_cult", plrno);
+
   /* The operations layer (W33 phase 4). Free slots save only their
    * NONE state, so quiet players cost a handful of keys. */
   secfile_insert_int(file, plr_data->last_strike_city,
@@ -246,6 +259,31 @@ static void dpai_player_load(struct player *pplayer,
     = secfile_lookup_int_default(file, 0,
                                  "player%d.deep_state.dv_turns_logged",
                                  plrno);
+
+  /* Defaulted to identity, so a save written by a build without the
+   * stance layer loads as today's game rather than as a zeroed
+   * stance, which is a ratio nothing can be read from. */
+  plr_data->stance.econ
+    = secfile_lookup_float_default(file, 1.0,
+                                   "player%d.deep_state.stance_econ",
+                                   plrno);
+  plr_data->stance.mil
+    = secfile_lookup_float_default(file, 1.0,
+                                   "player%d.deep_state.stance_mil",
+                                   plrno);
+  plr_data->stance.cult
+    = secfile_lookup_float_default(file, 1.0,
+                                   "player%d.deep_state.stance_cult",
+                                   plrno);
+
+  /* Read back out loud: this hook runs before the next phase
+   * re-resolves the axes, so it is the only place the round trip is
+   * observable. Keyed on plrno, not the name -- this fires inside
+   * sg_load_player_main and the player is not fully built yet. */
+  log_base(deep_metric_log_level(),
+           "deep-stance-load plr=%d econ=%.3f mil=%.3f cult=%.3f",
+           plrno, plr_data->stance.econ, plr_data->stance.mil,
+           plr_data->stance.cult);
 
   plr_data->last_strike_city
     = secfile_lookup_int_default(file, 0,
