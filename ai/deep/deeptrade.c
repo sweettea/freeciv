@@ -436,7 +436,8 @@ static adv_want deep_trade_merit_want(struct ai_type *ait,
                                       struct unit_type *utype,
                                       struct adv_data *adv,
                                       struct caravan_result *result,
-                                      int *committed, int *slots)
+                                      int *committed, int *slots,
+                                      int *build)
 {
   const struct civ_map *nmap = &(wld.map);
   const struct deep_tuning *tune = deep_tuning_get();
@@ -447,6 +448,7 @@ static adv_want deep_trade_merit_want(struct ai_type *ait,
   int build_turns;
 
   caravan_result_init_zero(result);
+  *build = -1;
   *committed = deep_committed_caravans(pcity);
   *slots = max_trade_routes(pcity) - city_num_trade_routes(pcity);
 
@@ -482,14 +484,18 @@ static adv_want deep_trade_merit_want(struct ai_type *ait,
     return 0;
   }
 
+  /* The delay is DISCOUNTED, not gated. A city three turns from
+   * finishing a caravan and a city thirty turns from one are answering
+   * the same question with different patience, which is exactly what
+   * amortize() is for; a cutoff at the horizon would be a second,
+   * unearned constant, and city_turns_to_build() returns FC_INFINITY
+   * for a city with no shield surplus, which amortize() takes to zero
+   * on its own. */
   build_turns = city_turns_to_build(pcity, &target, TRUE);
-  if (build_turns < 0 || build_turns > MORT) {
-    /* Never, or not inside the horizon the value was summed over. */
-    return 0;
-  }
+  *build = build_turns;
 
   want = amortize((adv_want) (result->value * adv->science_priority / MORT),
-                  build_turns)
+                  MAX(build_turns, 0))
     * tune->trade_merit_gain;
 
   return MIN(want, DAI_WANT_DOMESTIC_MAX);
@@ -569,7 +575,7 @@ void deep_trade_merit_apply(struct ai_type *ait, struct player *pplayer,
   struct caravan_result result;
   struct unit_type *utype, *stock_utype = NULL;
   adv_want stock_bid, merit;
-  int committed = 0, slots = 0;
+  int committed = 0, slots = 0, build_turns = -1;
   const char *mode = "keep";
   bool recovered = FALSE, partial = FALSE;
 
@@ -587,7 +593,7 @@ void deep_trade_merit_apply(struct ai_type *ait, struct player *pplayer,
 
   stock_bid = deep_stock_trade_bid(ait, pplayer, pcity, adv, &stock_utype);
   merit = deep_trade_merit_want(ait, pplayer, pcity, utype, adv, &result,
-                                &committed, &slots);
+                                &committed, &slots, &build_turns);
 
   if (stock_bid > 0 && stock_utype != NULL
       && choice->type == CT_CIVILIAN
@@ -626,11 +632,11 @@ void deep_trade_merit_apply(struct ai_type *ait, struct player *pplayer,
 
   log_base(deep_metric_log_level(),
            "deep-trade-merit turn=%d player=\"%s\" city=%d mode=%s"
-           " stock=%.1f merit=%.1f npv=%.1f eta=%d dest=%d"
+           " stock=%.1f merit=%.1f npv=%.1f eta=%d build=%d dest=%d"
            " committed=%d slots=%d recover=%s",
            game.info.turn, player_name(pplayer), pcity->id, mode,
            (double) stock_bid, (double) merit, result.value,
-           result.arrival_time,
+           result.arrival_time, build_turns,
            result.dest != NULL ? result.dest->id : -1,
            committed, slots,
            recovered ? "yes" : (partial ? "partial" : "-"));
