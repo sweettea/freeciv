@@ -1503,6 +1503,16 @@ void deep_auto_settler_run(struct ai_type *ait, const struct civ_map *nmap,
     return;
   }
 
+  /* The same leak, for the same reason, on this phase's non-operation
+   * holds: a civilian the flee pass sent running for a city is marked
+   * done, and this driver never looks at the flag -- so the fled
+   * worker was re-tasked back into the field at end of phase, every
+   * turn, and the flee logged a decision it did not keep
+   * (mechanism-map D-A). */
+  if (deep_phase_held(pplayer, punit->id)) {
+    return;
+  }
+
   /*** If we are on a city mission: Go where we should ***/
 
 BUILD_CITY:

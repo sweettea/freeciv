@@ -467,6 +467,10 @@ static void dpai_data_phase_begin(struct player *pplayer, bool is_new_phase)
    * the bottom, and they must get the same answer. Clearing here also
    * means no verdict can outlive the phase it was taken in. */
   deep_survival_cache_clear();
+  /* A hold expresses one phase's decision about one unit and may never
+   * outlive it; this is what lets the manage loop tell a hold taken
+   * this turn from the stale flag left by the last one. */
+  deep_phase_holds_clear(pplayer);
 
   if (is_new_phase) {
     struct deep_plr *plr_data = deep_plr_data(pplayer);

@@ -1232,7 +1232,7 @@ static void deep_manage_convoys(struct ai_type *ait,
         }
       } unit_list_iterate_end;
       if (incoming) {
-        def_ai_unit_data(boat, ait)->done = TRUE;
+        deep_hold_unit(ait, boat, "convoy");
         log_base(deep_metric_log_level(),
                  "deep-convoy turn=%d player=\"%s\" hold boat=%d"
                  " cargo=%d want=%d",
@@ -1454,7 +1454,7 @@ static void deep_hold_tired_attackers(struct ai_type *ait,
              game.info.turn, player_name(pplayer),
              unit_rule_name(punit), punit->moves_left, chance,
              TILE_XY(unit_tile(punit)));
-    unit_data->done = TRUE;
+    deep_hold_unit(ait, punit, "tired");
   } unit_list_iterate_end;
 }
 
@@ -1567,7 +1567,7 @@ static void deep_flee_workers(struct ai_type *ait, struct player *pplayer)
     }
     if (w->goto_tile == city_tile(refuge)) {
       /* Already running there: keep running, no re-path spam. */
-      def_ai_unit_data(w, ait)->done = TRUE;
+      deep_hold_unit(ait, w, "flee");
       continue;
     }
     log_base(deep_metric_log_level(),
@@ -1576,7 +1576,7 @@ static void deep_flee_workers(struct ai_type *ait, struct player *pplayer)
              refuge->id, best);
     unit_activity_handling(w, ACTIVITY_IDLE, ACTION_NONE);
     if (dai_unit_goto(ait, w, city_tile(refuge))) {
-      def_ai_unit_data(w, ait)->done = TRUE;
+      deep_hold_unit(ait, w, "flee");
     }
   } unit_list_iterate_safe_end;
 }
@@ -3967,6 +3967,11 @@ static void deep_balance_treasury(struct ai_type *ait,
 void deep_do_last_activities(struct ai_type *ait, struct player *pplayer)
 {
   TIMING_LOG(AIT_ALL, TIMER_START);
+  /* First, while it can still be checked: the server ran the manage
+   * loop AND auto_workers_player() since the holds were taken, so
+   * anything that was going to re-task a held unit has already had its
+   * chance (deepops.c, deep_hold_census). */
+  deep_hold_census(ait, pplayer);
   /* Before the wipe: tech_want[] is cleared here and refilled by the
    * city loop BELOW the rates, so the only honest read of what
    * research is worth to this empire is last turn's array, taken now

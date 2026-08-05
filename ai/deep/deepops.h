@@ -130,6 +130,15 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer);
 int deep_op_claiming(const struct player *pplayer, int unit_id);
 bool deep_op_release_member(const struct player *pplayer, int unit_id);
 bool deep_op_holds(const struct player *pplayer, int unit_id);
+/* Non-operation holds, scoped to one phase (mechanism-map D-A). A pass
+ * that decides a unit should stand still says so here instead of
+ * writing unit_ai.done directly, because the manage loop must reset
+ * that flag and cannot tell this turn's decision from last turn's. */
+void deep_hold_unit(struct ai_type *ait, struct unit *punit,
+                    const char *why);
+bool deep_phase_held(const struct player *pplayer, int unit_id);
+void deep_phase_holds_clear(const struct player *pplayer);
+void deep_hold_census(struct ai_type *ait, struct player *pplayer);
 void deep_manage_units(struct ai_type *ait, struct player *pplayer);
 void deep_hull_order_choice(struct ai_type *ait, struct player *pplayer,
                             struct city *pcity,

@@ -137,6 +137,149 @@ bool deep_op_holds(const struct player *pplayer, int unit_id)
          || dp->ops[oi].state == DEEP_OP_CONSOLIDATE;
 }
 
+/* This phase's non-operation holds.
+ *
+ * deep_manage_units() has to reset unit_ai.done -- the flag is stale
+ * from last turn, and stock's dai_manage_units() clears it for exactly
+ * that reason -- but the passes that run BEFORE it express their
+ * decisions through that same flag: the tired-attack hold, the convoy
+ * HOLD, the worker flee mark and the garrison a consolidating assault
+ * just converted. An unconditional reset erased all four every turn,
+ * so each of them logged a decision it never took (mechanism-map D-A).
+ *
+ * The distinction the reset needs is not "set" but "set THIS phase",
+ * which the flag cannot carry, so the holds are recorded here. Two
+ * independent drivers consume them: deep_manage_units(), and the
+ * settler entry point, because auto_workers_player() reaches every
+ * worker of an AI player at end of phase whatever the flag says
+ * (deepsettler.c:1484).
+ *
+ * Each entry also keeps what the unit looked like when it was held. A
+ * hold that is never observed holding is precisely the failure this
+ * fix exists to end, so deep_hold_census() reports the same unit again
+ * once every driver has run. */
+struct deep_hold {
+  int plr_no;
+  int unit_id;
+  int turn;
+  const char *why;              /* Static string: the mechanism. */
+  int tile;                     /* Where it stood when held. */
+  int moves_left;
+  enum ai_unit_task task;
+  int cargo;
+};
+
+static struct deep_hold *deep_holds = NULL;
+static int deep_holds_n = 0;
+static int deep_holds_cap = 0;
+
+/**********************************************************************//**
+  Is this unit held by one of THIS player's THIS-turn phase holds?
+**************************************************************************/
+bool deep_phase_held(const struct player *pplayer, int unit_id)
+{
+  int i;
+
+  for (i = 0; i < deep_holds_n; i++) {
+    if (deep_holds[i].unit_id == unit_id
+        && deep_holds[i].plr_no == player_number(pplayer)
+        && deep_holds[i].turn == game.info.turn) {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+/**********************************************************************//**
+  Forget this player's holds. Called at phase begin, which is what
+  makes the marker phase-scoped: a hold expresses one turn's decision
+  and may never survive into the next one.
+**************************************************************************/
+void deep_phase_holds_clear(const struct player *pplayer)
+{
+  int i = 0;
+
+  while (i < deep_holds_n) {
+    if (deep_holds[i].plr_no == player_number(pplayer)) {
+      deep_holds[i] = deep_holds[--deep_holds_n];   /* swap-pop */
+    } else {
+      i++;
+    }
+  }
+}
+
+/**********************************************************************//**
+  Hold this unit for the rest of the phase: nothing else re-tasks it,
+  and the census can check afterwards that nothing did. `why` names
+  the mechanism and must be a literal.
+**************************************************************************/
+void deep_hold_unit(struct ai_type *ait, struct unit *punit,
+                    const char *why)
+{
+  const struct player *pplayer = unit_owner(punit);
+  struct deep_hold *h;
+
+  def_ai_unit_data(punit, ait)->done = TRUE;
+  if (deep_phase_held(pplayer, punit->id)) {
+    return;   /* One entry per unit per phase; the first reason wins. */
+  }
+  if (deep_holds_n >= deep_holds_cap) {
+    deep_holds_cap = MAX(64, deep_holds_cap * 2);
+    deep_holds = fc_realloc(deep_holds,
+                            deep_holds_cap * sizeof(*deep_holds));
+  }
+  h = &deep_holds[deep_holds_n++];
+  h->plr_no = player_number(pplayer);
+  h->unit_id = punit->id;
+  h->turn = game.info.turn;
+  h->why = why;
+  h->tile = tile_index(unit_tile(punit));
+  h->moves_left = punit->moves_left;
+  h->task = def_ai_unit_data(punit, ait)->task;
+  h->cargo = get_transporter_occupancy(punit);
+}
+
+/**********************************************************************//**
+  Report every hold of this player's phase, AFTER the manage loop and
+  the auto-worker pass have both run: alive, still held, still where it
+  was, still on the task it was given. "Held" and "actually held" are
+  different claims, and only this line tells them apart.
+**************************************************************************/
+void deep_hold_census(struct ai_type *ait, struct player *pplayer)
+{
+  int i;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+
+  for (i = 0; i < deep_holds_n; i++) {
+    const struct deep_hold *h = &deep_holds[i];
+    struct unit *punit;
+
+    if (h->plr_no != player_number(pplayer)
+        || h->turn != game.info.turn) {
+      continue;
+    }
+    punit = game_unit_by_number(h->unit_id);
+    log_base(deep_metric_log_level(),
+             "deep-hold turn=%d player=\"%s\" unit=%d why=%s alive=%d"
+             " same_tile=%d moved=%d spent=%d same_task=%d cargo=%d/%d",
+             game.info.turn, player_name(pplayer), h->unit_id, h->why,
+             punit != NULL ? 1 : 0,
+             punit != NULL && tile_index(unit_tile(punit)) == h->tile
+               ? 1 : 0,
+             punit != NULL && tile_index(unit_tile(punit)) != h->tile
+               ? 1 : 0,
+             punit != NULL ? h->moves_left - punit->moves_left : -1,
+             punit != NULL
+               && def_ai_unit_data(punit, ait)->task == h->task ? 1 : 0,
+             punit != NULL ? get_transporter_occupancy(punit) : -1,
+             h->cargo);
+  }
+}
+
 /**********************************************************************//**
   Size the trip-sharing gap, once per player per turn.
 
@@ -1871,15 +2014,20 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
-  The stock manage loop with one change: operation holds survive.
+  The stock manage loop with one change: this phase's holds survive.
   dai_manage_units() clears every unit's done flag before managing,
   which silently erased everything the operation layer had marked --
   the muster "hold" never held, and STRIKE members were re-tasked by
   find_something_to_kill the same turn the op fought the battle (the
   stall tripwire caught a strike member walking AWAY from the walls
   under stock orders). Same airlift, same defender assignment, same
-  per-unit management; the only difference is that units an op holds
-  stay done.
+  per-unit management; the only difference is that units held this
+  phase stay done.
+
+  The reset itself has to stay -- the flag is stale from last turn --
+  so "preserve if set" would be wrong. What survives is a hold taken
+  in THIS phase, whether the operation layer took it or one of the
+  four first-activities passes did.
 **************************************************************************/
 void deep_manage_units(struct ai_type *ait, struct player *pplayer)
 {
@@ -1900,7 +2048,8 @@ void deep_manage_units(struct ai_type *ait, struct player *pplayer)
   unit_list_iterate(pplayer->units, punit) {
     struct unit_ai *unit_data = def_ai_unit_data(punit, ait);
 
-    unit_data->done = deep_op_holds(pplayer, punit->id);
+    unit_data->done = deep_op_holds(pplayer, punit->id)
+                      || deep_phase_held(pplayer, punit->id);
     if (unit_data->task == AIUNIT_DEFEND_HOME && !unit_data->done) {
       dai_unit_new_task(ait, punit, AIUNIT_NONE, NULL);
     }
@@ -3062,7 +3211,11 @@ static void deep_op_drive_consolidate(struct ai_type *ait,
              game.info.turn, player_name(pplayer), oi, op->target_city,
              unit_rule_name(gar));
     dai_unit_new_task(ait, gar, AIUNIT_DEFEND_HOME, ctile);
-    def_ai_unit_data(gar, ait)->done = TRUE;
+    /* Removed from the members below, so the op no longer holds it:
+     * without a phase hold of its own the manage loop clears this
+     * fresh DEFEND_HOME within the same turn and dai_set_defenders()
+     * re-decides who garrisons the city we just took. */
+    deep_hold_unit(ait, gar, "garrison");
     op->members[gar_i] = op->members[--op->n_members];
   }
 
