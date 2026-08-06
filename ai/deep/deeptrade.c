@@ -966,10 +966,19 @@ void deep_wonder_merit_apply(struct ai_type *ait, struct player *pplayer,
   stock_bid = deep_stock_wonder_bid(ait, pplayer, pcity, adv, &stock_utype);
   merit = deep_wonder_merit_want(ait, pplayer, pcity, utype, adv, &wc);
 
+  /* The winner's want is compared against the bid AS THE ADVISOR LEFT
+   * IT, which is the bid clamped to DAI_WANT_DOMESTIC_MAX
+   * (daidomestic.c:634). Comparing against the raw bid loses exactly
+   * the cities where the wonder producer bid hardest: measured on one
+   * probe game of primary-120-classic, 6 of 84 eligible seam lines
+   * carry a stock bid above the clamp, all of them recognised as
+   * "keep" -- the repricing silently declining to act on the top 7% of
+   * its own population. The raw bid is still what gets LOGGED, because
+   * that is the number R3's corpus needs. */
   if (stock_bid > 0 && stock_utype != NULL
       && choice->type == CT_CIVILIAN
       && choice->value.utype == stock_utype
-      && choice->want == stock_bid) {
+      && choice->want == MIN(stock_bid, DAI_WANT_DOMESTIC_MAX)) {
     mode = "replace";
     recovered = deep_caravan_replace(pplayer, pcity, choice, merit, &partial);
   } else if (merit > choice->want) {
