@@ -20,9 +20,13 @@ struct adv_choice *domestic_advisor_choose_build(struct ai_type *ait,
                                                  struct player *pplayer,
                                                  struct city *pcity);
 
-/* Visibility only (ai/deep needs to read this producer's bid without
+/* Visibility only (ai/deep needs to read these producers' bids without
  * re-running the whole domestic advisor). No behaviour change. */
 void dai_choose_trade_route(struct ai_type *ait, struct city *pcity,
+                            struct adv_choice *choice,
+                            struct adv_data *ai);
+
+void dai_choose_help_wonder(struct ai_type *ait, struct city *pcity,
                             struct adv_choice *choice,
                             struct adv_data *ai);
 
