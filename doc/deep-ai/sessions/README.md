@@ -89,6 +89,16 @@ items in its reports are owed a doc-hygiene pass.
    sessions wait for the reset. Session model stays Opus (quality
    failures cost more than the premium); Fable stays the orchestrator.
 
+## Standing human calls (2026-08-06)
+
+- **M1 valuation forms**: marginal-clamped loss for the build want,
+  total form (dp x worth - E[total losses]) for the op go/no-go.
+- **PEACE fold**: the love bar is REMOVED; peace-seeking defaults on,
+  coupled to trade-route love (commerce earns the affection that
+  justifies forgiveness). Landed via the TRADE session.
+- **`switch_cost_gain` stays 1.0** ("it's what a human would do") —
+  pile-listed, no early sweep.
+
 ## Standing human calls (2026-08-05)
 
 - **Do NOT fold `stance_source = 1` or `traitdistribution EVEN` into
