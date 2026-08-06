@@ -6785,3 +6785,323 @@ units per game were meltable garrison fodder.
 `meson test -C build` **3/3 OK** and `python3 benchmark/tune-audit.py`
 **CLEAN 121/121/121/121** before and after; this round adds no tunable
 and changes no value.
+
+## M3: the small-mechanism round -- four built, four closed on evidence (2026-08-05)
+
+Seven code commits plus this one. `ai/deep` and one meson option; no
+`ai/default`, `ai/baseline` or `advisors` behaviour touched.
+
+    791c0a3a15  ai/deep: census the cross-water discount on density fear
+    7f709fd90b  ai/deep: size the founder pool by land a founder can reach
+    5720d60fd4  ai/deep: correct two comments that claim honesty the code lacks
+    5841c3d285  ai/deep: price the health credit in citizens like every other credit
+    6affe4e1cc  build: allow adv_choice producer tags without a debug build
+    026c2360cf  ai/deep: price the marginal explorer, not the average one
+    a9793209ac  ai/deep: correct horizon_health_weight's documented dimension
+    af14ebcf12  ai/deep: salvage the explorers the prize can no longer employ
+
+Binaries, all pinned to scratch with `libfreeciv.so` beside them,
+`--server`, `--arms deep`, tuning=none:
+
+    BEFORE   4a9f2afb06   7e3aee3001d3   the pre-session tip
+    AFTER1   6affe4e1cc   d90dce3ecc95   items 1, 5, 6, 7, 8
+    AFTER2   026c2360cf   c3cae66773d9   AFTER1 + item 4's build shape
+    AFTER3   af14ebcf12   63532b6f75d2   AFTER2 + item 4's salvage leg
+
+`meson test -C build` **3/3 OK** before and after. `tune-audit.py`
+**CLEAN 121/121/121/121 -> 124/124/124/124**: three new PLACEHOLDERs
+(`explore_explorer_claim`, `explore_salvage_gap`,
+`explore_retain_floor`), each registered in all four audit places and
+in the G/ECON/ALL blocks; the `deep-tuning` log line is generated from
+`DEEP_TUNING_FIELDS` so it picked them up unaided.
+
+### 1. The verdict table
+
+    #   item                            verdict            where the number is
+    1   density-fear reachability gate  ALREADY BUILT;     4a. Brief was stale:
+                                        census built       gate is 92bd4a961a
+    2   hut-risk awareness              CLOSED -- the      2. Premise inverted
+                                        premise is wrong      vs server source
+    3   drop-pick cosmetics             WONTFIX, measured  3. 1.2/game vs 633
+    4   explorer census creep           BUILT (2 commits)  5. Hypothesis was
+                                        + hypothesis dead     falsified first
+    5   founder-pool reachability       BUILT              6. 12.5x tile cut
+    6   producer tags for R3            BUILT              7. Byte-identical
+    7   health-credit currency          BUILT              8. 1146 lines/game
+    8   two dishonest comments          BUILT              -- no code change
+    9   civil-war splinter purity       CLOSED -- defect   9. Splinters inherit
+                                        is not real           the parent aitype
+    10  phantom switch-penalty dock     SUPERSEDED         brief item 10; the
+                                        (human, 08-05)        HEDGE session owns it
+
+### 2. Item 2: the hut-risk discount has the sign backwards
+
+The brief asked whether `hut_risk_radius`/`hut_risk_discount` covers
+the hut->barbarian lottery. **It covers the opposite of it.**
+
+`_deflua_hut_get_barbarians` (`data/default/default.lua:106-129`)
+refuses to unleash anything when
+`unit.tile:city_exists_within_max_city_map(true)` -- i.e. when ANY
+player's city lies within `CITY_MAP_MAX_RADIUS` (5,
+`common/fc_types.h:87`) of the hut. The AI-handicap path
+`hut_get_limited()` (`server/unittools.c:3320`) carries the identical
+guard. **A hut near a city cannot spawn barbarians at all**; the huts
+that can are the ones far from every city.
+
+That governs both cells this project runs: neither `data/classic/` nor
+`data/civ2civ3/` ships a `default.lua`, their `script.lua` files
+contain zero occurrences of "hut", and `ruleload.c:9758` ->
+`valid_ruleset_filename()` (`:541`) falls back to
+`data/default/default.lua`.
+
+`deepexplore.c` discounts huts within `hut_risk_radius` of an OWN
+city -- exactly the risk-free ones -- and pays full value for the ones
+that unleash. Two lesser mismatches on top of the sign: the server
+tests EVERY player's cities, deep tests only its own; and the server's
+predicate is a squared-radius city-map iterate where deep uses
+`real_map_distance`.
+
+The barbarian-rate/onset gate deep applies IS right -- it is
+`unleash_barbarians()`'s own gate (`server/barbarian.c:283`).
+
+**Not fixed here.** The correction is small (use the server's own
+predicate, invert the branch) but it changes an explore-value term and
+needs its own A/B on a hut venue, and this session's huts cell was
+already carrying three arms for item 4. The v3b tuner's habit of
+zeroing hut value on classic is now explicable as pricing around a
+term with the wrong sign, not merely an unpriced one.
+
+### 3. Item 3: the drop-pick population is gone
+
+The event is `deep-lift-op ... nextstop` (`deepops.c:1606`) -- the
+operation re-picking its beachhead at the next passenger's goto tile
+after a drop. Cycling is an op that does this repeatedly.
+
+    dir                        games  nextstop/game  games>0  ops re-picking 2+
+    isolated-150 BEFORE           20           1.50    13/20                  6
+    isolated-150 AFTER1           20           1.20    12/20                  2
+    isolated-150 AFTER3           20           1.25    12/20                  3
+    cramped AFTER1                10           0.00     0/10                  0
+
+Against the seed-205 watch item's **633**. There is no cost to
+measure because there are 1.2 events per game and 2-6 operations in
+20 games that ever re-pick twice. **WONTFIX**, and the watch item is
+retired rather than carried.
+
+### 4. Item 1: the gate was built a week ago; what was missing was the counter
+
+The brief lists this as unbuilt. It is not: `92bd4a961a` landed it and
+STATUS 2026-07-31 records "#18 CLOSED -- cross-water density fear
+scales by the neighbour's actual lift". The spec at `0112a65112` and
+the code agree; **the brief is the stale half**.
+
+What was genuinely missing is what `findings/knob-coverage.md` 4a
+names as the project's largest instrument hole. `deep-density` now
+reports, per city per assessment, rivals in radius, how many are
+across water, how many were discounted for owning no lift, and the
+fear both with and without the gate.
+
+    counter (per game)              isolated-150 (20)   cramped (10)
+    deep-density lines                       2 543.8       12 802.9
+    rivals in radius                         5 531.2       43 734.6
+      of which across water                  3 825.1       21 381.0
+      of which DISCOUNTED                    3 825.1       21 381.0
+    raw fear (no gate)                       4 739.4       38 883.2
+    gated fear                               2 400.8       25 313.6
+    share of raw fear shaved                   51.2%          32.4%
+
+Every cross-water rival in range was discounted in both cells: not one
+of them owned a sea transport at the moment it was priced. And the
+gate is not cosmetic at the integer where the danger is actually
+injected -- on isolated-150 it **moves the injected integer on 48.6%
+of evaluations (24 702 of 50 876)** and more than halves the cities
+that see any density fear at all (1 724.8 -> 763.0 per game).
+
+**The brief's cramped prediction is falsified.** It asked for a
+counter of ~0 on cramped "where everyone is reachable". Cramped is
+30x30 with three players and plenty of water: 21 381 cross-water
+contributions per game, a third of the raw fear shaved. Cramped is
+not a reachability no-op cell and should not be used as one again.
+
+**No A/B isolates this gate**, and none can from the arms run here:
+it is present in BEFORE and AFTER alike. The owed measurement is a
+probe binary with the gate disabled, the E34.2b technique. Recorded
+as owed rather than claimed.
+
+### 5. Item 4: the hypothesis was wrong, the defect was real, and the fix is upstream of the fleet
+
+The brief's hypothesis was that the fleet supply count includes
+explorers on continents that cannot serve the local unknown.
+**Falsified before any code was written**: the continent filter is
+already in force (`deepexplore.c:79-130`), the supply set and the
+demand set span the same continents by construction, and `unknown`
+has read 0 in 100% of logged lines since the omniscience gate landed.
+
+The actual pump is the want's SHAPE. Dividing the whole visible prize
+by the fleet is a hyperbola: it approaches zero and never arrives, and
+`explore_want > city_data->choice.want` accepts any positive number
+from a city whose own best want is 0. So the fleet grows until
+something else stops it, which nothing does.
+
+Fixed by pricing the MARGINAL explorer -- each one already fielded or
+on order is deemed to work `explore_explorer_claim` huts' worth of the
+prize, and only the remainder is divided by the fleet. The want now
+reaches exactly zero.
+
+    counter (deep-explore)          AFTER1      AFTER3
+    isolated-150, peak explorers        12           1
+    isolated-150, mean explorers      0.98        0.94
+    isolated-150, want-positive lines 2 630         479   (-82%)
+    huts cell, peak explorers            2           2
+    huts cell, want-positive lines    1 401         702   (-50%)
+
+Score, isolated-150, AFTER1 vs AFTER3, 20 paired seeds:
+**+0.01 +/- 0.34 (t +0.04)** -- and 18 of 20 seeds are bit-identical,
+because the runaway fleet is a tail event, not the median game.
+
+**The huts cell has no decision population for this at all.** All
+three arms produced identical games on all 20 seeds and every metric
+(score 67.50, cities 9.31, unitsbuilt 34.39, ... delta 0.00 on all).
+The want changed on 699 lines per cell and never once flipped a build
+argmax: peak fleet there is 2, and 80 turns is too short to reach the
+equilibrium. The huts cell measures hut RACING, not fleet sizing;
+isolated-150 is the venue for this mechanism.
+
+**The salvage leg is built and has never fired.** Zero `deep-salvage`
+lines in every cell. That is the loop closing from the front: with the
+build shape fixed the fleet never grows past the retention floor, so
+there is nothing to salvage. It stays because it is the disposal half
+of the same quantity and it costs nothing, but **do not count it as a
+live mechanism** -- same status as the tired-attack hold and the
+convoy hold from D1, and for a healthier reason.
+
+### 6. Item 5: the founder pool was holding options on other people's islands
+
+`deep_remaining_sites()` fed the Join City gate from a whole-map count
+of every unowned land tile on the planet. Now: land on a landmass we
+occupy always; the rest of the world only while we own a sea transport
+that could carry a founder to it. `deep-pool` gained `freetiles=` and
+`reachtiles=`.
+
+    counter (deep-pool, per game)   isolated-150        cramped
+    lines with reachtiles<freetiles   75.8 / 75.8    35.7 / 35.7
+    mean freetiles                         427.4           74.6
+    mean reachtiles                         34.3           21.6
+
+**Every single line.** On isolated-150 the census was counting 12.5x
+more land than a founder could stand on.
+
+    metric        BEFORE   AFTER   delta     se       t     cell
+    sites          47.25    3.55  -43.70   1.74  -25.07   iso-150
+    pool target     2.83    0.21   -2.62   0.10  -25.27   iso-150
+    sites           8.00    2.80   -5.20   0.72   -7.22   cramped
+    pool target     0.48    0.17   -0.30   0.05   -6.65   cramped
+
+A/B, BEFORE vs AFTER1 (this arm also carries items 6, 7 and 8; 6 and 8
+are provably behaviour-neutral, so the movement is items 5 and 7):
+
+    cell            score BEFORE   AFTER    delta      se      t   wins
+    isolated-150         194.66   196.12    +1.46    4.38  +0.33  12/20
+    cramped              313.43   321.37    +7.93   17.37  +0.46   5/10
+
+Flat and slightly positive on both. The mechanism metrics move the way
+the change predicts -- isolated-150 settlers 3.51 -> 3.20,
+mean_city_size +0.11 -- and two cramped metrics move more than noise
+in a direction worth watching: **cities 11.27 -> 10.87 (t -1.07) and
+munits 35.60 -> 30.73 (t -2.78)**.
+
+**Recalibration debt, and it is the important line here.**
+`founder_pool_per_site` was tuned against the UNFILTERED sites number.
+The pool target is now 0.17-0.21 where it was 0.48-2.83, so the gate
+dissolves nearly every surplus founder. The knob has not changed but
+its meaning has, by roughly 13x. **It owes the tuning pile a value
+before any expansion claim rests on this gate.**
+
+### 7. Item 6: producer tags, byte-identically neutral
+
+`-Dadvchoicetrack=true` defines `ADV_CHOICE_TRACK` as a global
+compiler argument -- global rather than an `fc_config.h` entry because
+the macro changes the LAYOUT of `struct adv_choice` and every
+translation unit that sees the header must see the macro whatever its
+include order. **No C source file is touched.**
+
+Neutrality proved two ways. Byte identity across the change at the
+default: `freeciv-server` `d0e1ad42481cf3b6...` and `libfreeciv.so`
+`5b7284355f8f0fc1...`, `sha256sum -c` OK on both after a full meson
+reconfigure. And the switch demonstrably does something when thrown:
+`adv_choice_set_use` and `adv_choice_get_use` are defined symbols in a
+`-Dadvchoicetrack=true` build and absent from the default one. The 25
+existing `adv_choice_set_use()` call sites in `ai/default`, `ai/deep`
+and `server/advisors` supply the names; nothing in the tree calls
+`ADV_CHOICE_LOG()` or `adv_choice_mark()`, so the switch adds no log
+output of its own. **R3 gets its producer column by building with the
+flag.**
+
+### 8. Item 7: the third currency is gone
+
+`deephorizon.c` paid raw `EFT_HEALTH_PCT` percent points times a
+weight. Now: expected citizens the building saves over the horizon,
+valued at `deep_unworked_tile_value()` -- the same per-citizen price
+the capacity and content credits pay. The conversion is the ruleset's
+own arithmetic (`city_illness_calc()` reports base illness per turn in
+tenths of a percent; `city_illness_strike()`, `citytools.c:2984`,
+costs exactly one citizen), so no constant was invented.
+
+`deep-credit` gained `health=`, the per-term instrument
+knob-coverage 4e records as missing:
+
+    cell            credit lines/game   with health>0   mean when >0
+    isolated-150              4 490.9         1 146.4           9.25
+    cramped                   4 971.5         1 842.0           9.58
+
+Live in 20/20 and 10/10 games. Under the old form a civ2civ3 Aqueduct
+contributed a flat 30 in every city, including cities whose plague
+risk was zero. **`horizon_health_weight`'s scale moved with its
+dimension** -- there was no exact factor to divide by the way the D2
+upkeep fix had MORT -- so it is flagged for the tuning pile and its
+header comment was corrected to name the new unit (`a9793209ac`).
+
+### 9. Item 9: splinters inherit the parent's aitype; the defect is not real
+
+`split_player()` (`server/plrhand.c:2777`) calls
+`server_create_player(-1, ai_name(pplayer->ai), ...)` -- **the
+parent's** aitype, not the server default. The 2026-07-31 bug-round
+item 5 is false against this tree and needs no fix.
+
+What does take `default_ai_type_name()` is the BARBARIAN player
+(`server/barbarian.c:131`, resolving to `AI_MOD_DEFAULT`), and
+barbarians are excluded from scoring twice over -- by `GOOD_PLAYER` in
+`historian_generic()` and by `paircmp.py`'s `P\d+` seat filter.
+
+Population, this session's dirs: **6 splinter seats in 10 cramped
+games, 1 in 20 isolated-150, 0 in 20 huts** -- all already filtered
+out of every comparison by that same rule, which `paircmp.py`'s
+docstring documents. No scoring contamination exists to fix.
+
+### 10. What G1 must know
+
+- **`founder_pool_per_site` is stale by ~13x in meaning.** G1's floor
+  work sits next to the expansion gate; any settler or founder claim
+  taken against the current value is taken against a knob calibrated
+  for a quantity that no longer exists.
+- **The density-fear gate has never been A/B'd**, in either direction,
+  and it is in every binary this project has benchmarked since
+  `92bd4a961a`. Its counter is now live and says it shaves a third to
+  a half of the raw fear. If a floor A/B moves, that term is in the
+  baseline.
+- **Cramped is not a reachability no-op cell.** 21 381 cross-water
+  density contributions per game. Any "everyone is reachable here"
+  reasoning about cramped is wrong.
+- **`deep-density`, `deep-credit health=` and `deep-pool
+  freetiles=/reachtiles=` are new.** Between them they convert part of
+  knob-coverage 4a and 4e from NO-INSTRUMENT; the fear lattice's other
+  ten knobs are still dark, because the post-injection `deep-def` line
+  is still not written.
+- **The explorer salvage leg has zero population.** Do not size
+  anything on the assumption that deep disbands explorers.
+- **Do not use the huts cell to measure explorer fleet sizing.** Three
+  binaries, 20 seeds, byte-identical games. Fleet sizing lives on
+  isolated-150.
+- **The hut-risk discount is inverted** and is still shipping that
+  way. Any hut-value tuning done before it is fixed is tuning around a
+  sign error, which is what v3b already did by hand.
