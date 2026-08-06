@@ -109,11 +109,39 @@ double deep_stack_survival(int n_att, const int *att_hp,
                            int n_def, const int *def_hp,
                            const struct deep_duel *pair)
 {
+  return deep_stack_survival_losses(n_att, att_hp, n_def, def_hp, pair,
+                                    NULL);
+}
+
+/**********************************************************************//**
+  As deep_stack_survival(), also reporting what the stream pays for
+  the answer: att_death[j] = P(attacker j dies).
+
+  It is the same walk. At every state the duel has exactly two
+  outcomes -- the defender survives (and the attacker is dead) or the
+  defender falls (and the attacker lives, its turn spent) -- so the
+  survival mass this function already computes per duel IS the
+  attacker's death probability, and summing it over the live states
+  costs one multiply-add per state. The mass that has already reached
+  `dead` (the whole stack annihilated) is not live, so an attacker
+  with nothing left to fight is charged nothing, which is what makes
+  the total a force size rather than a casualty rate.
+**************************************************************************/
+double deep_stack_survival_losses(int n_att, const int *att_hp,
+                                  int n_def, const int *def_hp,
+                                  const struct deep_duel *pair,
+                                  double *att_death)
+{
   int max_hp = 0, i, j, h, hh, width;
   size_t cells, c;
   double *base, *state, *next, *duel_dist, *swap;
   double dead = 0.0;
 
+  if (att_death != NULL) {
+    for (j = 0; j < n_att; j++) {
+      att_death[j] = 0.0;
+    }
+  }
   if (n_def <= 0) {
     return 0.0;
   }
@@ -159,6 +187,9 @@ double deep_stack_survival(int n_att, const int *att_hp,
         }
         survive = deep_duel_defender_dist(&pair[j * n_def + i],
                                           att_hp[j], h, duel_dist);
+        if (att_death != NULL) {
+          att_death[j] += m * survive;
+        }
         for (hh = 1; hh < width; hh++) {
           if (duel_dist[hh] > 0.0) {
             next[i * width + hh] += m * duel_dist[hh];

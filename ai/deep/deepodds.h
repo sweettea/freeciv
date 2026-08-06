@@ -45,4 +45,17 @@ double deep_stack_survival(int n_att, const int *att_hp,
                            const struct deep_duel *pair
                            /* [n_att * n_def], attacker-major */);
 
+/* The same walk, keeping what it costs the attacker. att_death[j] is
+ * filled with P(attacker j dies in its duel) -- which is exactly the
+ * probability that the defender it met survived, because a freeciv
+ * duel runs to a death. An attacker that never gets to strike (the
+ * stack fell before its turn) contributes 0, so
+ * n_att - sum(att_death) is the expected size of the force still
+ * standing after the assault: the quantity "can I hold what I take"
+ * needs and nothing in this project could previously ask for. */
+double deep_stack_survival_losses(int n_att, const int *att_hp,
+                                  int n_def, const int *def_hp,
+                                  const struct deep_duel *pair,
+                                  double *att_death /* [n_att] or NULL */);
+
 #endif /* FC__DEEPODDS_H */
