@@ -8440,3 +8440,246 @@ in `knobcensus.py`.
 - **Every arm this session pinned `pay_switch_penalty = 1` and
   `switch_cost_price = 1`.** The archived inis are
   `benchmark/tuning/r3-{off,settler,worker,cap,all}.ini`.
+
+## M1: combat E2 -- the attack learns what it costs (2026-08-06)
+
+Ten code/benchmark commits plus this one. `ai/deep`, `tests/`,
+`benchmark/` and doc only; no `ai/default`, `ai/baseline` or
+`advisors` behaviour touched.
+
+    6f7858abc8  ai/deep: report expected attacker losses from the
+                survival walk
+    7d5f928892  ai/deep: charge an assault want the losses it expects
+                to take
+    cce4f82b1e  ai/deep: price the marginal attacker against the force
+                that can arrive
+    6625a568cd  ai/deep: launch a mustered wave on its odds, not on a
+                head count
+    21dcc5cdf9  ai/deep: decide hold-vs-press where a unit is actually
+                tired
+    4e6edebce5  ai/deep: let the survival wave see enemy air
+    def008f38c  benchmark: report the combat E2 census and register its
+                four knobs
+    b4bde75f6d  ai/deep: charge the assault loss only when there is one
+    b3e6c2723b  ai/deep: keep deep_op_form's doc comment on deep_op_form
+    d6e8c26ff2  benchmark: refuse a float tunable written without a
+                decimal point
+
+**Headline: deep loses half the units it used to lose, and the score
+moves the right way on both cells without clearing twenty seeds.** On
+contested the whole epic takes unitslost 23.99 -> 12.98 (t -9.47,
+worse on ZERO of 20 seeds) and unitsbuilt 54.52 -> 42.72 (t -9.22) for
++1.75 score (t +1.27); the cost term ALONE is -4.41 unitslost
+(t -4.40) for +1.27 score. The freed shields show up where the brief
+said to look: mean_city_size +0.36 (t +3.07), wonders +0.13 (t +2.43),
+techs +0.57. Full tables in
+`findings/combat-e2-attrition-2026-08-06.md`.
+
+### 1. What the substrate now reports, and what it costs to report it
+
+`deep_stack_survival_losses()` fills `att_death[j] = P(attacker j
+dies)` from the walk that was already happening: at every state the
+duel has two outcomes, and the defender's survival probability IS the
+attacker's death probability. Mass in the annihilated-stack absorber
+is not live, so an attacker with nothing left to fight is charged
+nothing -- which makes `n_att - sum(att_death)` an expected FORCE SIZE
+and lets "can I hold what I take" be asked for the first time.
+
+Performance, the brief's stop condition: 32 attackers x 16 defenders
+at 40 HP, 200 calls, -O2 -- **2.406 ms/call before, 2.394 after, ratio
+0.995.** No measurable cost.
+
+`meson test -C build` is **4/4**: `tests/deepattrition_test.c` is a new
+L0 target beside `deepodds`, all closed forms, including the
+hand-checkable four-coin-flip example (P(attacker j dies) = 0.5^(j+1)
+exactly, expected survivors 3.0625) and the accounting identity that
+every duel kills exactly one unit.
+
+### 2. The clamp, which is the epic's one real design decision
+
+The first census of `loss=` said the MARGINAL loss is negative on
+48.1% of evaluations (lategame-80, 63 375 lines, mean -5.40 shields).
+That is real: the stream strikes strongest-first, so a strong blade at
+the head often kills the defender in duel one and the weaker pool
+members never fight. Paid unclamped it would be a SUBSIDY on half the
+population, and it would credit the build with the same causal event
+`Dp` already credits it with. Clamped at zero the term is a cost and
+only a cost -- it can make deep more selective than the pre-E2 want
+and never more aggressive. **"Massing a strong blade at the head saves
+the weak ones behind it" is recorded, not spent**; it belongs to
+whichever epic prices force COMPOSITION.
+
+### 3. The three A/B arms, both cells, 20 paired seeds each
+
+Binary PINNED (`8ce4a7617a7c`, server + `libfreeciv.so`, `--server`),
+`--arms deep`, every arm loading a tuning FILE that pins
+`pay_switch_penalty = 1` and `switch_cost_price = 1` so no arm differs
+in HEDGE's handicap. Arms: OFF (every E2 mechanism off), LOSS
+(`attack_loss_gain 1.0` alone), ALL (compiled defaults).
+
+    contested                    OFF      LOSS       ALL   L-O (t)   A-O (t)
+    score                      79.12     80.39     80.87  +1.27 1.18 +1.75 1.27
+    unitsbuilt                 54.52     50.31     42.72  -4.21 -6.17 -11.80 -9.22
+    UNITSLOST                  23.99     19.58     12.98  -4.41 -4.40 -11.01 -9.47
+    unitskilled                17.93     14.64      9.82  -3.29 -3.58  -8.11 -8.21
+    mean_city_size              5.29      5.41      5.65  +0.12 +1.23  +0.36 +3.07
+    wonders                     0.28      0.31      0.41  +0.03 +0.74  +0.13 +2.43
+    munits                     14.49     14.17     13.07  -0.33 -0.60  -1.43 -2.50
+
+    per game                     OFF      LOSS       ALL
+    declines (cost)          1668.00   1757.65   2431.90   55.1% -> 81.9%
+    marginal loss NEGATIVE    782.30    717.60    144.20   25.8% ->  4.9%
+    net want, summed       165334.48  89291.96  26700.21
+    pool members, summed    12043.95  12739.25   3203.00
+    ... OUT of reach             0.00      0.00  10702.05
+    operations formed           6.30      5.15      2.90
+    operations LAUNCHED         5.25      4.45      2.60
+
+    lategame-80                  OFF      LOSS       ALL   L-O (t)   A-O (t)
+    score                     169.54    170.68    168.05  +1.14 0.78 -1.49 -0.84
+    cities                      7.78      7.85      8.08  +0.07 0.52 +0.30 +1.97
+    unitsbuilt                 38.98     39.18     39.76  +0.20 0.35 +0.77 +1.21
+    UNITSLOST                  13.07     13.01     13.39  -0.06 -0.13 +0.33 +0.59
+    mean_city_size              5.47      5.43      5.32  -0.04 -0.71 -0.15 -2.31
+    operations LAUNCHED         4.65      4.85      6.35  +0.20      +1.70 +1.99
+    declines (cost)           682.60    668.45   1392.65   33.1% ->   65.0%
+    pool members, summed     8982.00   9459.05   2144.10
+    ... OUT of reach             0.00      0.00   7097.15
+
+**The cost term points the same way on both cells** (+1.27 contested,
++1.14 lategame-80) and clears twenty seeds on neither. **The ops pair
+does not**: it is part of contested's +1.75 and it costs 2.63 on
+lategame-80. The halving of unit losses is a CONTESTED result --
+lategame-80's unitslost is flat -- because contested is where deep
+fights a lot and loses a lot.
+
+The reach test is the biggest single behaviour change in the round:
+**it removes three quarters of the pool** (lategame-80: 9459 -> 2144
+member-slots a game, binding on 75% of evaluations) and by doing so
+turns the marginal blade from a shield into a fighter, which is why
+the decline rate climbs from 55% to 82% when the two are combined.
+
+**The launch bar's sign is venue-dependent.** Launches fall 4.45 ->
+2.60 on contested and RISE 4.85 -> 6.35 on lategame-80. Same code,
+same knobs: contested's waves rarely clear an odds bar the head count
+would have passed, lategame's often clear it before the last body
+arrives. A verdict inherits its venue.
+
+**The four-marginal-campaigns pattern did NOT appear.** Force size per
+launch is essentially unchanged (lategame-80: 4.51 -> 4.27 members);
+what moved is the NUMBER of launches, in opposite directions by cell.
+G2's "four marginal campaigns where a human runs one decisive one" is
+not addressed by this epic and remains open.
+
+### 4. Two mechanisms with no population, and one with none by design
+
+- **The re-seated tired-attack hold fires ZERO times in 120 games,
+  both cells.** The seat is now correct -- D1 proved the old one could
+  not fire, and this one sits inside the op's own battle where a unit
+  IS tired -- but the window (a member adjacent, `0 < moves_left <
+  SINGLE_MOVE`, tired odds below the floor AND fresh odds above it) is
+  empty on both standing cells. Marching members arrive with either
+  full moves or none. **Do not count it as a live mechanism**; same
+  status as the convoy hold and the explorer salvage leg.
+- **`deep-air` is zero in 120 games**, which is the answer G1 already
+  predicted: neither standing cell reaches flight. The air term ships
+  proven-inert-here rather than proven-correct, and the cell that
+  would exercise it is the era-reachability item (ladder row 14).
+- The negative-loss branch is inert BY DESIGN (section 2).
+
+### 5. A harness defect that cost a 40-game pair, now guarded
+
+The first lategame pair came back **bit-identical on all 20 seeds**
+with `attack_loss_gain = 0` in one arm and `1.0` in the other.
+`secfile` stores a token with no decimal point as an INT entry, and
+`TUNE_DOUBLE`'s `secfile_lookup_float_default()` then falls back to
+the COMPILED DEFAULT. The key name validates, the entry exists, the
+result key differs -- nothing downstream notices. The `deep-tuning`
+line is what caught it (both arms printed `attack_loss_gain=1
+tired_attack_floor=0.9`).
+
+`run.sh` now reads each key's declared type from `tuning-params.ini`
+and refuses an int-formatted value for a float key, proven both ways.
+**All 20 archived inis under `benchmark/tuning/` were scanned and are
+CLEAN**, so no published result is affected.
+
+The wasted pair is not wasted evidence: both its arms charged the cost
+and neither ran the ops-side changes, so it isolates the ops pair on
+lategame-80 exactly (score -2.63, t -1.54; launches +1.50, t +1.76).
+Both lategame arms were then RE-RUN with the corrected file, and every
+lategame number in section 3 is from the corrected pair.
+
+### 6. Owed to the tuning pile
+
+    attack_loss_gain      1.0   PLACEHOLDER, and the epic's hottest
+                                knob. The conversion is
+                                SHIELD_WEIGHTING -- the codebase's own
+                                shields-to-want rate and stock's own
+                                choice in kill_desire() -- so nothing
+                                is invented; the gain is how much of it
+                                to charge. At 1.0 it refuses 55-82% of
+                                positively priced attacks. 0 = the
+                                pre-E2 want exactly.
+    op_hold_survivors     1.0   PLACEHOLDER, expected units. "One blade
+                                expected to survive and stand in the
+                                city." Never exercised against an
+                                alternative value.
+    assault_pool_reach      1   Geometry, not a magnitude, like
+                                boat_water_gate. 0 restores the
+                                whole-continent pool.
+    op_launch_odds          1   The bar's CURRENCY, not a magnitude.
+                                0 restores the head count.
+
+`tune-audit.py` CLEAN **145/145/145/145 -> 149/149/149/149**, each new
+key in all four audit places, in the G/MIL/ALL blocks, in the generated
+`deep-tuning` line and in `knobcensus.py`.
+
+### 7. What the next session must know
+
+- **The cost of victory is landed and it is the first mechanism this
+  project has that makes deep DECLINE.** Any military measurement from
+  here is taken against a seat that refuses most of the attacks it
+  prices. Take new baselines.
+- **`attack_loss_gain` wants a magnitude sweep before anything else in
+  MIL is tuned.** It moves the offensive want mass by 84% on contested
+  at its placeholder value; every other MIL knob is being tuned around
+  whatever it is set to.
+- **The tired-attack hold now has a CORRECT seat and no population.**
+  Two sessions have now paid for this mechanism. If a third wants it,
+  the honest next step is to measure how often any deep unit is
+  adjacent-and-tired at all, not to re-seat it again.
+- **The negative marginal loss is an unowned finding.** 48% of
+  evaluations price the marginal blade as REDUCING the wave's losses,
+  because strongest-first ordering lets a strong unit absorb the duel
+  the weak ones would have lost. Nothing in deep prices force
+  composition, and this is the number that says it should.
+- **`deep_take_odds_cost()` is the substrate's new public face**
+  (expected losses in shields, expected survivors). W14's war ledger
+  and E8's raid trade metric both wanted exactly this and can now be
+  built on it.
+- **The deep-bid MILITARY split that R3 asked for is NOT built.** The
+  military ladder is a running MAX over producers, so a per-producer
+  line at that seam reports "who raised the max", not "what each class
+  bid". A true split needs each producer to report its own want before
+  the max -- free for deep's own producers (the assault want already
+  logs itself in `deep-kill`), impossible for stock's
+  `kill_something_with()` without touching `ai/default`. Written up
+  rather than half-landed.
+- **The two recovered posture notes are DEFERRED, not dropped.**
+  Sortie pricing as survival-DELTAS and escort demand scaled from
+  observed sea threat are both pre-registered designs
+  (`civ2civ3-adjustments.md`, "Combat workstream epic 1"), and the
+  escort one is explicitly filed to naval epic #16 with its own rule
+  ("empty seas justify unescorted caravans"). Neither fits inside an
+  epic that already changed the pool definition, the launch bar and
+  the want; landing them badly would contaminate the attribution this
+  session's tables rest on.
+- **An underdetermined choice the human owns** (lost-posture warning,
+  flagged rather than guessed): whether the cost of victory should be
+  the MARGINAL loss (what this blade adds, shipped) or the assault's
+  TOTAL expected loss discounting the prize (`Dp x (worth - cost)`).
+  The brief's wording supports either; the marginal form was chosen
+  because it matches the benefit's own form, and the clamp exists
+  because the marginal form has a sign problem the total form does
+  not. If the human wants the total form, it is a small change to the
+  same call site and the census already logs what it needs.
