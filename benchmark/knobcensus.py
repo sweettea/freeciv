@@ -396,6 +396,25 @@ MAP = {
         "S2", "mag", "direct", [("deep-kill", "")],
         "deep-kill logs the assault want this weight scales "
         "(deepdefence.c:3177/3247)."),
+    "attack_loss_gain": (
+        "S2", "mag", "direct", [("deep-kill", "")],
+        "deep-kill carries gross= and loss=, so the cost-of-victory "
+        "subtraction this gain scales is on the line whether or not it "
+        "changed the argmax (deepdefence.c:3813)."),
+    "assault_pool_reach": (
+        "S2", "gate", "direct", [("deep-kill", "")],
+        "far= counts the free attackers the per-target pool dropped "
+        "for being unable to arrive by the marginal blade's eta; 0 on "
+        "every line is the off arm (deepdefence.c:3720)."),
+    "op_launch_odds": (
+        "S2", "gate", "direct", [("deep-op", "flag:march")],
+        "the march line carries bar=, odds= and surv=: bar=0 is the "
+        "head-count launch, bar=1 the odds one (deepops.c:3760)."),
+    "op_hold_survivors": (
+        "S2", "mag", "direct", [("deep-op", "flag:march")],
+        "surv= on the march line is the expected force still standing "
+        "after the take, which this bar is compared against; a launch "
+        "that never happens leaves no line, so pair it with op_form."),
     "sortie_win_floor": (
         "S2", "mag", "direct", [("deep-sortie", "has:kill")],
         "the kill= form of deep-sortie fires only after the duel "
