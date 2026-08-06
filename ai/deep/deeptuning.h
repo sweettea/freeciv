@@ -1015,6 +1015,40 @@ struct deep_tuning {
    * reaches in 20 games, below the spikes. 0 = no cap = today's
    * behaviour. PLACEHOLDER. */
   double emergency_value_cap;
+
+  /* PEACE -- the cease-fire trap. 20-42% of every pair that ever
+   * stopped shooting reached DS_CEASEFIRE and never got off it
+   * (findings/deep-dive-2026-08-05/diplomacy-gamestate.md §2a), and
+   * the mechanism is legible: a cease-fire lapses back to WAR after
+   * 16 turns (diplhand.c:57), stock refuses to even PRICE peace while
+   * `turns_left > 4` (daidiplomacy.c:405), and its own anti-spam gate
+   * skips the whole AI-AI diplomacy branch for fc_rand(4)+3 turns
+   * (:1814,:1824). The window and the gate are the same size, so the
+   * pass that could ask often is not running on any of the four turns
+   * it would be allowed to.
+   *
+   * peace_seek_gain runs a PRE-PASS in deep's own wrapper, before
+   * stock's spam-gated pass, on exactly the turns the window is open.
+   * The value is the fraction of stock's own req_love_for_peace bar
+   * deep is willing to WAIVE for a partner it is not committed to
+   * fighting: 0.0 asks for the full stock bar and therefore proposes
+   * nothing stock would not already have proposed given the chance,
+   * which is why 0.0 is the off switch AND the honest control. 1.0
+   * would seek peace at any love at all.
+   *
+   * Note what this does NOT do: it never waives the structural guards
+   * (a live war countdown, an alliance with our enemy, H_AWAY, the
+   * non-attack precondition). It waives a LOVE THRESHOLD, and love is
+   * the quantity the trap is built out of -- best_target bleeds up to
+   * 50/turn against a 125-love bar (:1135-1141), so a pair can be
+   * permanently below a bar it would clear if it were ever asked.
+   *
+   * THE TRADE IS REAL AND IS NOT HIDDEN: a peace deep signs is a
+   * conquest deep forgoes, and on cells decided by conquest that can
+   * cost score. The dividend (trade routes across a durable peace)
+   * belongs to TRADE, not here. PLACEHOLDER. */
+  double peace_seek_gain;
+
 };
 
 void deep_tuning_init(void);

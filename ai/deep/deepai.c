@@ -61,6 +61,7 @@
 
 #include "deepcombat.h"
 #include "deepdefence.h"
+#include "deepdiplomacy.h"
 #include "deepsettler.h"
 #include "deepsite.h"
 #include "deepstance.h"
@@ -945,6 +946,15 @@ static void dpai_diplomacy_actions(struct player *pplayer)
   struct ai_type *deftype = deep_ai_get_self();
   struct deep_plr *dp = deep_plr_data(pplayer);
 
+  /* PEACE's pre-pass, and it must run BEFORE stock's pass: stock's
+   * anti-spam gate skips the whole AI-AI branch for fc_rand(4)+3
+   * turns and the cease-fire peace window is four turns wide, so the
+   * pass that would propose peace is not running on the turns the
+   * counterparty is allowed to say yes. With every PEACE knob at its
+   * compiled 0 this refreshes the leader read, logs it, and returns.
+   * (Off-switch proof: benchmark/tuning/peace-off.ini.) */
+  deep_diplomacy_prepass(deftype, pplayer);
+
   dai_diplomacy_actions(deftype, pplayer);
 
   /* Retract a war countdown that quietly lapsed.
@@ -1003,6 +1013,13 @@ static void dpai_treaty_evaluate(struct player *pplayer, struct player *aplayer,
                                 struct treaty *ptreaty)
 {
   struct ai_type *deftype = deep_ai_get_self();
+
+  /* Deep claims only the treaty shapes it prices in full -- a lone
+   * peace clause, or a treaty made of nothing but embassy clauses --
+   * and forwards every other treaty untouched. */
+  if (deep_treaty_evaluate(deftype, pplayer, aplayer, ptreaty)) {
+    return;
+  }
 
   dai_treaty_evaluate(deftype, pplayer, aplayer, ptreaty);
 }

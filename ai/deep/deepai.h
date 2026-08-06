@@ -153,6 +153,15 @@ struct deep_plr {
   int rates_agreed;
   int rates_celebrate;
   int rates_unpriced;
+  /* Diplomacy (PEACE, 2026-08-06). The execution census for the
+   * cease-fire pre-pass. Cumulative within a run and NOT saved: the
+   * per-event log lines are what benchmark/diplcensus.py reads, and a
+   * reload that resets the tallies costs a partial count of an
+   * already-logged stream (the same contract the rates counters ship
+   * under). */
+  int peace_windows;            /* pre-pass evaluations inside a window */
+  int peace_proposed;           /* ... that sent a peace clause */
+  int peace_taken;              /* peace clauses deep's evaluate accepted */
 };
 
 static inline struct deep_plr *deep_plr_data(const struct player *pplayer)
