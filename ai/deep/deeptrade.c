@@ -560,6 +560,7 @@ struct deep_route_cand {
   int life;                     /* turns of ongoing income priced */
   double npv;                   /* the answer, discounted to now */
   double caravan_npv;           /* what caravan.c's assembly would say */
+  double survival;              /* the transit-risk factor applied */
   bool ceasefire;               /* partner's route has a known death date */
 };
 
@@ -799,6 +800,7 @@ static void deep_route_price(const struct player *pplayer,
     c->npv = deep_route_pv(c->windfall + ongoing, c->eta, discount);
   }
   c->npv *= survival;
+  c->survival = survival;
 
   /* The same pair through caravan.c's assembly, for the census only.
    * Nothing reads it; it is what turns "the annuity is inverted" from
@@ -1141,7 +1143,6 @@ static adv_want deep_trade_merit_want(struct ai_type *ait,
     if (cand[i].ceasefire) {
       tc->truncated++;
     }
-    tc->danger = MAX(tc->danger, 1.0 - survival);
     cand[keep++] = cand[i];
   }
   pf_map_destroy(pfm);
@@ -1173,7 +1174,8 @@ static adv_want deep_trade_merit_want(struct ai_type *ait,
   tc->windfall = pick->windfall;
   tc->per_turn = pick->per_turn;
   tc->life = pick->life;
-  tc->survival = (pick->npv > 0.0 && pick->eta >= 0) ? 1.0 - tc->danger : 1.0;
+  tc->survival = pick->survival;
+  tc->danger = 1.0 - pick->survival;
 
   /* The delay is DISCOUNTED, not gated. A city three turns from
    * finishing a caravan and a city thirty turns from one are answering
