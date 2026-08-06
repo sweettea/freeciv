@@ -107,6 +107,23 @@ def main():
         for c in classes_seen:
             print(f"    {c:<8s} {classlive[c]/n:10.1f}/game"
                   f"   {100.0*classlive[c]/max(tot[0],1):5.1f}%")
+        # The gate's own effect, directly: an eligible city-turn where
+        # the menace scaler was ABOVE zero -- so the ungated floor would
+        # have injected a defender's worth of danger -- and no class was
+        # live, so the class-gated floor injects nothing. This is the
+        # acceptance sentence's counter: no live class and no active
+        # threat means the settler or the building wins.
+        saved = [sum(1 for r in parse(d)
+                     if "w" in r and r["w"] <= 0 and r.get("menace", 0) > 0)
+                 for d, *_ in per_game]
+        saved_early = [sum(1 for r in parse(d)
+                           if "w" in r and r["w"] <= 0
+                           and r.get("menace", 0) > 0
+                           and r["turn"] <= args.early)
+                       for d, *_ in per_game]
+        print(f"  GATED TO ZERO (menace>0, no live class)"
+              f" {sum(saved)/n:9.1f}/game"
+              f"   turn<={args.early}: {sum(saved_early)/n:.1f}")
     print("  applied-danger histogram (value: city-turns/game):")
     for v in sorted(applied_hist)[:12]:
         print(f"    {v:>5}: {applied_hist[v]/n:9.1f}")
