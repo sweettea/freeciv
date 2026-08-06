@@ -4295,6 +4295,60 @@ static void deep_prodswitch_log(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Census the competing bids BEFORE the auction, at the one seam where
+  every class's price for the same city-turn is simultaneously
+  readable.
+
+  `deep-want` (below) records the WINNER, which is how the July 2026
+  W01 corpus was taken; a winner-conditioned sample cannot say what a
+  class bid when it lost, and the classes this project most needs to
+  compare -- the founder against the building anchor -- rarely win in
+  the same city-turn. R2b's two-price logging is the pattern: both
+  prices for the same decision, on the same line.
+
+  Every value here is already computed and none is recomputed:
+  `founder_want` and `worker_want` are `ai/default`'s own fields
+  (daisettlers.c / daicity.c) as they stand before
+  domestic_advisor_choose_build() scales them by traits, by `expand`
+  and by the wonder-city divisor; `mil` is deep's military choice,
+  formed above; `build` is the same maximum over
+  `pcity->server.adv->building_want[]` that building_advisor_choose()
+  takes, computed here WITHOUT the AI's choose_building callback so
+  the census cannot perturb the decision it is watching.
+
+  `founder` keeps its sign: negative means "I want to found and I need
+  a boat first" (daicity.h:60), so its magnitude is the want and its
+  sign is the errand.
+**************************************************************************/
+static void deep_bid_log(struct player *pplayer, struct city *pcity,
+                         const struct ai_city *city_data)
+{
+  struct deep_want mil = deep_want_from_choice(&city_data->choice);
+  adv_want build = 0;
+
+  improvement_iterate(pimprove) {
+    int id = improvement_index(pimprove);
+
+    if (!is_wonder(pimprove)
+        && pcity->server.adv->building_want[id] > build
+        && can_city_build_improvement_now(pcity, pimprove, RPT_CERTAIN)) {
+      build = pcity->server.adv->building_want[id];
+    }
+  } improvement_iterate_end;
+
+  log_base(deep_metric_log_level(),
+           "deep-bid turn=%d player=\"%s\" city=%d"
+           " founder=" ADV_WANT_PRINTF " worker=" ADV_WANT_PRINTF
+           " expand=%d mil=" ADV_WANT_PRINTF " miltier=%d"
+           " build=" ADV_WANT_PRINTF " size=%d",
+           game.info.turn, player_name(pplayer), pcity->id,
+           (adv_want) city_data->founder_want,
+           (adv_want) city_data->worker_want,
+           pplayer->ai_common.expand,
+           mil.value, (int) mil.tier, build, city_size_get(pcity));
+}
+
+/**********************************************************************//**
   Final build-choice selection for one city. Derived from
   dai_city_choose_build(); the differences (W01) are that the
   military-emergency gate is a want TIER check instead of a magnitude
@@ -4330,6 +4384,8 @@ static void deep_city_choose_build(struct ai_type *ait,
              universal_rule_name(&pcity->production),
              deep_prod_class(&pcity->production));
   }
+
+  deep_bid_log(pplayer, pcity, city_data);
 
   if (has_handicap(pplayer, H_AWAY)
       && !city_built_last_turn(pcity)
