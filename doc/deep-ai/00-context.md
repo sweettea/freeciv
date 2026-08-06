@@ -81,13 +81,13 @@ place**. This is why the project is tractable.
 | Infrastructure | State |
 |---|---|
 | `struct ai_type::funcs` vtable | Complete; `ai/tex` proves a second module works |
-| `player_save` / `player_load` hooks | Exist; **commented out** in `classicai.c:628` |
-| `struct player_tile` / `vision_site` | Full remembered map, maintained and saved, **never read by the AI** |
-| `pcity->cm_parameter` | Honoured by `auto_arrange_workers`, **never set by the AI** |
-| `is_pos_dangerous` PF callback | Documented, **assigned by nothing anywhere** |
+| `player_save` / `player_load` hooks | Exist; commented out in `classicai.c:628` — **wired by `ai/deep`** (E00.7) |
+| `struct player_tile` / `vision_site` | Full remembered map, maintained and saved, **never read by any AI** (W04's subject; see `findings/non-omniscient-roadmap.md`) |
+| `pcity->cm_parameter` | Honoured by `auto_arrange_workers`, never set by `ai/default` — **`ai/deep` sets it** (W09-lite, `deepcm.c`) |
+| `is_pos_dangerous` PF callback | Documented, assigned by nothing in stock — **`ai/deep` assigns it for civilians** (`deepsettler.c:220`); military/ferry paths still NULL |
 | `adv->oceans[].size` | Computed every phase, **only `.threat` ever read** |
 | `ai_invasion` counters | Built for enemy cities, **never for own** |
-| `TIMING_LOG` + ~25 `AIT_*` buckets | Instrumented throughout, compiled out |
+| `TIMING_LOG` + ~25 `AIT_*` buckets | Instrumented throughout; **now behind the `aitiming` meson option** (default off), used by deep's own code |
 | `create_city_virtual()` | Used for site scoring, **never for strategy simulation** |
 | `tile_virtual_new/destroy` | The correct purity pattern, used in one place |
 | `struct req_context` | Threads through requirement eval; needs one added field |

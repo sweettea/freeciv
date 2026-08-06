@@ -289,3 +289,59 @@ exhausted). Not fixed in place per rule 2's spirit for common/.
     in place: `deeptrade.c` sets the virtual caravan's `carrying` from
     the city before the speculation and refuses the valuation when the
     city can provide no goods at all. Measured 2026-08-05.
+
+35. **Bombard is priced as a kill** — `dai_rampage_want` values every attack
+    via `stack_cost` × win-chance (shield value of killing the stack), but
+    bombard does not kill, and civ2civ3's `attack_blocked_by` forces
+    Bombarders to bombard forever, each pass priced as a kill.
+    (2026-08-05 action sweep; era-unreachable in current cells.)
+36. **Base extras are structurally unvaluable** — `adv_calc_extra()` →
+    `city_tile_value()` sums food/shield/trade only; a Fortress/Airbase
+    changes no output, so its want is exactly 0 by construction. Empirically
+    zero fortresses/airbases/buoys across a 175-city T162 game.
+37. **`EFT_AIRLIFT`'s want makes Airports unbuildable** — the valuation is a
+    self-described "totally braindead" constant (`daieffects.c:314-318`);
+    0 Airports in 175 cities.
+38. **The civ2civ3 trade-route dead branch** — `dai_choose_trade_route`'s
+    only foreign-destination scan is gated on `prefer_different_cont =
+    (NATIONAL_IC > NATIONAL)` (`daidomestic.c:283`), a comparison between
+    two NATIONAL percentages; with both 0 (civ2civ3) the function returns
+    without producing any want in 100% of games, though foreign routes pay
+    100/200%.
+39. **`daieffects.c:176-201`'s "already evaluated in base_want()" list is
+    wrong for 8 of the 25 effects it names** (GOV_CENTER, OUTPUT_WASTE,
+    OUTPUT_WASTE_BY_DISTANCE, SPECIALIST_OUTPUT, TECH_UPKEEP_FREE,
+    IRRIGATION_PCT, MINING_PCT, OUTPUT_TILE_PUNISH_PCT) — absent from the
+    `impr_calc` trigger switch (`advdata.c:89-138`), so e.g. the
+    Ecclesiastical Palace's gov-center value is dark.
+40. **`allow_specialists` is read by nothing**, and every AI pins the CM's
+    gold and science factors equal (`cityturn.c:342-348`), so taxman vs
+    scientist is decided by lattice order.
+41. **AI build wants are docked for a production-switch penalty the AI never
+    pays** — `daicity.c:1909` subtracts `shield_stock × SHIELD_WEIGHTING/15`
+    while `citytools.c:3221` exempts AI players without `H_PRODCHGPEN`
+    (unset at every played difficulty).
+42. **War-target clobber** — `daidiplomacy.c:1839` reassigns the
+    function-scope `target` inside the DS_ALLIANCE branch, so the
+    `aplayer == target /* no mercy */` guard compares an unrelated player
+    for the rest of the loop.
+43. **A hard AI can never open with a cease-fire** — without `H_CEASEFIRE`
+    the first-contact branch requires `worth > 0`, and the ceasefire
+    valuation returns exactly 0 while `turns_since_contact <
+    TURNS_BEFORE_TARGET` — always true at first contact.
+44. **An alliance, once formed, is never dissolved for non-participation** —
+    the dissolution path (`daidiplomacy.c:1890`) is inside the unreachable
+    `ally_patience` ladder (bug #2's consequence; matches the measured 22.6%
+    end-state alliance rate).
+45. **`tech_leader`/`production_leader` can name a dead player** —
+    `advdata.c:488-498` uses `players_iterate` (not `_alive`) with strict
+    `<`, keeps the last max, and the results are read by nothing anyway.
+46. **The mutual embassy swap is arithmetically impossible from turn 2** —
+    receive is valued `tech_leak_pct/10` = 10 gold flat; give at peace is
+    `-5 × turn`, unbounded (`daidiplomacy.c:566-584`) — in a ruleset where
+    embassies ARE the tech leakage.
+47. **civ2civ3's Trireme defeats every `UMT_SEA` transport test** — the
+    class is river-native (`UMT_BOTH`→reads as land move type), so
+    move-type-based hull detection misses the ancient era's primary
+    transport; terrain-nativity ("can it exist on ocean") is the correct
+    test (deep fixed 988f284760).
