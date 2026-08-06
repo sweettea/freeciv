@@ -71,7 +71,7 @@ def games(d, arm):
 def census(d, arm):
     gl = games(d, arm)
     ng = max(len(gl), 1)
-    sw, cv, fb = [], [], []
+    sw, cv, fb, sc, fl, hd = [], [], [], [], [], []
     shields = 0.0
     coinpicks = 0
     cityturns = 0
@@ -83,6 +83,12 @@ def census(d, arm):
                 cv.append(parse(line, "deep-convertible"))
             elif "deep-fallback " in line:
                 fb.append(parse(line, "deep-fallback"))
+            elif "deep-switchcost " in line:
+                sc.append(parse(line, "deep-switchcost"))
+            elif "deep-switchflip " in line:
+                fl.append(line)
+            elif "deep-switchhold " in line:
+                hd.append(line)
             elif "deep-def " in line:
                 m = re.search(r" shield=(-?\d+)", line)
                 if m:
@@ -201,6 +207,20 @@ def census(d, arm):
         print("   stock there    p10/p50/p90 %s"
               % q([r["stock"] for r in fb], 8, 1))
     print("   Coinage actually PICKED       %9.2f /game" % (coinpicks / ng))
+
+    print("\n8. THE AUCTION'S OWN COUNTERS (switch_cost_price)")
+    print("   deep-switchcost debits        %9.1f /game" % (len(sc) / ng))
+    if sc:
+        print("   ... forfeit charged           %9.1f /game shields"
+              % (sum(r["forfeit"] for r in sc) / ng))
+        print("   ... debit  p10/p50/p90 %s" % q([r["debit"] for r in sc]))
+        print("   ... want   p10/p50/p90 %s" % q([r["want"] for r in sc]))
+        print("   ... left   p10/p50/p90 %s" % q([r["left"] for r in sc]))
+        zero = sum(1 for r in sc if r["left"] <= 0)
+        print("   ... debited to ZERO           %9.1f /game (%.1f%%)"
+              % (zero / ng, 100.0 * zero / len(sc)))
+    print("   deep-switchflip (winner changed) %6.1f /game" % (len(fl) / ng))
+    print("   deep-switchhold (switch refused) %6.1f /game" % (len(hd) / ng))
 
 
 def main():

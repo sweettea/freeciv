@@ -7941,3 +7941,280 @@ table meaningful rather than circular.
 **134 -> 136** (`wonder_merit`, `wonder_merit_gain`), each in all four
 audit places, in the G / ECON / ALL blocks and in the generated
 `deep-tuning` line.
+
+## HEDGE: the AI's free production switch, sized and then priced (2026-08-06)
+
+Four code/benchmark commits and this one. The session was briefed to
+size a liquidity hedge -- bank surplus shields in a caravan when a
+military need MAY arrive -- and, on the human's redirect, to stop deep
+exempting itself from the change-production penalty. The sizing retired
+the hedge and found something an order of magnitude larger underneath
+it.
+
+    cbbda6c933  ai/deep: census the production switch and the shields
+                it would forfeit
+    75ea5bbb07  ai/deep: let a deep seat pay the change-production
+                penalty
+    3385b40e4c  benchmark: report the production-switch penalty census
+    1934ac4df8  ai/deep: price the production switch in the build
+                auction
+
+**Headline: deep was throwing away a quarter to two fifths of its own
+shield output and nothing in the codebase knew.** The exempted mass is
+4045 shields a game on contested (25.2% of everything the empire
+produces) and 7967 on primary-120-classic (39.5%). Imposing the penalty
+without pricing it costs 2.69 score and changes the churn by -3%;
+pricing the switch in the auction cuts class churn 40%, the forfeit
+66%, and brings score back to the exempt arm's level (-0.36, t -0.24)
+while finishing three times as many wonders. The hedge itself is
+retired on its own census: its instrument is a UNIT, so hedging pays
+the very forfeit it hedges against.
+
+### 0. The two human calls this section implements, and the asymmetry
+
+2026-08-05: do not exploit the AI exemption -- deep self-imposes
+`H_PRODCHGPEN` behind `pay_switch_penalty`, default off, "and if score
+drops the verdict is that churn is expensive, not that the honesty
+should come out."
+
+2026-08-06, on the first numbers: "honest but expensive, with
+switching-penalty in the auction to make the cost real." Compiled
+default flips ON and the auction debits candidates by the real forfeit.
+
+**Read this into every number from here on: `ai/default` and
+`ai/baseline` stay exempt.** Deep is now the only seat in any benchmark
+paying a cost its opponents do not, and every head-to-head from today
+measures deep-with-a-handicap against stock-without-one. That is the
+chosen posture, not an oversight. `pay_switch_penalty = 0` restores
+comparability with everything published before today.
+
+### 1. The mechanism nobody was paying (ruleset facts, stated)
+
+`city_change_production_penalty()` (common/city.c:1943) halves
+`before_change_shields` when production changes CLASS -- unit,
+improvement and wonder are the three classes, and a change inside one
+is free -- unless the city built last turn, in which case up to last
+turn's shield surplus is exempt. `disbanded_shields` are never
+penalized; `caravan_shields` are penalized unless the new target is a
+wonder.
+
+`change_build_target()` (server/citytools.c:3221) applies it
+`if (!is_ai(pplayer) || has_handicap(pplayer, H_PRODCHGPEN))`, and
+`handicap_of_skill_level()` (ai/difficulty.c:60-91) sets H_PRODCHGPEN
+at **AWAY and NOVICE/RESTRICTED only** -- not at easy, and not at
+`hard`, which every benchmark cell runs. The penalty is a rule for
+humans and for the two weakest AI levels, and free for everyone else.
+
+Conversion rates the hedge's legs needed, off the rulesets, identical
+in both:
+
+    Disband Unit Recover      50%  (Unit_Shield_Value_Pct -50, range 1)
+    Help Wonder              100%  (no Unit_Shield_Value_Pct effect)
+    Caravan build cost        50 shields (classic and civ2civ3)
+    Caravan shield upkeep      0 classic / 1 per turn civ2civ3
+    Settlers build cost       40 classic / 30 civ2civ3
+
+### 2. Step 0, the sizing: how big the exempted mass is
+
+Binary PINNED (`f2e87b9dfe87`, server + `libfreeciv.so`, `--server`),
+`--arms deep`, 20 seeds per cell, `identity.ini`. The seam is deep's
+own commit point (`deepdefence.c`, immediately before
+`change_build_target()`) -- W36's rule about logging where the decision
+commits.
+
+    per game                    contested (civ2civ3)  primary-120-classic
+    city-turns                              3 807.8              8 251.5
+    production CHANGES                      1 209.8              1 965.0
+    ... class-changing                        629.0              1 025.5
+    ... penalty > 0                           452.0                747.8
+    shields produced                       16 067.5             20 149.2
+    PENALTY MASS forfeited                  4 045.3              7 967.5
+    ... as share of output                    25.2%                39.5%
+    ... in settlers (40 shields)              101.1                199.2
+
+The class-pair matrix says where it sits: `I->U` and `U->I` together
+hold 82% of the mass in both cells; the wonder pairs are rare and
+expensive (`W->U` on classic, 19.9 events a game at a mean of 37.5
+shields, p90 93). Why it is zero when it is zero, on the class-changing
+population of contested: 406.3 events a game are a standing stock
+charged 50% (3748 shields), 156.6 built last turn (297), 66.2 have an
+empty box (0).
+
+**The counterfactual was an honest upper bound and it is now checked
+against the bill**: 4045 estimated, 3470 actually taken when the
+penalty was imposed on the same cell and seeds -- 86% -- the gap being
+exactly the compounding the census could not model.
+
+### 3. The hedge's own population: retired on the arithmetic
+
+    per game                        contested   classic
+    switch INTO a unit                  309.4     545.5
+    ... at a caravan-capable city        16.5     359.7
+    ... mass there                      161.7   3 192.2
+    ... share of the cell's mass          4.0%     40.1%
+    ... and danger > 0                    9.2     180.9
+    ... mass there                       87.5   1 469.5
+
+The venue owns the population again -- 4% of the mass on civ2civ3
+against 40% on classic, because a HelpWonder-capable unit is buildable
+at 5% of the relevant city-turns there and 66% here. But the hedge dies
+in both cells for a reason the design did not anticipate:
+
+**a caravan is a UNIT.** Banking shields in one is itself a class
+change, charged the same forfeit, on the turn the hedge fires. The
+hedge pays the penalty now to avoid paying it later, and the "later" it
+avoids is a mean 8.9 shields on the addressable population, bought with
+a 50-shield instrument carrying 1 shield/turn upkeep on civ2civ3. Worse,
+`caravan_shields` are themselves penalized on any switch that is not
+into a wonder (common/city.c:2006), so the bank is not a safe deposit
+either.
+
+That is the brief's stop condition -- the penalty function differs from
+the design's assumption in a way that guts the arbitrage -- and it IS
+the finding. **WONTFIX: no option-value hedge on the caravan.** Section
+5 is what the hedge was reaching for, and it needs no instrument at all.
+
+Also worth recording against the design: `danger` does not discriminate.
+On contested 38.5% of the mass is forfeited at cities with danger
+exactly 0 and 57.6% at danger 1-99, and `menace > 0` covers 610 of 629
+class-changing events. A hedge gated on elevated fear would have fired
+almost everywhere or nowhere.
+
+### 4. The other two legs, sized and closed
+
+**Coinage.** `deep-fallback` -- the city-turns where every producer bid
+zero, which the brief named as the sink comparison's only population --
+fires **0.00 times a game on contested and 0.50 on classic**, against
+3808 and 8252 city-turns. The fallback ladder whose caravan rung R2
+killed is not a live population at all: deep's want machinery
+essentially never bottoms out. Coinage is picked 8.4 (contested) / 2.05
+(classic) times a game by the ordinary domestic advisor at wants under
+1. **WONTFIX: there is nothing to compare three sinks on.**
+
+**Salvage / the convertible class**, per game:
+
+    deep-convertible city-turns   contested 2.75   classic 10.50
+    ... disband-into-build             1.85            4.90
+    ... shields recovered              18.5            38.2
+    ... Help Wonder ARRIVALS            0.55            5.65
+    ... shields delivered              27.5           292.5
+
+Disband-into-build happens five times a game at best and recovers under
+40 shields. A salvage option-value term on workers would be priced
+against a 1-in-2000-city-turn event. **WONTFIX on the sizing.**
+
+This does close an R2b gap for free: **the Help Wonder arrival is
+instrumented now** (`carsh` on `deep-convertible`). Deep manages cities
+in last-activities, after every unit has moved and before
+`nullify_prechange_production()` wipes the field, which is the one
+vantage that still sees it.
+
+### 5. The three arms: exempt, honest, honest-and-priced
+
+Binary PINNED (`52e293e7aba5`), `--server`, `--arms deep`, contested,
+20 paired seeds, every arm loading a tuning FILE.
+
+    A  exempt            pay_switch_penalty=0  switch_cost_price=0
+    B  paid, unpriced    pay_switch_penalty=1  switch_cost_price=0
+    C  paid and priced   compiled defaults
+
+    metric              A       B       C     B-A (t)      C-A (t)      C-B (t)
+    score           79.47   76.79   79.12   -2.69 -2.26  -0.36 -0.24  +2.33 +1.87
+    unitsbuilt      62.31   50.73   54.52  -11.58 -8.84  -7.79 -6.45  +3.79 +2.86
+    munits          16.27   14.24   14.49   -2.03 -3.21  -1.78 -2.76  +0.25 +0.37
+    wonders          0.09    0.06    0.28   -0.03 -0.77  +0.19 +2.78  +0.22 +3.68
+    cities           4.50    4.40    4.51   -0.10 -0.75  +0.01 +0.06  +0.11 +0.88
+    pop             23.36   23.38   24.13   +0.03 +0.04  +0.78 +1.32  +0.75 +1.29
+    techs           17.11   17.50   17.13   +0.39 +1.48  +0.02 +0.05  -0.37 -0.92
+
+The mechanism, same seeds:
+
+    per game                        A         B         C
+    production CHANGES         1209.8    1169.5     970.3
+    ... class-changing          629.0     607.9     377.6
+    penalty mass                4045.3*   3469.7    1195.7
+    ... share of output          25.2%*    21.8%      7.5%
+    switch debits applied         0.00      0.00    1788.1
+    ... debited to ZERO           0.00      0.00    1551.5  (86.8%)
+    winner flips                  0.00      0.00     365.4
+    switches REFUSED              0.00      0.00     236.5
+                                          (* counterfactual, not paid)
+
+**B is the finding the brief predicted and it is worth stating plainly:
+paying without pricing changed nothing about the behaviour that caused
+the bill.** Churn moved -3%, the seat forfeited 3470 shields a game --
+22% of its output, 87 settlers -- and bought 11.58 fewer units and 2.69
+less score with them. Nothing in the auction knew the penalty existed,
+so nothing responded to it.
+
+**C is what pricing it does.** Class-changing switches fall 40% (629.0
+-> 377.6), the forfeit falls 66% against B and 70% against A's
+counterfactual, and score comes back to the exempt arm within noise
+(-0.36, t -0.24, 11/20). The one metric that moves clearly in C's
+favour is **wonders, 0.09 -> 0.28 per seat (t +2.78 against A, +3.68
+against B)**: a wonder is the longest illiquid build in the game, and
+it is what an unpriced switch was mostly abandoning.
+
+Units built stay 7.79 below A. That is the honest half of the trade:
+deep really is poorer per turn than an exempt seat, and it buys the
+same score with fewer, better-committed builds.
+
+### 6. Both off-switches proven, twice each
+
+Smoke cell, 10 paired seeds. Arm A on the PRICED binary
+(`52e293e7aba5`) is byte-identical to the pre-session binary
+(`bb6ee6d8d6c2`, HEAD `ebadf7dae9`) on all ten scorelogs, and the
+hashes are the ones R2b published:
+
+    a6f3efd43d48  2a4d816b561d  253dd4e45ad6  dfc060079036  175aab030ede
+    c96854550231  e3280a3541d2  eae0f81b8e88  4f67f36c5f92  4fab860a4858
+
+The census binary (`f2e87b9dfe87`, the three read-only seam lines
+alone) was proved the same way before it took section 2's numbers --
+10/10 identical, same hashes. Execution counters both ways:
+`deep-payswitch` 0.00 lines and `deep-prodswitch pen=1` 0 events in
+every off arm, against 8 seats a game (one line each, turn 1) and
+970.3 paid events in C;
+`deep-switchcost` 0.00 in A and B against 1788.1 in C.
+
+**Note what byte-identity now describes: the tuning-file OFF arm, not
+the compiled defaults.** From `1934ac4df8` the defaults are
+honest-and-priced and are deliberately NOT identical to anything
+published before today.
+
+### 7. What the next session must know
+
+- **`pay_switch_penalty` and `switch_cost_price` ship at 1**, both
+  registered PLACEHOLDERs, with `switch_cost_gain` (1.0, untuned) as
+  the magnitude. `benchmark/switchcensus.py` reads all of it.
+- **`switch_cost_gain` is the hottest untuned knob in the tree.** The
+  debit is the real forfeit at SHIELD_WEIGHTING (17) per shield, and it
+  zeroes **86.8%** of the candidates it touches (debit p50 136 against
+  a candidate want p50 41). It works, and it works as a near-veto on
+  class changes; the tuning pile should find out whether a gentler
+  conversion keeps the wonders and gives back some of the 7.79 units.
+- **Deep is handicapped relative to stock from now on.** Any A/B whose
+  arms differ in `pay_switch_penalty` is measuring the handicap, not
+  the mechanism under test. Pin it in both arms.
+- **Every number published before 2026-08-06 was taken on an exempt
+  seat.** They remain valid on their own terms and remain reproducible
+  with `pay_switch_penalty = 0`, but a re-measurement at the new
+  defaults is a different game.
+- **The commitment-discipline generalisation is queued, not built**
+  (human call 2026-08-06: a written note, not tonight's code). Three
+  pieces, in the order the evidence supports them:
+  1. **Worklists.** Deep never writes one. A worklist is the ruleset's
+     own commitment device -- production advances to the next entry
+     without a class change being re-litigated -- and the census says
+     405 of contested's 970 remaining changes are `U->U`, which a
+     worklist would express directly.
+  2. **Deeper hysteresis.** The debit is symmetric today: it prices
+     leaving the current class but nothing prices ABANDONING a build
+     that is nearly finished. `city_turns_to_build()` is already
+     charged for elsewhere and the completion fraction is free to read.
+  3. **The emergency exemption's cost.** Emergency-tier choices bypass
+     the debit by design. Nobody has measured what share of the
+     remaining 1196 shields they forfeit, and the counter to do it is
+     already in the log (`deep-prodswitch` with `urgency > 0`).
+- **The R2b trade-path clamp gap is still unfixed** and is unaffected
+  by this session.
