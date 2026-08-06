@@ -146,6 +146,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .op_take_target = 0.7,                /* PLACEHOLDER, untuned */
   .op_muster_wait = 10,                 /* PLACEHOLDER, untuned */
   .op_launch_odds = 1,                  /* the bar, not a magnitude */
+  .op_net_value = 1,                    /* human call 2026-08-06 */
   .op_hold_survivors = 1.0,             /* PLACEHOLDER, untuned */
   .satisfied_fear_discount = 0.0,       /* PLACEHOLDER, untuned */
   .colony_lift_weight = 0.5,            /* PLACEHOLDER, untuned */
@@ -315,6 +316,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(op_take_target) \
   TUNE_INT(op_muster_wait) \
   TUNE_INT(op_launch_odds) \
+  TUNE_INT(op_net_value) \
   TUNE_DOUBLE(op_hold_survivors) \
   TUNE_DOUBLE(satisfied_fear_discount) \
   TUNE_DOUBLE(colony_lift_weight) \

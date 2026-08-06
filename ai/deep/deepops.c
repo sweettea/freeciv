@@ -41,6 +41,7 @@
 #include "unittools.h"
 
 /* server/advisors */
+#include "advbuilding.h"
 #include "advgoto.h"
 
 /* ai/default */
@@ -3803,7 +3804,7 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
   if (op->state == DEEP_OP_MUSTER) {
     int present = 0;
     struct unit *here[DEEP_OP_MEMBERS];
-    double odds_now = 0.0, surv_now = 0.0;
+    double odds_now = 0.0, surv_now = 0.0, loss_now = 0.0;
     bool go;
 
     for (i = 0; i < op->n_members; i++) {
@@ -3841,9 +3842,48 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
         eta_here = MAX(eta_here, ti);
       }
       odds_now = deep_take_odds_cost(nmap, target, here, present,
-                                     eta_here, NULL, &surv_now);
+                                     eta_here, &loss_now, &surv_now);
       go = odds_now >= deep_op_assault_bar(pplayer, target, FALSE)
            && surv_now >= tune->op_hold_survivors;
+
+      /* And then the question the BAR cannot ask: is the whole fight
+       * worth having (human call 2026-08-06).
+       *
+       * The build want prices a MARGINAL blade and therefore charges a
+       * marginal loss, clamped so it can never become a subsidy. Here
+       * the decision is not marginal at all -- launch this wave at
+       * this city, or do not -- so the honest form is the TOTAL one:
+       * what the take is worth times the chance of getting it, less
+       * what the whole assault is expected to cost. Not launching is
+       * the zero, so odds_now IS the probability difference.
+       *
+       * `worth x odds` is the operations layer's existing currency for
+       * a take (deep_op_defend_bid weighs a threatened city against
+       * exactly that product), and the losses convert at
+       * SHIELD_WEIGHTING through attack_loss_gain -- the same rate and
+       * the same referee the build side uses, so the two seats cannot
+       * disagree about what a shield is worth.
+       *
+       * A bar-passing wave refused here is the interesting event and
+       * it is the one that gets logged: this counter is by
+       * construction the launches the odds bar alone WOULD have
+       * taken. */
+      if (go && tune->op_net_value) {
+        double value = odds_now * def_ai_city_data(target, ait)->worth;
+        double cost = tune->attack_loss_gain * loss_now * SHIELD_WEIGHTING;
+
+        if (value - cost <= 0.0) {
+          log_base(deep_metric_log_level(),
+                   "deep-netval turn=%d player=\"%s\" op=%d refuse"
+                   " target=%d force=%d odds=%.3f worth=%.1f"
+                   " loss=%.2f value=%.1f cost=%.1f",
+                   game.info.turn, player_name(pplayer), oi,
+                   op->target_city, present, odds_now,
+                   (double) def_ai_city_data(target, ait)->worth,
+                   loss_now, value, cost);
+          go = FALSE;
+        }
+      }
     } else {
       go = present >= op->required;
     }

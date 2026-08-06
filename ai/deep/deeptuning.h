@@ -683,6 +683,13 @@ struct deep_tuning {
    * build since. 0 restores the head count. The wait cap keeps its
    * half-quorum count either way: that is a patience rule. */
   int op_launch_odds;
+  /* The op-level go/no-go asks the TOTAL question the marginal build
+   * want cannot (human call 2026-08-06): worth x P(take) minus the
+   * whole assault's expected losses, converted at SHIELD_WEIGHTING
+   * through attack_loss_gain so both seats price a shield the same.
+   * A wave that clears the odds bar and still loses money does not
+   * launch. 0 restores the bar alone. */
+  int op_net_value;
   /* And how much of the wave must be expected to SURVIVE taking the
    * city, from the substrate's attacker-loss output: a wave that wins
    * the city and dies doing it hands it back next turn. In units,

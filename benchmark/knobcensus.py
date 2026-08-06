@@ -410,6 +410,11 @@ MAP = {
         "S2", "gate", "direct", [("deep-op", "flag:march")],
         "the march line carries bar=, odds= and surv=: bar=0 is the "
         "head-count launch, bar=1 the odds one (deepops.c:3760)."),
+    "op_net_value": (
+        "S2", "gate", "direct", [("deep-netval", "flag:refuse")],
+        "deep-netval is emitted exactly when the total-form value test "
+        "refuses a launch the odds bar would have taken "
+        "(deepops.c:3860); zero lines is the off arm."),
     "op_hold_survivors": (
         "S2", "mag", "direct", [("deep-op", "flag:march")],
         "surv= on the march line is the expected force still standing "
