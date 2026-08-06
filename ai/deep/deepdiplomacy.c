@@ -394,8 +394,15 @@ static void deep_embassy_offer(struct ai_type *ait, struct player *pplayer,
   int slot = player_index(aplayer);
   bool want_theirs, give_ours;
 
-  if (ds != DS_PEACE && ds != DS_ARMISTICE && ds != DS_ALLIANCE
-      && ds != DS_TEAM) {
+  /* PEACE LEVEL ONLY. Alliance and team are ai/default's: dai_share()
+   * already swaps embassies there and prices giving at zero, on the
+   * reasoning that an ally's research is partly one's own. Deep has no
+   * evidence that reasoning is wrong and no brief to test it, and
+   * charging an ally for a clause stock hands over free could only
+   * REMOVE embassies from the 22.6% of pairs that end allied. The
+   * population this lever exists for is the one where the clause is
+   * arithmetically impossible and never proposed: peace. */
+  if (ds != DS_PEACE && ds != DS_ARMISTICE) {
     return;
   }
   if (slot < 0 || slot >= MAX_NUM_PLAYER_SLOTS) {
@@ -523,8 +530,7 @@ bool deep_embassy_by_treaty(struct ai_type *ait, const struct player *pplayer,
     return FALSE;
   }
 
-  return ds == DS_PEACE || ds == DS_ARMISTICE || ds == DS_ALLIANCE
-         || ds == DS_TEAM;
+  return ds == DS_PEACE || ds == DS_ARMISTICE;
 }
 
 /**********************************************************************//**
@@ -573,7 +579,8 @@ bool deep_treaty_evaluate(struct ai_type *ait, struct player *pplayer,
     return FALSE;
   }
 
-  if (n > 0 && embassy == n && t->embassy_price_gain > 0.0) {
+  if (n > 0 && embassy == n && t->embassy_price_gain > 0.0
+      && deep_embassy_by_treaty(ait, pplayer, aplayer)) {
     clause_list_iterate(ptreaty->clauses, pclause) {
       double worth = deep_embassy_clause_worth(pplayer, aplayer, pclause);
 
