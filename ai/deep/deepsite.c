@@ -1029,8 +1029,18 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
       cr = NULL;
     }
 
-    /* Can we terminate early? */
-    if (best && best->result > RESULT_IS_ENOUGH
+    /* Can we terminate early?
+     *
+     * The SAME threshold the caller uses to decide whether an overseas
+     * search happens at all (deepsettler.c:711) -- one quantity, "a
+     * site good enough to stop looking", read from two places. It was
+     * tunable there and a compile-time RESULT_IS_ENOUGH here, so a
+     * tuner that raised the knob made the phase-2 gate more demanding
+     * while this loop kept stopping at 250: the search abandoned
+     * candidates the caller had just been told were not good enough.
+     * Default 250.0 == RESULT_IS_ENOUGH, so this is identical until
+     * something moves the knob. */
+    if (best && best->result > deep_tuning_get()->site_enough_result
         && turns > parameter->move_rate /* sic */
         && best_turn < turns) {
       break;
