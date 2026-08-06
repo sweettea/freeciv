@@ -945,20 +945,41 @@ static bool deep_utype_is_airborne(const struct unit_type *ut)
   Can a unit of this type attack straight off a hull -- the "Marines"
   capability, again as a ruleset fact rather than a flag name?
 
-  utype_can_do_action_result_when_ustate(..., USP_NATIVE_TILE, FALSE)
-  asks the ruleset's own action enablers whether an attack (or a city
-  conquest) is possible while the actor is NOT standing on native
-  terrain. In classic that is exactly the set {enabler_attack_marines,
-  enabler_attack_att_from_non_native}: an ordinary Musketeer's only
-  attack enabler requires UnitState OnNativeTile, so it fails, and a
-  Marine's does not, so it passes. No flag name appears here.
+  utype_can_do_action_result_when_ustate() asks the ruleset's own
+  action enablers whether an attack (or a city conquest) is possible
+  while the actor's unit state has a given value. A unit still aboard
+  is on neither a NATIVE nor a LIVABLE tile, and both properties must
+  be tested because the two rulesets shipped here key their
+  ashore-first enabler on different ones: classic's and civ2civ3's
+  `enabler_attack_from_native` requires UnitState OnNativeTile, while
+  their `enabler_conquer_city_native` requires OnLivableTile. Testing
+  only one of them reported every city-taking land unit as a marine
+  from turn 1 (caught on a smoke game before it reached a batch).
+
+  Restricted to land movers: the class this gates is "a land unit that
+  can strike a coast without landing first". A ruleset whose warship
+  class carries AttFromNonNative would otherwise make the escalation
+  true from the first trireme, which is a different threat and is
+  already priced by the boat shadow.
+
+  No flag name appears here; a ruleset that spells the capability
+  differently still matches.
 **************************************************************************/
 static bool deep_utype_strikes_from_hull(const struct unit_type *ut)
 {
-  return (utype_can_do_action_result_when_ustate(ut, ACTRES_ATTACK,
-                                                 USP_NATIVE_TILE, FALSE)
-          || utype_can_do_action_result_when_ustate(ut, ACTRES_CONQUER_CITY,
-                                                    USP_NATIVE_TILE, FALSE));
+  if (utype_move_type(ut) != UMT_LAND) {
+    return FALSE;
+  }
+  return ((utype_can_do_action_result_when_ustate(ut, ACTRES_ATTACK,
+                                                  USP_NATIVE_TILE, FALSE)
+           && utype_can_do_action_result_when_ustate(ut, ACTRES_ATTACK,
+                                                     USP_LIVABLE_TILE, FALSE))
+          || (utype_can_do_action_result_when_ustate(ut, ACTRES_CONQUER_CITY,
+                                                     USP_NATIVE_TILE, FALSE)
+              && utype_can_do_action_result_when_ustate(ut,
+                                                        ACTRES_CONQUER_CITY,
+                                                        USP_LIVABLE_TILE,
+                                                        FALSE)));
 }
 
 /**********************************************************************//**
@@ -1040,7 +1061,14 @@ deep_floor_class_facts(struct player *pplayer)
   } city_list_iterate_end;
 
   players_iterate_alive(aplayer) {
+    /* Barbarians and animals are excluded here, and that is the
+     * one-owner rule again: the barbarian class owns them through the
+     * server's own onset gate, and their nations are exempted from the
+     * ruleset's conquest enablers anyway. Left in, civ2civ3's animal
+     * player -- which starts met and can "build" anything -- reported
+     * the marines escalation live from turn 4 of every game. */
     if (aplayer == pplayer
+        || is_barbarian(aplayer)
         || pplayers_allied(pplayer, aplayer)
         || player_diplstate_get(pplayer, aplayer)->type == DS_NO_CONTACT) {
       continue;
