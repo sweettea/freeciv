@@ -3488,6 +3488,28 @@ static void deep_op_drive_consolidate(struct ai_type *ait,
 }
 
 /**********************************************************************//**
+  This unit's win chance if it struck FRESH -- the counterfactual the
+  tired-attack decision is about. Same trick, and the same honesty
+  note, as deep_fresh_attack_power() in deepcombat.c: moves_left is
+  restored before anything else can observe it.
+**************************************************************************/
+static double deep_fresh_win_chance(const struct civ_map *nmap,
+                                    struct unit *att,
+                                    const struct unit *def)
+{
+  int save = att->moves_left;
+  double p;
+
+  if (save < SINGLE_MOVE) {
+    att->moves_left = SINGLE_MOVE;
+  }
+  p = unit_win_chance(nmap, att, def, NULL);
+  att->moves_left = save;
+
+  return p;
+}
+
+/**********************************************************************//**
   Fight the battle under op control (W33 phase 3, strike control).
   The wave stands at the walls; instead of two dozen independent
   find_something_to_kill passes, the op orders the attacks itself:
@@ -3592,6 +3614,42 @@ static void deep_op_drive_strike(struct ai_type *ait,
     }
     if (att == NULL) {
       break;
+    }
+
+    /* Tired-attack discipline, at the seat where a unit is actually
+     * tired (D1 hand-off). The original pass ran in first_activities,
+     * where update_unit_activities() has just restored every unit's
+     * movement, so its moves_left < SINGLE_MOVE test could never be
+     * true -- zero firings in 206 result directories, and no
+     * done-flag fix could have revived it. A unit becomes tired by
+     * MARCHING, and the op's own battle is the moment the decision
+     * exists: strike now at moves_left/SINGLE_MOVE of full power
+     * (combat.c), or stand and strike fresh next turn.
+     *
+     * Held only when resting actually changes the answer: the tired
+     * odds are below the floor AND the fresh odds are not. A blade
+     * that is hopeless either way strikes -- a wounded straggler does
+     * not earn a night's rest -- and one that already clears the
+     * floor never waits. */
+    if (game.info.tired_attack
+        && tune->tired_attack_floor > 0.0
+        && att->moves_left > 0
+        && att->moves_left < SINGLE_MOVE
+        && best < tune->tired_attack_floor) {
+      struct unit *pdef = get_defender(nmap, att, ctile, NULL);
+      double fresh = pdef != NULL
+                     ? deep_fresh_win_chance(nmap, att, pdef) : 1.0;
+
+      if (fresh >= tune->tired_attack_floor) {
+        log_base(deep_metric_log_level(),
+                 "deep-tired turn=%d player=\"%s\" seat=strike"
+                 " unit=\"%s\" moves=%d p=%.3f fresh=%.3f target=%d",
+                 game.info.turn, player_name(pplayer),
+                 unit_rule_name(att), att->moves_left, best, fresh,
+                 op->target_city);
+        deep_hold_unit(ait, att, "tired");
+        continue;
+      }
     }
     {
       int att_id = att->id;
