@@ -54,6 +54,7 @@
 #include "deepai.h"
 #include "deepcombat.h"
 #include "deepdefence.h"
+#include "deepdiplomacy.h"
 #include "deepstance.h"
 #include "deeptuning.h"
 
@@ -2367,6 +2368,18 @@ static struct city *deep_op_pick_target(struct ai_type *ait,
       }
       score = def_ai_city_data(acity, ait)->worth
               / (1.0 + real_map_distance(from, city_tile(acity)));
+      /* The runaway-leader bias (PEACE lever 3): the first consumer of
+       * a signal the server has recomputed every turn since 2003 and
+       * nobody has ever read. A player who is alone at the top on
+       * techs or on production is worth taking a city from more than
+       * the same city held by anybody else. 0.0 = off, and the
+       * multiply is skipped rather than done, so the off arm is the
+       * previous ordering byte-identically. */
+      if (deep_tuning_get()->leader_check_gain > 0.0
+          && deep_player_is_leader(ait, pplayer, aplayer)) {
+        score *= 1.0 + deep_tuning_get()->leader_check_gain;
+        deep_plr_data(pplayer)->leader_bias_applied++;
+      }
       if (score > best_score) {
         best_score = score;
         target = acity;

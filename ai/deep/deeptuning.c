@@ -182,6 +182,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .scale_ferry = 1.0,                   /* PLACEHOLDER, 1.0 = no rescale */
   .emergency_value_cap = 0.0,           /* PLACEHOLDER, 0 = no cap */
   .peace_seek_gain = 0.0,               /* PLACEHOLDER, 0 = stock's bar */
+  .leader_check_gain = 0.0,             /* PLACEHOLDER, 0 = off */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -343,7 +344,8 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(scale_attacker) \
   TUNE_DOUBLE(scale_ferry) \
   TUNE_DOUBLE(emergency_value_cap) \
-  TUNE_DOUBLE(peace_seek_gain)
+  TUNE_DOUBLE(peace_seek_gain) \
+  TUNE_DOUBLE(leader_check_gain)
 
 /**********************************************************************//**
   Load tuning overrides from $FREECIV_DEEP_TUNING, if set. Called once

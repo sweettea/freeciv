@@ -159,6 +159,16 @@ struct deep_plr {
    * reload that resets the tallies costs a partial count of an
    * already-logged stream (the same contract the rates counters ship
    * under). */
+  /* The runaway-leader read: a per-turn cache stamped by
+   * `leaders_turn`, with both consumers going through
+   * deep_leaders_refresh() so neither can act on a stale value.
+   * Player NUMBERS, -1 for "nobody leads on this axis", which is what
+   * a tie means. */
+  int leaders_turn;
+  int tech_leader_id;
+  int prod_leader_id;
+  bool wincap_seen;
+  int leader_bias_applied;      /* op targets moved by the leader bias */
   int peace_windows;            /* pre-pass evaluations inside a window */
   int peace_proposed;           /* ... that sent a peace clause */
   int peace_taken;              /* peace clauses deep's evaluate accepted */

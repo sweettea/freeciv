@@ -33,4 +33,11 @@ void deep_diplomacy_prepass(struct ai_type *ait, struct player *pplayer);
 bool deep_treaty_evaluate(struct ai_type *ait, struct player *pplayer,
                           struct player *aplayer, struct treaty *ptreaty);
 
+/* The runaway-leader read (lever 3). Refreshed at most once per
+ * player-turn; both consumers go through the accessor so neither can
+ * act on a stale or unset value. */
+void deep_leaders_refresh(struct ai_type *ait, struct player *pplayer);
+bool deep_player_is_leader(struct ai_type *ait, struct player *pplayer,
+                           const struct player *aplayer);
+
 #endif /* FC__DEEPDIPLOMACY_H */

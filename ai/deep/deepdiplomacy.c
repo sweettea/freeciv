@@ -271,6 +271,88 @@ static void deep_peace_seek(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Lever 3. Who is running away with it?
+
+  Computed here rather than read from adv->dipl because the stock loop
+  (advdata.c:486-500) iterates players_iterate -- not the _alive form
+  -- with a strict `<`, and can therefore name a player who is already
+  dead. Ties resolve to nobody: three players level on techs is not a
+  runaway, and a signal that fires on a tie is a signal that fires
+  always.
+**************************************************************************/
+void deep_leaders_refresh(struct ai_type *ait, struct player *pplayer)
+{
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  bool close_here;
+  struct ai_plr *ai;
+  int tech_best = -1, prod_best = -1;
+  int tech_id = -1, prod_id = -1;
+  int tech_ties = 0, prod_ties = 0;
+
+  if (dp->leaders_turn == game.info.turn) {
+    return;
+  }
+  dp->leaders_turn = game.info.turn;
+
+  players_iterate_alive(aplayer) {
+    if (is_barbarian(aplayer)) {
+      continue;
+    }
+    if (aplayer->score.techs > tech_best) {
+      tech_best = aplayer->score.techs;
+      tech_id = player_number(aplayer);
+      tech_ties = 1;
+    } else if (aplayer->score.techs == tech_best) {
+      tech_ties++;
+    }
+    if (aplayer->score.mfg > prod_best) {
+      prod_best = aplayer->score.mfg;
+      prod_id = player_number(aplayer);
+      prod_ties = 1;
+    } else if (aplayer->score.mfg == prod_best) {
+      prod_ties++;
+    }
+  } players_iterate_alive_end;
+
+  dp->tech_leader_id = (tech_ties == 1) ? tech_id : -1;
+  dp->prod_leader_id = (prod_ties == 1) ? prod_id : -1;
+
+  ai = dai_plr_data_get(ait, pplayer, &close_here);
+  dp->wincap_seen = (ai->diplomacy.strategy == WIN_CAPITAL);
+  if (close_here) {
+    dai_data_phase_finished(ait, pplayer);
+  }
+
+  log_base(deep_metric_log_level(),
+           "deep-leaders turn=%d plr=\"%s\" tech=%d prod=%d techscore=%d"
+           " prodscore=%d wincap=%d bias=%d",
+           game.info.turn, player_name(pplayer), dp->tech_leader_id,
+           dp->prod_leader_id, tech_best, prod_best,
+           dp->wincap_seen ? 1 : 0,
+           (dp->tech_leader_id >= 0 || dp->prod_leader_id >= 0) ? 1 : 0);
+}
+
+/**********************************************************************//**
+  Is aplayer the runaway on either axis, from pplayer's point of view?
+  Never true of pplayer itself: leading is not a reason to attack
+  oneself, and the bias exists to point a wave at somebody else.
+**************************************************************************/
+bool deep_player_is_leader(struct ai_type *ait, struct player *pplayer,
+                           const struct player *aplayer)
+{
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  int id;
+
+  if (aplayer == pplayer) {
+    return FALSE;
+  }
+  deep_leaders_refresh(ait, pplayer);
+  id = player_number(aplayer);
+
+  return id == dp->tech_leader_id || id == dp->prod_leader_id;
+}
+
+/**********************************************************************//**
   Deep's own treaty ruling, for the two treaty shapes deep fully
   understands. Returns FALSE for everything else, and ai/default then
   evaluates the treaty exactly as it always has.
@@ -322,6 +404,11 @@ bool deep_treaty_evaluate(struct ai_type *ait, struct player *pplayer,
 void deep_diplomacy_prepass(struct ai_type *ait, struct player *pplayer)
 {
   const struct deep_tuning *t = deep_tuning_get();
+
+  /* Always: the signals are read and logged whether or not anything
+   * consumes them. A free measurement of a thing nobody reads is the
+   * cheapest evidence there is. */
+  deep_leaders_refresh(ait, pplayer);
 
   if (!is_ai(pplayer) || is_barbarian(pplayer)
       || has_handicap(pplayer, H_AWAY)) {

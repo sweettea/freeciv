@@ -1049,6 +1049,26 @@ struct deep_tuning {
    * belongs to TRADE, not here. PLACEHOLDER. */
   double peace_seek_gain;
 
+  /* PEACE -- the three signals that are computed every turn and read
+   * by nothing.
+   *
+   * `tech_leader` and `production_leader` are recomputed for every
+   * player in advdata.c:486-500 and no line of ai/default or
+   * ai/deep has ever read either; WIN_CAPITAL is written to
+   * ai->diplomacy.strategy at daidiplomacy.c:880 and only WIN_SPACE
+   * is ever read back. Deep computes its own leaders rather than
+   * reading adv->dipl, because the stock loop uses players_iterate
+   * (not _alive) with a strict `<` and can therefore name a DEAD
+   * player (upstream bug candidate, same finding).
+   *
+   * leader_check_gain is the first and deliberately minimal consumer:
+   * deep's operations layer biases its target choice toward the
+   * runaway leader's cities by this fraction. 0.0 = off = today's
+   * target ordering byte-identically. The real statecraft on top of
+   * these signals -- dogpiling, peace-broking, counting a target's
+   * existing enemies -- is BALANCE's, not this session's.
+   * PLACEHOLDER. */
+  double leader_check_gain;
 };
 
 void deep_tuning_init(void);
