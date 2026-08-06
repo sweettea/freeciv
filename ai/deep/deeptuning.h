@@ -885,6 +885,32 @@ struct deep_tuning {
    * moved. 1.0 is the untuned corner, not a claim. PLACEHOLDER. */
   int wonder_merit;
   double wonder_merit_gain;
+
+  /* Whether a deep seat PAYS the change-production penalty every human
+   * player pays.
+   *
+   * It does not today, and neither does any other AI:
+   * change_build_target() (server/citytools.c:3221) applies
+   * city_change_production_penalty() only when the player is human or
+   * carries H_PRODCHGPEN, and no difficulty level above `easy` sets
+   * that flag (ai/difficulty.c:71/91). So an AI seat can hold 200
+   * shields against a wonder, switch to a defender, and keep all 200 --
+   * while stock's own build code docks the want of a held stock as if
+   * the shields were at risk (daicity.c:1909), pricing a cost the seat
+   * never pays.
+   *
+   * pay_switch_penalty != 0 makes deep ISSUE ITSELF the handicap in its
+   * own phase hook, the same way deep reads its own H_MAP rather than
+   * asking for an exemption. Nothing in ai/default or the server
+   * changes; the seat simply stops being exempt, so the dock becomes
+   * true pricing and the shields a switch strands are really stranded.
+   *
+   * The cost lands before any mechanism learns to avoid it -- existing
+   * churn is taxed on the first turn the flag is on -- so a score drop
+   * is the expected short-run shape and not a reason to take the
+   * honesty back out. 0 = exempt, the compiled default, byte-identical
+   * to every measurement taken before this knob existed. */
+  int pay_switch_penalty;
 };
 
 void deep_tuning_init(void);

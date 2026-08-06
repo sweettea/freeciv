@@ -32,6 +32,9 @@
 #include "player.h"
 #include "research.h"
 
+/* ai */
+#include "handicaps.h"
+
 /* server */
 #include "srv_main.h"
 #include "unittools.h"
@@ -460,6 +463,48 @@ static void dpai_created_by_civil_war(struct player *original,
 }
 
 /**********************************************************************//**
+  Hand this seat the change-production penalty every human pays.
+
+  `change_build_target()` (server/citytools.c:3221) runs
+  `city_change_production_penalty()` only for humans and for AI players
+  carrying H_PRODCHGPEN, and no difficulty level above `easy` sets that
+  flag (ai/difficulty.c:71/91) -- so every AI seat, deep included,
+  switches production for free while a human forfeits half the standing
+  stock. Deep declines the exemption: it ORs the handicap onto its own
+  player in its own hook, which is the same shape as reading its own
+  H_MAP instead of asking the server for an exception, and costs
+  nothing in ai/default, ai/baseline or the server.
+
+  Re-checked every phase rather than once, because set_ai_level() can
+  rewrite the whole handicap vector mid-game and would otherwise
+  silently hand the exemption back.
+
+  Never REMOVES the flag: a seat that legitimately carries it from its
+  difficulty level keeps it when the knob is off, so off means "deep
+  adds nothing", not "deep guarantees exemption".
+**************************************************************************/
+static void deep_impose_switch_penalty(struct player *pplayer)
+{
+  bv_handicap *handicaps;
+
+  if (deep_tuning_get()->pay_switch_penalty <= 0
+      || is_human(pplayer)
+      || pplayer->ai_common.handicaps == NULL
+      || has_handicap(pplayer, H_PRODCHGPEN)) {
+    return;
+  }
+
+  handicaps = (bv_handicap *) pplayer->ai_common.handicaps;
+  BV_SET(*handicaps, H_PRODCHGPEN);
+
+  /* Once per seat per game in the ordinary case, which makes it the
+   * execution counter for the switch: no line, no imposition. */
+  log_base(deep_metric_log_level(),
+           "deep-payswitch turn=%d player=\"%s\" imposed=1",
+           game.info.turn, player_name(pplayer));
+}
+
+/**********************************************************************//**
   Call default ai with deep ai type as parameter.
 **************************************************************************/
 static void dpai_data_phase_begin(struct player *pplayer, bool is_new_phase)
@@ -467,6 +512,8 @@ static void dpai_data_phase_begin(struct player *pplayer, bool is_new_phase)
   struct ai_type *deftype = deep_ai_get_self();
 
   dai_data_phase_begin(deftype, pplayer, is_new_phase);
+
+  deep_impose_switch_penalty(pplayer);
 
   /* The phase is the unit of coherence for "will this city hold": the
    * citizen arrangement asks at the top of it and the growth ladder at

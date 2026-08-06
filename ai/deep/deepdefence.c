@@ -4183,7 +4183,7 @@ static void deep_prodswitch_log(struct ai_type *ait, struct player *pplayer,
            " stock=%d after=%d loss=%d bcs=%d carsh=%d disb=%d lts=%d"
            " builtlast=%d surplus=%d size=%d"
            " danger=%u urgency=%u menace=%.3f"
-           " carav=%d carcost=%d coin=%d",
+           " carav=%d carcost=%d coin=%d pen=%d",
            game.info.turn, player_name(pplayer), pcity->id,
            universal_rule_name(&pcity->changed_from),
            universal_rule_name(build_new),
@@ -4199,7 +4199,11 @@ static void deep_prodswitch_log(struct ai_type *ait, struct player *pplayer,
            carav != NULL ? 1 : 0,
            carav != NULL ? utype_build_shield_cost(pcity, NULL, carav) : 0,
            (build_new->kind == VUT_IMPROVEMENT
-            && is_convert_improvement(build_new->value.building)) ? 1 : 0);
+            && is_convert_improvement(build_new->value.building)) ? 1 : 0,
+           /* Whether `loss` is about to be REALLY taken, one event at a
+            * time: the seat carries the handicap, so the change the
+            * next statement makes will run the penalty. */
+           has_handicap(pplayer, H_PRODCHGPEN) ? 1 : 0);
 }
 
 /**********************************************************************//**

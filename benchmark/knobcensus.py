@@ -523,6 +523,14 @@ MAP = {
         "S4", "mode", "direct", [("deep-wonder-merit", "")],
         "off-switch for the wonder-caravan merit bid (deeptrade.c). "
         "Default 0: expect no deep-wonder-merit lines at defaults."),
+    "pay_switch_penalty": (
+        "S4", "mode", "direct", [("deep-payswitch", "")],
+        "honesty switch, not a magnitude: deep issues itself "
+        "H_PRODCHGPEN so the change-production penalty applies to its "
+        "own seats (deepai.c). One deep-payswitch line per seat per "
+        "game when on; deep-prodswitch pen=1 says the loss on that "
+        "event was really taken. Default 0: expect neither at "
+        "defaults."),
     "boat_water_gate": (
         "S3", "mode", "direct", [("deep-watergate", "")],
         "A/B off-switch for the water gate (deepdefence.c:3494)."),
