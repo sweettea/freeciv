@@ -34,6 +34,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .settler_guard_tolerance = 1.0,       /* PLACEHOLDER = stock bar */
   .site_enough_result = 250.0,          /* PLACEHOLDER = stock */
   .site_defence_weight = 20.0,          /* PLACEHOLDER = DEFENSE_EMPHASIS */
+  .site_naval_gate = 1,                 /* geometry, not a magnitude */
   .founder_pool_per_site = 0.06,        /* PLACEHOLDER, see deeptuning.h */
   .committed_fear_mult = 1.0,           /* PLACEHOLDER = no effect */
   .incoming_defence_eta_weight = 0.5,   /* PLACEHOLDER, untuned */
@@ -181,6 +182,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(settler_guard_tolerance) \
   TUNE_DOUBLE(site_enough_result) \
   TUNE_DOUBLE(site_defence_weight) \
+  TUNE_INT(site_naval_gate) \
   TUNE_DOUBLE(founder_pool_per_site) \
   TUNE_DOUBLE(committed_fear_mult) \
   TUNE_DOUBLE(incoming_defence_eta_weight) \

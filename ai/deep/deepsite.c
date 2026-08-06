@@ -850,6 +850,15 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
   return result;
 }
 
+/* Per-search census of the naval premium: how many candidates were
+ * paid it, how many were refused it because their water closes on its
+ * own continent, and how much score the refusals withheld. Reset and
+ * reported once per settler search (deep_settler_map_iterate), because
+ * one line per CANDIDATE would be tens of thousands per game. */
+static int deep_site_naval_paid = 0;
+static int deep_site_naval_refused = 0;
+static double deep_site_naval_refused_want = 0.0;
+
 /**********************************************************************//**
   The composite defence factor of a candidate site, on stock's scale:
   10 is flat open ground, +1 per 10% of terrain defence, with the free
@@ -1014,7 +1023,38 @@ static struct cityresult *deep_city_desirability(struct ai_type *ait,
     }
     cr->total += defence;
   }
-  cr->total += naval_bonus(cr);
+
+  /* The maritime premium, but only for water that goes somewhere.
+   *
+   * naval_bonus() pays NAVAL_EMPHASIS percent of the whole site value
+   * for adjacency to ANY ocean-class tile -- a lake, or a sea that
+   * closes on this same continent, is indistinguishable there from the
+   * world ocean. The build side already refuses to lay a keel at such
+   * a city (boat_water_gate, deepdefence.c), so the site is bid up for
+   * an option the empire discovers is unavailable only at the
+   * shipyard. This is the site-side mirror of that gate, using the
+   * same free geometry (get_lake_surrounder, via
+   * deep_city_water_bridges); the gate's own sizing found closed-water
+   * hulls were 6.9% of hulls owning 11.2% of idle time.
+   *
+   * The magnitude is stock's and unchanged: this refuses a premium, it
+   * never resizes one. site_naval_gate = 0 restores the old
+   * behaviour and is the A/B switch. */
+  {
+    adv_want naval = naval_bonus(cr);
+
+    if (naval > 0) {
+      if (deep_tuning_get()->site_naval_gate > 0
+          && !deep_city_water_bridges(cr->tile)) {
+        deep_site_naval_refused++;
+        deep_site_naval_refused_want += (double) naval;
+        naval = 0;
+      } else {
+        deep_site_naval_paid++;
+      }
+    }
+    cr->total += naval;
+  }
 
   /* Add remaining points, which is our potential (always 0 here --
    * the catchment weighting already spoke). */
@@ -1041,6 +1081,10 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
   struct unit_class *pclass = unit_class_get(punit);
   Continent_id curcont = tile_continent(unit_tile(punit));
   int cost = unit_build_shield_cost_base(punit);
+
+  deep_site_naval_paid = 0;
+  deep_site_naval_refused = 0;
+  deep_site_naval_refused_want = 0.0;
 
   pfm = pf_map_new(parameter);
   pf_map_move_costs_iterate(pfm, ptile, move_cost, FALSE) {
@@ -1142,6 +1186,21 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
       break;
     }
   } pf_map_move_costs_iterate_end;
+
+  /* One census line per SEARCH -- a few hundred a game, against the
+   * tens of thousands a per-candidate line would be. `refused` is the
+   * counter that proves the gate executes, and `withheld` is the score
+   * the closed-water premium no longer buys. */
+  if (deep_site_naval_paid > 0 || deep_site_naval_refused > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-sitenaval turn=%d player=\"%s\" unit=%d paid=%d"
+             " refused=%d withheld=%.1f best=(%d,%d)",
+             game.info.turn, player_name(pplayer), punit->id,
+             deep_site_naval_paid, deep_site_naval_refused,
+             deep_site_naval_refused_want,
+             best != NULL ? index_to_map_pos_x(tile_index(best->tile)) : -1,
+             best != NULL ? index_to_map_pos_y(tile_index(best->tile)) : -1);
+  }
 
   pf_map_destroy(pfm);
 

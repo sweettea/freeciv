@@ -83,6 +83,15 @@ struct deep_tuning {
    * the term, which is this change's off switch. */
   double site_defence_weight;
 
+  /* Refuse the maritime premium (stock naval_bonus(), NAVAL_EMPHASIS
+   * percent of the site's value for ocean adjacency) to a site whose
+   * only water closes on its own continent -- the same geometry the
+   * build side's boat_water_gate uses to refuse the keel
+   * (get_lake_surrounder, deep_city_water_bridges). GEOMETRY, not a
+   * magnitude, so 0/1 like boat_water_gate rather than a weight: 1
+   * gates, 0 restores stock's blind premium and is the A/B arm. */
+  int site_naval_gate;
+
   /* Founders to keep alive per SITE the unclaimed land could still
    * hold (deep_remaining_sites()) before Join City may dissolve one. A
    * founder pool must be nonzero -- a settler in hand is the only way
