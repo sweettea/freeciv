@@ -170,6 +170,8 @@ static const struct deep_tuning deep_tuning_defaults = {
   .rates_luxury_gain = 1.0,             /* PLACEHOLDER, untuned */
   .trade_merit = 0,                     /* PLACEHOLDER, 0 = stock's bid */
   .trade_merit_gain = 1.0,              /* PLACEHOLDER, untuned */
+  .trade_ceasefire_peace_odds = 0.0,    /* PLACEHOLDER, 0 = no optimism */
+  .trade_route_risk_gain = 0.0,         /* PLACEHOLDER, 0 = no discount */
   .wonder_merit = 0,                    /* PLACEHOLDER, 0 = stock's bid */
   .wonder_merit_gain = 1.0,             /* PLACEHOLDER, untuned */
   .pay_switch_penalty = 1,              /* human call 2026-08-06: honest */
@@ -335,6 +337,8 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(rates_luxury_gain) \
   TUNE_INT(trade_merit) \
   TUNE_DOUBLE(trade_merit_gain) \
+  TUNE_DOUBLE(trade_ceasefire_peace_odds) \
+  TUNE_DOUBLE(trade_route_risk_gain) \
   TUNE_INT(wonder_merit) \
   TUNE_DOUBLE(wonder_merit_gain) \
   TUNE_INT(pay_switch_penalty) \

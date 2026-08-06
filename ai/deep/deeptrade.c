@@ -15,6 +15,8 @@
 #include <fc_config.h>
 #endif
 
+#include <math.h>               /* pow() */
+
 /* utility */
 #include "fcintl.h"
 #include "log.h"
@@ -35,6 +37,8 @@
 
 /* common/aicore */
 #include "caravan.h"
+#include "path_finding.h"
+#include "pf_tools.h"
 
 /* server */
 #include "citytools.h"
@@ -61,6 +65,7 @@
 #include "daiunit.h"
 
 #include "deepdefence.h"
+#include "deepsettler.h"
 #include "deeptuning.h"
 
 #include "deeptrade.h"
@@ -376,118 +381,618 @@ static struct goods_type *deep_ghost_goods(const struct city *pcity,
   return best;
 }
 
+/* ------------------------------------------------------------------
+ * Deep's own route NPV (the portfolio epic).
+ *
+ * R2 priced a caravan with caravan.c's own model at horizon = MORT.
+ * That horizon is the only thing in the tree that reaches
+ * caravan.c's annuity(), and annuity() is INVERTED
+ * (upstream-bugs.md): it computes
+ *
+ *   perpetuity(payment) * (1 - 1 / rate^term)
+ *
+ * where the closed form is perpetuity(payment) * (1 - rate^term). For
+ * rate < 1 the bracket is negative and grows without bound in term, so
+ * at rate 0.95 and MORT 24 a route worth one trade per turn is priced
+ * at -48.5 where it is worth +14.2. Since get_discounted_reward() then
+ * returns trade + windfall and compares it against the wonder branch, a
+ * destination where a route CAN be established scores tens of points
+ * BELOW one where it cannot -- exactly inverted.
+ *
+ * Deep cannot fix it in place: ai/baseline and ai/default both link
+ * common/aicore, and both are measurement controls. So deep assembles
+ * the NPV itself, from the same pricing primitives caravan.c uses
+ * (common/traderoutes.c, which is correct) and its own three-line
+ * discount arithmetic. What deep does NOT reimplement is the pricing:
+ * trade_base_between_cities(), get_caravan_enter_city_trade_bonus() and
+ * city_trade_removable() are called, not copied.
+ *
+ * Having its own assembly is also what makes the rest of this epic
+ * expressible, and that is the reason to build it rather than a
+ * workaround for the bug alone:
+ *
+ *  - the SLOT is a scarce asset, so the Nth caravan a city commits is
+ *    worth the Nth-best destination, not the best one N times over;
+ *  - a cease-fire partner's route has a KNOWN death date, so its
+ *    annuity is truncated at the lapse rather than run to the horizon;
+ *  - a route walked through danger is a route that may never open, so
+ *    the NPV is discounted by the path's own risk.
+ *
+ * None of those can be said to caravan.c through its parameter struct.
+ * ------------------------------------------------------------------ */
+
+/* Enough for every city a caravan can reach inside the horizon on the
+ * cells this project runs (measured p90 well under 30 on both). The
+ * enumeration stops at the cap and says so on its census line rather
+ * than silently truncating the comparison the epic rests on. */
+#define DEEP_ROUTE_CAND_MAX 128
+
+struct deep_route_cand {
+  struct city *dest;
+  int eta;                      /* turns until the caravan arrives */
+  double windfall;              /* one-shot at arrival, undiscounted */
+  double per_turn;              /* ongoing route income, undiscounted */
+  int life;                     /* turns of ongoing income priced */
+  double npv;                   /* the answer, discounted to now */
+  double caravan_npv;           /* what caravan.c's assembly would say */
+  bool ceasefire;               /* partner's route has a known death date */
+};
+
+/**********************************************************************//**
+  A lump sum 'term' turns out, discounted to now. caravan.c's
+  presentvalue(), which is correct.
+**************************************************************************/
+static double deep_route_pv(double payment, int term, double rate)
+{
+  return payment * pow(rate, term);
+}
+
+/**********************************************************************//**
+  The present value, at the moment of arrival, of 'payment' per turn for
+  'term' turns. This is the function caravan.c means and does not
+  compute; see the comment above and upstream-bugs.md.
+
+  rate >= 1 is not a discount at all and the sum is the undiscounted
+  total; caravan_parameter_is_legal() already refuses rate > 1, and the
+  branch exists so this function is total rather than trusting a caller.
+**************************************************************************/
+static double deep_route_annuity(double payment, int term, double rate)
+{
+  if (term <= 0) {
+    return 0.0;
+  }
+  if (rate >= 1.0) {
+    return payment * term;
+  }
+
+  return payment * (1.0 - pow(rate, term)) / (1.0 - rate);
+}
+
+/**********************************************************************//**
+  The same annuity restricted to turns (from, to] after arrival -- the
+  TAIL a cease-fire truncation refuses to count, which is also the part
+  trade_ceasefire_peace_odds buys back.
+**************************************************************************/
+static double deep_route_annuity_tail(double payment, int from, int to,
+                                      double rate)
+{
+  if (to <= from) {
+    return 0.0;
+  }
+
+  return deep_route_annuity(payment, to, rate)
+    - deep_route_annuity(payment, from, rate);
+}
+
+/**********************************************************************//**
+  What one endpoint of a new route is worth per turn to US, net of what
+  establishing it destroys.
+
+  This is caravan.c's one_city_trade_benefit() re-derived from the
+  public primitives, and it is the ONE LEDGER the epic's design call
+  asks for: a city whose slots are full does not gain the new route's
+  income, it gains the DIFFERENCE between the new route and the worst
+  incumbent city_trade_removable() would evict -- and if the evicted
+  partner is also ours, the income that partner loses on its own side of
+  the same route is subtracted as well. Both halves of a domestic route
+  belong to the same empire and only one ledger may count them.
+
+  city_trade_removable() is the game's own answer to "what would this
+  cost me", priority-ordered by the goods' replace_priority, and it is
+  the function that decides in can_establish_trade_route() whether the
+  route may be made at all. Deep asks it the value question at the same
+  time the rules ask it the legality question, so the price and the rule
+  cannot disagree.
+
+  Guarded where caravan.c is not: game_city_by_number() on a route's
+  partner can return NULL and caravan.c dereferences it (same
+  upstream-bugs.md entry).
+**************************************************************************/
+static int deep_route_endpoint_gain(const struct city *pcity,
+                                    const struct player *pplayer,
+                                    const struct goods_type *pgood,
+                                    int newtrade)
+{
+  int losttrade = 0;
+
+  if (city_owner(pcity) != pplayer) {
+    /* Someone else's city keeps the income from its own side. We still
+     * care about what OUR cities lose when its slots are re-shuffled. */
+    newtrade = 0;
+  }
+
+  if (city_num_trade_routes(pcity) >= (int) max_trade_routes(pcity)) {
+    struct trade_route_list *would_remove = trade_route_list_new();
+    int oldtrade = city_trade_removable(pcity, pgood->replace_priority,
+                                        would_remove);
+
+    if (city_owner(pcity) == pplayer) {
+      newtrade -= oldtrade;
+    }
+    trade_route_list_iterate(would_remove, plost) {
+      struct city *losercity = game_city_by_number(plost->partner);
+
+      if (losercity != NULL && city_owner(losercity) == pplayer) {
+        trade_routes_iterate(losercity, pback) {
+          if (pback->partner == pcity->id) {
+            losttrade += pback->value;
+          }
+        } trade_routes_iterate_end;
+      }
+    } trade_route_list_iterate_end;
+    trade_route_list_destroy(would_remove);
+  }
+
+  return newtrade - losttrade;
+}
+
+/**********************************************************************//**
+  The two flows a caravan arriving at 'dest' from 'src' would start: the
+  one-shot establishment/marketplace bonus and the ongoing per-turn
+  route income, both undiscounted and both at TODAY's prices.
+
+  The primitives are the game's. The windfall is
+  get_caravan_enter_city_trade_bonus() with the same can_establish flag
+  the server will use, doubled when the ruleset pays into science AND
+  gold -- which is classic's "Both" and is not civ2civ3's "Gold".
+**************************************************************************/
+static void deep_route_terms(const struct player *pplayer,
+                             const struct city *src, const struct city *dest,
+                             const struct unit *carrier,
+                             struct goods_type *pgood,
+                             double *windfall, double *per_turn)
+{
+  bool can_establish;
+
+  *windfall = 0.0;
+  *per_turn = 0.0;
+
+  if (!can_cities_trade(src, dest)) {
+    return;
+  }
+  can_establish = unit_can_do_action(carrier, ACTION_TRADE_ROUTE)
+    && can_establish_trade_route(src, dest, pgood->replace_priority);
+
+  *windfall = get_caravan_enter_city_trade_bonus(src, dest,
+                                                 unit_type_get(carrier),
+                                                 pgood, can_establish);
+  if (TBONUS_BOTH == trade_route_settings_by_type
+      (cities_trade_route_type(src, dest))->bonus_type) {
+    *windfall *= 2;
+  }
+
+  if (!can_establish
+      || max_trade_routes(src) <= 0 || max_trade_routes(dest) <= 0) {
+    /* A marketplace sale and nothing more. */
+    return;
+  }
+
+  {
+    int newtrade = trade_base_between_cities(src, dest);
+
+    *per_turn = deep_route_endpoint_gain(src, pplayer, pgood, newtrade)
+      + deep_route_endpoint_gain(dest, pplayer, pgood, newtrade);
+  }
+}
+
+/**********************************************************************//**
+  How long this route is priced to LIVE, in turns after the caravan
+  arrives, and whether the answer came from a cease-fire.
+
+  Design call (orchestrator, 2026-08-05): a cease-fire route is priced
+  by TRUNCATION, not banned and not bonused. A cease-fire's lapse turn
+  is KNOWN STATE -- player_diplstate_get()->turns_left, the same counter
+  PEACE's pre-pass watches -- and when it lapses the pair is at war,
+  where both rulesets in use set the Enemy trade pct to 0 with
+  cancelling "Cancel". The route dies on a date we can read. So it is
+  worth the annuity up to that date and nothing after it, which is the
+  honest known-mechanics price and needs no constant at all.
+
+  What the tuner may add on top is optimism: trade_ceasefire_peace_odds
+  buys back the post-lapse tail at whatever probability it thinks peace
+  follows a cease-fire. At its default 0.0 no optimism is expressed and
+  no fragile route is farmed.
+
+  Returns the priced life; sets *tail_from to where the truncated tail
+  begins (== the life) and *ceasefire when a truncation happened.
+**************************************************************************/
+static int deep_route_life(const struct player *pplayer,
+                           const struct city *dest, int eta, int horizon,
+                           bool *ceasefire)
+{
+  const struct player *them = city_owner(dest);
+  const struct player_diplstate *ds;
+  int full = MAX(horizon - eta, 0);
+
+  *ceasefire = FALSE;
+  if (them == pplayer) {
+    return full;
+  }
+  ds = player_diplstate_get(pplayer, them);
+  if (ds == NULL || ds->type != DS_CEASEFIRE) {
+    return full;
+  }
+
+  *ceasefire = TRUE;
+  /* turns_left counts from NOW; the caravan spends eta of it walking. */
+  return CLIP(0, (int) ds->turns_left - eta, full);
+}
+
+/**********************************************************************//**
+  Price one candidate destination completely, and record what
+  caravan.c's own assembly would have said about the same pair so the
+  census can compare the two rather than assert a difference.
+**************************************************************************/
+static void deep_route_price(const struct player *pplayer,
+                             const struct city *src,
+                             const struct unit *carrier,
+                             struct goods_type *pgood,
+                             int horizon, double discount, double survival,
+                             struct deep_route_cand *c)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int full = MAX(horizon - c->eta, 0);
+  double ongoing;
+
+  deep_route_terms(pplayer, src, c->dest, carrier, pgood,
+                   &c->windfall, &c->per_turn);
+  c->life = deep_route_life(pplayer, c->dest, c->eta, horizon, &c->ceasefire);
+
+  ongoing = deep_route_annuity(c->per_turn, c->life, discount)
+    + tune->trade_ceasefire_peace_odds
+      * deep_route_annuity_tail(c->per_turn, c->life, full, discount);
+
+  if (c->ceasefire && c->life <= 0) {
+    /* We arrive after the cease-fire has already lapsed: at war the
+     * route is illegal and the establishment bonus is not paid either.
+     * Only the optimism branch pays anything at all. */
+    c->npv = tune->trade_ceasefire_peace_odds
+      * deep_route_pv(c->windfall + deep_route_annuity(c->per_turn, full,
+                                                       discount),
+                      c->eta, discount);
+  } else {
+    c->npv = deep_route_pv(c->windfall + ongoing, c->eta, discount);
+  }
+  c->npv *= survival;
+
+  /* The same pair through caravan.c's assembly, for the census only.
+   * Nothing reads it; it is what turns "the annuity is inverted" from
+   * a claim into a measurement, per game, per city, per destination. */
+  c->caravan_npv
+    = deep_route_pv(c->windfall
+                    + (c->per_turn / (1.0 - discount))
+                      * (1.0 - 1.0 / pow(discount, MAX(full, 1))),
+                    c->eta, discount);
+}
+
+/**********************************************************************//**
+  Every city a caravan of this type, standing here, could reach inside
+  the horizon -- with the number of turns it would take.
+
+  This is caravan_search_from()'s traversal, which is static, and it is
+  the one piece of caravan.c deep must run itself: the candidate SET has
+  to survive the pricing, and caravan.c drops any destination whose
+  assembled value loses to the wonder branch. Under the inverted annuity
+  that is precisely the set of destinations where a route can be
+  established, so harvesting through caravan.c's own callback would
+  filter out the population this epic exists to price.
+
+  The pf map is handed back so the caller can ask it for a PATH without
+  paying for a second traversal -- which is what makes the transit-risk
+  discount affordable.
+**************************************************************************/
+static int deep_route_candidates(struct player *pplayer, struct city *src,
+                                 struct unit *carrier, int horizon,
+                                 bool omniscient,
+                                 struct deep_route_cand *cand, int max,
+                                 struct pf_map **pfm_out, bool *capped)
+{
+  const struct civ_map *nmap = &(wld.map);
+  struct pf_parameter parameter;
+  struct pf_map *pfm;
+  int n = 0;
+
+  *capped = FALSE;
+  pft_fill_unit_parameter(&parameter, nmap, carrier);
+  parameter.start_tile = unit_tile(carrier);
+  parameter.moves_left_initially = carrier->moves_left;
+  parameter.omniscience = omniscient;
+  pfm = pf_map_new(&parameter);
+
+  pf_map_positions_iterate(pfm, pos, TRUE) {
+    struct city *pcity;
+
+    if (pos.turn > horizon) {
+      break;
+    }
+    pcity = tile_city(pos.tile);
+    if (pcity == NULL || pcity == src) {
+      continue;
+    }
+    if (n >= max) {
+      *capped = TRUE;
+      break;
+    }
+    memset(&cand[n], 0, sizeof(cand[n]));
+    cand[n].dest = pcity;
+    cand[n].eta = pos.turn;
+    n++;
+  } pf_map_positions_iterate_end;
+
+  *pfm_out = pfm;
+
+  return n;
+}
+
+/**********************************************************************//**
+  How much of the walk to 'dest' is dangerous, as a fraction of the
+  path's length.
+
+  The machinery is the settler's, not a second opinion about danger:
+  deep_settler_overnight_veto() is the same bar deep's civilian
+  pathfinder refuses to end a turn on and the same bar its escort
+  request uses, asked here at the escort tolerance. A caravan is a
+  civilian walking across the same map for the same reason.
+
+  Returns 0.0 when the path is unknown, so an unmeasurable route is
+  never penalised for being unmeasurable.
+**************************************************************************/
+static double deep_route_danger_fraction(struct pf_map *pfm,
+                                         struct unit *carrier,
+                                         struct tile *dest)
+{
+  struct pf_path *ppath = pf_map_path(pfm, dest);
+  int i, danger = 0, len;
+  double f;
+
+  if (ppath == NULL) {
+    return 0.0;
+  }
+  len = ppath->length - 1;
+  if (len <= 0) {
+    pf_path_destroy(ppath);
+    return 0.0;
+  }
+  for (i = 1; i < ppath->length; i++) {
+    if (deep_settler_overnight_veto(carrier, ppath->positions[i].tile,
+                                    deep_tuning_get()
+                                    ->settler_guard_tolerance)) {
+      danger++;
+    }
+  }
+  f = (double) danger / (double) len;
+  pf_path_destroy(ppath);
+
+  return f;
+}
+
+/**********************************************************************//**
+  Compare two priced candidates, best first.
+**************************************************************************/
+static int deep_route_cand_cmp(const void *a, const void *b)
+{
+  double da = ((const struct deep_route_cand *) a)->npv;
+  double db = ((const struct deep_route_cand *) b)->npv;
+
+  return (da < db) - (da > db);
+}
+
+/**********************************************************************//**
+  Is this destination inside the reach the tuner set?
+
+  caravan.c's does_foreign_trade_param_allow(), which is static, applied
+  to the same enum deep_caravan_reach() already returns -- so the
+  candidate set deep prices is the candidate set caravan.c would have
+  offered, and the two remain comparable at the seam.
+**************************************************************************/
+static bool deep_route_reach_allows(const struct player *src,
+                                    const struct player *dest)
+{
+  switch (deep_caravan_reach()) {
+  case FTL_NATIONAL_ONLY: return src == dest;
+  case FTL_ALLIED:        return pplayers_allied(src, dest);
+  case FTL_PEACEFUL:      return pplayers_in_peace(src, dest);
+  case FTL_NONWAR:        return !pplayers_at_war(src, dest);
+  }
+
+  return FALSE;
+}
+
+/* Everything the trade price is made of, so the census line can print
+   the inputs beside the answer. A want that cannot be decomposed in the
+   log is a want nobody can calibrate (R3). */
+struct deep_trade_case {
+  const struct city *dest;      /* the destination that set the want */
+  int eta;                      /* turns to walk there */
+  int build;                    /* turns to build the caravan */
+  int committed;                /* caravans this city already has out */
+  int slots;                    /* free route slots here */
+  int rank;                     /* which best destination we were sold */
+  int seen;                     /* candidates enumerated */
+  int priced;                   /* ... that carried a positive NPV */
+  int truncated;                /* ... truncated by a cease-fire */
+  bool capped;                  /* the enumeration hit its cap */
+  double npv;                   /* deep's NPV of the chosen candidate */
+  double caravan_npv;           /* what caravan.c's assembly says */
+  double windfall;
+  double per_turn;
+  int life;
+  double danger;                /* fraction of the path that is dangerous */
+  double survival;              /* the factor that came out of it */
+};
+
 /**********************************************************************//**
   What a caravan built here would be worth, as a build want.
 
-  The valuation is caravan.c's, run against the REAL destinations
-  reachable from this city by a unit of this type -- the same model,
-  the same discount and the same reach the caravan will be given the
-  moment it exists (deep_choose_trade_targets above), so the price and
-  the plan cannot disagree (RC5).
+  The destinations are the real ones a unit of this type could reach
+  from this city, and the price is deep's own NPV of each (see the
+  section comment above). Three things this replaces, in order of size:
 
-  Three deliberate differences from the destination call, each of
-  which is also what makes this affordable to run per city per turn:
+  1. **The inverted annuity.** R2 ran caravan.c's assembly at
+     horizon = MORT, the only finite-horizon caller in the tree, and so
+     ran the one defective branch in the file. Deep now assembles the
+     NPV from the same primitives with the correct closed form.
 
-  1. horizon = MORT rather than FC_INFINITY. Every other deep credit
-     is summed over MORT turns; an infinite horizon also turns the
-     ongoing route into perpetuity() -- a 20x multiplier at 0.95 --
-     and makes the pathfinder walk the entire map instead of stopping
-     at the planning horizon. A route the caravan cannot even REACH
-     inside the horizon is not an argument for building it. (The
-     executing caravan keeps the infinite horizon: it is choosing
-     among destinations, not deciding whether to exist.)
-  2. consider_wonders = FALSE. The wonder caravan is a separate
-     producer with a separate want (dai_choose_help_wonder,
-     daidomestic.c:66) and this epic does not touch it. Pricing the
-     wonder here would double-count it against itself.
-  3. consider_trade is switched off when every route slot this city
-     has is already claimed by a caravan in the field. That is the
-     honest marginal value of the Nth caravan, and it replaces stock's
-     "if unassigned_caravans * 10 > want then want = 0.1" -- a clamp
-     that answers a real question (the second caravan is worth less)
-     with a number that is not an answer. What is genuinely left for
-     an over-committed city is the one-shot windfall, and caravan.c
-     prices that correctly on its own.
+  2. **The slot, priced as the scarce asset it is.** civ2civ3 and
+     classic both give a city a flat number of route slots. R2 answered
+     the Nth-caravan question with a boolean -- consider_trade off once
+     every free slot was claimed by a caravan in the field -- which on
+     classic silently deletes the whole candidate rather than repricing
+     it, because `enter_marketplace_blocked_by = "Establish Trade
+     Route"` means the windfall it expected to fall back on is not
+     legal exactly where a route is. Deep instead sells the Nth caravan
+     the Nth-BEST destination: the candidates are priced, sorted, and
+     the one at rank `committed` is the marginal one. That IS "value
+     minus the best alternative for the same slot", expressed as a
+     comparison rather than a coefficient, and it degrades smoothly
+     instead of falling off a cliff.
 
-  The result is an NPV in raw output points at the moment the caravan
-  would set out. Two conversions bring it to a build want:
+     Replacement pricing needs no separate mechanism: when the slots
+     are full, the game's own city_trade_removable() prices the
+     incumbent that would be evicted and deep_route_endpoint_gain()
+     subtracts it, on both endpoints, with the far side of a broken
+     domestic route counted once. A new partner is therefore worth
+     building for exactly when it beats the worst incumbent -- and the
+     caravan's own cost is charged by amortize() over the build.
 
-  - divide by MORT. Build wants are PER-TURN weighted output deltas
-    (base_want measures what a building adds to this turn's output),
-    and an NPV is a stock. MORT is exactly the annuity factor of
-    amortize()'s own rate: its discount is 1 - 1/MORT, so a perpetual
-    per-turn flow of x is worth x * MORT and the inverse is the
-    division here. No new constant.
-  - price an output point at adv->science_priority, which is what
-    deep_unworked_tile_value() already pays for a point of tile trade
-    everywhere else in the module. The windfall's science-AND-gold
-    double payout is already applied by caravan.c (caravan.c:275), so
-    it must not be applied again here.
+  3. **Cease-fire truncation and transit risk**, both inside
+     deep_route_price().
 
-  Finally amortize() over the turns until the caravan is BUILT, the
-  same way the horizon credits amortize over time-to-grow; the walk to
-  the destination is already discounted inside the NPV, so that delay
-  must not be charged twice.
+  The conversions to a build want are R2's and are unchanged: divide the
+  NPV by MORT to turn a stock into the per-turn flow build wants are
+  denominated in (MORT is exactly amortize()'s own annuity factor, so no
+  constant is minted), price an output point at adv->science_priority
+  the way deep_unworked_tile_value() does, and amortize over the turns
+  until the caravan is BUILT -- the walk is already discounted inside
+  the NPV and must not be charged twice.
 
-  Known blindness, stated rather than hidden: caravan.c's optimizer
-  "does not take into account other caravans in transit", so two
-  cities can each price the same destination. The slot test above
-  catches the case that matters (one city over-committing); two cities
-  racing for one partner is not modelled.
+  Known blindness, stated rather than hidden: two cities can still each
+  price the same destination. The rank test catches the case that
+  matters (one city over-committing); two cities racing for one partner
+  is not modelled.
 **************************************************************************/
 static adv_want deep_trade_merit_want(struct ai_type *ait,
                                       struct player *pplayer,
                                       struct city *pcity,
                                       struct unit_type *utype,
                                       struct adv_data *adv,
-                                      struct caravan_result *result,
-                                      int *committed, int *slots,
-                                      int *build)
+                                      struct deep_trade_case *tc)
 {
-  const struct civ_map *nmap = &(wld.map);
   const struct deep_tuning *tune = deep_tuning_get();
-  struct caravan_parameter parameter;
-  struct unit *ghost;
+  struct deep_route_cand cand[DEEP_ROUTE_CAND_MAX];
   struct universal target = { .kind = VUT_UTYPE, .value.utype = utype };
+  struct unit *ghost;
+  struct pf_map *pfm = NULL;
+  struct deep_route_cand *pick;
+  double discount = tune->caravan_discount;
   adv_want want;
-  int build_turns;
+  int n, i, keep = 0;
 
-  caravan_result_init_zero(result);
-  *build = -1;
-  *committed = deep_committed_caravans(pcity);
-  *slots = max_trade_routes(pcity) - city_num_trade_routes(pcity);
+  memset(tc, 0, sizeof(*tc));
+  tc->build = -1;
+  tc->eta = -1;
+  tc->rank = -1;
+  tc->survival = 1.0;
+  tc->committed = deep_committed_caravans(pcity);
+  tc->slots = max_trade_routes(pcity) - city_num_trade_routes(pcity);
+
+  if (discount <= 0.0 || discount > 1.0) {
+    /* The same legality caravan_parameter_is_legal() enforces: a
+     * discount outside (0,1] is not a discount and the tuner range
+     * admits the endpoint. */
+    return 0;
+  }
 
   ghost = unit_virtual_create(pplayer, pcity, utype, 0);
   ghost->carrying = deep_ghost_goods(pcity, ghost);
   if (ghost->carrying == NULL) {
-    /* Nothing this city could load. The speculation below would read
-     * the null straight through actres.c:927, and a caravan that can
-     * carry nothing is worth nothing anyway. */
-    unit_virtual_destroy(ghost);
-    return 0;
-  }
-  caravan_parameter_init_from_unit(&parameter, ghost);
-  parameter.horizon = MORT;
-  parameter.consider_wonders = FALSE;
-  parameter.ignore_transit_time = FALSE;
-  parameter.discount = tune->caravan_discount;
-  parameter.allow_foreign_trade = deep_caravan_reach();
-  if (*slots - *committed <= 0) {
-    parameter.consider_trade = FALSE;
-  }
-
-  if (!caravan_parameter_is_legal(&parameter)) {
+    /* Nothing this city could load, and a caravan that can carry
+     * nothing is worth nothing. (It is also what would take
+     * actres.c:927's null dereference, upstream bug 34.) */
     unit_virtual_destroy(ghost);
     return 0;
   }
 
-  caravan_find_best_destination(nmap, ghost, &parameter, result,
-                                !has_handicap(pplayer, H_MAP));
+  n = deep_route_candidates(pplayer, pcity, ghost, MORT,
+                            !has_handicap(pplayer, H_MAP),
+                            cand, DEEP_ROUTE_CAND_MAX, &pfm, &tc->capped);
+  tc->seen = n;
+
+  for (i = 0; i < n; i++) {
+    double survival = 1.0;
+
+    if (!deep_route_reach_allows(pplayer, city_owner(cand[i].dest))) {
+      continue;
+    }
+    if (tune->trade_route_risk_gain > 0.0) {
+      /* Priced off the SAME pf map the enumeration built, so the risk
+       * discount costs one path extraction rather than a traversal. */
+      double f = deep_route_danger_fraction(pfm, ghost,
+                                            city_tile(cand[i].dest));
+
+      survival = CLIP(0.0, 1.0 - tune->trade_route_risk_gain * f, 1.0);
+    }
+    deep_route_price(pplayer, pcity, ghost, ghost->carrying, MORT,
+                     discount, survival, &cand[i]);
+    if (cand[i].npv <= 0.0) {
+      continue;
+    }
+    if (cand[i].ceasefire) {
+      tc->truncated++;
+    }
+    tc->danger = MAX(tc->danger, 1.0 - survival);
+    cand[keep++] = cand[i];
+  }
+  pf_map_destroy(pfm);
   unit_virtual_destroy(ghost);
 
-  if (result->dest == NULL || result->value <= 0.0) {
+  tc->priced = keep;
+  if (keep == 0) {
     return 0;
   }
+
+  qsort(cand, keep, sizeof(cand[0]), deep_route_cand_cmp);
+
+  /* The slot opportunity cost, structurally: this caravan is the
+   * (committed+1)-th, so what it can still have is the
+   * (committed+1)-th best destination. Past the end of the list every
+   * remaining partner is already spoken for and the marginal caravan is
+   * worth nothing -- which is the same answer R2's boolean gave, but
+   * reached by comparison and only at the point where it is true. */
+  tc->rank = MIN(MAX(tc->committed, 0), keep);
+  if (tc->rank >= keep) {
+    return 0;
+  }
+  pick = &cand[tc->rank];
+
+  tc->dest = pick->dest;
+  tc->eta = pick->eta;
+  tc->npv = pick->npv;
+  tc->caravan_npv = pick->caravan_npv;
+  tc->windfall = pick->windfall;
+  tc->per_turn = pick->per_turn;
+  tc->life = pick->life;
+  tc->survival = (pick->npv > 0.0 && pick->eta >= 0) ? 1.0 - tc->danger : 1.0;
 
   /* The delay is DISCOUNTED, not gated. A city three turns from
    * finishing a caravan and a city thirty turns from one are answering
@@ -496,11 +1001,10 @@ static adv_want deep_trade_merit_want(struct ai_type *ait,
    * unearned constant, and city_turns_to_build() returns FC_INFINITY
    * for a city with no shield surplus, which amortize() takes to zero
    * on its own. */
-  build_turns = city_turns_to_build(pcity, &target, TRUE);
-  *build = build_turns;
+  tc->build = city_turns_to_build(pcity, &target, TRUE);
 
-  want = amortize((adv_want) (result->value * adv->science_priority / MORT),
-                  MAX(build_turns, 0))
+  want = amortize((adv_want) (pick->npv * adv->science_priority / MORT),
+                  MAX(tc->build, 0))
     * tune->trade_merit_gain;
 
   return MIN(want, DAI_WANT_DOMESTIC_MAX);
@@ -624,10 +1128,9 @@ void deep_trade_merit_apply(struct ai_type *ait, struct player *pplayer,
                             struct city *pcity, struct adv_choice *choice)
 {
   struct adv_data *adv = adv_data_get(pplayer, NULL);
-  struct caravan_result result;
+  struct deep_trade_case tc;
   struct unit_type *utype, *stock_utype = NULL;
   adv_want stock_bid, merit;
-  int committed = 0, slots = 0, build_turns = -1;
   const char *mode = "keep";
   bool recovered = FALSE, partial = FALSE;
 
@@ -644,13 +1147,19 @@ void deep_trade_merit_apply(struct ai_type *ait, struct player *pplayer,
   }
 
   stock_bid = deep_stock_trade_bid(ait, pplayer, pcity, adv, &stock_utype);
-  merit = deep_trade_merit_want(ait, pplayer, pcity, utype, adv, &result,
-                                &committed, &slots, &build_turns);
+  merit = deep_trade_merit_want(ait, pplayer, pcity, utype, adv, &tc);
 
+  /* The winner's want is compared against the bid AS THE ADVISOR LEFT
+   * IT -- clamped to DAI_WANT_DOMESTIC_MAX (daidomestic.c:634).
+   * Comparing against the raw bid declines to act on exactly the
+   * cities that bid hardest; R2b measured that gap on the wonder
+   * producer at 6 of 84 eligible seam lines and fixed it there, and
+   * left it here on purpose because trade_merit was shipping at 0.
+   * This epic reprices the trade path, so it is fixed here too. */
   if (stock_bid > 0 && stock_utype != NULL
       && choice->type == CT_CIVILIAN
       && choice->value.utype == stock_utype
-      && choice->want == stock_bid) {
+      && choice->want == MIN(stock_bid, DAI_WANT_DOMESTIC_MAX)) {
     /* Stock's trade producer is the domestic winner. */
     mode = "replace";
     recovered = deep_caravan_replace(pplayer, pcity, choice, merit, &partial);
@@ -665,13 +1174,16 @@ void deep_trade_merit_apply(struct ai_type *ait, struct player *pplayer,
 
   log_base(deep_metric_log_level(),
            "deep-trade-merit turn=%d player=\"%s\" city=%d mode=%s"
-           " stock=%.1f merit=%.1f npv=%.1f eta=%d build=%d dest=%d"
-           " committed=%d slots=%d recover=%s",
+           " stock=%.1f merit=%.1f npv=%.1f cnpv=%.1f eta=%d build=%d"
+           " dest=%d committed=%d slots=%d rank=%d seen=%d priced=%d"
+           " trunc=%d wind=%.1f flow=%.2f life=%d risk=%.2f capped=%d"
+           " recover=%s",
            game.info.turn, player_name(pplayer), pcity->id, mode,
-           (double) stock_bid, (double) merit, result.value,
-           result.arrival_time, build_turns,
-           result.dest != NULL ? result.dest->id : -1,
-           committed, slots,
+           (double) stock_bid, (double) merit, tc.npv, tc.caravan_npv,
+           tc.eta, tc.build, tc.dest != NULL ? tc.dest->id : -1,
+           tc.committed, tc.slots, tc.rank, tc.seen, tc.priced,
+           tc.truncated, tc.windfall, tc.per_turn, tc.life, tc.danger,
+           tc.capped ? 1 : 0,
            recovered ? "yes" : (partial ? "partial" : "-"));
 }
 

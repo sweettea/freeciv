@@ -119,9 +119,9 @@ deep_settler_tile_behavior(const struct tile *ptile,
   reaches defence * tolerance, so 1.0 reproduces the stock bar
   exactly and higher is braver.
 **************************************************************************/
-static bool deep_settler_overnight_veto(struct unit *punit,
-                                        const struct tile *ptile,
-                                        double tolerance)
+bool deep_settler_overnight_veto(struct unit *punit,
+                                 const struct tile *ptile,
+                                 double tolerance)
 {
   struct player *pplayer = unit_owner(punit);
   struct city *pcity = tile_city(ptile);

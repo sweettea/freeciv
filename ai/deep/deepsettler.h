@@ -27,6 +27,14 @@ void deep_auto_settler_run(struct ai_type *ait, const struct civ_map *nmap,
                            struct player *pplayer,
                            struct unit *punit, struct workermap *state);
 
+/* The overnight-danger bar with a tolerance multiplier -- deep's own
+ * civilian risk test, shared with the trade evaluator so that "would a
+ * settler refuse to stand here" and "is this caravan's road dangerous"
+ * are the same question asked of the same tiles. */
+bool deep_settler_overnight_veto(struct unit *punit,
+                                 const struct tile *ptile,
+                                 double tolerance);
+
 adv_want deep_worker_task_value(const struct player *pplayer,
                                 const struct unit *punit,
                                 struct tile *ptile, adv_want value);

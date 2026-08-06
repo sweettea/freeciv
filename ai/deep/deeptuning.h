@@ -875,6 +875,34 @@ struct deep_tuning {
   int trade_merit;
   double trade_merit_gain;
 
+  /* The two knobs of the route PORTFOLIO (TRADE, 2026-08-06). Both sit
+   * INSIDE trade_merit -- neither can execute while the master switch
+   * is 0 -- and both are exact off-switches at their defaults.
+   *
+   * trade_ceasefire_peace_odds. A cease-fire partner's route has a
+   * KNOWN death date: player_diplstate_get()->turns_left, after which
+   * the pair is at war and both rulesets in use set the Enemy trade pct
+   * to 0 with cancelling "Cancel". Deep therefore prices such a route
+   * as the annuity TRUNCATED at the lapse rather than banning it (a
+   * ban is an invented rule) or paying it in full (which is false).
+   * This knob is the one thing truncation cannot know: the probability
+   * that peace follows the cease-fire, which buys back the post-lapse
+   * tail. At 0.0 -- the compiled default -- the price is pure known
+   * mechanics and no fragile route is farmed on optimism. PLACEHOLDER;
+   * a tuner that finds peace usually follows may pay for the tail.
+   *
+   * trade_route_risk_gain. A caravan that dies on the road opens no
+   * route, and deep already owns the civilian danger test its settlers
+   * refuse to stand on (deep_settler_overnight_veto, asked here at
+   * settler_guard_tolerance). The route's NPV is multiplied by
+   * 1 - gain * (dangerous tiles / path length), clamped to [0,1], so
+   * 0.0 is exactly no discount and 1.0 prices a wholly dangerous road
+   * as worthless. The path comes from the pf map the destination
+   * enumeration already built, so the discount costs one path
+   * extraction rather than a traversal. PLACEHOLDER. */
+  double trade_ceasefire_peace_odds;
+  double trade_route_risk_gain;
+
   /* Wonder-caravan BUILD want on merit (R2b), the SAME reform applied
    * to the larger claimant. R2's deep-want census found the caravan
    * build queue is decided by dai_choose_help_wonder()
