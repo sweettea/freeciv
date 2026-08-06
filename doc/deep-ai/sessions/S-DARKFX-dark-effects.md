@@ -40,7 +40,20 @@ machinery and the constants-into-knobs precedent you follow).
    shield-stock exposure as a small credit debit (ruleset frequencies ×
    consequences — measured facts, one weight). If the expected values
    are negligible, report the numbers and skip the code.
-7. **Border-push check (from the mechanisms round)**: verify which
+7. **Culture credits (orchestrator call, delegated 2026-08-06; derby
+   evidence).** culture/50 is 29.5% of world score at T300 and compounds
+   (history stock earns interest), and deep prices none of its sources
+   (7 Temples vs stock's 28 in the derby; cohort gap decomposed culture
+   -361 vs everything-else noise). Price the effects that FEED culture
+   per ruleset (EFT_HISTORY / EFT_NATION_HISTORY / performance channels
+   -- find the actual channel per ruleset, the derby was classic and the
+   flow still tracked Temples/Marketplaces) as a credit with tunable
+   weight, sized against the score term's measured share at the cell's
+   horizon. Guard against short-horizon metric-chasing: the weight
+   scales with the venue's horizon or ships small; the pile refines.
+   This also un-blocks the stance cult axis eventually -- note it, do
+   not wire it here.
+8. **Border-push check (from the mechanisms round)**: verify which
    border/culture effects civ2civ3 buildings carry; if any are dark and
    material, add to the credit list; else close with evidence.
 

@@ -35,6 +35,13 @@ love mechanism (one love ledger, no double-charging).
    pressure delta — the mechanism's OWN metric is "did the menacer get
    busier elsewhere," measurable from diplstate + the fear terms.
 
+3. **Culture stock in conquest worth (derby N2).** Conquest transfers
+   the accumulated history stock (Carthago inherited Gdansk's 2445 and
+   compounded it to 6408); `conquest_worth_mult` doubles city worth but
+   nothing prices that annuity. Add the captured city's culture stock x
+   the score term's value as a component of conquest worth (tunable,
+   PLACEHOLDER), at the same call sites as the multiplier.
+
 ## Discipline
 
 Both levers default OFF (byte-identity), both are proposals through the

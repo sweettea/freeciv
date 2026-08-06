@@ -56,6 +56,15 @@ which is why they bundle safely.
    threat. A/B lens: shields spent on soon-void buildings and
    soon-obsolete units, before/after.
 
+5. **The never-launches damper (derby N3).** No loop exists from "the
+   op never launches" back to "stop building its passengers": Iceland
+   built 57 Marines against 6 launches in 600 turns; Gallia switched to
+   Diplomat 191 times for +2 embassies. Consume the existing hold/launch
+   and dispatch/outcome counters as a demand damper on the corresponding
+   build wants (attackers when ops chronically hold; diplomats when
+   missions chronically fail) -- the explorer divisor's shape, applied
+   to two more pumps. Tunable gains, PLACEHOLDERs; counters.
+
 Discipline: each item its own commits + counter + A/B lens; all knobs
 PLACEHOLDERs registered everywhere; `meson test` + `tune-audit.py` CLEAN;
 byte-identity where defaults are off-shaped (items 1-2 gate on new
