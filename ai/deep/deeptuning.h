@@ -926,7 +926,22 @@ struct deep_tuning {
    * never, alone, into an alliance.
    *
    * Exploitable by design and symmetric: a rival can farm routes to
-   * pacify deep. 0.0 = off, the compiled default. PLACEHOLDER.
+   * pacify deep. That is now a POSTURE and not an accident:
+   *
+   * HUMAN CALL 2026-08-06 -- "remove the love bar, trade want anchors
+   * love". peace_seek_gain and trade_route_love ship ON TOGETHER, and
+   * the pairing is the whole argument. Waiving the love precondition
+   * on peace alone would make deep forgive indiscriminately; waiving
+   * it while commerce pays love means a partner who trades with us
+   * EARNS the affection that justifies the peace, and one who stops
+   * decays back toward wariness at stock's own 4% a turn. The
+   * forgiveness is safe because it is bought, per turn, by a route
+   * that either exists or does not.
+   *
+   * So the compiled default is 5.0, not 0.0. It is still a
+   * PLACEHOLDER -- the value the measurement arm used, chosen to give
+   * the mechanism a population, never swept -- and 0.0 restores the
+   * previous behaviour exactly.
    *
    * trade_partner_target_discount is the same posture on the military
    * side, and it is where the project's STANCE toward its partners is
@@ -1111,8 +1126,18 @@ struct deep_tuning {
    *
    * THE TRADE IS REAL AND IS NOT HIDDEN: a peace deep signs is a
    * conquest deep forgoes, and on cells decided by conquest that can
-   * cost score. The dividend (trade routes across a durable peace)
-   * belongs to TRADE, not here. PLACEHOLDER. */
+   * cost score. PEACE measured that cost and did not find it: the
+   * peace-vs-conquest trade never turned negative on either cell.
+   *
+   * HUMAN CALL 2026-08-06 -- "remove the love bar, trade want anchors
+   * love". The compiled default is 1.0: deep seeks peace with no love
+   * precondition at all. That is a values decision and it overrides
+   * rule 7's hold on shipping an unswept number; what makes it safe
+   * rather than merely forgiving is that it ships PAIRED with
+   * trade_route_love (above), so the affection deep acts on is EARNED
+   * by commerce and decays when the commerce stops. 1.0 is still the
+   * setting PEACE measured its population at, not a tuned optimum, and
+   * 0.0 restores stock's bar exactly. PLACEHOLDER. */
   double peace_seek_gain;
 
   /* PEACE -- the embassy clause, which is arithmetically impossible

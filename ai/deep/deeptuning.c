@@ -173,7 +173,10 @@ static const struct deep_tuning deep_tuning_defaults = {
   .trade_merit_gain = 1.0,              /* PLACEHOLDER, untuned */
   .trade_ceasefire_peace_odds = 0.0,    /* PLACEHOLDER, 0 = no optimism */
   .trade_route_risk_gain = 0.0,         /* PLACEHOLDER, 0 = no discount */
-  .trade_route_love = 0.0,              /* PLACEHOLDER, 0 = off */
+  /* ON by compiled default -- human call 2026-08-06: "remove the love
+   * bar, trade want anchors love". Ships as a PAIR with
+   * peace_seek_gain below; see deeptuning.h. PLACEHOLDER value. */
+  .trade_route_love = 5.0,
   .trade_partner_target_discount = 0.0, /* PLACEHOLDER, 0 = opportunist */
   .wonder_merit = 0,                    /* PLACEHOLDER, 0 = stock's bid */
   .wonder_merit_gain = 1.0,             /* PLACEHOLDER, untuned */
@@ -186,7 +189,10 @@ static const struct deep_tuning deep_tuning_defaults = {
   .scale_attacker = 1.0,                /* PLACEHOLDER, 1.0 = no rescale */
   .scale_ferry = 1.0,                   /* PLACEHOLDER, 1.0 = no rescale */
   .emergency_value_cap = 0.0,           /* PLACEHOLDER, 0 = no cap */
-  .peace_seek_gain = 0.0,               /* PLACEHOLDER, 0 = stock's bar */
+  /* Same human call: the pre-pass runs and the love precondition is
+   * waived. PLACEHOLDER value -- 1.0 is the setting PEACE measured its
+   * population at, not a tuned optimum. */
+  .peace_seek_gain = 1.0,
   .embassy_price_gain = 0.0,            /* PLACEHOLDER, 0 = off */
   .embassy_give_gain = 1.0,             /* PLACEHOLDER, untuned */
   .leader_check_gain = 0.0,             /* PLACEHOLDER, 0 = off */
