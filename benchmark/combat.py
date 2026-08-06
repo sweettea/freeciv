@@ -37,6 +37,9 @@ from pathlib import Path
 
 KV = re.compile(r'(\w+)=("[^"]*"|\S+)')
 
+# server/advisors/advbuilding.h, the codebase's shields-to-want rate.
+SHIELD_WEIGHTING = 17
+
 
 def kvs(rest):
     row = {}
@@ -69,10 +72,17 @@ def game_stats(gamedir):
             s["kill_elsewhere"] += r.get("elsewhere", 0)
             if r.get("far", 0) > 0:
                 s["kill_far_evals"] += 1
-            if r.get("gross", 0.0) > 0 and r.get("want", 0.0) <= 0:
-                s["kill_declined"] += 1
             if r.get("gross", 0.0) > 0:
                 s["kill_positive"] += 1
+                # The DECLINE counterfactual, computable in both arms
+                # because loss= is logged whether or not it is charged:
+                # the cost at gain 1.0 swallows the whole gross want.
+                if r.get("loss", 0.0) * SHIELD_WEIGHTING >= r["gross"]:
+                    s["kill_declined"] += 1
+                if r.get("want", 0.0) <= 0:
+                    s["kill_zeroed"] += 1
+                if r.get("loss", 0.0) < 0:
+                    s["kill_shielding"] += 1
         elif "deep-op " in line:
             rest = line.split("deep-op ", 1)[1]
             r = kvs(rest)
@@ -129,7 +139,9 @@ def paired(a, b, key):
 KEYS = [
     ("kill_evals", "deep-kill evaluations"),
     ("kill_positive", "... priced positive gross"),
-    ("kill_declined", "... DECLINED on cost"),
+    ("kill_declined", "... DECLINED on cost (gain 1)"),
+    ("kill_zeroed", "... amortized to zero"),
+    ("kill_shielding", "... marginal loss NEGATIVE"),
     ("kill_gross", "gross want, summed"),
     ("kill_loss", "expected loss, shields"),
     ("kill_want", "net want, summed"),
@@ -188,8 +200,11 @@ def main():
         n = len(a)
         dec = sum(g["kill_declined"] for g in a.values())
         pos = sum(g["kill_positive"] for g in a.values())
-        print("%-12s games=%d  decline rate=%.1f%% of positively priced"
-              % (names[i][:12], n, 100.0 * dec / pos if pos else 0.0))
+        neg = sum(g["kill_shielding"] for g in a.values())
+        print("%-12s games=%d  decline rate=%.1f%%  shielding rate=%.1f%%"
+              " (of positively priced)"
+              % (names[i][:12], n, 100.0 * dec / pos if pos else 0.0,
+                 100.0 * neg / pos if pos else 0.0))
 
 
 if __name__ == "__main__":

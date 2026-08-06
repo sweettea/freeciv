@@ -25,7 +25,8 @@ from pathlib import Path
 from statistics import mean, stdev
 
 COLS = ["score", "cities", "unitsbuilt", "techs", "pop", "mean_city_size",
-        "settlers", "landarea", "munits", "wonders"]
+        "settlers", "landarea", "munits", "wonders",
+        "unitslost", "unitskilled"]
 
 
 def metrics(root, arm):

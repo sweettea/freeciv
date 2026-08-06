@@ -3825,10 +3825,23 @@ static void deep_assault_want(struct ai_type *ait,
    *
    * Charged BEFORE the amortization, not after: the losses are paid
    * at the same moment the odds are won, so both sides of the trade
-   * discount together. */
+   * discount together.
+   *
+   * CLAMPED AT ZERO, and the clamp is the whole design decision.
+   * The marginal loss is NEGATIVE on 49% of the evaluations this
+   * session censused (lategame-80, 63 375 lines): the stream strikes
+   * strongest-first, so inserting a strong blade at the head often
+   * kills the defender in the first duel and the weaker pool members
+   * behind it never fight at all. Paying for that would credit this
+   * build with the same causal event Dp already credits it with --
+   * the defender dying sooner -- and the two together are one effect
+   * counted twice. So the term is a COST and never a subsidy: it can
+   * only make deep more selective than the pre-E2 want, never more
+   * aggressive. The negative branch is real and is recorded as a
+   * finding, not spent. */
   gross = tune->attack_value_weight * tworth * marginal;
   {
-    adv_want cost = (adv_want) (tune->attack_loss_gain * loss
+    adv_want cost = (adv_want) (tune->attack_loss_gain * MAX(loss, 0.0)
                                 * SHIELD_WEIGHTING);
 
     want = military_amortize(pplayer, pcity, MAX(gross - cost, 0),
@@ -3875,7 +3888,7 @@ static void deep_assault_want(struct ai_type *ait,
                              MAX(tune->attack_value_weight * tworth
                                  * (pa - p0)
                                  - (adv_want) (tune->attack_loss_gain
-                                               * (la - l0)
+                                               * MAX(la - l0, 0.0)
                                                * SHIELD_WEIGHTING), 0),
                              MAX(1, eta2), build_cost_balanced(ut));
       if (w2 > want) {
