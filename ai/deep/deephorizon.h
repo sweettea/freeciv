@@ -29,6 +29,25 @@ struct city;
  * deep_entertainer_load() is the half of that which is actually off
  * the tiles -- the population a luxury point can hand back to the
  * land. */
+/* "The game has no bell" -- returned by deep_turns_left() when the
+ * server carries no end turn at all. Larger than any horizon deep
+ * plans over, so every MIN() against it is a no-op. */
+#define DEEP_NO_END_TURN (1 << 24)
+
+/* The endgame horizon (ENDGAME, 2026-08-06). deep_turns_left() is the
+ * readable game state nothing in ai/ or server/advisors/ has ever
+ * read: `end_turn - turn`, the turns of play that remain after this
+ * one. deep_horizon_turns() is the planning horizon the growth ladder
+ * may count over -- MORT, shortened to what remains -- and
+ * deep_arrives_in_time() answers whether a benefit that first lands in
+ * `delay` turns lands before the bell at all.
+ *
+ * All three are inert with `endgame_horizon` off, and inert with it on
+ * until the game is inside MORT turns of its end. */
+int deep_turns_left(void);
+int deep_horizon_turns(void);
+bool deep_arrives_in_time(int delay);
+
 adv_want deep_unworked_tile_value(struct city *pcity,
                                   struct adv_data *adv, int count,
                                   int *raw);

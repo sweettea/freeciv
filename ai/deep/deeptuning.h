@@ -1237,6 +1237,28 @@ struct deep_tuning {
    * existing enemies -- is BALANCE's, not this session's.
    * PLACEHOLDER. */
   double leader_check_gain;
+
+  /* ENDGAME -- the game ends, and until now nothing in ai/ or
+   * server/advisors/ knew it. `game.server.end_turn` is plain readable
+   * state and has zero readers in the whole AI; MORT is a fixed 24;
+   * 199 of 199 benchmark games end on the turn limit. So a Granary
+   * started on turn 195 of 200 is priced with 24 turns of payback and
+   * 24 turns of upkeep, neither of which will happen.
+   *
+   * endgame_horizon = 1 makes deep's growth ladder plan over
+   * MIN(MORT, end_turn - turn) instead of MORT, on BOTH the benefit
+   * and the upkeep side, and refuse a credit whose first instalment
+   * lands after the last turn. It is a correctness clamp, not a
+   * strategy: it is arithmetically inert on every turn more than MORT
+   * from the end, which the `deep-endgame clamps=` counter proves per
+   * player per turn. 0 = off = byte-identical.
+   *
+   * FAIRNESS, stated once: stock does not know the game ends either,
+   * so this is deep learning something its opponent does not. It is a
+   * benchmark-realism feature -- a human absolutely plays the bell in
+   * a scored game -- and a real-game feature wherever `endturn` is
+   * set at all. PLACEHOLDER. */
+  int endgame_horizon;
 };
 
 void deep_tuning_init(void);

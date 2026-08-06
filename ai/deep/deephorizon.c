@@ -60,6 +60,89 @@
  * and bundle buildings get credit for the joint effect value over the
  * catchment tiles that could carry the partner extra. */
 
+/* Horizon credits whose planning horizon the bell actually shortened
+ * during the current player's build pass, and how short it got. Not
+ * saved and not per-player state: the pass resets them and logs them,
+ * which is the whole census. */
+static int deep_horizon_clamped = 0;
+static int deep_horizon_missed = 0;
+
+/**********************************************************************//**
+  Turns of play left after this one.
+
+  `game.server.end_turn` is plain readable game state, and before this
+  commit NOTHING in ai/ or server/advisors/ read it -- the whole AI
+  plans as though the game were infinite, on cells where 199 of 199
+  games end on the turn limit. Returns DEEP_NO_END_TURN when no bell is
+  set, so callers can MIN() unconditionally.
+**************************************************************************/
+int deep_turns_left(void)
+{
+  if (game.server.end_turn <= 0) {
+    return DEEP_NO_END_TURN;
+  }
+
+  return MAX(0, game.server.end_turn - game.info.turn);
+}
+
+/**********************************************************************//**
+  The planning horizon the growth ladder may count over: MORT, cut down
+  to the turns that remain.
+
+  Every credit in this file counts a per-turn value across MORT turns
+  and discounts once for the delay, and the upkeep bill is charged over
+  the same MORT. On turn 195 of 200 that prices 24 turns of payback
+  that do not exist -- and prices 24 turns of upkeep that will not be
+  paid either, which is why the clamp is applied to BOTH sides here and
+  not only to the benefit.
+
+  Off by default (`endgame_horizon = 0`, byte-identity), and inert
+  even when on until the game is inside MORT turns of its end, which is
+  what makes "the clamp cannot regress mid-game behaviour" a fact about
+  the code rather than a hope about the numbers.
+**************************************************************************/
+int deep_horizon_turns(void)
+{
+  int left;
+
+  if (deep_tuning_get()->endgame_horizon <= 0) {
+    return MORT;
+  }
+
+  left = deep_turns_left();
+  if (left >= MORT) {
+    return MORT;
+  }
+
+  deep_horizon_clamped++;
+  return left;
+}
+
+/**********************************************************************//**
+  Whether a benefit whose first instalment arrives in `delay` turns
+  arrives at all.
+
+  The horizon clamp above shortens what a credit counts; this one is
+  the other half, and the two are genuinely different. A Granary in a
+  city that grows every 30 turns still earns `MAX(1, H/ttg)` growth
+  steps under the clamp because the formula floors at one -- which is
+  right when the game has 200 turns to run and wrong when it has five.
+  Always TRUE with the clamp off, so the floor's existing behaviour is
+  untouched at defaults.
+**************************************************************************/
+bool deep_arrives_in_time(int delay)
+{
+  if (deep_tuning_get()->endgame_horizon <= 0) {
+    return TRUE;
+  }
+  if (delay <= deep_turns_left()) {
+    return TRUE;
+  }
+
+  deep_horizon_missed++;
+  return FALSE;
+}
+
 /**********************************************************************//**
   Mean weighted-output value of the best currently-unworked workable
   tiles of the city -- what a new citizen would earn, in the same
@@ -257,8 +340,8 @@ static adv_want deep_capacity_credit(struct city *pcity,
    * credit: "the mechanism fired" and "the mechanism paid" are
    * different claims and only the counter tells them apart. */
   ttg = deep_counterfactual_ttg(pcity, &cfsurplus);
-  if (ttg > 0) {
-    steps = MAX(1, MORT / ttg);
+  if (ttg > 0 && deep_arrives_in_time(ttg)) {
+    steps = MAX(1, deep_horizon_turns() / ttg);
     per_citizen = deep_unworked_tile_value(pcity, adv, 3, NULL);
     credit = amortize(per_citizen * steps * tune->horizon_capacity_weight,
                       ttg);
@@ -359,11 +442,16 @@ static adv_want deep_content_credit(struct city *pcity,
   /* Citizens due to arrive within the horizon. Past the content limit
    * each of them lands on pacification duty, so they are demand for
    * this building just as surely as today's entertainers are. */
-  arriving = (ttg > 0 ? MORT / ttg : 0);
+  arriving = (ttg > 0 ? deep_horizon_turns() / ttg : 0);
 
   /* A building can only ever convert its own `amount`. */
   freed = MIN(amount, load + arriving);
   if (freed <= 0) {
+    return 0;
+  }
+
+  if (load <= 0 && !deep_arrives_in_time(ttg)) {
+    /* Nothing to pacify today and nobody arriving before the bell. */
     return 0;
   }
 
@@ -414,9 +502,15 @@ static adv_want deep_growth_credit(struct city *pcity,
     return 0;
   }
 
+  if (!deep_arrives_in_time(ttg)) {
+    /* The city does not grow again before the bell; there is no growth
+     * left to accelerate. */
+    return 0;
+  }
+
   /* Growths within the horizon, and the share of one growth-cycle's
    * food the building hands back each time. */
-  steps = MAX(1, MORT / ttg);
+  steps = MAX(1, deep_horizon_turns() / ttg);
   extra = (adv_want) steps * pct / 100.0;
   per_citizen = deep_unworked_tile_value(pcity, adv, 3, NULL);
 
@@ -538,8 +632,11 @@ static adv_want deep_multiplier_credit(struct city *pcity,
     /* No food surplus: nothing arriving. */
     return 0;
   }
-  arriving = MORT / ttg;
+  arriving = deep_horizon_turns() / ttg;
   if (arriving <= 0) {
+    /* Under the endgame clamp this is the "nobody arrives before the
+     * bell" case, and it needs no separate test: the horizon itself
+     * has already gone below one growth cycle. */
     return 0;
   }
 
@@ -753,6 +850,9 @@ void deep_adjust_building_wants(struct ai_type *ait,
     return;
   }
 
+  deep_horizon_clamped = 0;
+  deep_horizon_missed = 0;
+
   city_list_iterate(pplayer->cities, pcity) {
     adv_want cap_credit;
     bool threatened;
@@ -922,7 +1022,8 @@ void deep_adjust_building_wants(struct ai_type *ait,
           (void) city_illness_calc(pcity, &ill_base, NULL, NULL, NULL);
           if (ill_base > 0) {
             double saved = (double) ill_base / 1000.0
-                           * MIN(health, 100) / 100.0 * MORT;
+                           * MIN(health, 100) / 100.0
+                           * deep_horizon_turns();
             adv_want hcred
               = saved * deep_unworked_tile_value(pcity, adv, 3, NULL)
                 * deep_tuning_get()->horizon_health_weight;
@@ -967,7 +1068,8 @@ void deep_adjust_building_wants(struct ai_type *ait,
          * does not smuggle a 24x tightening into the round's A/B;
          * the knob now means "gold per turn against the horizon" and
          * owes the tuning pile a value. */
-        add -= city_improvement_upkeep(pcity, pimprove) * MORT
+        add -= city_improvement_upkeep(pcity, pimprove)
+               * deep_horizon_turns()
                * deep_tuning_get()->upkeep_gold_weight;
         add = MAX(add, 0);
       }
@@ -1005,4 +1107,19 @@ void deep_adjust_building_wants(struct ai_type *ait,
                (double) tr_topadd, (double) tr_health);
     }
   } city_list_iterate_end;
+
+  /* The clamp's execution counter, one line per player per turn, and
+   * the reason the "inert before the window" claim is checkable rather
+   * than argued: `clamps` is zero on every turn more than MORT from
+   * the end, and zero on every turn at all with the knob off. */
+  if (deep_horizon_clamped > 0 || deep_horizon_missed > 0) {
+    int left = deep_turns_left();
+
+    log_base(deep_metric_log_level(),
+             "deep-endgame turn=%d player=\"%s\" left=%d horizon=%d"
+             " clamps=%d missed=%d",
+             game.info.turn, player_name(pplayer), left,
+             MIN(MORT, left), deep_horizon_clamped,
+             deep_horizon_missed);
+  }
 }
