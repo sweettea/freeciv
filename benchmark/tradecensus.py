@@ -99,12 +99,46 @@ def stance_counters(text):
 def route_endpoints(save_text):
     """Routes that EXIST at the end, counted as endpoints.
 
-    Each city section lists its partners as traderoute0..N; a domestic
-    route therefore contributes two endpoints and a foreign one
-    contributes one per side that is ours. Counting endpoints rather
-    than routes is what R2 published and is kept for comparability.
+    Each player's city table is a `c={"col",...}` header followed by one
+    row per city; the partner city ids live in the `traderouteN`
+    columns and a 0 means the slot is empty. A domestic route therefore
+    contributes two endpoints (one per city's row) and a foreign one
+    contributes one per side that belongs to a benchmark seat. Counting
+    endpoints rather than routes is what R2 published and is kept for
+    comparability.
+
+    Read from the FINAL SAVE rather than from an intention log: an
+    endpoint is a route that exists.
     """
-    return len(re.findall(r"^traderoute\d+=", save_text, re.M))
+    import csv as _csv
+
+    total = 0
+    lines = save_text.split("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+        if not line.startswith("c={"):
+            continue
+        cols = re.findall(r'"([^"]*)"', line)
+        idx = [n for n, c in enumerate(cols)
+               if re.fullmatch(r"traderoute\d+", c)]
+        if not idx:
+            continue
+        while i < len(lines):
+            row = lines[i]
+            if not row or row.startswith("[") or row.startswith("c={") \
+               or re.match(r"^[a-zA-Z_][\w.]*=", row):
+                break
+            i += 1
+            try:
+                vals = next(_csv.reader([row]))
+            except StopIteration:
+                continue
+            for n in idx:
+                if n < len(vals) and vals[n].strip() not in ("", "0"):
+                    total += 1
+    return total
 
 
 def final_save(seed_dir):
