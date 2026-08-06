@@ -401,6 +401,11 @@ MAP = {
         "deep-kill carries gross= and loss=, so the cost-of-victory "
         "subtraction this gain scales is on the line whether or not it "
         "changed the argmax (deepdefence.c:3813)."),
+    "conquest_worth_mult": (
+        "S2", "mag", "direct", [("deep-kill", ""), ("deep-netval", "")],
+        "both conquest lines carry worth= (stock's read of the city) "
+        "and eworth= (after the multiplier), so the ratio IS the knob "
+        "and it is on every evaluation win or lose."),
     "assault_pool_reach": (
         "S2", "gate", "direct", [("deep-kill", "")],
         "far= counts the free attackers the per-target pool dropped "

@@ -657,6 +657,19 @@ struct deep_tuning {
    * the codebase values a shield; 0 restores the pre-E2 want, which
    * priced an attack as if winning it were free. */
   double attack_loss_gain;
+  /* What a conquest is worth, as a multiple of what the city is worth
+   * to us (human call 2026-08-06): taking it gains us its amortized
+   * value AND denies that value to the opponent, and every conquest
+   * want in this project has only ever counted the first half. The
+   * human's prior band is ~1.9-2.2. Applied ONCE at each of the two
+   * conquest seats -- deep_assault_want's build side and the
+   * operation's net-value gate -- never compounded between them.
+   * 1.0 restores the pre-rider behaviour.
+   *
+   * NOT applied to the DEFENSIVE side: keeping our own city is worth
+   * about 2x by the identical argument, and multiplying only conquest
+   * tilts the offence/defence budget. Parked for the human (STATUS). */
+  double conquest_worth_mult;
   /* The pool a marginal attacker is priced against reaches only as
    * far as the marginal attacker itself does: a free blade that
    * cannot be at the target by the same arrival turn is not part of

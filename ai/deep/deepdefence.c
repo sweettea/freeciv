@@ -3629,7 +3629,7 @@ static void deep_assault_want(struct ai_type *ait,
   struct unit *pool[32];      /* deep_take_odds caps the stream anyway */
   int n_pool = 0, n_elsewhere = 0, n_far = 0, eta, rate, csize;
   struct unit *vunit;
-  adv_want tworth, want, gross;
+  adv_want tworth, raw_worth, want, gross;
   double l0 = 0.0, l1 = 0.0, loss;
 
   if (tune->attack_value_weight <= 0.0 || punittype == NULL) {
@@ -3692,7 +3692,22 @@ static void deep_assault_want(struct ai_type *ait,
   if (target == NULL) {
     return;
   }
-  tworth = def_ai_city_data(target, ait)->worth;
+  /* Conquest is worth twice what the city is worth to us, near enough
+   * (human call 2026-08-06): taking it BOTH gains us its amortized
+   * value AND denies that value to the opponent, and the want has only
+   * ever counted the first half. conquest_worth_mult is that second
+   * half, applied ONCE here and once at the operation's own net-value
+   * gate -- the same referee at both conquest seats, never compounded.
+   *
+   * Two things this does not fix, both recorded in STATUS: the
+   * DEFENSIVE symmetry (keeping our own city is ~2x by the same
+   * argument, and multiplying only conquest tilts the offence/defence
+   * budget) is parked for the human, and the base being multiplied is
+   * still stock's omniscient read of an enemy city (census finding
+   * #4). W04's estimator replaces the base; the multiplier survives
+   * that swap unchanged. */
+  raw_worth = def_ai_city_data(target, ait)->worth;
+  tworth = raw_worth * tune->conquest_worth_mult;
 
   {
     /* March or sail time is the defender's budget on BOTH terrains
@@ -3934,12 +3949,14 @@ static void deep_assault_want(struct ai_type *ait,
 
   log_base(deep_metric_log_level(),
            "deep-kill turn=%d player=\"%s\" city=%d target=%d barb=%d"
-           " worth=" ADV_WANT_PRINTF " pool=%d elsewhere=%d far=%d p0=%.3f"
+           " worth=" ADV_WANT_PRINTF " eworth=" ADV_WANT_PRINTF
+           " pool=%d elsewhere=%d far=%d p0=%.3f"
            " p1=%.3f ck=%d type=\"%s\" gross=" ADV_WANT_PRINTF
            " loss=%.2f want=" ADV_WANT_PRINTF,
            game.info.turn, player_name(pplayer), pcity->id, target->id,
            is_barbarian(city_owner(target)) ? 1 : 0,
-           tworth, n_pool, n_elsewhere, n_far, p0, p1, csize,
+           raw_worth, tworth, n_pool, n_elsewhere, n_far, p0, p1,
+           csize,
            utype_rule_name(punittype), gross, loss, want);
 
   if (want > choice->want) {

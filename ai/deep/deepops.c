@@ -3869,18 +3869,22 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
        * construction the launches the odds bar alone WOULD have
        * taken. */
       if (go && tune->op_net_value) {
-        double value = odds_now * def_ai_city_data(target, ait)->worth;
+        /* Same conquest_worth_mult as the build side, applied once
+         * here: taking the city gains us its value and denies it to
+         * the owner (human call 2026-08-06). */
+        double raw_worth = def_ai_city_data(target, ait)->worth;
+        double eff_worth = raw_worth * tune->conquest_worth_mult;
+        double value = odds_now * eff_worth;
         double cost = tune->attack_loss_gain * loss_now * SHIELD_WEIGHTING;
 
         if (value - cost <= 0.0) {
           log_base(deep_metric_log_level(),
                    "deep-netval turn=%d player=\"%s\" op=%d refuse"
                    " target=%d force=%d odds=%.3f worth=%.1f"
-                   " loss=%.2f value=%.1f cost=%.1f",
+                   " eworth=%.1f loss=%.2f value=%.1f cost=%.1f",
                    game.info.turn, player_name(pplayer), oi,
-                   op->target_city, present, odds_now,
-                   (double) def_ai_city_data(target, ait)->worth,
-                   loss_now, value, cost);
+                   op->target_city, present, odds_now, raw_worth,
+                   eff_worth, loss_now, value, cost);
           go = FALSE;
         }
       }
