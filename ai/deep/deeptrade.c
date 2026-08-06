@@ -739,8 +739,12 @@ static void deep_route_terms(const struct player *pplayer,
   follows a cease-fire. At its default 0.0 no optimism is expressed and
   no fragile route is farmed.
 
-  Returns the priced life; sets *tail_from to where the truncated tail
-  begins (== the life) and *ceasefire when a truncation happened.
+  Only DS_CEASEFIRE truncates. An armistice already has a date on which
+  it becomes PEACE rather than war, and peace keeps the route legal, so
+  it is not a death date and is not treated as one.
+
+  Returns the priced life in turns after arrival, and sets *ceasefire
+  when a truncation happened -- which is what the census counts.
 **************************************************************************/
 static int deep_route_life(const struct player *pplayer,
                            const struct city *dest, int eta, int horizon,
