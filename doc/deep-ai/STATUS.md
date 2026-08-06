@@ -7378,3 +7378,181 @@ cost. Twenty seeds are direction; this one is worth forty.
 
 `meson test -C build` 3/3 OK and `python3 benchmark/tune-audit.py`
 CLEAN **131/131/131/131** (was 124), before and after.
+
+## D3: site truth -- deep had the inverted defence bonus, and its SIZE was the cost (2026-08-05)
+
+Six code commits, one doc commit, plus this section. `ai/deep`,
+`benchmark/` and doc only; no `ai/default`, `ai/baseline` or
+`advisors` behaviour touched.
+
+    ed98f06afb  ai/deep: read the enough-result threshold from the tuner
+    7d645af4bd  ai/deep: value a site's defensible ground upwards
+    4a0d05dd74  ai/deep: refuse the naval premium to water that leads nowhere
+    0d6440e194  ai/deep: re-validate a lift passenger's mission mid-crossing
+    263691b1ff  doc: correct the 00-context claim about the defence bonus
+    051bc68483  ai/deep: make the maritime premium a tunable
+    96e7f6d1dd  ai/deep: default the site defence weight to a measured zero
+
+Binaries, pinned to scratch with `libfreeciv.so` beside them,
+`--server`, `--arms deep`:
+
+    BEFORE  b2161301d2  d1160fff868e   the G1 tip
+    WIRED   ed98f06afb  1c3fba40772d   BEFORE + the enough-result wiring only
+    AFTER   263691b1ff  240ae22fb680   all four defects, defence at stock's 20
+    FINAL   96e7f6d1dd  750a0c988c80   AFTER + naval knob + defence default 0
+
+`meson test -C build` 3/3 before and after. `tune-audit.py` CLEAN
+**131 -> 134** (`site_defence_weight`, `site_naval_gate`,
+`site_naval_weight`): each in all four audit places, in the X
+(expansion) and ALL blocks -- X is where every other `site_*` knob
+lives, there is no SITE block -- and in the generated `deep-tuning`
+line, checked in a probe (2976 of 8192 chars, nothing truncated).
+`benchmark/sitecensus.py` reports the two new censuses.
+
+### 1. The defence bonus, and the position proof mechanism-map D-D asked for
+
+`deep_city_desirability()` called stock's `result_defense_bonus()`
+from the day the deep site scorer landed until this session --
+upstream bug #1, where the defence factor sits in a DENOMINATOR, so
+better ground scores less. **`00-context` section 5 offered exactly
+this function as the bug ai/deep "simply doesn't have"** (corrected in
+`263691b1ff`; the correction is in the context doc, where the claim
+was).
+
+The proof is a real position, not arithmetic. Turn-1 save of
+isolated-150 seed 1, replayed three turns on the AFTER binary at
+`-d 3`; the new `deep-sitedef` line is LOG_VERBOSE (free in benchmark
+runs) and prints stock's term beside deep's, so one probe shows both
+rankings of the same candidate. 331 candidates scored:
+
+    turn 1, player P3 -- both candidates, identical base total 277.83
+      Hills     (43,56)  defence factor 18   stock 313.69   deep 322.28
+      Grassland (41,54)  defence factor 10   stock 349.56   deep 277.83
+      => STOCK PREFERS THE GRASSLAND. Deep prefers the hills.
+
+    6 exact-tie pairs in the probe, all inverted before, all correct now.
+    92 near-tie pairs (|d total| <= 2, different defence factors):
+      high-defence site ranked ABOVE:  stock 0/92,  deep 92/92.
+
+Per-terrain means from the same probe make the second half of the bug
+visible -- the stock term also falls with site VALUE, so it pays the
+worst sites the most:
+
+    terrain     factor    n   mean total   deep term   stock term
+    Plains          10   89        326.6        0.00        64.33
+    Grassland       10   80        322.7        0.00        64.75
+    Hills           15   44        323.9       32.39        38.49
+    Desert          10   21        258.4        0.00        83.46
+    Hills           18    5        275.5       44.08        38.01
+
+### 2. The sign was wrong AND the size was too hot -- and the size is what cost score
+
+contested (8 players, 32x32, T150), 20 paired seeds, `--arms deep`:
+
+    arm                                    score    delta     se      t   wins
+    BEFORE (G1 tip)                        81.29       --     --     --     --
+    AFTER, defence at stock's 20           76.94    -4.36   1.69  -2.57   4/20
+    AFTER, same binary, defence OFF        79.37    -1.93   1.75  -1.10   7/20
+    FINAL (default 0.0), vs BEFORE         79.37    -1.93   1.75  -1.10   7/20
+
+The term ON vs OFF inside one binary is **+2.43 for OFF (se 1.87,
+t +1.30, 13/20)**: more than half the session's regression is the
+corrected term at stock's own DEFENSE_EMPHASIS. That agrees with the
+human prior recorded the same day -- *"defense bonuses for cities
+basically don't matter long-term"* -- so `site_defence_weight`
+DEFAULTS TO 0.0, measured rather than assumed, with its 0-80 tuner
+range registered for the pile. The sign fix ships unconditionally; the
+magnitude is now a knob where stock had a literal, and the same commit
+gives `site_naval_weight` the same treatment for NAVAL_EMPHASIS
+(default 20.0 = stock, never measured by anyone).
+
+**FINAL is byte-identical to AFTER+`site-defence-off.ini` on all 20
+contested seeds** (scorelog sha256, 20/20 SAME). That proves two
+things at once: the naval-weight refactor is inert at 20.0, and the
+"skip the term's per-candidate virtual city when the weight is 0"
+short-circuit changes no decision.
+
+### 3. The closed-water premium: counted, and zeroed where the gate fires
+
+`naval_bonus()` pays NAVAL_EMPHASIS percent of a site's whole value
+for adjacency to ANY ocean-class tile, including a lake or a sea that
+closes on its own continent -- at a city where the build side's
+`boat_water_gate` then refuses to lay a keel. Gated on the same free
+geometry (`deep_city_water_bridges` -> `get_lake_surrounder`).
+
+    per game (deep-sitenaval)          contested (20)   isolated-150 (20)
+    candidates PAID the premium              2 634.6            10 959.9
+    candidates REFUSED it                       95.0               614.6
+    games with >0 refusals                     20/20               20/20
+    site score withheld                      7 312.1            54 511.1
+
+**The closed-water site premium is exactly zero in the shipped
+configuration** -- the refused count IS the population that used to be
+paid it, and the withheld sum is what it used to be worth. Off-switch
+proven by counter, not assumed: `site_naval_gate = 0` gives
+`refused=0` while the gated arm refuses 22 in the same two probe turns.
+
+### 4. D-E's frequency, finally a number
+
+The op-hold early return sits above `city_can_be_built_here()`, so a
+held passenger's mission was never re-examined; the lift delivered
+onto an unfoundable tile and the metric called it `lift-arrived`. The
+audit could only say "frequency unmeasured -- nothing logs it".
+
+    per game (deep-lift-invalid)       contested (20)   isolated-150 (20)
+    invalidations                                2.20                6.85
+    games with >0                               13/20               16/20
+    of which killed the BEACHHEAD                2.15                6.60
+    operations aborted                           2.10                6.40
+    re-aimed to another passenger                0.00                0.20
+    lift-arrived                                 5.15               17.25
+
+    when it fires: the hull is 23.5 tiles from its beachhead, 8.8 turns
+    after the lift formed (n=137, isolated-150).
+
+So on the island cell **roughly one crossing in four was sailing to a
+tile that had stopped being foundable**, and it was being counted as a
+delivery. `lift-arrived` falls 6.90 -> 5.15 on contested and
+21.00 -> 15.00 on isolated-150 (10 paired seeds) -- that drop is the
+metric getting honest, not deliveries being lost: the aborted
+operations release their passengers to re-search instead of shipping
+them to a dead tile. The re-aim path is real but rare (0.20/game):
+almost every lift on these cells carries ONE passenger, so when its
+target dies there is nobody else aboard to sail on for.
+
+### 5. `site_enough_result`, byte-identical at default
+
+The early break in `deep_settler_map_iterate()` compared the
+compile-time `RESULT_IS_ENOUGH` while its own caller already read the
+tunable for the same decision. Wired; default 250.0 = the constant.
+
+    isolated-150, 10 seeds, BEFORE vs WIRED, scorelog sha256:
+    seeds 1-10 all SAME  =>  10/10 byte-identical.
+
+### 6. What the next session must know
+
+- **The corrected defence term is written, correct, and OFF.** Turning
+  it on at stock's magnitude costs 2.43 points on contested. A tuning
+  pass over `site_defence_weight` (0-80) is the way to find out
+  whether any positive value pays; it is the cheapest untried knob in
+  site scoring and the term is waiting for it.
+- **`site_naval_weight` is the bigger unmeasured magnitude.** A fifth
+  of a site's whole value for touching water, inherited from stock and
+  never tested by anyone, and it fires on thousands of candidates a
+  game. It is now tunable. Nobody has moved it yet.
+- **The naval GATE has no isolation arm.** Its counters prove it fires
+  (95 / 615 refusals per game) and the off switch is proven inert, but
+  the `site_naval_gate = 0` A/B was queued and dropped when the cores
+  were needed for the defence attribution. `benchmark/tuning/
+  site-naval-gate-off.ini` is committed and ready; one 20-game
+  isolated-150 arm closes it.
+- **The remaining -1.93 (t -1.10) is unattributed.** It is the naval
+  gate plus the lift re-validation plus noise, on 20 seeds. If it
+  matters, forty seeds and the gate-off arm will say which.
+- **`deep-sitedef` is a LOG_VERBOSE probe line**, not a benchmark
+  counter: it costs a `result_defense_bonus()` call per candidate and
+  only exists under `-d 3`. That is how a per-candidate quantity gets
+  instrumented without drowning a game log -- reusable pattern.
+- **Nothing in this session touched the lift's SUPPLY side.** The
+  invalidation abort is a correctness fix on the demand side; the
+  wait-tail lead from W36 is still open and still unowned.
