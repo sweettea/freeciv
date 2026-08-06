@@ -8937,3 +8937,353 @@ the two seats cannot disagree about what a shield is worth.
   ops pair was part of a POSITIVE result (+1.75), and a gate that
   removes launches could subtract from it. Do not assume the sign
   carries.
+
+## TRADE: the annuity was inverted, and the slot had no population (2026-08-06)
+
+Nine code/benchmark commits plus this one. `ai/deep`, `benchmark/` and
+doc only; **zero `ai/default`, `ai/baseline` or `server/advisors`
+changes** (`git diff --stat e18c3dd60d..HEAD -- ai/default ai/baseline
+server/advisors` is empty). Full tables in
+`findings/trade-portfolio-2026-08-06.md`.
+
+    ed1d8ed3c0  doc: file caravan.c's inverted annuity as an upstream
+                bug
+    50891abf43  ai/deep: assemble the trade route's NPV instead of
+                caravan.c's
+    77a698d47c  ai/deep: let live trade routes reach the war and the
+                peace
+    90c1b549d9  benchmark: census the route portfolio and the partners
+                we cannot reach
+    0d9618b5ba  ai/deep: report the risk factor of the route that set
+                the want
+    69ea3e3d28  benchmark: archive the TRADE arms
+    2d067c6a02  ai/deep: correct the cease-fire life function's own doc
+                comment
+    c8c94270f6  benchmark: read route endpoints out of the save's city
+                table
+    1783550091  ai/deep: remove the love bar and let commerce anchor the
+                peace
+
+**Headline: the caravan build want R2 shipped was priced with an
+inverted annuity, so for two sessions deep has valued the destinations
+where a trade route could actually be established BELOW the ones where
+it could not. `common/aicore/caravan.c:446` computes
+`perpetuity * (1 - 1/rate^term)` where the closed form is
+`(1 - rate^term)`; every other caller in the tree uses an infinite
+horizon and takes the correct `perpetuity()` branch, and R2's
+`horizon = MORT` is the only thing that reaches the broken one.**
+
+### 1. Measured per decision, not argued from the source
+
+Deep now assembles its own NPV and prints caravan.c's beside it for the
+same pair. On primary-120-classic, 78 272 priced evaluations over 20
+games:
+
+    quantity            p10      p50      p90
+    deep's npv        28.10    49.40    67.90
+    caravan.c cnpv   -16.50     4.40    25.40
+    merit / stock      0.01     0.21     0.47
+
+    an ongoing route is available on 95.5% of priced destinations
+    caravan.c's NPV is NEGATIVE on 37.1% of them
+
+**The decomposition is proved rather than assumed:** on the rows where
+no ongoing route is available -- the marketplace-only destinations,
+where the annuity term vanishes -- deep's number equals caravan.c's
+exactly, 350 of 350 on the probe corpus. The entire difference is the
+annuity.
+
+It also explains a number R2 could not decompose. R2 reported the merit
+at a median **0.114** of stock's bid and asked for a ~8x deflator; on
+the corrected price the same ratio is **0.21**. Half of R2's deflator
+was this bug. **R2's "useful gain 5-10" does not carry over** -- ~4.8
+is where the corrected price sits on stock's median, and that gain was
+not run.
+
+Not fixed in place (`ai/baseline` and `ai/default` both link
+`common/aicore`); filed in `findings/upstream-bugs.md` with a second,
+smaller defect in the same function's neighbourhood (an unguarded
+`city_owner(game_city_by_number(...))` in the broken-route ledger).
+
+### 2. Two of the brief's premises did not survive the code
+
+- **`city_trade_removable()` is not uncalled.** `caravan.c`'s
+  `one_city_trade_benefit()` calls it on BOTH endpoints for every
+  candidate, and `account_for_broken_routes` defaults TRUE, so the
+  "one-ledger rule" the brief asked for is the behaviour the game
+  already has. What deep was doing wrong was throwing it away: R2 set
+  `consider_trade = FALSE` once the slots were committed, which on
+  classic deletes the candidate outright because
+  `enter_marketplace_blocked_by = "Establish Trade Route"` makes the
+  windfall it fell back on illegal exactly where a route is legal.
+- **Trade caravans are already lift-eligible.**
+  `deep_lift_wants_boat()` tests three things and has no unit-class
+  filter, so a caravan with a cross-continent goto would be carried
+  today. The block is one step upstream: the destination search is a
+  LAND pathfinder, in deep's enumeration and caravan.c's alike, so an
+  overseas city is never a candidate and that goto is never set. Stock
+  reaches them only by setting `ignore_transit_time` -- pricing the
+  crossing as free, the exact defect R2 removed. **`lift_carry_caravans`
+  was not added: it would gate a thing that is not gated.**
+
+### 3. What was built, and what it is worth where it landed
+
+    mechanism                     executes            binds
+    corrected annuity             3 946 seam/game     95.5% of prices
+    slot rank (Nth-best dest)     3 946 seam/game     0.5% of decisions
+    cease-fire truncation         691/game            3.6% of seam rows
+    transit risk discount         knob at 0.0         not exercised
+    trade_route_love              64 lines/6 games    classic only
+    trade_partner_target_discount knob at 0.0         see section 6
+
+**The slot opportunity cost -- the brief's first job -- is correct,
+structural and almost without population.** The rank the marginal
+caravan is sold: rank 0 on 77 858 decisions, rank 1 on 365, rank 2 on
+37, rank 3 on 10, rank 4 on 2. 99.5% of cities have no trade caravan
+already in the field, so the comparison never gets to bite. It replaces
+a boolean that was wrong in a way that mattered; it does not, on this
+cell, change many decisions.
+
+### 4. The A/Bs
+
+**primary-120-classic, 20 paired seeds**, binary PINNED
+(`b9321020ec2b`), `--arms deep`, both arms loading a tuning FILE with
+the standing `pay_switch_penalty` / `switch_cost_price` pins, both at
+the PRE-FOLD diplomacy defaults so the pair measures the price alone:
+
+    metric              OFF        ON     delta      se      t   wins
+    score            137.60    139.57     +1.97    2.05  +0.96  11/20
+    pop               68.08     69.81     +1.73    1.66  +1.04  12/20
+    cities            21.48     21.95     +0.47    0.55  +0.85  10/20
+    techs             28.20     28.19     -0.01    0.44  -0.02   8/20
+    unitsbuilt        83.92     82.42     -1.50    1.06  -1.41   6/20
+
+    per game            OFF        ON
+    seam evaluations   0.00   3946.05
+    mode=replace       0.00    230.20
+    truncations        0.00    691.20
+    trade dispatches   5.45      1.10
+    ROUTE ENDPOINTS    8.90      3.00
+
+**At the untuned corner the corrected price still WITHDRAWS** -- route
+endpoints 8.90 -> 3.00, the same direction R2 measured at gain 1 on the
+inverted price. Correcting the arithmetic doubled the number without
+moving it onto stock's scale. Score +1.97 at t +0.96 is the right sign
+and twenty seeds cannot resolve it.
+
+**lategame-80 (civ2civ3), `trade_merit = 0`, `peace_seek_gain` pinned
+1.0**: **0.30 route endpoints per game.** R2's finding that the
+trade-route subsystem is effectively dead on this project's default
+ruleset **survives PEACE**. There is no route population on civ2civ3
+for the price to move, which is why no civ2civ3 price arm was run.
+
+**isolated-150, 4 games**: 6 priced land destinations in four games,
+zero routes, the whole fleet on the wonder errand -- and offshore legal
+partners on **8.1% of city-turns, one or two at a time, at `offpct=200`
+every time**. The INIC premium design call 3 was aiming at is real and
+is exactly the 2x it expected; the population it would serve is one or
+two partners on 8% of the city-turns of one cell, on top of a land
+population that is empty. **Sized rather than built.**
+
+### 5. The switch tree, and each level proved
+
+    trade_merit = 0 (compiled default)   the whole price path skipped
+      trade_merit = 1
+        corrected annuity                always on inside (a bug fix)
+        slot rank                        always on inside (a comparison)
+        trade_ceasefire_peace_odds 0.0   pure truncation pricing
+        trade_route_risk_gain      0.0   survival factor exactly 1.0
+    trade_partner_target_discount 0.0    own off-switch, skipped
+    trade_route_love              5.0    own off-switch -- NOW ON, §6
+
+**Level 1, everything off, proved before the fold:** smoke cell, 10
+paired seeds, both arms loading `trade-off.ini`, pre-session
+`e18c3dd60d` (pinned `923fc3512696`) against the session binary --
+**10/10 byte-identical**, and the same ten hashes M1 published on
+2026-08-06. Execution counters on those seeds: 0 `deep-trade-merit`
+lines, 0 `deep-trade-love` lines, `spared=0 loved=0` throughout.
+
+### 6. THE FOLD -- and the thing the human should see
+
+**Human call 2026-08-06: "remove the love bar, trade want anchors
+love".** Two compiled defaults flip together:
+`peace_seek_gain 0.0 -> 1.0` and `trade_route_love 0.0 -> 5.0`. The
+argument is the pairing: waiving stock's `req_love_for_peace` alone is
+indiscriminate forgiveness; waiving it while commerce pays love means
+the affection is EARNED per turn by a route that exists, and decays at
+stock's own 4% when it stops. Every structural guard PEACE refused to
+waive is still refused. This overrides rule 7 on values grounds and is
+recorded as such; both stay registered PLACEHOLDERs and 0.0 restores
+the old behaviour on either side.
+
+The flip is proved to be exactly those two values: the post-flip binary
+(`2d0d5143f974`) with only the standing pins equals the pre-flip binary
+with both values written out, **10/10 smoke seeds identical** -- and 8
+of those 10 differ from the pre-session hashes, so it does change play.
+
+**Confirm pair, lategame-80, 20 paired seeds:**
+
+    metric              OFF        ON     delta      se      t   wins
+    score            168.05    169.97     +1.93    1.31  +1.47  13/20
+    techs             52.75     53.12     +0.37    0.16  +2.36  13/20
+    pop               41.67     42.38     +0.71    0.69  +1.02  13/20
+    munits            15.09     14.28     -0.82    0.44  -1.84   6/20
+
+**And the decomposition says the whole +1.93 is the bar removal.** A
+third arm at `peace_seek_gain = 1.0, trade_route_love = 0.0` is **byte
+-identical to the fold-on arm on 20 of 20 scorelogs**, and there are
+**0 `deep-trade-love` lines in all three arms across 60 games** --
+because the cell holds 0.30 route endpoints a game, so
+`deep_routes_with_players()` returns zero and the function returns
+before it can add anything.
+
+**The anchor is inert on the ruleset this project measures its economy
+on.** It is live on classic: 64 firings over 6 games, 3 of 6 seeds,
++5 love per partner per turn, structural cap observed at 249
+(`req_love_for_alliance - 1`), 7.67 route endpoints a game. So the
+mechanism works and the pairing is real -- on a ruleset that is not the
+default one. **On civ2civ3 the bar removal ships alone.** That is not a
+reason to withdraw it (it measures positive), but the human's safety
+argument does not apply on the cells the campaign runs, and that should
+be a deliberate decision rather than an inherited assumption.
+
+### 7. What the next session must know
+
+- **Take no caravan number from R2 or R2b at face value again.** R2's
+  entire calibration table was taken on the inverted price. R2b's
+  wonder path is unaffected (it never touches `annuity()`), and its
+  numbers stand.
+- **The corrected price has never been run at a gain where it acts.**
+  ~4.8 puts it on stock's median. One arm, twenty seeds, classic.
+- **The fold's two halves have never been measured together where both
+  act.** `trade-love-probe.ini` at twenty seeds against
+  `trade-fold-off.ini` on primary-120-classic is the arm.
+- **`trade_partner_target_discount` ships at 0.0 with an execution
+  probe only** (section 6 of the findings). It is the one knob this
+  session did not give a scored arm.
+- **PEACE's timing/character decomposition is still not run and is now
+  more urgent**, because `peace_seek_gain = 1.0` is shipping.
+- **civ2civ3 kills the trade route and PEACE does not revive it.**
+  0.30 endpoints a game with the pre-pass pinned on. Any future trade
+  work is a `-classic` project until somebody builds a cell where
+  foreign routes actually form.
+- **`lift_carry_caravans` was not created**, and the reason is in the
+  code rather than in a measurement: the lift already accepts caravans.
+  Cross-water trade needs an overseas candidate enumeration with a
+  modelled ETA, and its population is one or two partners on 8.1% of
+  island-cell city-turns.
+
+`meson test -C build` **4/4**; `python3 benchmark/tune-audit.py` CLEAN
+**158/158/158/158** (four new keys: `trade_ceasefire_peace_odds`,
+`trade_route_risk_gain`, `trade_route_love`,
+`trade_partner_target_discount`).
+
+## M1 rider 2: conquest is worth what it denies, too (2026-08-06)
+
+One code commit (`cede5b9dbd`) and this section, on the human call
+that a conquest has been under-counted: taking a city both gains us
+its amortized value and deprives the opponent of it, and every
+conquest want in this project has priced only the first half.
+
+`conquest_worth_mult`, default **2.0** in a registered range 1.0-3.0
+(the human's prior band is ~1.9-2.2), multiplies the city worth at
+BOTH conquest seats -- `deep_assault_want`'s build side and the
+operation's net-value launch gate -- once at each, never compounded,
+same referee in both. `deep-kill` and `deep-netval` now carry `worth=`
+(stock's read, meaning unchanged so older numbers stay comparable)
+beside `eworth=` (after the multiplier), so the knob is visible on
+every evaluation win or lose.
+
+**Verdict: the refusal prediction is confirmed, the launch prediction
+is falsified, and score is flat with a fat tail.**
+
+### 1. The pair
+
+Binary PINNED (`d3b70a215b7c`), `--server`, `--arms deep`,
+lategame-80, 20 paired seeds, arms differing in `conquest_worth_mult`
+alone (1.0 vs 2.0) with everything else at compiled defaults
+(`op_net_value` on) and HEDGE's two keys pinned in both.
+`benchmark/tuning/m1c-mult{10,20}.ini`.
+
+    metric                    mult 1.0    mult 2.0    delta      se      t  wins
+    score                       170.28      169.47    -0.81    1.67  -0.48 11/20
+    unitslost                    12.85       12.33    -0.52    0.51  -1.01 10/20
+    unitskilled                  11.46       11.03    -0.43    0.49  -0.89  9/20
+    munits                       14.97       14.49    -0.48    0.40  -1.20  7/20
+    unitsbuilt                   40.08       39.67    -0.42    0.54  -0.77  8/20
+    settlers                      0.43        0.64    +0.21    0.14  +1.51 12/20
+    pop                          42.77       42.07    -0.71    0.55  -1.29  5/20
+    cities                        8.18        8.15    -0.03    0.13  -0.19  7/20
+
+    deep-netval refusals          8.00        3.45    -4.55    1.90  -2.40  4/20
+    operations formed             7.75        8.40    +0.65    1.20  +0.54  9/20
+    operations LAUNCHED           4.05        4.15    +0.10    0.62  +0.16  9/20
+    operations at the walls       1.40        1.15    -0.25    0.49  -0.51  7/20
+
+**Zero identical games.** All twenty seeds moved, which is what a
+multiplier on the quantity every conquest want reads should do. The
+score spread is wide -- -15.2 to +10.7 -- and the mean is -0.81 at
+t -0.48, so twenty seeds say flat, not negative.
+
+### 2. The two predictions, judged
+
+**CONFIRMED: the net-value gate refuses less.** 8.00 -> 3.45 refusals
+a game (t -2.40), a 57% fall, because doubling the prize is exactly
+what clears a value-versus-cost test.
+
+**FALSIFIED: it does not buy more launches.** +0.10 a game (t +0.16),
+flat, even though the gate stopped refusing 4.55 times a game. The
+reason is in what the counter counts: `deep-netval` is a per-TURN
+refusal event, not a distinct operation denied. A refused muster stays
+mustered and re-asks next turn, so removing refusals makes a wave
+launch EARLIER, not more often. Every previous reading of this counter
+-- including the M1 addendum's -1.25 launches for +7.65 refusals --
+should be read that way.
+
+### 3. What is still refused, which is the more interesting half
+
+    per refusal            mult 1.0   mult 2.0
+    refusals (total)            160         69
+    mean odds                 0.933      0.888
+    mean RAW worth              632        598
+    ... under 300                0%         0%
+    mean expected loss    112.6 sh   149.0 sh
+    mean value vs cost   589 / 1914  1067 / 2534
+
+**The prediction that the survivors would be "genuinely cheap prizes
+only" is not what happened.** The raw worth of a refused target barely
+moves (632 -> 598) and none of them is a cheap city. What the
+multiplier filters out is the band of fights that cost between one and
+two cities; what survives is the fights that cost more than TWO --
+still 2.4x under water on average, and BIGGER (expected loss 112.6 ->
+149.0 shields). The gate did not become lenient, it became
+better-targeted.
+
+### 4. Two things parked for the human, explicitly
+
+1. **The defensive symmetry is not implemented.** Keeping our own city
+   is worth about 2x by the identical argument -- we keep the value
+   and deny the taker -- and multiplying only the conquest side tilts
+   the offence/defence budget by construction. `deep_op_defend_bid`'s
+   `worth x odds` and the whole fear lattice are untouched. This is a
+   design call, not an oversight, and it is the first thing to settle
+   before `conquest_worth_mult` is tuned.
+2. **The base is still omniscient.** The multiplier scales stock's
+   `def_ai_city_data(acity)->worth`, which reads an enemy city's true
+   state (census finding #4, the self-valuation channel). The rider
+   does not touch that channel and does not worsen it; W04's estimator
+   replaces the base, and the multiplier survives that swap unchanged
+   because it multiplies whatever the base reports.
+
+### 5. Owed
+
+- `conquest_worth_mult` ships at **2.0**, registered in all four audit
+  places, in the M/MIL/ALL blocks, in the generated `deep-tuning` line
+  and in `knobcensus.py`; off-switch is 1.0 and is proven by counter
+  (`worth == eworth` on every line of the 1.0 arm).
+- **A 2.0-vs-1.0 verdict at forty seeds is worth having**: every seed
+  moved and the spread is +-10, which is the profile of a knob that
+  matters and a sample that cannot see it.
+- **Contested is NOT re-measured here** (BALANCE owns that cell's
+  re-measure). The multiplier is live in both cells' defaults from
+  this commit, so any contested number taken before it is stale.
