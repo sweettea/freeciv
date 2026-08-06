@@ -186,9 +186,17 @@ def log_census(d, arm):
         print("  peace clauses judged by deep %7.1f/game   ACCEPTED %7.1f"
               % (len(take) / ng, len(ok) / ng))
     if emb:
-        cleared = [r for r in emb if r.get("accept", 0) > 0]
-        print("  embassy clauses priced %7.1f/game   swaps CLEARED %7.1f"
-              % (len(emb) / ng, len(cleared) / ng))
+        # accept= on a clause line is the RUNNING balance's sign, so the
+        # treaty's decision is the last line of its group. Grouping on
+        # (turn, judge, counterparty) reconstructs the treaty without
+        # the server having to name it.
+        deals = {}
+        for r in emb:
+            deals[(r.get("turn"), r.get("plr"), r.get("with"))] = r
+        cleared = [r for r in deals.values() if r.get("accept", 0) > 0]
+        print("  embassy clauses priced %7.1f/game   treaties judged %7.1f"
+              "   CLEARED %7.1f"
+              % (len(emb) / ng, len(deals) / ng, len(cleared) / ng))
         gv = [r["worth"] for r in emb if r.get("give", 0) > 0]
         tk = [r["worth"] for r in emb if r.get("give", 0) <= 0]
         if gv:
