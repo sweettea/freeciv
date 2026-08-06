@@ -61,12 +61,19 @@ Principle: a block is tuned where its mechanisms have POPULATION, pinned
 where pinning makes its objective separable (W34 phase A's purpose), and
 its stage order respects currency dependencies.
 
-**Stage 0 — the exchange rate.** R3's class deflators first, alone: they
-set the cross-class currency every other want trades in; any within-block
-optimum found under wrong exchange rates is an optimum for the wrong game
-(receipt: E34.2's gates-3+4 collision; W02-v1). Small dimension, biggest
-interaction. Venue: isolated-150 + contested, unpinned (deflators must
-hold in mixed play). Warm start: R3's corpus-derived values.
+**Stage 0 — RETIRED BY R3's MEASUREMENT (2026-08-06).** The corpus showed
+the exchange-rate disease substantially healed structurally: the honest
+anchor shrank the founder gap from 10-20x to 3.7-6.5x, the founder
+deflator is exactly neutral at claim power (-0.05, t -0.02, n=40) while
+costing 13% of cities, worker inflation is poisonous (bounded-by-
+construction want), joint rescales are non-additive, and the military
+scales have no derivation (anchor ratios INVERT between cells). All six
+scale_* keys ship inert at 1.0 and are EXCLUDED from the search except
+scale_settler on isolated-150 at a tight range if stage 3 wants it. The
+cross-class currency is owned by the per-mechanism merits (R1/R2/R2b,
+combat E2 for the emergency-tier attacker spikes — p50 6485, max 259,976,
+which is where W01's disease actually retreated to). Receipt:
+findings/want-corpus-2026-08-06.md.
 
 **Stage 1 — ECON block, PINNED ECONOMIC.** horizon_* weights,
 cm_* factors, upkeep weights, rates gains (R1's measured ranges:
