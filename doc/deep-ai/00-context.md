@@ -147,7 +147,15 @@ research ecosystem automatically.
 
 **Bug fixes are offered upstream in parallel, and nothing depends on them
 landing.** If the inverted `result_defense_bonus` is never fixed upstream,
-`ai/deep` simply doesn't have that bug.
+`ai/deep` doesn't have to carry the bug — but *not having it is work*, and this
+document claimed the property before the work was done. **Correction
+(2026-08-05, session D3):** `deep_city_desirability()` called stock's
+`result_defense_bonus()` from the day the deep site scorer landed until D3
+replaced it, so for months the example of a bug deep "simply doesn't have" was
+a bug deep had. Reusing `ai/default` is the default and is usually right; what
+it does *not* do is exempt the reused function from being read. The
+[mechanism map](findings/mechanism-map.md) D-D found this by reading the call
+site, which is the only way it can be found.
 
 ---
 
