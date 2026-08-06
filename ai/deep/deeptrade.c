@@ -23,7 +23,9 @@
 /* common */
 #include "city.h"
 #include "game.h"
+#include "improvement.h"
 #include "map.h"
+#include "movement.h"
 #include "player.h"
 #include "traderoutes.h"
 #include "traits.h"
@@ -35,6 +37,7 @@
 #include "caravan.h"
 
 /* server */
+#include "citytools.h"
 #include "notify.h"
 #include "srv_log.h"
 
@@ -43,12 +46,14 @@
 #include "advchoice.h"
 #include "advdata.h"
 #include "advtools.h"
+#include "infracache.h"
 
 /* ai */
 #include "aitraits.h"
 #include "handicaps.h"
 
 /* ai/default */
+#include "daicity.h"
 #include "daidata.h"
 #include "daidomestic.h"
 #include "daiplayer.h"
@@ -667,5 +672,323 @@ void deep_trade_merit_apply(struct ai_type *ait, struct player *pplayer,
            result.arrival_time, build_turns,
            result.dest != NULL ? result.dest->id : -1,
            committed, slots,
+           recovered ? "yes" : (partial ? "partial" : "-"));
+}
+
+/* ------------------------------------------------------------------
+ * The WONDER caravan (the wonder-merit epic, R2b).
+ *
+ * Everything above prices the caravan that opens a trade route. This
+ * prices the other one, and R2's own census says it is the bigger
+ * half: of 354 caravan build decisions per game on primary-120-classic
+ * the WINNING want has p50 197, while stock's trade bid has p50 71.
+ * The caravan build queue belongs to dai_choose_help_wonder()
+ * (daidomestic.c:71), which prices a wonder caravan as
+ *
+ *   want = wonder_city->building_want[wonder] / MAX(walk_turns, 1)
+ *
+ * behind a count gate: build another while
+ *
+ *   build_points_left(wonder_city) > one caravan's shields * caravans
+ *
+ * where caravans is every help-wonder-capable unit on this continent,
+ * fielded or in production.
+ *
+ * The gate is not the problem -- it is a real marginality test, just a
+ * boolean one. The want is. It credits a caravan with the WHOLE
+ * wonder's want no matter what fraction of the wonder its shields
+ * actually buy, and it divides by the walk instead of discounting it,
+ * which is the same undiscounted arithmetic R2 found on the trade
+ * side and which no other deep credit uses.
+ *
+ * D2 made building_want[] honest in the wonder city. This re-
+ * denominates it PER SHIELD DELIVERED. Nothing new is invented: the
+ * output is the wonder city's own want, multiplied by a share and
+ * amortized over a delay.
+ * ------------------------------------------------------------------ */
+
+/* Everything the wonder price is made of, kept together so the census
+ * line can print the inputs beside the answer. A want that cannot be
+ * decomposed in the log is a want nobody can calibrate (R3). */
+struct deep_wonder_case {
+  const struct city *wcity;         /* the wonder city, or NULL */
+  adv_want wonder_want;             /* its building_want for the wonder */
+  int cost;                         /* the wonder's full shield cost */
+  int left;                         /* shields still to find */
+  int pledged;                      /* shields already walking or on order */
+  int deliver;                      /* what THIS caravan would put in */
+  int usable;                       /* the part of that which is not surplus */
+  int walk;                         /* turns to walk there */
+  int build;                        /* turns to build it here */
+};
+
+/**********************************************************************//**
+  How many shields of help are already committed to the wonder.
+
+  The POPULATION is stock's, deliberately: every unit on this continent
+  that can do Help Wonder, plus every one in production on it
+  (daidomestic.c:104-120). Stock then counts them; deep asks each what
+  it would deliver, through the same unit_shield_value() the server
+  charges at the moment of delivery (unithand.c:5970), so a ruleset
+  that pays a Freight more than a Caravan is priced rather than
+  averaged.
+
+  Not narrowed to units actually tasked AIUNIT_WONDER. An idle caravan
+  on this continent is exactly what the next wonder call will send, and
+  a caravan whose route was better spent elsewhere is a bid this
+  producer does not get to make. Counting stock's set keeps the two
+  prices comparable at the seam, which is the whole point of the
+  census.
+**************************************************************************/
+static int deep_pledged_wonder_shields(const struct player *pplayer,
+                                       Continent_id continent,
+                                       const struct action *paction)
+{
+  int shields = 0;
+
+  unit_list_iterate(pplayer->units, punit) {
+    if (unit_can_do_action(punit, ACTION_HELP_WONDER)
+        && tile_continent(unit_tile(punit)) == continent) {
+      shields += unit_shield_value(punit, unit_type_get(punit), paction);
+    }
+  } unit_list_iterate_end;
+
+  city_list_iterate(pplayer->cities, acity) {
+    if (VUT_UTYPE == acity->production.kind
+        && utype_can_do_action(acity->production.value.utype,
+                               ACTION_HELP_WONDER)
+        && tile_continent(acity->tile) == continent) {
+      shields += unit_shield_value(NULL, acity->production.value.utype,
+                                   paction);
+    }
+  } city_list_iterate_end;
+
+  return shields;
+}
+
+/**********************************************************************//**
+  What a wonder caravan built HERE would be worth, as a build want.
+
+  The value side. A caravan delivers its shields into the wonder city's
+  current build, so what it buys is a SHARE of the wonder:
+
+    want = building_want[wonder] * usable_shields / wonder_shield_cost
+
+  building_want[] is the wonder city's own number, horizon-credited by
+  deep and made honest by D2, so this session mints no scale and no
+  second opinion about which wonder is worth having: it re-expresses
+  the opinion the wonder city already holds, per shield.
+
+  usable_shields is where stock's count gate goes, graded. The shields
+  pledged by caravans already fielded or on order are subtracted from
+  what the wonder still needs, and this caravan is credited only with
+  what is left after them -- so the second caravan to a nearly funded
+  wonder is worth a fraction of the first, and the one that arrives
+  after the wonder is paid for is worth nothing, which is the same
+  answer stock's boolean gives at the point where it flips.
+
+  Deliberately NOT credited: the shields that overshoot the finish
+  line. They are not lost (the city keeps its stock for the next
+  build), but they are not what this caravan was priced for, and
+  crediting them here would price a caravan as a shield-transfer
+  service, which is a different mechanism with a different gate.
+
+  The delay side. Two delays, both real and both currently ignored:
+  the turns to BUILD the caravan (stock charges nothing for it -- the
+  same omission R2 measured as the largest single term on the trade
+  side) and the turns to WALK it there (stock divides by them, which
+  is not a discount -- it makes a wonder 20 turns away worth 5% of one
+  next door, where amortize() at MORT makes it 43%). Deep amortizes
+  over their sum, the same amortize() every horizon credit uses.
+
+  The walk is stock's own number, and it is already a real path:
+  distance_to_wonder_city is a pathfinder move cost from the wonder
+  city (daidomestic.c:643), so dividing by the unit's move rate gives
+  turns over actual terrain rather than tiles as the crow flies. Zero
+  means "unreachable inside seven turns of travel" and this producer
+  declines, exactly as stock's does.
+**************************************************************************/
+static adv_want deep_wonder_merit_want(struct ai_type *ait,
+                                       struct player *pplayer,
+                                       struct city *pcity,
+                                       struct unit_type *utype,
+                                       struct adv_data *adv,
+                                       struct deep_wonder_case *wc)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct ai_city *city_data = def_ai_city_data(pcity, ait);
+  struct city *wonder_city = game_city_by_number(adv->wonder_city);
+  const struct action *paction = action_by_number(ACTION_HELP_WONDER);
+  const struct impr_type *wonder;
+  struct universal target = { .kind = VUT_UTYPE, .value.utype = utype };
+  int residual, move_rate;
+  adv_want want;
+
+  memset(wc, 0, sizeof(*wc));
+  wc->walk = -1;
+  wc->build = -1;
+
+  /* Eligibility is stock's, unchanged (daidomestic.c:86-101): this
+   * epic reforms the PRICE, not the population. A distance of zero
+   * means the pathfinder never reached us. */
+  if (pcity == wonder_city
+      || wonder_city == NULL
+      || city_data->distance_to_wonder_city <= 0
+      || !city_production_gets_caravan_shields(&wonder_city->production)
+      || VUT_UTYPE == wonder_city->production.kind
+      || !is_wonder(wonder_city->production.value.building)) {
+    return 0;
+  }
+
+  wonder = wonder_city->production.value.building;
+  wc->wcity = wonder_city;
+  wc->wonder_want
+    = wonder_city->server.adv->building_want[improvement_index(wonder)];
+  wc->cost = impr_build_shield_cost(wonder_city, wonder);
+  wc->left = build_points_left(wonder_city);
+  wc->deliver = unit_shield_value(NULL, utype, paction);
+  wc->pledged = deep_pledged_wonder_shields(pplayer,
+                                            tile_continent(pcity->tile),
+                                            paction);
+
+  if (wc->wonder_want <= 0 || wc->cost <= 0 || wc->left <= 0) {
+    return 0;
+  }
+
+  residual = wc->left - wc->pledged;
+  if (residual <= 0) {
+    /* The wonder is already fully funded by help that exists. Stock's
+     * gate says the same thing here; deep says it as a zero rather
+     * than a branch, and says it on the way down as well. */
+    return 0;
+  }
+  wc->usable = MIN(wc->deliver, residual);
+
+  /* The rate the DISTANCE was measured in: dai_wonder_city_distance()
+   * walks a fresh, undamaged unit of this role (daidomestic.c:673), so
+   * veteran level 0 and full hit points are that unit, not an
+   * optimistic reading. */
+  move_rate = utype_move_rate(utype, city_tile(pcity), pplayer, 0,
+                              utype->hp);
+  if (move_rate <= 0) {
+    return 0;
+  }
+  wc->walk = city_data->distance_to_wonder_city / move_rate;
+  wc->build = city_turns_to_build(pcity, &target, TRUE);
+
+  want = amortize((adv_want) (wc->wonder_want * wc->usable
+                              / (double) wc->cost),
+                  MAX(wc->walk, 0) + MAX(wc->build, 0))
+    * tune->wonder_merit_gain;
+
+  return MIN(want, DAI_WANT_DOMESTIC_MAX);
+}
+
+/**********************************************************************//**
+  Read stock's wonder-caravan bid without disturbing anything.
+
+  Same probe R2 built for the trade producer, against the producer next
+  door. dai_choose_help_wonder() writes its choice argument and, through
+  dai_wants_role_unit(), the player's tech_want[]; snapshotting and
+  restoring that array is what makes the probe inert, and it is why the
+  bid cannot be obtained by re-running domestic_advisor_choose_build()
+  (which would double every producer's tech want, not just this one's).
+
+  It reads the incoming choice as a FLOOR (it only ever raises the
+  want), so the probe is handed a fresh zeroed choice and what comes
+  back is the producer's own number.
+**************************************************************************/
+static adv_want deep_stock_wonder_bid(struct ai_type *ait,
+                                      struct player *pplayer,
+                                      struct city *pcity,
+                                      struct adv_data *adv,
+                                      const struct unit_type **utype_out)
+{
+  struct ai_plr *plr_data = def_ai_player_data(pplayer, ait);
+  adv_want saved[A_LAST + 1];
+  struct adv_choice *probe = adv_new_choice();
+  adv_want bid;
+
+  memcpy(saved, plr_data->tech_want, sizeof(saved));
+  dai_choose_help_wonder(ait, pcity, probe, adv);
+  memcpy(plr_data->tech_want, saved, sizeof(saved));
+
+  bid = probe->want;
+  *utype_out = (probe->want > 0 && probe->type == CT_CIVILIAN)
+    ? probe->value.utype : NULL;
+  adv_free_choice(probe);
+
+  return bid;
+}
+
+/**********************************************************************//**
+  Substitute deep's per-shield wonder-caravan want for stock's at the
+  build seam, for one city.
+
+  The three outcomes and the recovery are the trade path's, for the
+  same reasons (see deep_trade_merit_apply); what differs is which
+  producer is being repriced. The two switches are independent by
+  design -- trade_merit is dead on every civ2civ3 cell this project
+  runs, because civ2civ3 sets the domestic trade-route bonus to zero,
+  while the wonder caravan is legal and alive on BOTH rulesets -- so
+  folding them into one key would tie a live mechanism to a dead one.
+
+  wonder_merit = 0 skips all of it, including the probe, and is the
+  compiled default.
+**************************************************************************/
+void deep_wonder_merit_apply(struct ai_type *ait, struct player *pplayer,
+                             struct city *pcity, struct adv_choice *choice)
+{
+  struct adv_data *adv = adv_data_get(pplayer, NULL);
+  struct deep_wonder_case wc;
+  struct unit_type *utype;
+  const struct unit_type *stock_utype = NULL;
+  adv_want stock_bid, merit;
+  const char *mode = "keep";
+  bool recovered = FALSE, partial = FALSE;
+
+  if (deep_tuning_get()->wonder_merit <= 0) {
+    return;
+  }
+
+  if (num_role_units(action_id_get_role(ACTION_HELP_WONDER)) == 0) {
+    return;
+  }
+
+  utype = best_role_unit(pcity, action_id_get_role(ACTION_HELP_WONDER));
+  if (utype == NULL) {
+    /* Cannot build one now. Stock's bid, if it makes one, exists only
+     * to stimulate the tech, and deep has no opinion about the price
+     * of a unit that cannot be ordered. */
+    return;
+  }
+
+  stock_bid = deep_stock_wonder_bid(ait, pplayer, pcity, adv, &stock_utype);
+  merit = deep_wonder_merit_want(ait, pplayer, pcity, utype, adv, &wc);
+
+  if (stock_bid > 0 && stock_utype != NULL
+      && choice->type == CT_CIVILIAN
+      && choice->value.utype == stock_utype
+      && choice->want == stock_bid) {
+    mode = "replace";
+    recovered = deep_caravan_replace(pplayer, pcity, choice, merit, &partial);
+  } else if (merit > choice->want) {
+    mode = "promote";
+    choice->type = CT_CIVILIAN;
+    choice->value.utype = utype;
+    choice->want = merit;
+    choice->need_boat = FALSE;
+    adv_choice_set_use(choice, "deep wonder merit");
+  }
+
+  log_base(deep_metric_log_level(),
+           "deep-wonder-merit turn=%d player=\"%s\" city=%d mode=%s"
+           " stock=%.1f merit=%.1f wwant=%.1f cost=%d left=%d pledged=%d"
+           " deliver=%d usable=%d walk=%d build=%d wcity=%d recover=%s",
+           game.info.turn, player_name(pplayer), pcity->id, mode,
+           (double) stock_bid, (double) merit, (double) wc.wonder_want,
+           wc.cost, wc.left, wc.pledged, wc.deliver, wc.usable,
+           wc.walk, wc.build,
+           wc.wcity != NULL ? wc.wcity->id : -1,
            recovered ? "yes" : (partial ? "partial" : "-"));
 }

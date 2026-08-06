@@ -502,6 +502,11 @@ MAP = {
     "trade_merit_gain": (
         "S4", "mag", "direct", [("deep-trade-merit", "merit>0")],
         "merit= is the NPV converted by this gain (deeptrade.c:499)."),
+    "wonder_merit_gain": (
+        "S4", "mag", "direct", [("deep-wonder-merit", "merit>0")],
+        "merit= is the wonder want, scaled by the share of the wonder "
+        "the caravan's shields buy and amortized over build+walk, "
+        "converted by this gain (deeptrade.c)."),
 
     # ---------------- Mode switches and degenerate ranges ------------
     "caravan_foreign_trade": (
@@ -514,6 +519,10 @@ MAP = {
         "S4", "mode", "direct", [("deep-trade-merit", "")],
         "off-switch for the whole merit bid (deeptrade.c:582). Default "
         "0: expect no deep-trade-merit lines at defaults."),
+    "wonder_merit": (
+        "S4", "mode", "direct", [("deep-wonder-merit", "")],
+        "off-switch for the wonder-caravan merit bid (deeptrade.c). "
+        "Default 0: expect no deep-wonder-merit lines at defaults."),
     "boat_water_gate": (
         "S3", "mode", "direct", [("deep-watergate", "")],
         "A/B off-switch for the water gate (deepdefence.c:3494)."),

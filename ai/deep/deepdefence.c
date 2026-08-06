@@ -4188,6 +4188,14 @@ static void deep_city_choose_build(struct ai_type *ait,
        * the two meet: the bid has been formed and nothing has consumed
        * it yet. See deeptrade.c. */
       deep_trade_merit_apply(ait, pplayer, pcity, newchoice);
+      /* And the other caravan producer, at the same seam. The wonder
+       * caravan is the LARGER claimant on this queue -- R2's census
+       * put the winning want at p50 197 for it against 71 for the
+       * trade bid -- and it is priced by dai_choose_help_wonder() with
+       * the whole wonder's want, undiscounted, divided by the walk.
+       * Both switches are independent and both default off. See
+       * deeptrade.c. */
+      deep_wonder_merit_apply(ait, pplayer, pcity, newchoice);
       if (deep_want_cmp(deep_want_from_choice(newchoice),
                         deep_want_from_choice(&city_data->choice)) > 0) {
         adv_choice_copy(&(city_data->choice), newchoice);

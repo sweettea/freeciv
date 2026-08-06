@@ -23,4 +23,7 @@ void deep_choose_trade_targets(struct ai_type *ait, struct player *pplayer);
 void deep_trade_merit_apply(struct ai_type *ait, struct player *pplayer,
                             struct city *pcity, struct adv_choice *choice);
 
+void deep_wonder_merit_apply(struct ai_type *ait, struct player *pplayer,
+                             struct city *pcity, struct adv_choice *choice);
+
 #endif /* FC__DEEPTRADE_H */
