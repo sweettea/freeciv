@@ -7618,3 +7618,326 @@ Owed, unchanged: forty seeds on the gate before anyone calls -11.68 a
 number, and a tuning pass on `site_defence_weight` and
 `site_naval_weight`, the two magnitudes this session turned from
 inherited constants into knobs.
+
+## R2b: the wonder caravan gets a price, and it buys back a third of a fleet (2026-08-05)
+
+Five code/benchmark commits and this one. `ai/deep` prices the OTHER
+caravan -- the one that helps build a wonder, and the one R2 measured
+as the LARGER claimant on the caravan queue -- by what it delivers and
+when. Behind `wonder_merit`, compiled default 0, stock's bid untouched,
+off arm byte-identical to the pre-session binary on 10/10 seeds.
+
+    9ea76baff6  ai/default: expose dai_choose_help_wonder for deep to
+                read its bid
+    b21ac26028  ai/deep: share the caravan runner-up recovery between
+                both producers
+    17707e715a  ai/deep: price a wonder caravan by the shields it
+                delivers
+    052688c1d9  benchmark: census the wonder-caravan producer and its
+                outcome
+    9d2cb32ebd  ai/deep: recognise a wonder bid the domestic clamp
+                truncated
+    d4d1d411ca  benchmark: separate the wonder lines that were priced
+                from the refused
+
+**Headline: the mechanism executes 3620 times a game, and at the gain
+that puts it on stock's own scale it builds 7% FEWER caravans on
+classic while sending 39% MORE of them to a wonder (7.80 -> 10.85
+dispatches, t +2.64) and completing slightly more wonders (2.75 ->
+3.10 per game). Score does not move on either cell at either gain
+(|t| <= 0.7). On civ2civ3 it buys the same wonders with 38% fewer
+caravans.** A seventh mechanism that provably works and is worth about
+zero in score. `wonder_merit` ships 0, with a measured gain of 5 and
+the calibration table below going to the pile.
+
+### 1. Wonder caravans ARE legal on civ2civ3 -- verified, not assumed
+
+R2's binding fact was that civ2civ3 kills the trade ROUTE: `National`
+and `NationalIC` pct 0 (`data/civ2civ3/game.ruleset:612-613`), so a
+domestic route cannot be established and no foreign one ever became
+legal in six games. That is the `[trade]` block and it has nothing to
+do with the other errand. `enabler_help_build_wonder`
+(`data/civ2civ3/actions.ruleset:647-662`) is present and identical in
+shape to classic's: HelpWonder-flagged actor, no diplomatic relation
+with the target (i.e. domestic only), target genus GreatWonder,
+`help_wonder_max_range = 1`. Caravan and Freight carry the flag
+(`units.ruleset:2638/2691`).
+
+Measured on the cells, not read off the file. lategame-80 (civ2civ3),
+20 games, off arm:
+
+    dispatches per game        wonder errand   trade errand
+    lategame-80 (civ2civ3)              6.55           0.95
+    primary-120-classic                 7.80           8.25
+
+**On civ2civ3 the caravan that gets dispatched is the wonder caravan**,
+7 to 1, and the on arms find 6757 eligible seam lines in 20 games there.
+The R2 caution stands for routes and is retired for wonders.
+
+### 2. What stock prices, and what deep prices instead
+
+`dai_choose_help_wonder()` (`daidomestic.c:71`, made non-static here by
+rule 2's exception) prices a wonder caravan as
+
+    want = wonder_city->building_want[wonder] / MAX(walk_turns, 1)
+
+behind a boolean count gate -- build another while
+`build_points_left > one caravan's shields * caravans on this
+continent`. The wonder's want is not the problem; D2 made that honest.
+Two other things are:
+
+- **the whole wonder's want is credited to a caravan that pays for a
+  sixth of it.** Deep re-denominates per shield delivered:
+  `building_want * usable_shields / impr_build_shield_cost`, where
+  usable_shields deducts the shields already pledged by help-wonder
+  units fielded or in production -- stock's count gate as a continuous
+  quantity. The share is a measured p50 of **0.167** (a 50-shield
+  Caravan into a 300-shield wonder), so this term alone is a 6x
+  deflator.
+- **the delay is divided by, or not charged at all.** Stock charges
+  nothing for the turns to BUILD the caravan (p50 **18** on classic --
+  the same omission R2 measured as the largest single term on the trade
+  side) and divides by the walk, which values a wonder 20 turns away at
+  5% of one next door where `amortize()` gives it 43%. Deep amortizes
+  over build + walk with the same `amortize()` every horizon credit
+  uses. The walk is stock's own pathfinder move cost over the unit's
+  move rate (p50 4 turns), not a crow-flight distance.
+
+Recognition at the seam is R2's probe: `dai_choose_help_wonder` called
+directly with `plr_data->tech_want[]` snapshotted and restored, because
+the domestic advisor's MAX cannot tell a wonder caravan from a trade
+one. Replace / promote / keep, all counted; `deep_caravan_replace()` is
+now shared with the trade path and brings the improvement runner-up
+back when the reprice is a reduction.
+
+**One recognition defect found by its own counter** (`9d2cb32ebd`): the
+advisor clamps its winner to `DAI_WANT_DOMESTIC_MAX` (750.075) before
+returning it, so comparing against the producer's RAW bid silently
+declines to act on the cities that bid hardest -- 6 of 84 eligible seam
+lines in the probe game, all classified "keep". Fixed for the wonder
+path; **the trade path has the identical gap and was deliberately left
+alone** (it ships at 0, it is off in every arm here, and moving it
+would take R2's published numbers out from under R2).
+
+### 3. The off switch, proven twice
+
+Smoke cell, 10 paired seeds, both arms loading `identity.ini`; the only
+difference is the binary. Pre-session binary is `f657986d1a`
+(`28d2e246ddac`); the session binary is `9d2cb32ebd` (`cced46192216`).
+
+    seed  1 base=a6f3efd43d48 new=a6f3efd43d48 SAME
+    seed  2 base=2a4d816b561d new=2a4d816b561d SAME
+    seed  3 base=253dd4e45ad6 new=253dd4e45ad6 SAME
+    seed  4 base=dfc060079036 new=dfc060079036 SAME
+    seed  5 base=175aab030ede new=175aab030ede SAME
+    seed  6 base=c96854550231 new=c96854550231 SAME
+    seed  7 base=e3280a3541d2 new=e3280a3541d2 SAME
+    seed  8 base=eae0f81b8e88 new=eae0f81b8e88 SAME
+    seed  9 base=4f67f36c5f92 new=4f67f36c5f92 SAME
+    seed 10 base=4fab860a4858 new=4fab860a4858 SAME
+    => 10/10 byte-identical, and 0 deep-wonder-merit lines
+
+Run twice: once on the pricing commit (`17707e715a`) and again on the
+clamp fix (`cced46192216`), because the clamp fix landed after the
+classic off arm had already been run on the earlier binary. Both are
+10/10 against the same pre-session hashes, which is what makes the one
+off arm valid for both -- non-execution and byte-identity are different
+claims and both are made, twice.
+
+The execution counter carries the same weight in the live cells: **0.00
+`deep-wonder-merit` lines per game in every off arm, 20/20 games on
+both cells**, against 3620 and 2210 in the on arms.
+
+### 4. The A/B: primary-120-classic, 20 paired seeds
+
+Binary PINNED (`cced46192216`, server + `libfreeciv.so`, `--server`),
+`--arms deep`, all arms load a tuning FILE, control is
+`benchmark/tuning/identity.ini`. Twenty seeds are direction.
+
+    metric              OFF     g=1    delta     se      t   wins
+    score            140.25  140.99    +0.74   1.08  +0.69  11/20
+    wonders (seat)     0.45    0.44    -0.01   0.03  -0.29   3/20
+    cities            21.65   21.30    -0.35   0.29  -1.21   6/20
+    techs             28.81   28.63    -0.17   0.32  -0.55   6/20
+    mean_city_size     3.33    3.41    +0.09   0.03  +2.63  13/20
+
+    metric              OFF     g=5    delta     se      t   wins
+    score            140.25  139.82    -0.42   1.14  -0.37  10/20
+    wonders (seat)     0.45    0.50    +0.05   0.05  +1.06   8/20
+    cities            21.65   21.15    -0.50   0.30  -1.67   8/20
+    techs             28.81   28.45    -0.36   0.25  -1.42   7/20
+    mean_city_size     3.33    3.42    +0.10   0.04  +2.23  13/20
+    landarea         284042  276933    -7108   2737  -2.60   7/20
+
+Mechanism, same seeds:
+
+    per game                  OFF     g=1     g=5
+    seam evaluations         0.00 3742.95 3619.55
+    mode=replace             0.00  253.85  181.40
+    mode=promote             0.00    0.00   50.15
+    recover=yes              0.00  241.80  124.25
+    recover=partial          0.00   12.00   15.35
+    caravan build picks    335.20  225.95  312.40
+    wonder DISPATCHES        7.80    3.95   10.85
+    route dispatches         8.25    8.00    8.70
+    wonders completed        2.75    2.70    3.10
+    mean completion turn    85.93   86.20   86.71
+
+    caravan picks  g=1 -109.25 (se 17.09, t -6.39,  0/20)
+                   g=5  -22.80 (se 10.62, t -2.15,  5/20)
+    wonder disp.   g=1   -3.85 (se  1.09, t -3.53,  3/20)
+                   g=5   +3.05 (se  1.16, t +2.64, 13/20)
+
+**The two gains do different things and both do what the price says
+they should.** At gain 1 the reformed want is a fifth of stock's, so
+the producer mostly withdraws: a third fewer caravans and half the
+wonder errands, with wonders completed flat. At gain 5 -- the gain that
+puts deep's number ON stock's median -- the fleet shrinks 7% while the
+errands rise 39%, i.e. the price is not buying fewer caravans, it is
+buying caravans that go to the wonder instead of idling or opening a
+route. Wonders completed move +0.35 per game (2.75 -> 3.10) on a
+population of ~2.7, which twenty seeds cannot resolve (t +1.06 on the
+per-seat metric).
+
+### 5. The A/B: lategame-80, the civ2civ3 cell, 20 paired seeds
+
+    metric              OFF     g=1    delta     se      t   wins
+    score            170.43  169.90    -0.52   1.16  -0.45   8/20
+    wonders (seat)     0.15    0.09    -0.06   0.03  -1.93   2/20
+    unitsbuilt        45.16   44.19    -0.97   0.24  -4.02   3/20
+    techs             53.03   52.79    -0.24   0.11  -2.20   3/20
+
+    metric              OFF     g=5    delta     se      t   wins
+    score            170.43  171.17    +0.74   1.07  +0.69  10/20
+    wonders (seat)     0.15    0.15    +0.00   0.04  +0.00   4/20
+    cities             7.98    8.00    +0.02   0.10  +0.16   9/20
+    techs             53.03   52.79    -0.24   0.14  -1.74   5/20
+
+    per game                  OFF     g=1     g=5
+    seam evaluations         0.00 2215.60 2210.00
+    mode=replace             0.00  164.05  134.20
+    mode=promote             0.00    0.00   22.45
+    caravan build picks     50.85    1.15   31.35
+    wonder DISPATCHES        6.55    0.30    6.30
+    wonders completed        1.00    0.55    0.90
+    mean completion turn    65.60   66.55   67.56
+
+**This is the cell where gain 1 is visibly too cold.** It does not
+merely trim the fleet, it abolishes it -- 50.85 caravan picks a game
+become 1.15 (t -8.96, 0/20 seeds) and wonder dispatches 6.55 become
+0.30 -- and the wonders follow it down, 1.00 completed per game to
+0.55, the only statistically interesting wonder movement in the
+session (per-seat t -1.93, 2/20). At gain 5 the same empire builds
+**38% fewer caravans and completes the same wonders at the same time**
+(0.90 vs 1.00 per game, completion turn 67.56 vs 65.60): a third of
+stock's wonder caravans were surplus to the wonders that got built,
+and the price says so before the shields are spent.
+
+### 6. Calibration, for R3's corpus and for WRACE
+
+The seam logs deep's price beside stock's for the SAME decision, per
+city per turn, with the whole decomposition (`wwant`, `cost`, `left`,
+`pledged`, `deliver`, `usable`, `walk`, `build`). 27 422 eligible
+evaluations on classic and 6 757 on lategame-80, over 20 games each.
+
+    population per game            classic g5    lategame g5
+    seam lines                       3 619.55       2 210.00
+    eligible (a wonder want)         1 371.10         337.85
+    PRICED (the amortize ran)        1 058.55         320.20
+    refused: already funded            312.55          17.65
+    refused: no shield surplus         107.75           0.35
+
+    over the priced population      p10     p50     p90
+    classic  merit (gain 5)       22.400  87.900 294.400
+    classic  stock's bid          33.800 102.100 333.100
+    classic  merit/stock           0.239   0.956   2.424
+    classic  merit (gain 1)        6.500  23.700  66.300
+    classic  merit/stock (g1)      0.068   0.233   0.542
+    classic  share of wonder       0.063   0.167   0.250
+    classic  walk (turns)          2.000   4.000   7.000
+    classic  build (turns)         7.000  18.000  45.000
+
+    lategame merit (gain 5)       82.900 174.500 277.900
+    lategame stock's bid          66.400 191.200 427.500
+    lategame merit/stock           0.440   0.765   2.274
+    lategame merit/stock (g1)      0.104   0.180   0.475
+
+**The deflator this producer needs is ~5, and it is the same answer on
+both cells** (1/0.233 = 4.3 on classic, 1/0.180 = 5.6 on lategame),
+which is a stronger result than R2's single-cell ~8: the two rulesets
+disagree about almost everything else and agree about this.
+
+Where the fifth goes is decomposable and none of it is mysterious: the
+share term is p50 0.167 (a 6x), the build+walk discount is
+`(23/24)^22` = 0.39 at the medians, and the two multiply to 0.065 --
+against a measured 0.233 because stock's own `/walk` division already
+takes its bid down by a factor of ~4 at p50 walk 4. **Stock and deep
+are charging for the same walk twice over in opposite directions**, and
+that is the whole gap.
+
+The anchors the brief asked for, on the same cells and the same games:
+
+    winning want when the pick is...      classic OFF   lategame OFF
+    a caravan (any producer)  p50               165.4          309.4
+    a BUILDING (non-wonder)   p50               191.8          258.3
+    a wonder improvement      p50               349.6          114.0
+
+    the same, on the g=5 arm
+    a caravan                 p50               154.0          229.0
+    a BUILDING (non-wonder)   p50               192.0          288.5
+
+R2 published p50 197.3 for the winning caravan want on this cell; this
+session measures 165.4 on its own off arm, on a binary six sessions
+later. **The reformed wonder want lands at p50 87.9 against stock's
+102.1 at the same seam and against a building anchor of 191.8** -- so
+the wonder caravan is priced at roughly HALF a typical winning
+improvement, by both valuations, and the reform does not move the
+building anchor at all (191.8 -> 192.0). That last number is the one
+R3 should take: **repricing one producer did not shift the scale the
+other producers live on**, which is what makes a per-producer deflator
+table meaningful rather than circular.
+
+### 7. What the next session must know
+
+- **`wonder_merit` and `wonder_merit_gain` ship at 0 and 1.0**, both
+  registered PLACEHOLDERs in ALL / G / ECON and in `knobcensus.py`.
+  **The useful gain is ~5** and 1.0 is measurably too cold -- it
+  abolishes the wonder caravan on civ2civ3 and costs wonders there.
+  Anyone turning this on at the compiled corner will measure the
+  withdrawal, not the reform.
+- **WRACE's delivery arm is `deep_wonder_merit_want()`
+  (`deeptrade.c`).** The race-urgency multiplier the brief wants goes
+  on the `usable/cost` share term, not on the want: the want is the
+  wonder city's own `building_want[]` and multiplying it here would
+  double-count whatever WRACE does to that array. Everything WRACE
+  needs is already logged per decision.
+- **The wonder caravan is the caravan errand that survives on
+  civ2civ3.** 6.55 wonder dispatches against 0.95 trade ones. Any
+  future caravan work should test on lategame-80 as well as a
+  `-classic` cell; the two cells give different answers about the
+  fleet's size and the same answer about its price.
+- **The trade path's clamp gap is real and unfixed** (section 2). It
+  censors the top of the trade producer's own bid distribution the same
+  way, and it should be fixed the next time `trade_merit` is touched --
+  with the arm re-run, because R2's tables were taken without it.
+- **`benchmark/wondercensus.py` reports three nested populations** --
+  eligible, priced, finite -- and the distinction is load-bearing: a
+  third of eligible classic lines are REFUSALS (the wonder is already
+  funded by caravans in the field), and averaging their zeros into the
+  price reads as deep pricing wonders at nothing.
+- **Nothing logs a Help Wonder ARRIVAL.** The action executes inside
+  `ai/default`'s `dai_manage_caravan()`, which deep must not modify, so
+  the session reports dispatches and completed wonders and states the
+  gap rather than inventing a delivery number.
+- **A concurrent session committed into this branch mid-edit.**
+  `f657986d1a` (D3's naval-gate default) carries R2b's two knob
+  registrations, because it was made at 21:28 while this session was
+  editing `deeptuning.*`. Nothing is wrong with either change and the
+  audit is CLEAN at both commits -- but a bisect over the knob's
+  introduction will land on a commit whose message is about something
+  else.
+
+`meson test -C build` **3/3** before and after. `tune-audit.py` CLEAN
+**134 -> 136** (`wonder_merit`, `wonder_merit_gain`), each in all four
+audit places, in the G / ECON / ALL blocks and in the generated
+`deep-tuning` line.
