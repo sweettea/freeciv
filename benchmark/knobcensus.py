@@ -566,6 +566,11 @@ MAP = {
         "the same for a transport-capable hull -- the attacker ferry "
         "and the colony lift, which file as CT_ATTACKER (deepwant.c). "
         "Default 1.0: no line at defaults."),
+    "emergency_value_cap": (
+        "S4", "mag", "direct", [("deep-scale", "scale=CAP")],
+        "caps the VALUE inside the emergency tier, never the tier "
+        "(deepwant.c). Default 0 = no cap: expect no scale=CAP lines "
+        "at defaults."),
     "boat_water_gate": (
         "S3", "mode", "direct", [("deep-watergate", "")],
         "A/B off-switch for the water gate (deepdefence.c:3494)."),

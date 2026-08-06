@@ -168,8 +168,38 @@ void deep_want_scale_apply(const struct player *pplayer,
 {
   struct deep_want w = deep_want_from_choice(choice);
   double scale = deep_want_class_scale(deep_want_class_of(choice));
+  double cap = deep_tuning_get()->emergency_value_cap;
 
-  if (scale == 1.0 || w.tier == DWT_EMERGENCY || choice->want <= 0) {
+  if (w.tier == DWT_EMERGENCY) {
+    /* Inside the emergency tier, priority is STILL a magnitude --
+     * exactly what the tier was introduced to abolish one level down.
+     * The corpus measures the two populations sharing this tier: the
+     * honest must-act wants (a first defender at p50 100, W01's
+     * calibrated defensive diplomat at 300, a defense building up to
+     * 398) and the kill_something_with spikes (an attacker at p50
+     * 6485 and up to 259976, an attacker ferry at 2705). The spikes
+     * do not mean more urgency; they mean a different currency.
+     *
+     * The cap flattens the spikes onto the top of the honest
+     * population WITHOUT deflating them onto the normal tier, which
+     * is the only treatment W01's gating map allows before the combat
+     * model prices them (W10 lineage). A grave-danger defender keeps
+     * its own value and keeps the tier. 0 = no cap. */
+    if (cap > 0 && w.value > cap) {
+      log_base(deep_metric_log_level(),
+               "deep-scale turn=%d player=\"%s\" city=%d who=\"%s\""
+               " pick=\"%s\" class=%d scale=CAP want=%.1f to=%.1f",
+               game.info.turn, player_name(pplayer), pcity->id, who,
+               adv_choice_rule_name(choice),
+               (int) deep_want_class_of(choice),
+               (double) w.value, cap);
+      w.value = cap;
+      deep_want_apply(choice, w);
+    }
+    return;
+  }
+
+  if (scale == 1.0 || choice->want <= 0) {
     return;
   }
 

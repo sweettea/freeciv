@@ -978,6 +978,16 @@ struct deep_tuning {
   double scale_defender;
   double scale_attacker;
   double scale_ferry;
+
+  /* The same disease one tier up. Inside the EMERGENCY tier priority
+   * is still a magnitude, so a kill_something_with attacker at 259976
+   * outranks a grave-danger defender at 100 by three orders. This
+   * caps the emergency VALUE -- the tier itself is never touched, so
+   * every must-act want still outranks every normal one. Corpus-
+   * derived: above the largest value any honest emergency producer
+   * reaches in 20 games, below the spikes. 0 = no cap = today's
+   * behaviour. PLACEHOLDER. */
+  double emergency_value_cap;
 };
 
 void deep_tuning_init(void);
