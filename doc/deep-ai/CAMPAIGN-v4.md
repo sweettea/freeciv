@@ -46,6 +46,7 @@ each rule cites its receipt.
 | 8e | **HEDGE incl. self-imposed H_PRODCHGPEN** (human call: no AI exemption from the switch cost) — pre-v4; its churn-tax A/B feeds the freeze decision | queued |
 | 8e2 | **TRADE portfolio session** (S-TRADE-routes.md: slot opportunity cost + replacement, partner-aware targeting, ceasefire truncation pricing, transit risk, cross-water caravans) — pre-v4, after PEACE | queued |
 | 8g | **CONSEQ** (defensive tech-wall, sell-before-fall, upkeep rehoming), **WRACE** (wonder races, after R2b), **BALANCE** (gifts + proxy arming, after PEACE) — human call 2026-08-05: all pre-v4 | queued |
+| 8h | **CM-completion** (posture counterfactuals + production-vs-growth arbitration in one currency) — human call 2026-08-05: pre-v4; it re-derives the cm_* factor states as priced argmax, shrinking the ECON block the campaign searches | queued |
 | 8f | INSTR runs LAST of the mechanism sessions (its census rerun must capture all new knobs) | queued |
 | 9 | Binary frozen at a named commit; `meson test` + `tune-audit.py` CLEAN; STATUS quiesced | — |
 | 10 | Human go | — |
