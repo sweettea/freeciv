@@ -531,6 +531,17 @@ MAP = {
         "game when on; deep-prodswitch pen=1 says the loss on that "
         "event was really taken. Default 0: expect neither at "
         "defaults."),
+    "switch_cost_price": (
+        "S4", "mode", "direct",
+        [("deep-switchcost", ""), ("deep-switchhold", "")],
+        "off-switch for pricing the switch in the build auction "
+        "(deepdefence.c). Default 1: expect deep-switchcost lines at "
+        "defaults, and deep-switchflip when the debit changed the "
+        "winner."),
+    "switch_cost_gain": (
+        "S4", "mag", "direct", [("deep-switchcost", "debit>0")],
+        "debit= is the real forfeit converted at SHIELD_WEIGHTING and "
+        "then by this gain (deepdefence.c)."),
     "boat_water_gate": (
         "S3", "mode", "direct", [("deep-watergate", "")],
         "A/B off-switch for the water gate (deepdefence.c:3494)."),

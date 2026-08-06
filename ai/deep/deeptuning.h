@@ -908,9 +908,47 @@ struct deep_tuning {
    * The cost lands before any mechanism learns to avoid it -- existing
    * churn is taxed on the first turn the flag is on -- so a score drop
    * is the expected short-run shape and not a reason to take the
-   * honesty back out. 0 = exempt, the compiled default, byte-identical
-   * to every measurement taken before this knob existed. */
+   * honesty back out.
+   *
+   * 0 = exempt, which is every measurement taken before this knob
+   * existed and is still the arm to run for comparison against them.
+   * Compiled default 1 by human call, 2026-08-06: "honest but
+   * expensive". NOTE THE ASYMMETRY THIS CHOOSES -- ai/default and
+   * ai/baseline stay exempt, so in every benchmark from here on deep
+   * is the only seat paying a cost its opponents do not. That is the
+   * chosen posture, not an oversight. */
   int pay_switch_penalty;
+
+  /* Whether the build auction PRICES the switch it is about to make.
+   *
+   * Paying the penalty and not pricing it is the worst of both: the
+   * session measured 3470 shields a game really forfeited on contested
+   * with the churn that caused it completely unchanged (-3%), because
+   * nothing in the auction knew. switch_cost_price debits every
+   * non-emergency candidate that would change production CLASS by the
+   * shields `city_change_production_penalty()` says the change really
+   * costs, converted at SHIELD_WEIGHTING -- the codebase's own
+   * shield-to-want constant (advbuilding.h:20, and what
+   * adv->shield_priority is set to) -- rather than at stock's WAG of
+   * `shield_stock * SHIELD_WEIGHTING / 4`.
+   *
+   * The hysteresis is not a rule, it is the arithmetic: a candidate in
+   * the incumbent's own class is charged nothing, because the ruleset
+   * charges nothing for it, so a challenger from another class has to
+   * beat the incumbent by the real forfeit. A challenger whose want
+   * does not survive the debit does not win a cheaper prize -- the
+   * city keeps building what it was building.
+   *
+   * With this on, deep also hides H_PRODCHGPEN from
+   * dai_build_adv_adjust(), so stock's own dock (daicity.c:1907) keeps
+   * the /15 form it has had in every measurement instead of switching
+   * to its /4 branch. The cost is then charged once, by the honest
+   * term, and the inherited phantom is left exactly as it was.
+   *
+   * switch_cost_gain is the residue on the conversion, 1.0 = the
+   * shield's own weight, untuned. PLACEHOLDER. */
+  int switch_cost_price;
+  double switch_cost_gain;
 };
 
 void deep_tuning_init(void);

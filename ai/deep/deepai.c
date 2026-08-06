@@ -674,8 +674,35 @@ static void dpai_build_adv_init(struct player *pplayer)
 static void dpai_build_adv_adjust(struct player *pplayer, struct city *wonder_city)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  bool hide = FALSE;
+
+  /* Charge the switch once. adjust_improvement_wants_by_effects()
+   * (daicity.c:1899-1911) docks a building want for the shields a
+   * class change would lose, and the dock DOUBLES from
+   * `shield_stock * SHIELD_WEIGHTING / 15` to `/ 4` the moment the seat
+   * carries H_PRODCHGPEN -- so the honesty flag alone would silently
+   * quadruple a WAG that deep is about to replace with the real
+   * forfeit. While deep prices the switch itself, the handicap is
+   * hidden from this call, which leaves stock's dock in the /15 form it
+   * has had in every measurement ever taken and makes deep's debit the
+   * only response to the new cost.
+   *
+   * Hidden, not cleared: the bit goes back before the function
+   * returns, and nothing between here and there changes production. */
+  if (deep_tuning_get()->switch_cost_price > 0
+      && deep_tuning_get()->pay_switch_penalty > 0
+      && !is_human(pplayer)
+      && pplayer->ai_common.handicaps != NULL
+      && has_handicap(pplayer, H_PRODCHGPEN)) {
+    BV_CLR(*((bv_handicap *) pplayer->ai_common.handicaps), H_PRODCHGPEN);
+    hide = TRUE;
+  }
 
   dai_build_adv_adjust(deftype, pplayer, wonder_city);
+
+  if (hide) {
+    BV_SET(*((bv_handicap *) pplayer->ai_common.handicaps), H_PRODCHGPEN);
+  }
 }
 
 /**********************************************************************//**

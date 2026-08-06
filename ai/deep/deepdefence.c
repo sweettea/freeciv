@@ -4137,6 +4137,94 @@ static char deep_prod_class(const struct universal *target)
 }
 
 /**********************************************************************//**
+  The universal this choice would put into production, or FALSE when
+  the choice does not name one.
+**************************************************************************/
+static bool deep_choice_target(const struct adv_choice *choice,
+                               struct universal *target)
+{
+  switch (choice->type) {
+  case CT_CIVILIAN:
+  case CT_ATTACKER:
+  case CT_DEFENDER:
+    if (choice->value.utype == NULL) {
+      return FALSE;
+    }
+    target->kind = VUT_UTYPE;
+    target->value.utype = choice->value.utype;
+    return TRUE;
+  case CT_BUILDING:
+    if (choice->value.building == NULL) {
+      return FALSE;
+    }
+    target->kind = VUT_IMPROVEMENT;
+    target->value.building = choice->value.building;
+    return TRUE;
+  default:
+    return FALSE;
+  }
+}
+
+/**********************************************************************//**
+  Debit one candidate by the shields its own production change would
+  really forfeit, and return the debit in want.
+
+  The forfeit is `city_change_production_penalty()` against the stock
+  the city is actually holding -- the same function the server runs a
+  few statements later -- so a candidate in the incumbent's class is
+  charged nothing because the ruleset charges nothing for it, a city
+  that built last turn is charged only what its surplus does not cover,
+  and a city with an empty box is charged nothing at all. Stock's dock
+  knows none of those three things: it takes a flat fraction of the
+  whole stock whenever the class differs.
+
+  The conversion is SHIELD_WEIGHTING per shield, the codebase's own
+  shield-to-want constant (advbuilding.h:20; `adv->shield_priority` is
+  set to exactly it, advdata.c:510). No new scale is minted.
+
+  Emergency-tier choices are exempt, as every deep gate exempts them:
+  a city that needs a defender this turn is not shopping.
+**************************************************************************/
+static adv_want deep_switch_cost_apply(struct player *pplayer,
+                                       struct city *pcity,
+                                       struct adv_choice *choice,
+                                       const char *who)
+{
+  struct universal target;
+  adv_want debit;
+  int forfeit;
+
+  if (deep_tuning_get()->switch_cost_price <= 0
+      || choice->want <= 0
+      || deep_want_from_choice(choice).tier == DWT_EMERGENCY
+      || !deep_choice_target(choice, &target)
+      || are_universals_equal(&target, &pcity->changed_from)) {
+    return 0;
+  }
+
+  forfeit = pcity->shield_stock - city_change_production_penalty(pcity,
+                                                                &target);
+  if (forfeit <= 0) {
+    return 0;
+  }
+
+  debit = (adv_want) (forfeit * SHIELD_WEIGHTING
+                      * deep_tuning_get()->switch_cost_gain);
+
+  log_base(deep_metric_log_level(),
+           "deep-switchcost turn=%d player=\"%s\" city=%d who=\"%s\""
+           " pick=\"%s\" forfeit=%d stock=%d debit=" ADV_WANT_PRINTF
+           " want=" ADV_WANT_PRINTF " left=" ADV_WANT_PRINTF,
+           game.info.turn, player_name(pplayer), pcity->id, who,
+           adv_choice_rule_name(choice), forfeit, pcity->shield_stock,
+           debit, choice->want, MAX(choice->want - debit, 0));
+
+  choice->want = MAX(choice->want - debit, 0);
+
+  return debit;
+}
+
+/**********************************************************************//**
   Census one production change at the seam where deep COMMITS it, with
   the shields the change-production penalty WOULD take.
 
@@ -4222,6 +4310,7 @@ static void deep_city_choose_build(struct ai_type *ait,
   struct adv_data *adv = adv_data_get(pplayer, NULL);
   struct ai_city *city_data = def_ai_city_data(pcity, ait);
   const struct civ_map *nmap = &(wld.map);
+  bool debit_zeroed = FALSE;
 
   /* The convertible class, censused where it is still visible. Both
    * fields are filled by unit actions during THIS phase and wiped by
@@ -4304,9 +4393,49 @@ static void deep_city_choose_build(struct ai_type *ait,
        * Both switches are independent and both default off. See
        * deeptrade.c. */
       deep_wonder_merit_apply(ait, pplayer, pcity, newchoice);
-      if (deep_want_cmp(deep_want_from_choice(newchoice),
-                        deep_want_from_choice(&city_data->choice)) > 0) {
-        adv_choice_copy(&(city_data->choice), newchoice);
+      /* Price the switch before the auction settles, not after: the
+       * cost belongs to the CANDIDATE, and charging the winner after
+       * it has won would only ever change whether the winner is built,
+       * never which candidate wins. Both bidders are debited by their
+       * own forfeit, so a challenger from another production class has
+       * to beat the incumbent's class by what leaving it really
+       * costs -- and a candidate in the incumbent's class is charged
+       * nothing, which is where the hysteresis comes from. */
+      {
+        bool dom_won_before
+          = deep_want_cmp(deep_want_from_choice(newchoice),
+                          deep_want_from_choice(&city_data->choice)) > 0;
+        adv_want had = (dom_won_before
+                        ? newchoice->want : city_data->choice.want);
+        bool dom_won_after;
+
+        deep_switch_cost_apply(pplayer, pcity, &(city_data->choice), "mil");
+        deep_switch_cost_apply(pplayer, pcity, newchoice, "dom");
+
+        dom_won_after
+          = deep_want_cmp(deep_want_from_choice(newchoice),
+                          deep_want_from_choice(&city_data->choice)) > 0;
+
+        if (dom_won_before != dom_won_after) {
+          /* The want-winner was rejected on cost. This is the counter
+           * the mechanism is judged on: no flips, no hysteresis. */
+          log_base(deep_metric_log_level(),
+                   "deep-switchflip turn=%d player=\"%s\" city=%d"
+                   " won=\"%s\" lost=\"%s\"",
+                   game.info.turn, player_name(pplayer), pcity->id,
+                   adv_choice_rule_name(dom_won_after
+                                        ? newchoice : &(city_data->choice)),
+                   adv_choice_rule_name(dom_won_before
+                                        ? newchoice : &(city_data->choice)));
+        }
+        if (dom_won_after) {
+          adv_choice_copy(&(city_data->choice), newchoice);
+        }
+        /* Remembered rather than re-derived below, because a want of
+         * zero has three other authors here (the water gate, an empty
+         * advisor, a barbarian) and only this one means "the switch was
+         * not worth its cost". */
+        debit_zeroed = (had > 0 && city_data->choice.want == 0);
       }
       adv_free_choice(newchoice);
     }
@@ -4344,6 +4473,27 @@ static void deep_city_choose_build(struct ai_type *ait,
              utype_rule_name(city_data->choice.value.utype),
              city_data->choice.want);
     city_data->choice.want = 0;
+  }
+
+  /* The hold. A candidate whose want did not survive its own switching
+   * cost has not earned a cheaper prize: it has failed to beat what the
+   * city is already building, and the honest answer is to go on
+   * building it. Handing the city to the fallback ladder here would
+   * switch production anyway, on a want of 1, and pay the very forfeit
+   * the debit just said was not worth paying.
+   *
+   * Only when the current production is still legal -- otherwise there
+   * is nothing to hold and the ladder is right. */
+  if (debit_zeroed
+      && city_data->choice.want == 0
+      && can_city_build_now(nmap, pcity, &pcity->production,
+                            RPT_CERTAIN)) {
+    log_base(deep_metric_log_level(),
+             "deep-switchhold turn=%d player=\"%s\" city=%d prod=\"%s\""
+             " stock=%d",
+             game.info.turn, player_name(pplayer), pcity->id,
+             universal_rule_name(&pcity->production), pcity->shield_stock);
+    return;
   }
 
   /* Fallbacks */

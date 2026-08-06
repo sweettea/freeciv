@@ -168,7 +168,9 @@ static const struct deep_tuning deep_tuning_defaults = {
   .trade_merit_gain = 1.0,              /* PLACEHOLDER, untuned */
   .wonder_merit = 0,                    /* PLACEHOLDER, 0 = stock's bid */
   .wonder_merit_gain = 1.0,             /* PLACEHOLDER, untuned */
-  .pay_switch_penalty = 0,              /* PLACEHOLDER, 0 = AI's exemption */
+  .pay_switch_penalty = 1,              /* human call 2026-08-06: honest */
+  .switch_cost_price = 1,               /* human call 2026-08-06: priced */
+  .switch_cost_gain = 1.0,              /* PLACEHOLDER, untuned */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -317,7 +319,9 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(trade_merit_gain) \
   TUNE_INT(wonder_merit) \
   TUNE_DOUBLE(wonder_merit_gain) \
-  TUNE_INT(pay_switch_penalty)
+  TUNE_INT(pay_switch_penalty) \
+  TUNE_INT(switch_cost_price) \
+  TUNE_DOUBLE(switch_cost_gain)
 
 /**********************************************************************//**
   Load tuning overrides from $FREECIV_DEEP_TUNING, if set. Called once
