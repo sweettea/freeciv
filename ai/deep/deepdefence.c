@@ -976,13 +976,25 @@ static bool deep_uclass_walks(const struct unit_class *pclass)
   differently still matches, and a ruleset with neither reports the
   class dead, which is the correct answer for that ruleset.
 **************************************************************************/
-static bool deep_utype_is_airborne(const struct unit_type *ut)
+bool deep_utype_is_airborne(const struct unit_type *ut)
 {
   return (utype_can_do_action_result(ut, ACTRES_PARADROP)
           || utype_can_do_action_result(ut, ACTRES_PARADROP_CONQUER)
           || (deep_uclass_walks(utype_class(ut))
               && deep_uclass_swims(utype_class(ut))
               && utype_can_take_over(ut)));
+}
+
+/**********************************************************************//**
+  How far such a unit reaches in one flight, in tiles: its drop range
+  or its move rate, whichever is longer. The same number the garrison
+  floor's airborne class is sized on, so the floor that INSURES
+  against air and the survival wave that would SEE it agree by
+  construction.
+**************************************************************************/
+int deep_utype_air_reach(const struct unit_type *ut)
+{
+  return MAX(ut->paratroopers_range, ut->move_rate / SINGLE_MOVE);
 }
 
 /**********************************************************************//**
@@ -1174,8 +1186,7 @@ deep_floor_class_facts(struct player *pplayer)
         continue;
       }
       if (deep_utype_is_airborne(ut)) {
-        int reach = MAX(ut->paratroopers_range,
-                        ut->move_rate / SINGLE_MOVE);
+        int reach = deep_utype_air_reach(ut);
 
         fc->air = TRUE;
         fc->air_range = MAX(fc->air_range, reach);

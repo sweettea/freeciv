@@ -32,6 +32,7 @@
 /* server/advisors */
 #include "advgoto.h"
 
+#include "deepdefence.h"
 #include "deepodds.h"
 #include "deeptuning.h"
 
@@ -301,6 +302,7 @@ static double deep_city_survival_core(const struct civ_map *nmap,
   struct tile *ctile = city_tile(pcity);
   Continent_id home = tile_continent(ctile);
   bool coastal = is_terrain_class_near_tile(nmap, ctile, TC_OCEAN);
+  int n_air = 0;
 
   if (wave_out != NULL) {
     *wave_out = 0;
@@ -321,16 +323,39 @@ static double deep_city_survival_core(const struct civ_map *nmap,
       const struct unit_type *at = unit_type_get(aunit);
       int rating = adv_unit_att_rating(aunit);
       int rate, turns;
+      bool flies_in;
 
       if (rating <= 0 || aunit->hp <= 0) {
         continue;
       }
       /* Reachable: shares the continent, is already at sea aboard a
-       * transport, or is a warship and the city has a shore. */
+       * transport, is a warship and the city has a shore -- or it
+       * flies, and we are inside its reach.
+       *
+       * The air term is combat E2 (military audit G5). Every enemy
+       * unit that neither swam nor rode used to be dropped for being
+       * on another landmass, which silently means the survival model
+       * cannot see a paratrooper or a helicopter at all: the two
+       * capabilities in the shipped rulesets whose whole point is
+       * that no approach is visible. Reach is the drop range or the
+       * move rate, from the same class test and the same sizing the
+       * garrison floor's airborne class uses -- so the floor that
+       * insures against air and the wave that would price it agree by
+       * construction. */
+      flies_in = tile_continent(unit_tile(aunit)) != home
+                      && !unit_transported(aunit)
+                      && deep_utype_is_airborne(at)
+                      && real_map_distance(unit_tile(aunit), ctile)
+                         <= deep_utype_air_reach(at);
+
       if (tile_continent(unit_tile(aunit)) != home
           && !unit_transported(aunit)
-          && !(utype_move_type(at) == UMT_SEA && coastal)) {
+          && !(utype_move_type(at) == UMT_SEA && coastal)
+          && !flies_in) {
         continue;
+      }
+      if (flies_in) {
+        n_air++;
       }
       rate = MAX(at->move_rate, 1);
       turns = (real_map_distance(unit_tile(aunit), ctile) * SINGLE_MOVE
@@ -347,6 +372,16 @@ static double deep_city_survival_core(const struct civ_map *nmap,
   }
   if (wave_out != NULL) {
     *wave_out = n_att;
+  }
+  if (n_air > 0) {
+    /* Its own counter, logged only when the term has a population:
+     * zero lines in a cell is the proof that the cell never reached
+     * flight, which is what both benchmark cells did before this. */
+    log_base(deep_metric_log_level(),
+             "deep-air turn=%d player=\"%s\" city=%d wave=%d air=%d"
+             " horizon=%d",
+             game.info.turn, player_name(pplayer), pcity->id, n_att,
+             n_air, horizon);
   }
 
   n_def = deep_collect_defenders(pcity, def, except);

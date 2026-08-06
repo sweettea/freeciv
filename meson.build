@@ -1720,6 +1720,13 @@ test('deepodds',
                 include_directories: include_directories('ai/deep'),
                 dependencies: m_dep,
                 install: false))
+test('deepattrition',
+     executable('deepattrition_test',
+                'tests/deepattrition_test.c',
+                'ai/deep/deepodds.c',
+                include_directories: include_directories('ai/deep'),
+                dependencies: m_dep,
+                install: false))
 # The tuning loader needs the registry, so this one links libfreeciv.
 test('deeptuning',
      executable('deeptuning_test',

@@ -17,6 +17,12 @@
 #include "fc_types.h"
 
 void deep_do_first_activities(struct ai_type *ait, struct player *pplayer);
+
+/* Ruleset capability tests shared with the survival wave (deepcombat.c):
+ * can a unit of this type strike a city with no visible approach, and
+ * how far does it reach doing it. */
+bool deep_utype_is_airborne(const struct unit_type *ut);
+int deep_utype_air_reach(const struct unit_type *ut);
 void deep_do_last_activities(struct ai_type *ait, struct player *pplayer);
 
 /* Map crowding from lobby settings: min(1, density_prior_tiles /
