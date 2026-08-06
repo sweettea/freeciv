@@ -972,6 +972,144 @@ static adv_want deep_gov_center_credit(struct city *pcity,
   return credit;
 }
 
+/* DARKFX: the free-upkeep credit's execution counter -- candidates
+ * that found a real bill to cancel, and what they were paid. */
+static int deep_upkeepfree_cands = 0;
+static adv_want deep_upkeepfree_paid = 0;
+
+/**********************************************************************//**
+  Credit a PLAYER-range free-upkeep effect at the empire it acts on.
+  Returns the credit for pimprove in pcity, or 0.
+
+  EFT_UNIT_UPKEEP_FREE_PER_CITY sits in daieffects.c's "currently not
+  supported for building AI" list, so King Richard's Crusade (2 free
+  gold of unit upkeep in every city) and the Statue of Zeus (1 free
+  shield, likewise) are valued at History x 5 plus a Make_Content_Mil
+  guess -- 15 and 10 want for an effect worth 40 gold and 20 shields a
+  turn at twenty cities. The audit ranked this the cheapest structural
+  win on the list and it is: the quantity is a plain sum over the
+  player's own cities.
+
+  What is summed is the bill the empire is ACTUALLY paying, not the
+  allowance the effect grants. The server applies free upkeep by
+  skipping the first N supported units in each output (city_support()),
+  so units beyond the allowance carry the whole charge and units within
+  it carry none; a wonder cannot save upkeep that is not being paid.
+  Per city and output the saving is therefore the paid upkeep scaled by
+  the share of paying units the new allowance would cover -- exact when
+  every unit's upkeep is the ruleset's usual 1, and a mean otherwise.
+**************************************************************************/
+static adv_want deep_upkeep_free_credit(struct city *pcity,
+                                        const struct impr_type *pimprove,
+                                        struct adv_data *adv)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct player *pplayer = city_owner(pcity);
+  struct universal source = {.kind = VUT_IMPROVEMENT,
+                             .value = {.building = pimprove}};
+  struct effect_list *plist = get_req_source_effects(&source);
+  const struct req_context context = {
+    .player = pplayer,
+    .city = pcity,
+    .building = pimprove,
+  };
+  int freed[O_LAST];
+  bool any = FALSE;
+  adv_want credit = 0;
+
+  if (tune->horizon_upkeepfree_weight <= 0.0 || plist == NULL) {
+    return 0;
+  }
+
+  memset(freed, 0, sizeof(freed));
+  effect_list_iterate(plist, peffect) {
+    Output_type_id otype = O_LAST;
+    bool useful = TRUE;
+
+    if (peffect->type != EFT_UNIT_UPKEEP_FREE_PER_CITY
+        || peffect->value <= 0) {
+      continue;
+    }
+    requirement_vector_iterate(&peffect->reqs, preq) {
+      if (preq->source.kind == VUT_OTYPE && preq->present) {
+        otype = preq->source.value.outputtype;
+        continue;
+      }
+      if (preq->source.kind == VUT_IMPROVEMENT
+          && preq->source.value.building == pimprove) {
+        /* The building we are pricing -- and the whole point of this
+         * credit is that its range is the PLAYER, so a City-range
+         * requirement is somebody else's effect and not ours. */
+        if (!preq->present || preq->range != REQ_RANGE_PLAYER) {
+          useful = FALSE;
+          break;
+        }
+        continue;
+      }
+      if (!is_req_active(&context, nullptr, preq, RPT_CERTAIN)) {
+        useful = FALSE;
+        break;
+      }
+    } requirement_vector_iterate_end;
+
+    if (useful && otype >= 0 && otype < O_LAST) {
+      freed[otype] += peffect->value;
+      any = TRUE;
+    }
+  } effect_list_iterate_end;
+
+  if (!any) {
+    return 0;
+  }
+
+  city_list_iterate(pplayer->cities, ocity) {
+    output_type_iterate(o) {
+      int paid = 0, payers = 0;
+      adv_want saved;
+
+      if (freed[o] <= 0) {
+        continue;
+      }
+      unit_list_iterate(ocity->units_supported, punit) {
+        if (punit->upkeep[o] > 0) {
+          paid += punit->upkeep[o];
+          payers++;
+        }
+      } unit_list_iterate_end;
+      if (payers <= 0) {
+        continue;
+      }
+      saved = (adv_want) paid * MIN(freed[o], payers) / payers;
+      switch (o) {
+      case O_FOOD:
+        credit += saved * adv->food_priority;
+        break;
+      case O_SHIELD:
+        credit += saved * adv->shield_priority;
+        break;
+      case O_GOLD:
+        credit += saved * adv->gold_priority;
+        break;
+      default:
+        break;
+      }
+    } output_type_iterate_end;
+  } city_list_iterate_end;
+
+  if (credit <= 0) {
+    return 0;
+  }
+
+  /* Per-turn saving over the planning horizon: the same dimension as
+   * the gold upkeep bill the credit is netted against, and no delay to
+   * amortize -- the allowance applies from the turn it exists. */
+  credit *= deep_horizon_turns() * tune->horizon_upkeepfree_weight;
+  deep_upkeepfree_cands++;
+  deep_upkeepfree_paid += credit;
+
+  return credit;
+}
+
 /* One improvement of one city that deep added credit to during the
  * current build pass, and the value it left in stock's array. */
 struct deep_credit_entry {
@@ -1176,6 +1314,8 @@ void deep_adjust_building_wants(struct ai_type *ait,
   deep_endgame_paid = 0;
   deep_govcenter_cities = 0;
   deep_govcenter_paid = 0;
+  deep_upkeepfree_cands = 0;
+  deep_upkeepfree_paid = 0;
 
   city_list_iterate(pplayer->cities, pcity) {
     adv_want cap_credit;
@@ -1304,6 +1444,9 @@ void deep_adjust_building_wants(struct ai_type *ait,
         /* DARKFX: what a government centre here saves every OTHER
          * city. Peace-time investment like the rest of the ladder. */
         add += deep_gov_center_credit(pcity, pimprove, adv);
+        /* DARKFX: what a Player-range free-upkeep effect saves every
+         * city, rather than what its History value guesses. */
+        add += deep_upkeep_free_credit(pcity, pimprove, adv);
       }
 
       if (!threatened && game.info.illness_on
@@ -1451,6 +1594,13 @@ void deep_adjust_building_wants(struct ai_type *ait,
              "deep-govcenter turn=%d player=\"%s\" cands=%d credit=%.1f",
              game.info.turn, player_name(pplayer),
              deep_govcenter_cities, (double) deep_govcenter_paid);
+  }
+
+  if (deep_upkeepfree_cands > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-upkeepfree turn=%d player=\"%s\" cands=%d credit=%.1f",
+             game.info.turn, player_name(pplayer),
+             deep_upkeepfree_cands, (double) deep_upkeepfree_paid);
   }
 
   /* The clamp's execution counter, one line per player per turn, and

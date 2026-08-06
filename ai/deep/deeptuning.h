@@ -1313,6 +1313,26 @@ struct deep_tuning {
    * over the planning horizon. 0.0 = off = byte-identical.
    * PLACEHOLDER. */
   double horizon_govcenter_weight;
+
+  /* DARKFX -- the second ranked dark effect, and the cheapest
+   * structural win in the audit: PLAYER-range effects, priced at the
+   * empire they act on rather than at the city that houses them.
+   *
+   * EFT_UNIT_UPKEEP_FREE_PER_CITY is listed under "currently not
+   * supported for building AI -- wait for modpack users"
+   * (daieffects.c:588), which means King Richard's Crusade (2 free
+   * gold of unit upkeep in EVERY city) and the Statue of Zeus (1 free
+   * shield, likewise) have no want at all beyond History x 5 and a
+   * Make_Content_Mil WAG. At twenty cities that is forty gold and
+   * twenty shields a turn, forever, priced at fifteen and ten.
+   *
+   * The credit is what the empire is actually paying today that the
+   * effect would stop paying: per city, the upkeep its supported units
+   * really pay in that output, capped at the units the new free
+   * allowance would cover. A wonder in an empire whose units cost it
+   * nothing is correctly worth nothing. 0.0 = off = byte-identical.
+   * PLACEHOLDER. */
+  double horizon_upkeepfree_weight;
 };
 
 void deep_tuning_init(void);
