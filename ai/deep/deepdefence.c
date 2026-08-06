@@ -4119,6 +4119,90 @@ static bool deep_boat_choice_refused(struct ai_type *ait,
 }
 
 /**********************************************************************//**
+  The production class the change penalty charges on, as a one-letter
+  tag. Mirrors the switch in city_change_production_penalty()
+  (common/city.c:1950) exactly -- U unit, I improvement, W wonder,
+  N nothing (the class that is never penalized).
+**************************************************************************/
+static char deep_prod_class(const struct universal *target)
+{
+  switch (target->kind) {
+  case VUT_IMPROVEMENT:
+    return is_wonder(target->value.building) ? 'W' : 'I';
+  case VUT_UTYPE:
+    return 'U';
+  default:
+    return 'N';
+  }
+}
+
+/**********************************************************************//**
+  Census one production change at the seam where deep COMMITS it, with
+  the shields the change-production penalty WOULD take.
+
+  It would take them and does not: change_build_target()
+  (server/citytools.c:3221) applies the penalty only to humans and to
+  AI players carrying H_PRODCHGPEN, and no difficulty level sets that
+  flag above `easy`. Deep therefore switches production for free
+  today, and stock's own want dock for held shields
+  (daicity.c:1909) prices a cost the seat never pays.
+
+  `loss` is what the server would have deducted from THIS stock at
+  THIS moment -- the honest per-event figure. Summed over a game it
+  is an upper bound on the exempted mass rather than the exact one,
+  because under the penalty the stock the next event acts on would
+  already be smaller; the census reports both the sum and the event
+  count so the bound is visible.
+
+  Logged only when the target differs from what the turn started
+  building (`changed_from`), which is the population the penalty acts
+  on; a city re-confirming its build every turn is not an event.
+**************************************************************************/
+static void deep_prodswitch_log(struct ai_type *ait, struct player *pplayer,
+                                struct city *pcity,
+                                const struct universal *build_new)
+{
+  struct ai_city *city_data = def_ai_city_data(pcity, ait);
+  const struct unit_type *carav = NULL;
+  int after, loss;
+
+  if (are_universals_equal(build_new, &pcity->changed_from)) {
+    return;
+  }
+
+  after = city_change_production_penalty(pcity, build_new);
+  loss = pcity->shield_stock - after;
+
+  if (num_role_units(action_id_get_role(ACTION_HELP_WONDER)) > 0) {
+    carav = best_role_unit(pcity, action_id_get_role(ACTION_HELP_WONDER));
+  }
+
+  log_base(deep_metric_log_level(),
+           "deep-prodswitch turn=%d player=\"%s\" city=%d"
+           " from=\"%s\" to=\"%s\" fromk=%c tok=%c"
+           " stock=%d after=%d loss=%d bcs=%d carsh=%d disb=%d lts=%d"
+           " builtlast=%d surplus=%d size=%d"
+           " danger=%u urgency=%u menace=%.3f"
+           " carav=%d carcost=%d coin=%d",
+           game.info.turn, player_name(pplayer), pcity->id,
+           universal_rule_name(&pcity->changed_from),
+           universal_rule_name(build_new),
+           deep_prod_class(&pcity->changed_from),
+           deep_prod_class(build_new),
+           pcity->shield_stock, after, loss,
+           pcity->before_change_shields, pcity->caravan_shields,
+           pcity->disbanded_shields, pcity->last_turns_shield_surplus,
+           city_built_last_turn(pcity) ? 1 : 0,
+           pcity->surplus[O_SHIELD], city_size_get(pcity),
+           city_data->danger, city_data->urgency,
+           deep_garrison_menace(pplayer),
+           carav != NULL ? 1 : 0,
+           carav != NULL ? utype_build_shield_cost(pcity, NULL, carav) : 0,
+           (build_new->kind == VUT_IMPROVEMENT
+            && is_convert_improvement(build_new->value.building)) ? 1 : 0);
+}
+
+/**********************************************************************//**
   Final build-choice selection for one city. Derived from
   dai_city_choose_build(); the differences (W01) are that the
   military-emergency gate is a want TIER check instead of a magnitude
@@ -4134,6 +4218,26 @@ static void deep_city_choose_build(struct ai_type *ait,
   struct adv_data *adv = adv_data_get(pplayer, NULL);
   struct ai_city *city_data = def_ai_city_data(pcity, ait);
   const struct civ_map *nmap = &(wld.map);
+
+  /* The convertible class, censused where it is still visible. Both
+   * fields are filled by unit actions during THIS phase and wiped by
+   * nullify_prechange_production() at end of turn; deep_manage_cities()
+   * runs in last-activities, after every unit has moved, so this is the
+   * one vantage that sees them. `carsh` is a Help Wonder ARRIVAL --
+   * R2b reported that nothing logs one -- and `disb` is a
+   * disband-into-build recovery, the salvage half of the liquidity
+   * argument. */
+  if (pcity->disbanded_shields > 0 || pcity->caravan_shields > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-convertible turn=%d player=\"%s\" city=%d"
+             " disb=%d carsh=%d stock=%d bcs=%d prod=\"%s\" prodk=%c",
+             game.info.turn, player_name(pplayer), pcity->id,
+             pcity->disbanded_shields, pcity->caravan_shields,
+             pcity->shield_stock, pcity->before_change_shields,
+             universal_rule_name(&pcity->production),
+             deep_prod_class(&pcity->production));
+  }
+
   if (has_handicap(pplayer, H_AWAY)
       && !city_built_last_turn(pcity)
       && city_data->urgency == 0) {
@@ -4243,6 +4347,31 @@ static void deep_city_choose_build(struct ai_type *ait,
     /* Fallbacks do happen with techlevel 0, which is now default. -- Per */
     CITY_LOG(LOG_DEBUG, pcity, "Falling back - didn't want to build"
              " soldiers, workers, caravans, settlers, or buildings!");
+    /* The fallback population, unconditionally: these are the
+     * city-turns where every producer bid zero, which is the only
+     * population a surplus-shield SINK (Coinage, a shield bank, a
+     * low-want build) could be compared on. Logged before the ladder
+     * runs, so the surplus is the one the sink would receive. */
+    {
+      int coinage = 0;
+
+      improvement_iterate(pimprove) {
+        if (is_convert_improvement(pimprove)
+            && can_city_build_improvement_now(pcity, pimprove,
+                                              RPT_CERTAIN)) {
+          coinage = 1;
+          break;
+        }
+      } improvement_iterate_end;
+
+      log_base(deep_metric_log_level(),
+               "deep-fallback turn=%d player=\"%s\" city=%d"
+               " surplus=%d stock=%d size=%d prod=\"%s\" coinage=%d",
+               game.info.turn, player_name(pplayer), pcity->id,
+               pcity->surplus[O_SHIELD], pcity->shield_stock,
+               city_size_get(pcity),
+               universal_rule_name(&pcity->production), coinage);
+    }
     city_data->choice.want = 1;
     /* The ladder's first rung is a caravan at want 1, built exactly
      * when the city wants nothing -- which is to say, on no argument
@@ -4321,6 +4450,8 @@ static void deep_city_choose_build(struct ai_type *ait,
       build_new.kind = universals_n_invalid();
       break;
     };
+
+    deep_prodswitch_log(ait, pplayer, pcity, &build_new);
 
     change_build_target(pplayer, pcity, &build_new,
                         E_CITY_PRODUCTION_CHANGED);
