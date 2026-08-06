@@ -8218,3 +8218,225 @@ published before today.
      already in the log (`deep-prodswitch` with `urgency > 0`).
 - **The R2b trade-path clamp gap is still unfixed** and is unaffected
   by this session.
+
+## R3: one scale, measured -- the gate is open and the room is empty (2026-08-06)
+
+Three code commits, one findings commit and this one. The session was
+briefed to put building, settling, trade-routing, worker-making and
+military-making "at least vaguely in the same scale", from a fresh
+corpus, behind per-class deflators. The corpus was taken, the
+mechanism was built, the deflators were derived and measured, and the
+answer is that **the rescale is safe and worth nothing.**
+
+    4787233332  ai/deep: census every class's bid before the auction,
+                not just the winner
+    21a7dc4e16  ai/deep: give each producer class a scale, with the
+                building as anchor
+    3a86052ba3  ai/deep: cap the value inside the emergency tier, not
+                the tier itself
+    a303604434  doc: re-take the want calibration corpus, and find the
+                tier is not a tier
+
+**Headline: W01's founder gate IS open -- deflating the founder 5x no
+longer craters score the way W02-v1 did (0.879, t -4.75) -- and behind
+it there is nothing. At 40 paired seeds on isolated-150 the founder
+deflator moves score by -0.05 (t -0.02, 20/40) while costing 13% of
+the empire's cities.** Everything ships inert at compiled defaults; the
+corpus (`findings/want-corpus-2026-08-06.md`) is the deliverable.
+
+### 1. The corpus, and the two things it says that July's did not
+
+20 games each on contested and isolated-150, census binary
+`d2274419b6ee` (`-Dadvchoicetrack=true`), proved byte-identical to the
+shipped build on 10/10 smoke scorelogs. Full tables in the findings
+file; the two headlines:
+
+**The disease is milder and has swapped classes.** The horizon credits
+moved the building anchor 2-4x (July median 10-48 -> bid p50 91.6
+contested / 191.3 isolated), so the founder's gap fell from 10-20x to
+**6.5x / 3.7x**. The WORKER, at parity in July, is now **0.40 / 0.27**
+of the anchor -- nothing rescaled it, the anchor grew out from under
+it. And the founder SATURATES: 32.8% (contested) and 51.9%
+(isolated-150) of winning founder wants sit exactly on
+`DAI_WANT_DOMESTIC_MAX` (750.075). On isolated-150 its p50, p90 and max
+are all the clamp.
+
+**W01's tier did not abolish priority-by-magnitude; it moved it up one
+level.** Emergency-tier winning VALUES, contested: first defender p50
+100 (max 353), W01's calibrated defensive diplomat 300 flat, defence
+building max 398 -- against attacker ferry p50 2705, attacker p50 6485
+**max 259 976**, and a veterancy building at p50 4382 that no
+workstream has ever mentioned. The honest emergency population's **p99
+is 300.0 in both cells**; 15.5% / 16.4% of all emergency wins exceed
+400. July read the "Trireme 63505" as a normal-tier spike. It is not.
+It rides the tier that was built to stop exactly this.
+
+The new instrument is `deep-bid` (`4787233332`): the founder, the
+worker, the building anchor and deep's military want for the same
+city-turn, **win or lose**. R2b asked for this; a winner-conditioned
+sample cannot price a class against a class it rarely beats, and
+founder-versus-building is that pair.
+
+### 2. What the corpus does and does not support
+
+    class        contested   isolated-150   shipped   basis
+    settler          0.154          0.273      1.0    measured, then refused
+    worker           2.48           3.75       1.0    measured, then refused
+    building          1.0            1.0       1.0    ANCHOR, no key
+    defender         0.29           2.99       1.0    NO DERIVATION
+    attacker         1.10           1.96       1.0    NO DERIVATION
+    ferry            0.65           3.22       1.0    NO DERIVATION
+
+**The three military classes have no derivable scale and that is a
+result, not an omission.** Their ratios to the anchor INVERT between
+cells -- the defender wants 0.29 on contested and 2.99 on isolated-150.
+A number that changes direction with the venue is not a calibration.
+The caravan classes are deliberately absent: R2's ~8 and R2b's ~5 are
+already implemented at the same seam as `trade_merit_gain` /
+`wonder_merit_gain`, and a `scale_caravan` would double-count them.
+
+### 3. The A/B, guard metrics before score
+
+Binary PINNED (`1044a6e97ff4`), `--server`, `--arms deep`, every arm
+loading a tuning file that **pins `pay_switch_penalty = 1` and
+`switch_cost_price = 1`** so no arm differs in HEDGE's handicap.
+Arms: S = `scale_settler 0.20`; W = `scale_worker 3.0`; CAP =
+`emergency_value_cap 400`; ALL = all three.
+
+    contested, 20 paired seeds      OFF        S          W        CAP        ALL
+    cities                         4.51    -0.12      -0.09      +0.00      -0.71
+                                          (-1.28)    (-0.92)              (-4.50)
+    landarea                     50 188     -813       -631        -13     -3 988
+                                          (-1.53)    (-0.83)              (-2.99)
+    settler picks                 544.3    -85.3      -15.1       -0.9     -154.0
+                                          (-5.27)    (-1.00)              (-6.21)
+    worker picks                   75.3     +0.9     +120.3       -0.1     +133.5
+                                          (+0.13)   (+12.11)              (+9.46)
+    mean_city_size                 5.29    +0.13      +0.01      -0.01      +0.47
+    unitsbuilt                    54.52    -1.09      -0.34      +0.19      -6.08
+    score                         79.12    +1.67      -1.52      -0.21      -3.79
+                                          (+0.80)    (-1.17)    (-1.00)    (-1.52)
+
+    isolated-150                  OFF        S (40 seeds)      ALL (20)
+    cities                      15.22     13.29  -1.94 (-4.34)  -4.46 (-8.04)
+    landarea                   190 506   176 456 -14 050 (-3.20) -39 225 (-6.13)
+    settler picks              1 480.9   1 152.0  -328.9 (-8.35)  -673.5 (-10.47)
+    mean_city_size               6.80      7.23   +0.44 (+3.50)   +0.95 (+3.67)
+    techs                       28.76     29.12   +0.36 (+0.78)   -3.04 (-5.75)
+    unitsbuilt                  88.58     80.44   -8.13 (-3.02)  -11.18 (-3.00)
+    score                      190.30    190.25   -0.05 (-0.02)  -24.30 (-6.28)
+
+**S: the gate is open, and empty.** At 20 seeds isolated-150 read
++6.39 (t +1.62, 14/20) and it looked like the session's result. At 40
+it is **-0.05, t -0.02, 20/40.** The project's own method note, for the
+fourth time: twenty seeds are direction, forty are a claim. What the
+deflator reliably buys is the trade it was designed to make -- 22%
+fewer settler build-decisions, 13% fewer cities, +0.44 mean city size
+(t +3.50) -- and that trade is worth exactly zero score. Contested
+agrees within its own noise (+1.67, t +0.80).
+
+**W: the median-match premise is falsified for the worker.** Inflating
+the worker 3x does precisely what it was told -- worker picks 75 ->
+196, t +12.11 -- and costs 1.52 score (t -1.17). Equalising medians
+assumes each class is equally valuable at ITS median. For a want whose
+distribution is bounded and small by construction (`worker_want` p90
+69-72, max 148-150 in both cells) that assumption is simply wrong, and
+the corpus could not have told the difference.
+
+**ALL is worse than the sum of its parts, and that is the mechanism
+story.** On contested S+W+CAP predicts -0.06 and ALL measures -3.79;
+on isolated-150 S alone is -0.05 and ALL is **-24.30 (t -6.28), cities
+-4.46 (t -8.04)** -- the W02-v1 tell, reproduced. The interaction is
+visible in one counter: with the founder deflated AND the worker
+inflated, settler picks fall to 856.8 against 1152.0 under the founder
+deflator alone. The worker becomes the dominant civilian bid and
+crowds out the settler a second time. **Two rescales that are each
+survivable are not jointly survivable**, which is the argument against
+ever folding a scale table one key at a time.
+
+**CAP executes and does not matter, for a reason worth writing down.**
+22.1 clamps a game, 20/20 seeds, and 19 of 20 games come back
+identical: score -0.21, cities +0.00, landarea -12.5. Clamping the
+spikes to 400 leaves them ABOVE the honest emergency population (p50
+100-300), so the ORDERING the cap was built to fix survives the cap.
+The real question is not the magnitude, it is whether a
+`kill_something_with` attacker belongs above a grave-danger defender at
+all -- and nothing measured here answers that. `emergency_value_cap`
+stays registered at 0.
+
+### 4. Fold / no-fold, per class -- the human owns this
+
+**Recommendation: fold nothing.** All six keys ship at their compiled
+defaults and are inert.
+
+    scale_settler         NO FOLD   safe (gate open) but score-neutral
+                                    at 40 seeds; costs 13% of cities
+    scale_worker          NO FOLD   measured harmful, -1.52 alone and
+                                    the poison in the bundle
+    scale_defender        NO FOLD   no derivation; ratios invert
+    scale_attacker        NO FOLD   no derivation; ratios invert
+    scale_ferry           NO FOLD   no derivation; ratios invert
+    emergency_value_cap   NO FOLD   executes, provably inert at 400
+
+The keys stay because the mechanism is built, proven and free when
+off, and because the cloud pile can now search a space the project
+could not previously express. Every one is a registered PLACEHOLDER.
+
+### 5. Off-switches proven, twice each
+
+10 paired smoke seeds per binary, scorelogs bit-identical along the
+whole chain `52e293e7aba5` (HEDGE's tip) -> `41b127880cc1` (bid
+census) -> `f8b1bf9a9b26` (five scales) -> `1044a6e97ff4` (the cap),
+same ten hashes each time:
+
+    bc553467c513  6e3885799d7c  d39705b3f05b  88aad2316372  61e2bf59ba57
+    190d8c2520ff  ca4b939713f9  ffadfe351823  c5ea7fcdd388  d28ccfcfd0d6
+
+and the census build `d2274419b6ee` (`-Dadvchoicetrack=true`) matches
+them too. Execution counters: **0.00 `deep-scale` lines per game at
+compiled defaults** in every one of those forty games, against 1065.0
+(S), 1291.9 (W), 2090.4 (ALL, contested) and 3704.1 (ALL,
+isolated-150); `scale=CAP` 0.00 at defaults against 22.1-29.2.
+
+`meson test -C build` **3/3**. `tune-audit.py` CLEAN **139 -> 145**
+(`scale_settler`, `scale_worker`, `scale_defender`, `scale_attacker`,
+`scale_ferry`, `emergency_value_cap`), each in all four audit places,
+in the G / ECON / ALL blocks, in the generated `deep-tuning` line and
+in `knobcensus.py`.
+
+### 6. What the next session must know
+
+- **`deep-bid` is now the project's conversion table** and it is cheap.
+  One line per city-turn, four prices, read-only, byte-neutral. Any
+  `want_t` work should start from `benchmark/wantcensus.py` output
+  rather than from an argument. The gap it still has is the MILITARY
+  split: deep forms one merged military choice, so defender, attacker
+  and ferry cannot be separated at bid time. The per-producer line
+  inside `deep_military_choose_build()` is the instrument combat E2
+  wants anyway, and it is the one thing that would let the three
+  military scales be derived.
+- **The explorer is NOT unblocked.** W01's map said explorer re-pricing
+  follows founder deflation. The corpus says the explore want wins
+  0.1-0.3 times a game at 7.5-30 against an anchor of 61.5-104.6 --
+  10-20x below, which no founder deflation reaches. It needs its own
+  valuation, not a rescale of its rivals.
+- **The veterancy building is an unowned spike class.** 9.5-10.4
+  emergency-tier wins a game at p50 ~4000, max 129 488, filed as
+  CT_BUILDING. It is in no workstream and nobody has priced it.
+- **The founder want has no resolution left.** Half its winning values
+  on isolated-150 are the clamp. Anything that wants the founder to
+  DISCRIMINATE -- between sites, under rival pressure, against a
+  building -- has to deal with the saturation first, and the scale key
+  is the wrong tool because it moves the whole distribution rather
+  than the ceiling.
+- **The emergency tier's ORDERING is the open design question.** The
+  cap proves the magnitudes can be flattened without effect; whether
+  an offensive want should ever outrank a grave-danger defender is a
+  doctrine call for W34/combat, not a calibration.
+- **Median-matching is not a safe default.** It worked for R2 and R2b
+  because both were pricing the SAME decision two ways. It failed here
+  for the worker, where two classes' medians were matched on the
+  assumption that they are equally valuable at their medians.
+- **Every arm this session pinned `pay_switch_penalty = 1` and
+  `switch_cost_price = 1`.** The archived inis are
+  `benchmark/tuning/r3-{off,settler,worker,cap,all}.ini`.
