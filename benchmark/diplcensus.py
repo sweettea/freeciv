@@ -206,9 +206,16 @@ def log_census(d, arm):
             print("     take-side worth mean %8.1f   n=%d"
                   % (sum(tk) / len(tk), len(tk)))
     if lead:
-        biased = [r for r in lead if r.get("bias", 0) > 0]
+        biased = [r for r in lead if r.get("live", r.get("bias", 0)) > 0]
         print("  leader reads %8.1f/game   with a live leader %8.1f"
               % (len(lead) / ng, len(biased) / ng))
+        # applied= is the op-target bias's own execution counter,
+        # cumulative per player, so the per-game figure is the largest
+        # value any seat reached.
+        app = [r["applied"] for r in lead if "applied" in r]
+        if app:
+            print("     target-bias applications, max per seat %8.1f"
+                  % max(app))
         wc = [r for r in lead if r.get("wincap", 0) > 0]
         print("     WIN_CAPITAL player-turns %8.1f/game" % (len(wc) / ng))
         tl = Counter(r.get("tech", "?") for r in lead)
