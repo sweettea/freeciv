@@ -29,6 +29,21 @@ gap 6 (wonder economics), and stock's wonder machinery
    × want, not want alone) so a contested wonder we would lose ranks
    below an uncontested lesser one. Stock's flat ×1.5 wonder emphasis
    stays.
+3b. **The composed wonder want (human formula, 2026-08-05).** This
+   session owns writing the product down as ONE valuation:
+   `P(win) × Σ_empire(amortized effect value) × amortize(completion ETA,
+   truncated at min(expected obsolescence, end_turn))`.
+   The factors arrive from their owners — empire-scoped effect values
+   from DARKFX, the ENDGAME clamp from its session, P(win) from step 1
+   here — but TWO truncations are this session's to build: the
+   completion-ETA discount (a 40-turn build must not pay from today; the
+   R2 delivery-discount shape) and **obsolescence truncation**: wonders
+   die (`obsolete_by` is ruleset state; verify whose discovery triggers
+   it — owner vs any player — and estimate arrival from research rates,
+   omniscient today, known_city-fed later). A wonder five turns from its
+   obsolescence is currently priced as eternal. Both truncations are
+   measured quantities, no invented constants; log the composed factors
+   per evaluation so the corpus can see which factor decides.
 4. **Under the honesty flag** (note for the roadmap, not this session):
    rival progress becomes an estimate; the go/no-go inherits
    known_city's staleness. Design the read behind one function so the
