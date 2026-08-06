@@ -1535,6 +1535,40 @@ static bool deep_op_form_lift(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
+  The manifest member whose own target lies nearest the hull, and (out)
+  how far that is. "Where does this boat go next" now has ONE
+  implementation, shared by the stop server below and by the
+  mid-crossing re-aim, which have to agree or a re-aimed operation
+  would be re-aimed again at the first stop.
+**************************************************************************/
+static struct unit *deep_lift_nearest_target(struct deep_operation *op,
+                                             const struct unit *ferry,
+                                             int *gap)
+{
+  struct unit *next = NULL;
+  int bestd = -1, k;
+
+  for (k = 0; k < op->n_members; k++) {
+    struct unit *m = game_unit_by_number(op->members[k]);
+    int d;
+
+    if (m == NULL || m->goto_tile == NULL) {
+      continue;
+    }
+    d = real_map_distance(unit_tile(ferry), m->goto_tile);
+    if (next == NULL || d < bestd) {
+      next = m;
+      bestd = d;
+    }
+  }
+  if (gap != NULL) {
+    *gap = bestd;
+  }
+
+  return next;
+}
+
+/**********************************************************************//**
   Serve the stop the boat is standing at: release every member whose
   own target is within lift_drop_radius of it, and if anyone is still
   aboard for somewhere else, re-aim the op at the nearest of THEIR
@@ -1578,19 +1612,7 @@ static bool deep_lift_serve_stop(struct player *pplayer,
     return FALSE;
   }
   op->n_members = kept;
-  for (k = 0; k < op->n_members; k++) {
-    struct unit *m = game_unit_by_number(op->members[k]);
-    int d;
-
-    if (m == NULL || m->goto_tile == NULL) {
-      continue;
-    }
-    d = real_map_distance(unit_tile(ferry), m->goto_tile);
-    if (next == NULL || d < bestd) {
-      next = m;
-      bestd = d;
-    }
-  }
+  next = deep_lift_nearest_target(op, ferry, &bestd);
   /* lift_drop_radius is the DETOUR the boat will make for a further
    * stop, in tiles -- "two boat moves" at the human's sizing
    * (2026-08-04). Beyond it the remaining passengers are released to
@@ -1608,6 +1630,97 @@ static bool deep_lift_serve_stop(struct player *pplayer,
            " boat=%d manifest=%d beach=(%d,%d) gap=%d",
            game.info.turn, player_name(pplayer), oi, op->ferry,
            op->n_members, TILE_XY(next->goto_tile), bestd);
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Re-validate the manifest's missions mid-crossing.
+
+  The beachhead is fixed when the lift FORMS (deep_op_form_lift) and
+  re-aimed only when a stop is served, while the passenger's own
+  validity check -- `city_can_be_built_here()` in
+  deep_auto_settler_run() -- sits BELOW that function's op-hold early
+  return, so a held passenger never reaches it. Between formation and
+  landfall a rival can found on the target, our own second settler can
+  found within citymindist of it, or the borders can move: the lift
+  then completed the crossing anyway and put a settler on a tile it
+  cannot build on, and the metric recorded a `lift-arrived` (D-E). The
+  frequency was unmeasured because nothing logged it; `deep-lift-invalid`
+  is that number.
+
+  Same predicate as the settler path, deliberately -- a second opinion
+  about foundability is a second bug waiting. Three outcomes: a member
+  whose target died loses its mission and its berth on the manifest (it
+  rides on as freight and re-searches from wherever it steps ashore);
+  if the DEAD target was the beachhead, the op re-aims at the nearest
+  surviving member's target through the same choice the stop server
+  makes; and with nobody left to deliver, the operation aborts rather
+  than sailing on to nothing.
+
+  Returns FALSE if the operation was dissolved (caller must return).
+**************************************************************************/
+static bool deep_lift_revalidate(struct ai_type *ait, struct player *pplayer,
+                                 struct deep_operation *op, int oi,
+                                 struct unit *ferry, struct tile *beach)
+{
+  const struct civ_map *nmap = &(wld.map);
+  bool beach_dead = FALSE;
+  int i, kept = 0, dropped = 0;
+
+  for (i = 0; i < op->n_members; i++) {
+    struct unit *m = game_unit_by_number(op->members[i]);
+
+    if (m != NULL
+        && m->goto_tile != NULL
+        && def_ai_unit_data(m, ait)->task == AIUNIT_BUILD_CITY
+        && !city_can_be_built_here(nmap, m->goto_tile, m, FALSE)) {
+      log_base(deep_metric_log_level(),
+               "deep-lift-invalid turn=%d player=\"%s\" op=%d unit=%d"
+               " target=(%d,%d) beach=(%d,%d) wasbeach=%d boatd=%d"
+               " turns=%d",
+               game.info.turn, player_name(pplayer), oi, op->members[i],
+               TILE_XY(m->goto_tile), TILE_XY(beach),
+               same_pos(m->goto_tile, beach) ? 1 : 0,
+               real_map_distance(unit_tile(ferry), beach),
+               game.info.turn - op->formed_turn);
+      if (same_pos(m->goto_tile, beach)) {
+        beach_dead = TRUE;
+      }
+      dai_unit_new_task(ait, m, AIUNIT_NONE, NULL);
+      dropped++;
+      continue;
+    }
+    op->members[kept++] = op->members[i];
+  }
+
+  if (dropped == 0) {
+    return TRUE;                /* The common case: nothing moved. */
+  }
+  op->n_members = kept;
+  if (kept <= 0) {
+    deep_op_dissolve(op, oi, "lift-invalid", pplayer);
+    return FALSE;
+  }
+  if (beach_dead) {
+    int gap = -1;
+    struct unit *next = deep_lift_nearest_target(op, ferry, &gap);
+
+    if (next == NULL
+        || deep_lift_meeting_tile(nmap, ferry, next->goto_tile) == NULL) {
+      /* Nothing left worth sailing to, or nowhere the hull can put it
+       * ashore: abort rather than deliver onto a dead tile. */
+      deep_op_dissolve(op, oi, "lift-invalid", pplayer);
+      return FALSE;
+    }
+    op->beachhead = tile_index(next->goto_tile);
+    op->phase_turn = game.info.turn;    /* Fresh cross budget. */
+    log_base(deep_metric_log_level(),
+             "deep-lift-op turn=%d player=\"%s\" op=%d reaim boat=%d"
+             " manifest=%d beach=(%d,%d) gap=%d",
+             game.info.turn, player_name(pplayer), oi, op->ferry,
+             op->n_members, TILE_XY(next->goto_tile), gap);
+  }
 
   return TRUE;
 }
@@ -1980,6 +2093,28 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
       deep_op_dissolve(op, oi, delivered ? "lift-delivered"
                                          : "lift-strayed", pplayer);
       return;
+    }
+
+    /* Is anyone still going anywhere? Asked EVERY march turn, because
+     * the world moves while the manifest is at sea and the hold keeps
+     * the passenger's own check from ever running (D-E). */
+    {
+      int was_beach = op->beachhead;
+
+      if (!deep_lift_revalidate(ait, pplayer, op, oi, ferry, beach)) {
+        return;                 /* Aborted: nothing left to deliver. */
+      }
+      if (op->beachhead != was_beach) {
+        /* Re-aimed. Re-read the target and the landing tile the rest
+         * of this block works from -- and only here, because
+         * deep_lift_meeting_tile() builds a pf map. */
+        beach = index_to_tile(nmap, op->beachhead);
+        if (beach == NULL) {
+          deep_op_dissolve(op, oi, "lift-nobeach", pplayer);
+          return;
+        }
+        land = deep_lift_meeting_tile(nmap, ferry, beach);
+      }
     }
     if (game.info.turn - op->phase_turn > tune->lift_cross_turns) {
       deep_op_dissolve(op, oi, "lift-cross-timeout", pplayer);
