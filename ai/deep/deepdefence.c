@@ -4349,6 +4349,51 @@ static void deep_bid_log(struct player *pplayer, struct city *pcity,
 }
 
 /**********************************************************************//**
+  Rescale the two domestic wants ai/default computes for deep, in
+  place, for the duration of one domestic_advisor_choose_build() call.
+
+  The caller restores them; they are `ai/default`'s own fields and
+  every other consumer must keep seeing the unscaled numbers.
+
+  Both are ints, so a scale rounds. That is the ruleset's own
+  granularity for these wants -- daisettlers.c and daicity.c both
+  write integers -- and a founder want that rounds to zero is a
+  founder the city genuinely will not build at that scale.
+**************************************************************************/
+static void deep_scale_domestic_bids(struct player *pplayer,
+                                     struct city *pcity,
+                                     struct ai_city *city_data)
+{
+  double fs = deep_tuning_get()->scale_settler;
+  double ws = deep_tuning_get()->scale_worker;
+
+  if (fs != 1.0 && city_data->founder_want != 0) {
+    int was = city_data->founder_want;
+
+    /* The sign is the errand, not the magnitude: negative means "and
+     * I need a boat first" (daicity.h:60). Scale the magnitude and
+     * put the sign back. */
+    city_data->founder_want = (int) (was * fs);
+    log_base(deep_metric_log_level(),
+             "deep-scale turn=%d player=\"%s\" city=%d who=\"bid\""
+             " pick=\"founder\" class=5 scale=%.4f want=%d to=%d",
+             game.info.turn, player_name(pplayer), pcity->id, fs,
+             was, city_data->founder_want);
+  }
+
+  if (ws != 1.0 && city_data->worker_want != 0) {
+    int was = city_data->worker_want;
+
+    city_data->worker_want = (int) (was * ws);
+    log_base(deep_metric_log_level(),
+             "deep-scale turn=%d player=\"%s\" city=%d who=\"bid\""
+             " pick=\"worker\" class=6 scale=%.4f want=%d to=%d",
+             game.info.turn, player_name(pplayer), pcity->id, ws,
+             was, city_data->worker_want);
+  }
+}
+
+/**********************************************************************//**
   Final build-choice selection for one city. Derived from
   dai_city_choose_build(); the differences (W01) are that the
   military-emergency gate is a want TIER check instead of a magnitude
@@ -4415,6 +4460,20 @@ static void deep_city_choose_build(struct ai_type *ait,
        * reconstruct, no second advisor call, and a POSITIVE
        * founder_want -- a settler for this city's own continent,
        * which the gate has no quarrel with -- is left alone. */
+      /* Rescale the two domestic bids that are not in the auction's
+       * currency, HERE, where ai/default has computed them and
+       * nothing has consumed them yet. The founder want is a settler
+       * count multiplied by the EXPANSIONIST trait and by `expand`;
+       * the worker want is a terrain-improvement estimate; the
+       * building want they both compete against is a discounted
+       * output sum. Scaling the winner instead would leave the
+       * advisor's own auction -- the one that decides settler against
+       * building -- reading the old currencies. See deepwant.c. */
+      int scale_saved_founder = city_data->founder_want;
+      int scale_saved_worker = city_data->worker_want;
+
+      deep_scale_domestic_bids(pplayer, pcity, city_data);
+
       if (deep_tuning_get()->boat_gate_at_bid > 0
           && deep_tuning_get()->boat_water_gate > 0
           && city_data->founder_want < 0
@@ -4432,6 +4491,8 @@ static void deep_city_choose_build(struct ai_type *ait,
       } else {
         newchoice = domestic_advisor_choose_build(ait, pplayer, pcity);
       }
+      city_data->founder_want = scale_saved_founder;
+      city_data->worker_want = scale_saved_worker;
       /* Re-price the caravan the domestic advisor just bid for -- or
        * bid for one it did not. Stock's trade-route producer prices a
        * caravan on an income estimate with a HARDCODED distance of ten
@@ -4464,6 +4525,17 @@ static void deep_city_choose_build(struct ai_type *ait,
         adv_want had = (dom_won_before
                         ? newchoice->want : city_data->choice.want);
         bool dom_won_after;
+
+        /* The military classes are rescaled here rather than at bid
+         * formation, because deep forms them itself and this is the
+         * one place both sides of the comparison exist. The domestic
+         * choice is deliberately NOT passed: its settler and worker
+         * bids were already scaled before the advisor ran, and its
+         * other two outcomes -- a building and a caravan -- are the
+         * anchor and R2/R2b's own priced producers. Scale before the
+         * switch debit: the debit is an absolute shield-equivalent
+         * cost and must be charged against the rescaled bid. */
+        deep_want_scale_apply(pplayer, pcity, &(city_data->choice), "mil");
 
         deep_switch_cost_apply(pplayer, pcity, &(city_data->choice), "mil");
         deep_switch_cost_apply(pplayer, pcity, newchoice, "dom");

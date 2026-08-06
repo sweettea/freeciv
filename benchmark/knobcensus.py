@@ -542,6 +542,30 @@ MAP = {
         "S4", "mag", "direct", [("deep-switchcost", "debit>0")],
         "debit= is the real forfeit converted at SHIELD_WEIGHTING and "
         "then by this gain (deepdefence.c)."),
+    "scale_settler": (
+        "S4", "mag", "direct", [("deep-scale", "pick=founder")],
+        "the per-class scale on ai/default's founder_want, applied "
+        "before domestic_advisor_choose_build() runs (deepdefence.c). "
+        "Default 1.0 is skipped, not multiplied: expect NO deep-scale "
+        "lines at compiled defaults."),
+    "scale_worker": (
+        "S4", "mag", "direct", [("deep-scale", "pick=worker")],
+        "the same, on worker_want (deepdefence.c). Default 1.0: no "
+        "line at defaults."),
+    "scale_defender": (
+        "S4", "mag", "direct", [("deep-scale", "class=1")],
+        "the per-class scale on deep's military choice when it is a "
+        "CT_DEFENDER, NORMAL tier only (deepwant.c). Default 1.0: no "
+        "line at defaults."),
+    "scale_attacker": (
+        "S4", "mag", "direct", [("deep-scale", "class=2")],
+        "the same for CT_ATTACKER without transport capacity "
+        "(deepwant.c). Default 1.0: no line at defaults."),
+    "scale_ferry": (
+        "S4", "mag", "direct", [("deep-scale", "class=3")],
+        "the same for a transport-capable hull -- the attacker ferry "
+        "and the colony lift, which file as CT_ATTACKER (deepwant.c). "
+        "Default 1.0: no line at defaults."),
     "boat_water_gate": (
         "S3", "mode", "direct", [("deep-watergate", "")],
         "A/B off-switch for the water gate (deepdefence.c:3494)."),

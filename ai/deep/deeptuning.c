@@ -171,6 +171,11 @@ static const struct deep_tuning deep_tuning_defaults = {
   .pay_switch_penalty = 1,              /* human call 2026-08-06: honest */
   .switch_cost_price = 1,               /* human call 2026-08-06: priced */
   .switch_cost_gain = 1.0,              /* PLACEHOLDER, untuned */
+  .scale_settler = 1.0,                 /* PLACEHOLDER, 1.0 = no rescale */
+  .scale_worker = 1.0,                  /* PLACEHOLDER, 1.0 = no rescale */
+  .scale_defender = 1.0,                /* PLACEHOLDER, 1.0 = no rescale */
+  .scale_attacker = 1.0,                /* PLACEHOLDER, 1.0 = no rescale */
+  .scale_ferry = 1.0,                   /* PLACEHOLDER, 1.0 = no rescale */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -321,7 +326,12 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(wonder_merit_gain) \
   TUNE_INT(pay_switch_penalty) \
   TUNE_INT(switch_cost_price) \
-  TUNE_DOUBLE(switch_cost_gain)
+  TUNE_DOUBLE(switch_cost_gain) \
+  TUNE_DOUBLE(scale_settler) \
+  TUNE_DOUBLE(scale_worker) \
+  TUNE_DOUBLE(scale_defender) \
+  TUNE_DOUBLE(scale_attacker) \
+  TUNE_DOUBLE(scale_ferry)
 
 /**********************************************************************//**
   Load tuning overrides from $FREECIV_DEEP_TUNING, if set. Called once

@@ -949,6 +949,35 @@ struct deep_tuning {
    * shield's own weight, untuned. PLACEHOLDER. */
   int switch_cost_price;
   double switch_cost_gain;
+
+  /* R3 -- one scale for what a city can do. The build auction compares
+   * bids that are not in the same unit: a weighted-output sum for a
+   * building, a percentage of danger for a defender, a trait-multiplied
+   * settler count for a founder, a kill-expectation for an attacker.
+   * Each key multiplies ONE producer class before the comparison. The
+   * BUILDING is the anchor and has no key: a rescale is only meaningful
+   * relative to something held fixed, and the building want is the one
+   * bid in the auction that is already a discounted output sum.
+   *
+   * 1.0 everywhere is today's behaviour, byte-identically -- the scale
+   * is skipped, not multiplied. Shipped values are corpus-DERIVED
+   * (findings/want-corpus-2026-08-06.md) and delivered in a tuning
+   * FILE, the way W01 delivered diplomat_defence_value. All
+   * PLACEHOLDERs; the cloud pile owns refinement.
+   *
+   * scale_settler and scale_worker act where ai/default FORMS the bid
+   * (city_data->founder_want / worker_want, before
+   * domestic_advisor_choose_build() runs its own auction), because a
+   * factor on that advisor's winner cannot reorder the classes inside
+   * it. scale_defender / scale_attacker / scale_ferry act on deep's
+   * own military choice at the merge seam. The EMERGENCY tier is
+   * exempt everywhere: it is the ruleset's must-act signal, and a
+   * deflator that leaked across it could lose a city. */
+  double scale_settler;
+  double scale_worker;
+  double scale_defender;
+  double scale_attacker;
+  double scale_ferry;
 };
 
 void deep_tuning_init(void);

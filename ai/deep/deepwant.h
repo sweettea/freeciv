@@ -36,10 +36,29 @@ struct deep_want {
   enum deep_want_tier tier;
 };
 
+/* The producer classes a scale can act on. Buildings are the ANCHOR:
+ * they have no key and are always 1.0, because a rescale is only
+ * meaningful relative to something held fixed, and the building want
+ * is the one currency in the auction that is a weighted-output sum
+ * (advbuilding.h) rather than a percentage, a trait product or a
+ * 1000-scale tier magnitude. */
+enum deep_want_class {
+  DWC_BUILDING = 0,     /* the anchor; scale is 1.0 by definition */
+  DWC_DEFENDER,
+  DWC_ATTACKER,
+  DWC_FERRY,
+  DWC_OTHER,            /* civilians reached at the merge seam */
+};
+
 struct deep_want deep_want_from_choice(const struct adv_choice *choice);
 void deep_want_apply(struct adv_choice *choice, struct deep_want want);
 int deep_want_cmp(struct deep_want a, struct deep_want b);
 void deep_want_log(const struct city *pcity,
                    const struct adv_choice *choice);
+enum deep_want_class deep_want_class_of(const struct adv_choice *choice);
+double deep_want_class_scale(enum deep_want_class cls);
+void deep_want_scale_apply(const struct player *pplayer,
+                           const struct city *pcity,
+                           struct adv_choice *choice, const char *who);
 
 #endif /* FC__DEEPWANT_H */
