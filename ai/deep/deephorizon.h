@@ -19,6 +19,7 @@
 struct ai_type;
 struct adv_data;
 struct city;
+struct universal;
 
 /* The two quantities the growth ladder already prices, exported so a
  * second consumer can reuse the price rather than invent a parallel
@@ -47,6 +48,13 @@ struct city;
 int deep_turns_left(void);
 int deep_horizon_turns(void);
 bool deep_arrives_in_time(int delay);
+
+/* The score mode's window test and its finishability test, exported
+ * for the second seam (the merge in deepdefence.c). Both are FALSE
+ * with `endgame_window` off. */
+bool deep_in_endgame_window(void);
+bool deep_finishes_in_time(const struct city *pcity,
+                           const struct universal *target);
 
 adv_want deep_unworked_tile_value(struct city *pcity,
                                   struct adv_data *adv, int count,

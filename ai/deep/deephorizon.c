@@ -144,6 +144,45 @@ bool deep_arrives_in_time(int delay)
 }
 
 /**********************************************************************//**
+  Whether the game is inside its final `endgame_window` turns.
+
+  This is a different question from the horizon clamp's, and the two
+  are deliberately measured apart. The clamp is arithmetic: it fires
+  whenever the remaining turns are fewer than the horizon the credit
+  was counting, needs no window, and is correctness. The window is
+  DOCTRINE: inside it deep stops playing for the empire and starts
+  playing for the scoreboard, and how many turns that is worth is a
+  measured quantity, not a derived one.
+**************************************************************************/
+bool deep_in_endgame_window(void)
+{
+  int window = deep_tuning_get()->endgame_window;
+
+  return window > 0 && deep_turns_left() < window;
+}
+
+/**********************************************************************//**
+  Whether `target` can actually be COMPLETED before the last turn is
+  played.
+
+  Production is resolved in the end-of-turn phase, so the turns that
+  still deliver a completed build are this one and every one after it:
+  `end_turn - turn + 1`. city_turns_to_build() already accounts for the
+  change-production penalty this seat now pays (HEDGE), so a switch
+  that forfeits half the box is correctly reported as slower.
+
+  What it does NOT model is a caravan arriving to Help Wonder, so a
+  wonder a fleet of caravans would finish reads as unfinishable here.
+  That is a known under-count and it is conservative in the direction
+  that matters: it can only decline to pay a wonder, never overpay one.
+**************************************************************************/
+bool deep_finishes_in_time(const struct city *pcity,
+                           const struct universal *target)
+{
+  return city_turns_to_build(pcity, target, TRUE) <= deep_turns_left() + 1;
+}
+
+/**********************************************************************//**
   Mean weighted-output value of the best currently-unworked workable
   tiles of the city -- what a new citizen would earn, in the same
   currency as the tile sums (W02).
@@ -830,6 +869,92 @@ void deep_revert_building_wants(struct player *pplayer)
   deep_credit_n = 0;
 }
 
+/* The score mode's execution census for the current build pass:
+ * improvement wants deflated because the bell arrives first, and great
+ * wonders paid the completion premium. */
+static int deep_endgame_refused = 0;
+static int deep_endgame_paid = 0;
+
+/**********************************************************************//**
+  The endgame score mode, on the improvement half of the auction:
+  inside the final `endgame_window` turns, deflate what cannot be
+  finished and pay for the great wonder that can.
+
+  Applied to stock's own building_want[] through the same credit ledger
+  the horizon credits use, which buys three things. It competes INSIDE
+  the domestic advisor's auction rather than against its winner -- the
+  gap R3 identified, where a multiplier on the winner can only change
+  whether domestic beats military and never which improvement domestic
+  picks. It is reverted at the end of the pass like every other deep
+  credit, so nothing outside the build decision ever sees it. And it is
+  a multiplier on an existing want rather than a new want, which is
+  RC4's rule.
+
+  The threat gate above deliberately does not apply. A city about to
+  fall has no endgame, but the ordinary reason to skip the growth
+  ladder in wartime -- growth is a peacetime investment -- says nothing
+  about whether a half-built Colosseum is worth finishing, and the
+  deflator's whole job is to stop paying for things that will not
+  arrive. The emergency tier is a UNIT-side concept and is handled at
+  the merge seam, not here.
+**************************************************************************/
+static void deep_endgame_bias_buildings(struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+
+  if (!deep_in_endgame_window()) {
+    return;
+  }
+
+  city_list_iterate(pplayer->cities, pcity) {
+    if (pcity->server.adv == NULL) {
+      continue;
+    }
+
+    improvement_iterate(pimprove) {
+      Impr_type_id id = improvement_number(pimprove);
+      adv_want want = pcity->server.adv->building_want[id];
+      struct universal target = {.kind = VUT_IMPROVEMENT,
+                                 .value = {.building = pimprove}};
+      double mult;
+      adv_want add;
+
+      if (want <= 0
+          || !can_city_build_improvement_now(pcity, pimprove,
+                                             RPT_CERTAIN)) {
+        continue;
+      }
+
+      if (!deep_finishes_in_time(pcity, &target)) {
+        mult = tune->endgame_unfinished_gain;
+      } else if (is_great_wonder(pimprove)) {
+        mult = tune->endgame_wonder_gain;
+      } else {
+        continue;
+      }
+
+      if (mult == 1.0) {
+        continue;
+      }
+
+      add = want * (mult - 1.0);
+      pcity->server.adv->building_want[id] += add;
+      deep_credit_record(pcity, id, add,
+                         pcity->server.adv->building_want[id]);
+      if (add < 0) {
+        deep_endgame_refused++;
+      } else {
+        deep_endgame_paid++;
+      }
+
+      log_base(LOG_DEBUG,
+               "deep-endgame-impr city=%d impr=\"%s\" want=%.1f"
+               " mult=%.2f", pcity->id, improvement_rule_name(pimprove),
+               (double) want, mult);
+    } improvement_iterate_end;
+  } city_list_iterate_end;
+}
+
 /**********************************************************************//**
   Post-adjust the stock building_want[] array with the horizon and
   bundle credits, once per city per management pass.
@@ -852,6 +977,8 @@ void deep_adjust_building_wants(struct ai_type *ait,
 
   deep_horizon_clamped = 0;
   deep_horizon_missed = 0;
+  deep_endgame_refused = 0;
+  deep_endgame_paid = 0;
 
   city_list_iterate(pplayer->cities, pcity) {
     adv_want cap_credit;
@@ -1108,18 +1235,27 @@ void deep_adjust_building_wants(struct ai_type *ait,
     }
   } city_list_iterate_end;
 
+  /* The score mode runs AFTER the horizon credits, on the array they
+   * have already written to: the deflator is meant to act on the want
+   * the city would really have carried into the auction, credits and
+   * all, and the wonder premium on the same. */
+  deep_endgame_bias_buildings(pplayer);
+
   /* The clamp's execution counter, one line per player per turn, and
    * the reason the "inert before the window" claim is checkable rather
    * than argued: `clamps` is zero on every turn more than MORT from
-   * the end, and zero on every turn at all with the knob off. */
-  if (deep_horizon_clamped > 0 || deep_horizon_missed > 0) {
+   * the end, and zero on every turn at all with the knob off. The two
+   * mechanisms are counted apart because they are measured apart. */
+  if (deep_horizon_clamped > 0 || deep_horizon_missed > 0
+      || deep_endgame_refused > 0 || deep_endgame_paid > 0) {
     int left = deep_turns_left();
 
     log_base(deep_metric_log_level(),
              "deep-endgame turn=%d player=\"%s\" left=%d horizon=%d"
-             " clamps=%d missed=%d",
+             " clamps=%d missed=%d refused=%d paid=%d",
              game.info.turn, player_name(pplayer), left,
              MIN(MORT, left), deep_horizon_clamped,
-             deep_horizon_missed);
+             deep_horizon_missed, deep_endgame_refused,
+             deep_endgame_paid);
   }
 }

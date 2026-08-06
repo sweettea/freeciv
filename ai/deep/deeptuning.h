@@ -1259,6 +1259,36 @@ struct deep_tuning {
    * a scored game -- and a real-game feature wherever `endturn` is
    * set at all. PLACEHOLDER. */
   int endgame_horizon;
+
+  /* ENDGAME -- the score mode, and its window.
+   *
+   * `endgame_window` is how many of the final turns deep plays for the
+   * scoreboard rather than for the empire: inside it, a build that
+   * cannot be FINISHED before the bell earns nothing it can spend,
+   * and a great wonder that can be finished is worth its five score.
+   * 0 = off = byte-identical; the window is a PLACEHOLDER and its size
+   * is measured, not argued.
+   *
+   * The two gains are a multiplier family over the existing want
+   * scales -- RC4 discipline, no new want is minted:
+   *
+   * endgame_unfinished_gain multiplies a candidate whose
+   * city_turns_to_build() exceeds the turns that remain. 1.0 is off
+   * (today's behaviour, where an unfinishable build competes at full
+   * price); 0.0 refuses it outright. It is a DEFLATOR and the
+   * emergency tier is exempt, like every other deep gate: a city that
+   * needs a defender this turn is not playing for score.
+   *
+   * endgame_wonder_gain multiplies a great wonder that CAN still be
+   * finished. get_civ_score() pays 5 per great wonder against 1 per
+   * citizen and 2 per tech, and a wonder is the one build whose whole
+   * value lands in a single lump at completion -- so the last turns of
+   * a scored game are exactly when it is worth the most and exactly
+   * when deep, pricing it as a perpetual improvement, values it
+   * least. 1.0 is off. Both PLACEHOLDERs. */
+  int endgame_window;
+  double endgame_unfinished_gain;
+  double endgame_wonder_gain;
 };
 
 void deep_tuning_init(void);
