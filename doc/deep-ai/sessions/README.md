@@ -75,6 +75,20 @@ from its verified-defect ledger; M1's brief must absorb the
 attrition/cost-of-victory coupling (mechanism-map §3.1); the ~20 stale-doc
 items in its reports are owed a doc-hygiene pass.
 
+## Quota regime (human-approved 2026-08-05, until the Aug 11 reset)
+
+1. Session agents WRITE THEIR OWN findings/STATUS files and return short
+   summaries — the orchestrator no longer re-emits reports verbatim.
+2. **Paired launches, one-epic-per-session waived by the human for**:
+   CONSEQ+WRACE (one agent, two epics, separate commits and STATUS
+   sections) and NAVSEE+hut-flip (#40). All other sessions stay single.
+3. Launch prompts are lean: brief pointer + HEAD + progress-log line;
+   harness rules by reference to NEXT-SESSION §5 only.
+4. **Hard checkpoint at 75% weekly usage: no new session launches** —
+   remaining budget finishes in-flight work and analysis; unlaunched
+   sessions wait for the reset. Session model stays Opus (quality
+   failures cost more than the premium); Fable stays the orchestrator.
+
 ## Standing human calls (2026-08-05)
 
 - **Do NOT fold `stance_source = 1` or `traitdistribution EVEN` into
