@@ -84,9 +84,8 @@ items in its reports are owed a doc-hygiene pass.
    sections) and NAVSEE+hut-flip (#40). All other sessions stay single.
 3. Launch prompts are lean: brief pointer + HEAD + progress-log line;
    harness rules by reference to NEXT-SESSION §5 only.
-4. **Hard checkpoint at 80% weekly usage (raised from 75% by the human
-   2026-08-06: "move fast break things", both paired launches inside the
-   line): no new session launches past it** —
+4. **Hard checkpoint at 90% weekly usage (75->80->90, human 2026-08-06;
+   reset Tue 16:00): no new session launches past it** —
    remaining budget finishes in-flight work and analysis; unlaunched
    sessions wait for the reset. Session model stays Opus (quality
    failures cost more than the premium); Fable stays the orchestrator.
