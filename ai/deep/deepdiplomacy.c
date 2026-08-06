@@ -484,12 +484,14 @@ void deep_leaders_refresh(struct ai_type *ait, struct player *pplayer)
 
   log_base(deep_metric_log_level(),
            "deep-leaders turn=%d plr=\"%s\" tech=%d prod=%d techscore=%d"
-           " prodscore=%d wincap=%d live=%d applied=%d",
+           " prodscore=%d wincap=%d live=%d applied=%d spared=%d"
+           " loved=%d",
            game.info.turn, player_name(pplayer), dp->tech_leader_id,
            dp->prod_leader_id, tech_best, prod_best,
            dp->wincap_seen ? 1 : 0,
            (dp->tech_leader_id >= 0 || dp->prod_leader_id >= 0) ? 1 : 0,
-           dp->leader_bias_applied);
+           dp->leader_bias_applied, dp->trade_partner_spared,
+           dp->trade_love_applied);
 }
 
 /**********************************************************************//**

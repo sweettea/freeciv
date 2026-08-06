@@ -20,6 +20,10 @@ struct player;
 
 void deep_choose_trade_targets(struct ai_type *ait, struct player *pplayer);
 
+int deep_routes_with_players(const struct player *pplayer, int *routes,
+                             int size);
+void deep_trade_route_love(struct ai_type *ait, struct player *pplayer);
+
 void deep_trade_merit_apply(struct ai_type *ait, struct player *pplayer,
                             struct city *pcity, struct adv_choice *choice);
 

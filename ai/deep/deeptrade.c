@@ -64,6 +64,7 @@
 #include "daitools.h"
 #include "daiunit.h"
 
+#include "deepai.h"
 #include "deepdefence.h"
 #include "deepsettler.h"
 #include "deeptuning.h"
@@ -293,6 +294,129 @@ void deep_choose_trade_targets(struct ai_type *ait, struct player *pplayer)
 
   if (ntrade > 0) {
     deep_brief_allies_trade(pplayer, dests, ndest, ntrade, maxeta);
+  }
+}
+
+/**********************************************************************//**
+  How many active trade routes we hold with each other player.
+
+  Counted from the cities, which is where the routes live: a route is
+  an object with a value, not an intention, so this is the same
+  quantity the final-save census counts and the two cannot drift.
+  Domestic routes are excluded on purpose -- both endpoints are ours
+  and no relationship is created.
+**************************************************************************/
+int deep_routes_with_players(const struct player *pplayer, int *routes,
+                             int size)
+{
+  int total = 0;
+
+  memset(routes, 0, sizeof(*routes) * size);
+  city_list_iterate(pplayer->cities, pcity) {
+    trade_routes_iterate(pcity, proute) {
+      struct city *partner = game_city_by_number(proute->partner);
+      int slot;
+
+      if (partner == NULL || proute->value <= 0) {
+        continue;
+      }
+      slot = player_index(city_owner(partner));
+      if (slot < 0 || slot >= size || city_owner(partner) == pplayer) {
+        continue;
+      }
+      routes[slot]++;
+      total++;
+    } trade_routes_iterate_end;
+  } city_list_iterate_end;
+
+  return total;
+}
+
+/**********************************************************************//**
+  Interdependence: an active trade route is a standing reason to keep
+  the peace with the player at the other end of it.
+
+  Human design call, 2026-08-05. Every active foreign route adds
+  trade_route_love to love[partner] per turn, from deep's own phase
+  wrapper -- struct deep_plr embeds struct ai_plr, so stock's war and
+  peace code reads whatever love holds and NOTHING in ai/default
+  changes. It is stateless by construction: stock decays love by 4% a
+  turn (daidiplomacy.c), so the moment the routes stop being counted
+  the addition unwinds itself. Nothing has to remember it, and a save
+  that reloads mid-game re-derives it from the routes that exist.
+
+  Why it belongs here rather than in the diplomacy module: it is the
+  counterweight to a bleed that already exists. best_target costs a
+  chosen victim up to 50 love a turn against a 125 peace bar, and it
+  chooses on worth-over-distance -- which is systematically the RICH
+  neighbour, i.e. the one worth trading with. PEACE measured 20-42% of
+  pacified pairs stuck at cease-fire forever. This adds a pull in the
+  opposite direction exactly where interdependence should create one,
+  and compounds with PEACE's pre-pass: routes raise love, love clears
+  the bar, peace keeps the routes legal.
+
+  THE CLAMP IS STRUCTURAL, not a second knob. Trade love is only ever
+  added while love[partner] stays below the player's OWN alliance
+  requirement (ai->diplomacy.req_love_for_alliance, which varies by
+  difficulty) -- so routes can carry a relationship to peace and can
+  never, on their own, carry it into an alliance. Love raised past that
+  bar by anything else is left alone; this only declines to push.
+
+  Exploitability, stated rather than hidden: a rival who deliberately
+  opens routes with deep can pacify it. That is real interdependence,
+  it is symmetric (deep gets the same pull on them if they are deep),
+  and it is tunable to zero.
+**************************************************************************/
+void deep_trade_route_love(struct ai_type *ait, struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  int routes[MAX_NUM_PLAYER_SLOTS];
+  struct ai_plr *ai;
+  bool close_here;
+  int cap, applied = 0, pairs = 0;
+
+  if (tune->trade_route_love <= 0.0
+      || !is_ai(pplayer) || is_barbarian(pplayer)) {
+    return;
+  }
+  if (deep_routes_with_players(pplayer, routes,
+                               ARRAY_SIZE(routes)) <= 0) {
+    return;
+  }
+
+  ai = dai_plr_data_get(ait, pplayer, &close_here);
+  cap = ai->diplomacy.req_love_for_alliance - 1;
+  if (close_here) {
+    dai_data_phase_finished(ait, pplayer);
+  }
+
+  players_iterate_alive(aplayer) {
+    int slot = player_index(aplayer);
+    int add, *love;
+
+    if (aplayer == pplayer || slot < 0 || slot >= MAX_NUM_PLAYER_SLOTS
+        || routes[slot] <= 0) {
+      continue;
+    }
+    love = &pplayer->ai_common.love[slot];
+    add = (int) (tune->trade_route_love * routes[slot]);
+    if (add <= 0 || *love >= cap) {
+      continue;
+    }
+    add = MIN(add, cap - *love);
+    *love += add;
+    applied += add;
+    pairs++;
+    dp->trade_love_applied++;
+  } players_iterate_alive_end;
+
+  if (pairs > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-trade-love turn=%d player=\"%s\" pairs=%d added=%d"
+             " cap=%d total=%d",
+             game.info.turn, player_name(pplayer), pairs, applied, cap,
+             dp->trade_love_applied);
   }
 }
 

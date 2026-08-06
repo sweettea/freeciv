@@ -903,6 +903,37 @@ struct deep_tuning {
   double trade_ceasefire_peace_odds;
   double trade_route_risk_gain;
 
+  /* Interdependence: love per ACTIVE foreign trade route per turn,
+   * added from deep's own phase wrapper (human design call,
+   * 2026-08-05). struct deep_plr embeds struct ai_plr, so stock's war
+   * and peace code reads whatever love holds and ai/default is not
+   * touched. Stateless: stock's 4%/turn decay unwinds it the moment
+   * the routes stop being counted.
+   *
+   * It is the counterweight to a bleed that already exists --
+   * best_target costs the chosen victim up to 50 love a turn against a
+   * 125 peace bar, and it chooses the rich neighbour, which is the one
+   * worth trading with. The clamp is STRUCTURAL rather than a second
+   * knob: trade love is added only while love stays below the player's
+   * own req_love_for_alliance, so routes can carry a pair to peace and
+   * never, alone, into an alliance.
+   *
+   * Exploitable by design and symmetric: a rival can farm routes to
+   * pacify deep. 0.0 = off, the compiled default. PLACEHOLDER.
+   *
+   * trade_partner_target_discount is the same posture on the military
+   * side, and it is where the project's STANCE toward its partners is
+   * tunable rather than asserted. deep_op_pick_target() scores an
+   * enemy city by worth over distance; this multiplies that score by
+   * (1 - discount) when we hold live routes with its owner, so among
+   * comparable targets deep burns a stranger before a partner. It does
+   * NOT own war and peace -- that stays stock's until W34-B -- it only
+   * stops deep destroying its own trade when an equal target exists.
+   * 0.0 is the PURE OPPORTUNIST posture and is the compiled default;
+   * 1.0 refuses a partner outright. PLACEHOLDER. */
+  double trade_route_love;
+  double trade_partner_target_discount;
+
   /* Wonder-caravan BUILD want on merit (R2b), the SAME reform applied
    * to the larger claimant. R2's deep-want census found the caravan
    * build queue is decided by dai_choose_help_wonder()

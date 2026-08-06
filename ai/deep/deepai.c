@@ -65,6 +65,7 @@
 #include "deepsettler.h"
 #include "deepsite.h"
 #include "deepstance.h"
+#include "deeptrade.h"
 #include "deeptuning.h"
 
 #include "autoworkers.h"
@@ -953,6 +954,13 @@ static void dpai_diplomacy_actions(struct player *pplayer)
    * counterparty is allowed to say yes. With every PEACE knob at its
    * compiled 0 this refreshes the leader read, logs it, and returns.
    * (Off-switch proof: benchmark/tuning/peace-off.ini.) */
+  /* Interdependence before either pass reads love: an active trade
+   * route is a standing reason to keep the peace, and it has to be in
+   * the number by the time the peace decision looks at it.
+   * trade_route_love = 0.0 (the compiled default) returns immediately.
+   * (deeptrade.c) */
+  deep_trade_route_love(deftype, pplayer);
+
   deep_diplomacy_prepass(deftype, pplayer);
 
   dai_diplomacy_actions(deftype, pplayer);

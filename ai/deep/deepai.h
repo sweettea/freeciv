@@ -169,6 +169,13 @@ struct deep_plr {
   int prod_leader_id;
   bool wincap_seen;
   int leader_bias_applied;      /* op targets moved by the leader bias */
+  /* The trade portfolio's two execution counters (TRADE, 2026-08-06):
+   * assault targets whose score was actually discounted for being a
+   * trade partner's, and love actually added for active routes. Both
+   * are zero in every arm whose knob is 0.0, which is what separates
+   * "did not execute" from "executed and did nothing". */
+  int trade_partner_spared;
+  int trade_love_applied;
   int peace_windows;            /* pre-pass evaluations inside a window */
   int peace_proposed;           /* ... that sent a peace clause */
   int peace_taken;              /* peace clauses deep's evaluate accepted */

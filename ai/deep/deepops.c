@@ -2345,14 +2345,29 @@ static struct city *deep_op_pick_target(struct ai_type *ait,
   bool can_sail
     = def_ai_player_data(pplayer, ait)->stats.boats > 0
       || best_role_unit_for_player(pplayer, L_FERRYBOAT) != NULL;
+  /* The partner discount's input, gathered once per call rather than
+   * once per candidate city: how many live routes we hold with each
+   * player. Skipped entirely at the compiled default. */
+  int routes[MAX_NUM_PLAYER_SLOTS];
+  bool spare = deep_tuning_get()->trade_partner_target_discount > 0.0;
+
+  if (spare) {
+    spare = deep_routes_with_players(pplayer, routes,
+                                     ARRAY_SIZE(routes)) > 0;
+  }
 
   players_iterate_alive(aplayer) {
+    bool partner;
+
     if (!pplayers_at_war(pplayer, aplayer)
         || (!is_barbarian(aplayer)
             && player_diplstate_get(pplayer, aplayer)->type
                == DS_NO_CONTACT)) {
       continue;
     }
+    partner = spare && player_index(aplayer) >= 0
+      && player_index(aplayer) < MAX_NUM_PLAYER_SLOTS
+      && routes[player_index(aplayer)] > 0;
     city_list_iterate(aplayer->cities, acity) {
       double score;
       bool overseas = tile_continent(city_tile(acity)) != home;
@@ -2379,6 +2394,19 @@ static struct city *deep_op_pick_target(struct ai_type *ait,
           && deep_player_is_leader(ait, pplayer, aplayer)) {
         score *= 1.0 + deep_tuning_get()->leader_check_gain;
         deep_plr_data(pplayer)->leader_bias_applied++;
+      }
+      /* PILLAR-LITE (TRADE design call 1). Route value enters deep's
+       * OWN military choice and nothing else: among targets we could
+       * take, one belonging to a live trade partner is discounted, so
+       * an equal stranger is burned first. War and peace stay stock's
+       * until W34-B -- this cannot start or stop a war, it can only
+       * re-order the targets of one already running. 0.0 is the pure
+       * opportunist posture and is the compiled default, and the
+       * multiply is skipped rather than done so the off arm keeps the
+       * previous ordering byte-identically. */
+      if (partner) {
+        score *= 1.0 - deep_tuning_get()->trade_partner_target_discount;
+        deep_plr_data(pplayer)->trade_partner_spared++;
       }
       if (score > best_score) {
         best_score = score;
