@@ -85,6 +85,28 @@ WITHIN live classes; it is not itself a class. Per-class weights are
 PLACEHOLDERS (rule 7), registered everywhere tune-audit checks + the
 tuning log + blocks; the class GATES are server/ruleset facts and free.
 
+## Post-M3 baseline facts (2026-08-05, from M3's hand-off — read its
+## STATUS section `9c78ed283e`)
+
+- Floor baselines must be taken on the post-D1/post-M3 binary (the
+  `deep-kill` line and the fear lattice both changed).
+- The density-fear reachability gate is in every benchmarked binary and
+  has NEVER been isolated. **Optional rider, strongly encouraged**: your
+  sizing runs on isolated-150 + lategame-80 share pins and cells with a
+  gate-disabled arm — add one arm (`density_reach_gate` off via tuning
+  file) and close that debt while the batches are warm.
+- Cramped is NOT a reachability no-op cell (21k cross-water density
+  contributions/game); do not design assuming it is.
+- The explorer salvage leg has zero population — don't size anything on
+  deep disbanding explorers.
+- `founder_pool_per_site` is ~13× stale in meaning post-M3 (pool target
+  2.83 → 0.21) — flagged for the pile; do not interpret founder-pool
+  behaviour against old numbers.
+- The hut-risk discount still ships sign-INVERTED (M3 item 2, fix
+  specified in its STATUS) — owed its own A/B on a hut venue, NOT this
+  session's scope; just don't let the barbarian class double-count with
+  it in either direction.
+
 ## THE JOB
 
 1. **Size the current floor first** (before touching it): A/B
