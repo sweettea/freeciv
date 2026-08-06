@@ -53,6 +53,14 @@
  * change the bar; it would only make deep propose into a refusal. */
 #define DEEP_PEACE_WINDOW 4
 
+/* Bulbs to gold. ai/default's own rate: dai_goldequiv_tech
+ * (daidiplomacy.c:158-179) prices a tech at 3 x the bulbs it takes.
+ * Reused rather than re-minted so the embassy clause is denominated
+ * in the same gold the rest of the treaty balance is in -- a clause
+ * valuation that invented its own exchange rate could not be added to
+ * the others. */
+#define DEEP_BULBS_TO_GOLD 3.0
+
 /**********************************************************************//**
   Is any player we are at war with allied to `them`?
 
@@ -164,6 +172,90 @@ static bool deep_op_aims_at(const struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Gold-equivalent worth to `pplayer` of holding an embassy with
+  `aplayer`, under a tech-leakage rule where an embassy IS the research
+  discount.
+
+  Every term is read, none is invented:
+
+  - The rate and the denominator are the ruleset's own. Under
+    TECH_LEAKAGE_EMBASSIES (common/research.c:954-981) a tech's cost
+    falls by `tech_leak_pct / alive_players` percent for EACH player
+    who knows it and with whom we hold an embassy. The count is per
+    player and is not de-duplicated across embassies, so one new
+    embassy with aplayer is worth exactly one such step on every tech
+    aplayer knows and we do not.
+  - The price of a step is this research's own remaining bulb cost. It
+    is the post-leak figure rather than the base cost the formula uses,
+    which makes this estimate CONSERVATIVE by exactly the leak already
+    banked.
+  - Bulbs become gold at ai/default's rate, not a new one.
+
+  What it does not model is discounting: the techs aplayer is ahead on
+  are collected over the rest of the game, not today. That is what
+  embassy_price_gain is the residue for, and it is why the knob is a
+  PLACEHOLDER rather than a derivation.
+**************************************************************************/
+static double deep_embassy_leak_worth(const struct player *pplayer,
+                                      const struct player *aplayer)
+{
+  const struct research *mine = research_get(pplayer);
+  const struct research *theirs = research_get(aplayer);
+  int players = 0, ahead = 0, bulbs;
+
+  if (game.info.tech_leakage != TECH_LEAKAGE_EMBASSIES
+      || game.info.tech_leak_pct <= 0
+      || mine == theirs
+      || player_has_embassy(pplayer, aplayer)) {
+    return 0.0;
+  }
+
+  players_iterate_alive(any) {
+    players++;
+  } players_iterate_alive_end;
+
+  advance_index_iterate(A_FIRST, idx) {
+    if (research_invention_state(theirs, idx) == TECH_KNOWN
+        && research_invention_state(mine, idx) != TECH_KNOWN) {
+      ahead++;
+    }
+  } advance_index_iterate_end;
+
+  if (ahead <= 0 || players <= 0) {
+    return 0.0;
+  }
+
+  bulbs = research_total_bulbs_required(mine, mine->researching, FALSE);
+  if (bulbs <= 0) {
+    return 0.0;
+  }
+
+  return DEEP_BULBS_TO_GOLD * bulbs * ahead
+         * game.info.tech_leak_pct / (100.0 * players);
+}
+
+/**********************************************************************//**
+  Deep's own gold-equivalent for one embassy clause, positive for what
+  we receive and negative for what we give away.
+**************************************************************************/
+static double deep_embassy_clause_worth(struct player *pplayer,
+                                        struct player *aplayer,
+                                        const struct Clause *pclause)
+{
+  const struct deep_tuning *t = deep_tuning_get();
+
+  if (pclause->from == pplayer) {
+    /* We are the giver: they get the discount we would have denied
+     * them. Weighted, because a rival's gain and our own are not the
+     * same event -- ours is certain and immediate. */
+    return -t->embassy_price_gain * t->embassy_give_gain
+           * deep_embassy_leak_worth(aplayer, pplayer);
+  }
+
+  return t->embassy_price_gain * deep_embassy_leak_worth(pplayer, aplayer);
+}
+
+/**********************************************************************//**
   Would deep sign a durable peace with aplayer right now?
 
   Sets *love and *bar to the numbers compared, and *why to the reason
@@ -271,6 +363,54 @@ static void deep_peace_seek(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Lever 2, proposal side. At peace or better, ask for the embassy the
+  ruleset gives away free -- and offer ours back when they lack it, so
+  the counterparty has a balance to weigh rather than a demand.
+
+  Asked at most once per diplomatic state per pair, recorded as
+  state + 1 so a zeroed slot means "never asked". That is the whole
+  anti-spam rule and it needs no timer: deep's own valuation of the
+  clause does not change with the turn number (which is the bug it
+  exists to replace), so a refusal is permanent information until the
+  relationship itself changes.
+**************************************************************************/
+static void deep_embassy_offer(struct ai_type *ait, struct player *pplayer,
+                               struct player *aplayer)
+{
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  enum diplstate_type ds = player_diplstate_get(pplayer, aplayer)->type;
+  int slot = player_index(aplayer);
+  bool want_theirs, give_ours;
+
+  if (ds != DS_PEACE && ds != DS_ARMISTICE && ds != DS_ALLIANCE
+      && ds != DS_TEAM) {
+    return;
+  }
+  if (slot < 0 || slot >= MAX_NUM_PLAYER_SLOTS) {
+    return;
+  }
+
+  want_theirs = !player_has_embassy(pplayer, aplayer);
+  give_ours = !player_has_embassy(aplayer, pplayer);
+
+  if (!want_theirs) {
+    /* We already hold it. Giving ours away for nothing is a gift, and
+     * gifts are BALANCE's business, not this session's. */
+    return;
+  }
+  if (dp->embassy_asked[slot] == (int) ds + 1) {
+    return;
+  }
+  dp->embassy_asked[slot] = (int) ds + 1;
+
+  deep_treaty_clear(pplayer, aplayer);
+  deep_treaty_suggest(pplayer, aplayer, CLAUSE_EMBASSY, TRUE, 0);
+  if (give_ours) {
+    deep_treaty_suggest(pplayer, aplayer, CLAUSE_EMBASSY, FALSE, 0);
+  }
+}
+
+/**********************************************************************//**
   Lever 3. Who is running away with it?
 
   Computed here rather than read from adv->dipl because the stock loop
@@ -353,6 +493,29 @@ bool deep_player_is_leader(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Can a treaty clause deliver an embassy with aplayer?
+
+  The composition point between deep's two embassy channels. With the
+  knobs shut this is always FALSE and the diplomat want is exactly what
+  it has always been.
+**************************************************************************/
+bool deep_embassy_by_treaty(struct ai_type *ait, const struct player *pplayer,
+                            const struct player *aplayer)
+{
+  enum diplstate_type ds = player_diplstate_get(pplayer, aplayer)->type;
+
+  if (deep_tuning_get()->embassy_price_gain <= 0.0
+      || !is_ai(aplayer)) {
+    /* A human counterparty is under no obligation to answer a clause,
+     * so the diplomat keeps owning that case. */
+    return FALSE;
+  }
+
+  return ds == DS_PEACE || ds == DS_ARMISTICE || ds == DS_ALLIANCE
+         || ds == DS_TEAM;
+}
+
+/**********************************************************************//**
   Deep's own treaty ruling, for the two treaty shapes deep fully
   understands. Returns FALSE for everything else, and ai/default then
   evaluates the treaty exactly as it always has.
@@ -367,12 +530,15 @@ bool deep_treaty_evaluate(struct ai_type *ait, struct player *pplayer,
 {
   const struct deep_tuning *t = deep_tuning_get();
   struct deep_plr *dp = deep_plr_data(pplayer);
-  int n = 0, peace = 0;
+  int n = 0, peace = 0, embassy = 0;
+  double balance = 0.0;
 
   clause_list_iterate(ptreaty->clauses, pclause) {
     n++;
     if (pclause->type == CLAUSE_PEACE) {
       peace++;
+    } else if (pclause->type == CLAUSE_EMBASSY) {
+      embassy++;
     }
   } clause_list_iterate_end;
 
@@ -395,6 +561,27 @@ bool deep_treaty_evaluate(struct ai_type *ait, struct player *pplayer,
     return FALSE;
   }
 
+  if (n > 0 && embassy == n && t->embassy_price_gain > 0.0) {
+    clause_list_iterate(ptreaty->clauses, pclause) {
+      double worth = deep_embassy_clause_worth(pplayer, aplayer, pclause);
+
+      balance += worth;
+      dp->embassy_priced++;
+      log_base(deep_metric_log_level(),
+               "deep-embassy turn=%d plr=\"%s\" with=\"%s\" give=%d"
+               " worth=%.1f accept=%d",
+               game.info.turn, player_name(pplayer), player_name(aplayer),
+               pclause->from == pplayer ? 1 : 0, worth,
+               balance >= 0.0 ? 1 : 0);
+    } clause_list_iterate_end;
+
+    if (balance >= 0.0) {
+      dp->embassy_cleared++;
+      handle_diplomacy_accept_treaty_req(pplayer, player_number(aplayer));
+    }
+    return TRUE;
+  }
+
   return FALSE;
 }
 
@@ -414,7 +601,7 @@ void deep_diplomacy_prepass(struct ai_type *ait, struct player *pplayer)
       || has_handicap(pplayer, H_AWAY)) {
     return;
   }
-  if (t->peace_seek_gain <= 0.0) {
+  if (t->peace_seek_gain <= 0.0 && t->embassy_price_gain <= 0.0) {
     return;
   }
 
@@ -422,6 +609,11 @@ void deep_diplomacy_prepass(struct ai_type *ait, struct player *pplayer)
     if (aplayer == pplayer || is_barbarian(aplayer)) {
       continue;
     }
-    deep_peace_seek(ait, pplayer, aplayer);
+    if (t->peace_seek_gain > 0.0) {
+      deep_peace_seek(ait, pplayer, aplayer);
+    }
+    if (t->embassy_price_gain > 0.0) {
+      deep_embassy_offer(ait, pplayer, aplayer);
+    }
   } players_iterate_alive_end;
 }

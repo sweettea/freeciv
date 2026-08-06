@@ -182,6 +182,8 @@ static const struct deep_tuning deep_tuning_defaults = {
   .scale_ferry = 1.0,                   /* PLACEHOLDER, 1.0 = no rescale */
   .emergency_value_cap = 0.0,           /* PLACEHOLDER, 0 = no cap */
   .peace_seek_gain = 0.0,               /* PLACEHOLDER, 0 = stock's bar */
+  .embassy_price_gain = 0.0,            /* PLACEHOLDER, 0 = off */
+  .embassy_give_gain = 1.0,             /* PLACEHOLDER, untuned */
   .leader_check_gain = 0.0,             /* PLACEHOLDER, 0 = off */
 };
 
@@ -345,6 +347,8 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(scale_ferry) \
   TUNE_DOUBLE(emergency_value_cap) \
   TUNE_DOUBLE(peace_seek_gain) \
+  TUNE_DOUBLE(embassy_price_gain) \
+  TUNE_DOUBLE(embassy_give_gain) \
   TUNE_DOUBLE(leader_check_gain)
 
 /**********************************************************************//**

@@ -40,4 +40,11 @@ void deep_leaders_refresh(struct ai_type *ait, struct player *pplayer);
 bool deep_player_is_leader(struct ai_type *ait, struct player *pplayer,
                            const struct player *aplayer);
 
+/* TRUE when a treaty clause could deliver an embassy with aplayer, so
+ * the diplomat channel should stop paying units for it. Answers FALSE
+ * whenever the embassy knobs are shut, which keeps the diplomat want
+ * exactly as it was. */
+bool deep_embassy_by_treaty(struct ai_type *ait, const struct player *pplayer,
+                            const struct player *aplayer);
+
 #endif /* FC__DEEPDIPLOMACY_H */

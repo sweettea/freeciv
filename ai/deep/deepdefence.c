@@ -78,6 +78,7 @@
 
 #include "deepai.h"
 #include "deepcombat.h"
+#include "deepdiplomacy.h"
 #include "deepexplore.h"
 #include "deephorizon.h"
 #include "deepsite.h"
@@ -3284,6 +3285,18 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
             || player_diplstate_get(pplayer, aplayer)->type
                == DS_NO_CONTACT
             || player_has_embassy(pplayer, aplayer)) {
+          continue;
+        }
+        /* The two embassy channels, and which one owns this player.
+         * With the treaty knobs open, an AI we are at peace-or-better
+         * with can be ASKED for an embassy in a clause that costs
+         * nothing to build and nothing to walk (deepdiplomacy.c), so
+         * paying a diplomat's shields and turns for the same discount
+         * is paying twice. The diplomat channel keeps everyone else:
+         * players at war, players never met, and every human, none of
+         * whom a clause can be relied on to reach. Answers FALSE with
+         * the knobs shut, so this want is untouched in the off arm. */
+        if (deep_embassy_by_treaty(ait, pplayer, aplayer)) {
           continue;
         }
         /* Only count embassies a diplomat could actually be

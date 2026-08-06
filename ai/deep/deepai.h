@@ -172,6 +172,15 @@ struct deep_plr {
   int peace_windows;            /* pre-pass evaluations inside a window */
   int peace_proposed;           /* ... that sent a peace clause */
   int peace_taken;              /* peace clauses deep's evaluate accepted */
+  int embassy_priced;           /* embassy clauses deep priced itself */
+  int embassy_cleared;          /* ... treaties that cleared on deep's sums */
+  /* The diplomatic state at which we last asked this player for an
+   * embassy, PLUS ONE, so a zeroed slot means "never asked". Deep's
+   * embassy valuation does not change with the turn number -- that is
+   * the bug it replaces -- so a refusal stands until the relationship
+   * itself changes. Not saved: the worst case after a reload is one
+   * extra ask per pair. */
+  signed char embassy_asked[MAX_NUM_PLAYER_SLOTS];
 };
 
 static inline struct deep_plr *deep_plr_data(const struct player *pplayer)

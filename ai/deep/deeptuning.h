@@ -1049,6 +1049,50 @@ struct deep_tuning {
    * belongs to TRADE, not here. PLACEHOLDER. */
   double peace_seek_gain;
 
+  /* PEACE -- the embassy clause, which is arithmetically impossible
+   * in the one ruleset where embassies matter most.
+   *
+   * civ2civ3 sets tech_leakage = "Embassies": an embassy IS the
+   * research discount. Stock prices RECEIVING one at
+   * `tech_leak_pct / 10` = 10 gold, flat, forever, and GIVING one at
+   * DS_PEACE at `-5 * game.info.turn`, which grows without bound. A
+   * mutual swap nets 10 - 5T each and is non-positive from turn 2
+   * (upstream bug #46). It is moot anyway, because the only code path
+   * that ever OFFERS an embassy clause is dai_share(), which is
+   * alliance/team-gated -- so at peace the clause is never proposed
+   * and would be refused if it were. Deep meanwhile pays diplomat
+   * units and turns for the same thing (embassy_science_value).
+   *
+   * embassy_price_gain is a GATE and a residue in one number. At 0.0
+   * deep does not touch embassy clauses and does not offer swaps:
+   * today's behaviour exactly. Above 0.0 deep prices an embassy by
+   * what the leakage rule says it is worth -- for each tech the other
+   * player knows and we do not, the embassy takes
+   * tech_leak_pct/players off that tech's price when we come to
+   * research it (common/research.c:954-981), valued at the current
+   * step's bulb cost and converted to gold at stock's own x3
+   * (dai_goldequiv_tech, :158-179). Nothing here is invented: the
+   * rate, the denominator and the conversion are all read from the
+   * ruleset or from ai/default.
+   *
+   * embassy_give_gain is the weight deep puts on the RIVAL's side of
+   * the same computation when giving. 1.0 says their discount hurts
+   * exactly as much as ours helps, so a swap clears only for whoever
+   * is behind on tech; below 1.0 deep is more willing to trade.
+   * PLACEHOLDER.
+   *
+   * WHICH CHANNEL OWNS WHICH CASE: the TREATY channel (this pair of
+   * knobs) owns every player deep is at peace-or-better with, because
+   * there a clause can deliver the embassy for free. The DIPLOMAT
+   * channel (embassy_science_value, deepdefence.c) owns everyone
+   * else. With the gate on, the diplomat want stops counting players
+   * the treaty channel can reach, so deep no longer builds a unit for
+   * something a free clause delivers -- that is the composition, and
+   * it is a change in the diplomat want that only happens when this
+   * gate is open. */
+  double embassy_price_gain;
+  double embassy_give_gain;
+
   /* PEACE -- the three signals that are computed every turn and read
    * by nothing.
    *
