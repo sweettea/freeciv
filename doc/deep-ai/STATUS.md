@@ -8696,3 +8696,158 @@ key in all four audit places, in the G/MIL/ALL blocks, in the generated
   because the marginal form has a sign problem the total form does
   not. If the human wants the total form, it is a small change to the
   same call site and the census already logs what it needs.
+
+## PEACE: the cease-fire trap halves, and the trade never turns negative (2026-08-06)
+
+Nine commits plus this one. `ai/deep`, `benchmark/` and doc only; **zero
+`ai/default`, `ai/baseline` or `server/advisors` changes** (`git diff
+--stat ac153b34a0..HEAD -- ai/default ai/baseline server/advisors` is
+empty).
+
+    3adcb9cd94  benchmark: census the diplomatic state every pair ever
+                reached
+    89a64dba74  ai/deep: propose peace on the turn the cease-fire window
+                opens
+    820cd03564  ai/deep: read the three game-state signals nobody has
+                ever read
+    c2fc2ec2cc  ai/deep: price an embassy by the research discount it
+                actually is
+    d4f20135fd  ai/deep: report the window the peace decision saw, not
+                the one after it
+    c95783641f  ai/deep: leave the allied embassy to ai/default and keep
+                peace level
+    e57e29f8cc  benchmark: archive the PEACE arms and read a treaty's
+                decision, not a clause's
+    c7bb0350e6  ai/deep: give the leader bias an execution counter of
+                its own
+    f45cd25364  doc: report PEACE -- the trap halves, and the trade
+                never turns negative
+
+**Headline: 20-42% of pacified pairs were stuck at cease-fire forever;
+the pre-pass halves that on contested and cuts it a third on
+lategame-80, and the peace-vs-conquest trade the brief asked me to
+report honestly DID NOT MATERIALISE AS A SCORE COST on either cell.**
+Full tables in `findings/peace-diplomacy-2026-08-06.md`.
+
+### 1. The seam the brief asked about does not exist
+
+`dai_diplomacy_suggest()` is static, but it is a three-line wrapper over
+`could_meet_with_player()` plus two handlers that are already public in
+`build/hand_gen.h`. Deep reaches the proposal machinery by calling the
+same three functions. Two eleven-line stateless statics
+(`get_allied_with_enemy_player`, `clear_old_treaty`) are copied under
+rule 3's last-resort clause and the commit says so: deep must apply
+exactly the guard the counterparty's valuation applies, or it proposes
+into a `-BIG_NUMBER` refusal on every turn of the window.
+
+Both handlers call `call_treaty_evaluate()` on both sides
+synchronously, so a proposal is judged, accepted and concluded inside
+the suggest call. That is what let the census be taken with no stored
+state -- and it is what made the first measurement wrong (§4).
+
+### 2. Off-switch proof
+
+Pre-session tip `ac153b34a0` (pinned `ed0a5ec1b9e355`, `tuning=none`)
+against the session binary `cc43f00c3f7a36` loading `peace-off.ini`:
+**10/10 smoke seeds byte-identical scorelogs, identical
+`metrics.csv`.** The counter-only commit `c7bb0350e6` is proved the
+same way on the real cell: its OFF arm's `metrics.csv` is identical to
+the earlier binary's OFF arm and all 20 scorelogs match.
+
+### 3. The A/B, guard metrics before score
+
+Binary PINNED, `--server`, `--arms deep`, 20 paired seeds, every arm
+loading a tuning FILE that pins `pay_switch_penalty = 1` and
+`switch_cost_price = 1`. Archived inis
+`benchmark/tuning/peace-{off,seek,embassy,lead,all}.ini`.
+
+    contested                       OFF     SEEK  EMBASSY      ALL
+    PEAKED AT CEASE-FIRE          29.7%    15.9%    28.6%    17.2%
+    ended peace-or-better         24.8%    34.4%    23.7%    33.5%
+    embassy (ordered pairs)       31.6%    35.8%    35.5%    41.7%
+    peace windows/game                0     53.5        0     53.2
+    ... PROPOSED / SIGNED           0/0  30.4/19.8      0/0  28.6/18.8
+    embassy treaties judged/CLEARED 0/0      0/0  48.7/26.9 45.0/25.5
+    score                         80.87    84.47    80.94    85.51
+                                          (+1.48)  (+0.04)  (+2.14)
+    techs                         17.71    18.94    17.98    19.03
+                                          (+1.96)  (+0.51)  (+2.61)
+    unitskilled                    9.82     6.82     9.59     8.81
+                                          (-3.11)  (-0.32)  (-1.07)
+
+    lategame-80                     OFF     SEEK  EMBASSY      ALL
+    PEAKED AT CEASE-FIRE          41.9%    28.6%    42.4%    28.5%
+    ended peace-or-better         19.9%    26.7%    19.9%    25.6%
+    embassy (ordered pairs)       26.3%    32.0%    28.6%    34.8%
+    ... PROPOSED / SIGNED           0/0   19.7/8.3     0/0  20.9/8.7
+    embassy treaties judged/CLEARED 0/0      0/0  21.3/10.9 23.9/12.4
+    score                        168.05   169.97   169.49   170.28
+                                          (+1.47)  (+2.18)  (+1.76)
+    techs                         52.75    53.12    52.87    53.08
+                                          (+2.36)  (+2.48)  (+3.27)
+
+    contested, second pin           OFF     LEAD
+    score                         80.87    82.31   (+1.04, 11/20)
+    unitsbuilt                    42.72    45.23   (+2.21)
+    unitskilled                    9.82    11.34   (+2.24)
+    unitslost                     12.98    15.04   (+2.12)
+    mean_city_size                 5.65     5.52   (-1.61)
+    target-bias applications       0        2216 (max per seat)
+
+### 4. A measurement that was wrong in its own output, again
+
+`ds` points at LIVE diplomatic state, and the treaty concludes inside
+`deep_treaty_suggest()`. The first probe therefore logged `left=16` --
+the armistice's counter -- on every proposal that worked, when the
+pre-pass only ever runs at `turns_left <= 4`. **The tell was that the
+number was impossible.** Fixed by snapshotting before, and the line
+gained `now=` read deliberately after, so one field separates "asked"
+from "got it". The same class of error was found and fixed in the
+census: `accept=` on a `deep-embassy` line is the RUNNING balance's
+sign, so a treaty's decision is its group's LAST line, and clauses
+priced / treaties judged / treaties cleared are three numbers that were
+being conflated into one.
+
+### 5. What the next session must know
+
+- **Every knob ships at 0.0, and that is a refusal, not caution.**
+  `peace_seek_gain = 1.0` was the batch's maximum-population setting,
+  not a tuned value; shipping it would be picking a number to chase a
+  benchmark (rule 7). All four knobs are registered in
+  `tuning-params.ini` and in the ALL/ECON/MIL blocks and are ready for
+  a pass. `tune-audit.py` CLEAN at 153/153/153/153; `meson test` 4/4.
+- **Lever 1 is the strongest thing in this session and is the one that
+  deserves 40 seeds.** Guard metrics are far outside noise on both
+  cells; score is +3.60 (t +1.48) and +1.93 (t +1.47). Nothing here
+  clears twenty seeds on score alone -- contested ALL at +4.64
+  (t +2.14, 15/20) is the closest anything comes.
+- **THE TIMING/CHARACTER DECOMPOSITION WAS NEVER RUN, and it is the
+  first thing a follow-up should measure.** `peace_seek_gain` bundles
+  two different changes: the pre-pass RUNS AT ALL (fixing a pure timing
+  collision -- stock would have proposed if it had been asked on the
+  right turn), and the love bar is WAIVED (deep proposes to players
+  stock never would). An arm at a small gain separates them. That is
+  the difference between fixing a bug and changing the AI's diplomatic
+  character, and this session cannot tell you which one earned the
+  +3.60.
+- **Lever 2 works, is nearly free, and is worth about nothing alone**
+  -- the seventh mechanism in this project to prove out and measure
+  flat (contested +0.07). It compounds with lever 1 because lever 1
+  supplies its population: peace-level pairs are 3-5% of the OFF world
+  and 25-34% once the pre-pass runs.
+- **Lever 3 is a read, not a policy.** It executes hard (2216 biases a
+  seat) and does exactly what it says -- more built, more killed, more
+  lost, growth down, score +1.44 at t +1.04. The statecraft that would
+  make the read pay is BALANCE's.
+- **`WIN_CAPITAL` is unreachable in every cell we run: 0 of 24 000
+  player-turns.** It needs `player_leading_spacerace()` to name
+  somebody, which needs a STARTED spaceship, which never happens inside
+  150-200 turns. One of the finding's three "free signals" is not a
+  signal here at all. The other two are live (a distinct tech leader on
+  92% of player-turns).
+- **Five of the pre-pass's ten guards never fire once**, including the
+  op-commitment guard that replaced stock's no-mercy rule: in 1070
+  windows deep never had a live operation aimed at a cease-fire
+  partner. It costs nothing and buys nothing in this population.
+- Upstream bugs #43-#46 all held up under measurement and none was
+  fixed in place. Two now have numbers (see the findings §6).
