@@ -922,6 +922,48 @@ static double deep_garrison_menace(struct player *pplayer)
 }
 
 /**********************************************************************//**
+  Can units of this class stand on water / on land? Asked of the
+  ruleset's own terrain nativity, NOT of utype_move_type().
+
+  The derived move type is unusable for this question and the counter
+  is what proved it: in civ2civ3 `utype_move_type()` reports the
+  TRIREME class as UMT_LAND, so every test in this module written as
+  `transport_capacity > 0 && utype_move_type(ut) == UMT_SEA` misses the
+  ancient-era transport -- which is to say the entire early- and
+  mid-game landing threat, in the default ruleset of every cell this
+  project benchmarks. The sea class measured as never live across 20
+  island games, on a cell where every seat demonstrably builds
+  Triremes, and a `mt=` debug line on the transports themselves is
+  what produced the number above.
+
+  Terrain nativity cannot drift that way: the Trireme class is
+  `native_to` lake and ocean in both shipped rulesets, which is what
+  "it floats" means. is_native_to_class() with no extras asks exactly
+  that, and it is the same accessor movement.c uses.
+**************************************************************************/
+static bool deep_uclass_swims(const struct unit_class *pclass)
+{
+  terrain_type_iterate(pterrain) {
+    if (is_ocean(pterrain) && is_native_to_class(pclass, pterrain, NULL)) {
+      return TRUE;
+    }
+  } terrain_type_iterate_end;
+
+  return FALSE;
+}
+
+static bool deep_uclass_walks(const struct unit_class *pclass)
+{
+  terrain_type_iterate(pterrain) {
+    if (!is_ocean(pterrain) && is_native_to_class(pclass, pterrain, NULL)) {
+      return TRUE;
+    }
+  } terrain_type_iterate_end;
+
+  return FALSE;
+}
+
+/**********************************************************************//**
   Can a unit of this type strike a city with no visible approach --
   drop onto it, or fly to it and take it?
 
@@ -938,7 +980,9 @@ static bool deep_utype_is_airborne(const struct unit_type *ut)
 {
   return (utype_can_do_action_result(ut, ACTRES_PARADROP)
           || utype_can_do_action_result(ut, ACTRES_PARADROP_CONQUER)
-          || (utype_move_type(ut) == UMT_BOTH && utype_can_take_over(ut)));
+          || (deep_uclass_walks(utype_class(ut))
+              && deep_uclass_swims(utype_class(ut))
+              && utype_can_take_over(ut)));
 }
 
 /**********************************************************************//**
@@ -967,7 +1011,11 @@ static bool deep_utype_is_airborne(const struct unit_type *ut)
 **************************************************************************/
 static bool deep_utype_strikes_from_hull(const struct unit_type *ut)
 {
-  if (utype_move_type(ut) != UMT_LAND) {
+  /* A pure land unit: it walks and it cannot swim. Terrain nativity,
+   * not utype_move_type() -- see deep_uclass_swims() for why the
+   * derived move type cannot be trusted for this. */
+  if (!deep_uclass_walks(utype_class(ut))
+      || deep_uclass_swims(utype_class(ut))) {
     return FALSE;
   }
   return ((utype_can_do_action_result_when_ustate(ut, ACTRES_ATTACK,
@@ -983,30 +1031,26 @@ static bool deep_utype_strikes_from_hull(const struct unit_type *ut)
 }
 
 /**********************************************************************//**
-  Does this type carry cargo of some class over water?
+  Does this type float, and carry cargo of the kind we are afraid of?
 
-  `move_type != UMT_LAND` and NOT `== UMT_SEA`, which is the test the
-  rest of this module uses and which is WRONG in civ2civ3: the River
-  extra is `native_to` the Trireme class, so movement.c's
-  set_unit_move_type() sees a land-moving extra and derives UMT_BOTH.
-  Every "does this player float transports" test written as
-  `transport_capacity > 0 && utype_move_type() == UMT_SEA` therefore
-  misses the Trireme -- the ancient-era transport, which is to say the
-  whole early-game landing threat -- and the sea class measured as
-  never live on 20 island games before this was found. The pre-existing
-  instances (boat shadow, density float, reachable-land) are recorded
-  in STATUS rather than changed here; the fear lattice is fenced this
-  session.
+  `flies` selects which cargo matters. A LANDING force is cargo that
+  walks and cannot swim -- a pure land unit, which must be put ashore.
+  A mobile AIRBASE carries cargo that both walks and swims, which is
+  how a ruleset spells flight (there is no UMT_AIR). A warship that
+  carries nothing is neither: it is a bombardment threat, and the boat
+  shadow already prices that.
 **************************************************************************/
-static bool deep_utype_floats(const struct unit_type *ut,
-                              enum unit_move_type cargo_mt)
+static bool deep_utype_floats(const struct unit_type *ut, bool flies)
 {
-  if (ut->transport_capacity <= 0 || utype_move_type(ut) == UMT_LAND) {
+  if (ut->transport_capacity <= 0 || !deep_uclass_swims(utype_class(ut))) {
     return FALSE;
   }
   unit_class_iterate(pclass) {
-    if (pclass->move_type == cargo_mt
-        && BV_ISSET(ut->cargo, uclass_index(pclass))) {
+    if (!BV_ISSET(ut->cargo, uclass_index(pclass))) {
+      continue;
+    }
+    if (flies ? (deep_uclass_walks(pclass) && deep_uclass_swims(pclass))
+              : (deep_uclass_walks(pclass) && !deep_uclass_swims(pclass))) {
       return TRUE;
     }
   } unit_class_iterate_end;
@@ -1014,24 +1058,14 @@ static bool deep_utype_floats(const struct unit_type *ut,
   return FALSE;
 }
 
-/**********************************************************************//**
-  A hull that can put a LANDING FORCE ashore: it floats and it carries
-  land units. A warship that carries nothing is not a landing threat --
-  it is a bombardment threat, which the boat shadow already prices.
-**************************************************************************/
 static bool deep_utype_floats_landing(const struct unit_type *ut)
 {
-  return deep_utype_floats(ut, UMT_LAND);
+  return deep_utype_floats(ut, FALSE);
 }
 
-/**********************************************************************//**
-  A mobile airbase: a hull that carries the things that fly (a class
-  native to land and ocean at once, which is how a ruleset spells
-  flight).
-**************************************************************************/
 static bool deep_utype_is_carrier(const struct unit_type *ut)
 {
-  return deep_utype_floats(ut, UMT_BOTH);
+  return deep_utype_floats(ut, TRUE);
 }
 
 /**********************************************************************//**
@@ -1358,6 +1392,7 @@ static void deep_apply_garrison_floor(const struct civ_map *nmap,
   const struct deep_tuning *tune = deep_tuning_get();
   const struct deep_floor_class *fc;
   struct deep_floor_weights w;
+  double fmult;
   unsigned int applied;
 
   if (city_data->danger != 0
@@ -1366,20 +1401,29 @@ static void deep_apply_garrison_floor(const struct civ_map *nmap,
   }
   fc = deep_floor_class_facts(city_owner(pcity));
   deep_floor_weigh(nmap, pcity, fc, &w);
+  /* Gate 6 (W34, human 2026-08-05): the personality multiplier. Gate
+   * 1 refuses to scale the floor because it scales anticipation TOWARD
+   * the floor; gate 6 asks the different question of how much
+   * insurance THIS personality buys against blind spots. Exactly 1.0
+   * at identity axes, so the benchmark baseline is a uniform floor. */
+  fmult = deep_stance_floor_mult(city_owner(pcity));
+  if (fmult != 1.0 && w.best > 0.0) {
+    deep_plr_data(city_owner(pcity))->stance_floor_gated++;
+  }
   applied = (unsigned int) (tune->garrison_floor_danger * upkeep_discount
-                            * menace * w.best);
+                            * menace * w.best * fmult);
   city_data->danger = applied;
   if (log_it) {
     log_base(deep_metric_log_level(),
              "deep-floor turn=%d player=\"%s\" city=%d units=%d"
              " menace=%.3f updisc=%.3f barb=%d sea=%d air=%d border=%d"
              " mar=%d carrier=%d airrange=%d wbarb=%.3f wsea=%.3f"
-             " wair=%.3f wborder=%.3f w=%.3f applied=%u",
+             " wair=%.3f wborder=%.3f w=%.3f fmult=%.3f applied=%u",
              game.info.turn, player_name(city_owner(pcity)), pcity->id,
              unit_list_size(city_tile(pcity)->units), menace,
              upkeep_discount, fc->barb, fc->sea, fc->air, fc->border,
              fc->marines, fc->carrier, fc->air_range, w.barb, w.sea,
-             w.air, w.border, w.best, applied);
+             w.air, w.border, w.best, fmult, applied);
   }
 }
 
