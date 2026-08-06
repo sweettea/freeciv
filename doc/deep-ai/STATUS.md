@@ -8851,3 +8851,89 @@ being conflated into one.
   partner. It costs nothing and buys nothing in this population.
 - Upstream bugs #43-#46 all held up under measurement and none was
   fixed in place. Two now have numbers (see the findings §6).
+
+## M1 addendum: the op-level go/no-go takes the total form (2026-08-06)
+
+One code commit (`50eef808a7`) and this section, on the human call that
+resolved the design question M1 flagged: keep the MARGINAL clamped form
+for the build want, and adopt the TOTAL form -- `Dp x worth - E[total
+losses]` -- for the operation's own launch decision, where "is the
+whole fight net-positive" is the actual question. Same substrate
+outputs, different call site.
+
+**Verdict: the theory that the launch bar's FORM caused lategame-80's
+ops-pair cost is supported in mechanism and unresolved in score.** The
+gate removes exactly the launches the odds bar had added, and it gives
+back +1.16 of the 1.49 the ops pair cost -- at t +1.47.
+
+### 1. The pair
+
+Binary PINNED (`20a685e8e655`), `--server`, `--arms deep`,
+lategame-80, 20 paired seeds, both arms loading a file that pins
+`pay_switch_penalty = 1` and `switch_cost_price = 1`. Arms differ in
+`op_net_value` alone (`benchmark/tuning/m1b-{baronly,netvalue}.ini`).
+
+    metric                  bar only   + net value   delta      se      t  wins
+    score                     168.05      169.21    +1.16    0.79  +1.47  8/20
+    mean_city_size              5.32        5.39    +0.06    0.03  +1.95  9/20
+    techs                      52.75       52.94    +0.19    0.13  +1.47  5/20
+    unitslost                  13.39       13.43    +0.03    0.37  +0.09  7/20
+    unitsbuilt                 39.76       39.64    -0.12    0.39  -0.30  5/20
+    cities                      8.08        8.01    -0.07    0.07  -1.00  3/20
+
+    deep-netval refusals        0.00        7.65    +7.65    1.48  +5.16 13/20
+    operations LAUNCHED         6.35        5.10    -1.25    0.48  -2.63  1/20
+    operations formed          11.50       10.60    -0.90    0.71  -1.26  4/20
+
+**The mechanism is exactly the predicted one.** M1's ops pair raised
+launches on this cell from 4.65 to 6.35 (+1.70); the net-value test
+takes 1.25 of that back, and it is lower or equal on 19 of 20 seeds.
+The gate is not undoing the odds bar -- it is removing the subset of
+what the bar released that does not pay.
+
+**Reported on the fired-on subset, as the method note requires**: 7 of
+20 games are identical (the gate never fired), 13 saw it fire at 11.77
+refusals a game. On those 13 the mean is **+1.78, se 1.19, 8/13**, and
+the spread is wide (-5.3 to +8.2). Twenty seeds are direction.
+
+### 2. What a refused launch looks like
+
+153 refusals across the arm:
+
+    mean odds           0.922      (27% of them at p >= 0.99)
+    mean target worth     633
+    mean expected loss  111.8 shields = 1901 want at SHIELD_WEIGHTING
+    mean value            583  against mean cost 1901
+
+**These are near-certain TAKES that cost three times what the city is
+worth.** The odds bar cannot see that by construction -- it asks
+whether the wave wins, and the answer was yes. This is the first gate
+in the project that can refuse a fight it expects to win.
+
+### 3. Why the two seats take different forms, in one line each
+
+- **Build want, MARGINAL and clamped.** It prices one more blade among
+  many; the marginal loss is negative half the time (a strong unit at
+  the head of a strongest-first stream saves the weak ones), and paying
+  for that would double-count the odds it is already paid for.
+- **Op launch, TOTAL and unclamped.** It prices the whole fight against
+  not fighting, so not launching is the zero, `odds_now` IS the
+  probability difference, and the whole expected loss is the whole
+  cost. Nothing here can go negative in the subsidy sense.
+
+Both convert shields at SHIELD_WEIGHTING through `attack_loss_gain`, so
+the two seats cannot disagree about what a shield is worth.
+
+### 4. Still owed
+
+- **`op_net_value` ships at 1** (human call), registered, audit-clean,
+  off-switch proven by counter: 0.00 `deep-netval` lines in the
+  baronly arm against 7.65 in the netvalue arm.
+- **The residual is not resolved.** +1.16 at t +1.47 against a
+  -1.49 the ops pair cost: consistent with a full recovery and equally
+  consistent with half of one. This pair is the fortieth-seed
+  candidate of the round.
+- **Contested has NOT been re-measured with the total form.** There the
+  ops pair was part of a POSITIVE result (+1.75), and a gate that
+  removes launches could subtract from it. Do not assume the sign
+  carries.
