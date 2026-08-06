@@ -33,7 +33,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .settler_risk_tolerance = 1.0,        /* PLACEHOLDER = stock bar */
   .settler_guard_tolerance = 1.0,       /* PLACEHOLDER = stock bar */
   .site_enough_result = 250.0,          /* PLACEHOLDER = stock */
-  .site_defence_weight = 20.0,          /* PLACEHOLDER = DEFENSE_EMPHASIS */
+  .site_defence_weight = 0.0,           /* MEASURED off: D3 contested A/B */
   .site_naval_gate = 1,                 /* geometry, not a magnitude */
   .site_naval_weight = 20.0,            /* PLACEHOLDER = NAVAL_EMPHASIS */
   .founder_pool_per_site = 0.06,        /* PLACEHOLDER, see deeptuning.h */

@@ -76,11 +76,25 @@ struct deep_tuning {
    * defence: at 20, a hills site (+100% in civ2civ3) is worth 20%
    * more than the same yields on the flat, and grassland earns
    * nothing. Replaces stock's result_defense_bonus(), which is
-   * upstream bug #1 and pays defensible ground LESS (deepsite.c).
-   * PLACEHOLDER 20.0 = stock's own DEFENSE_EMPHASIS, the only
-   * magnitude in this area any game has ever been played with; the
-   * SHAPE is corrected, the size is owed a tuning pass. 0 disables
-   * the term, which is this change's off switch. */
+   * upstream bug #1 and pays defensible ground LESS (deepsite.c) --
+   * the SIGN correction ships unconditionally; this is its size.
+   *
+   * DEFAULT 0.0, and that number is MEASURED, not assumed. At stock's
+   * own DEFENSE_EMPHASIS (20) the corrected term costs score on the
+   * cell where defensible ground should matter most: contested, 20
+   * paired seeds, term ON vs OFF inside the same binary, score 76.94
+   * vs 79.37 (+2.43 for OFF, se 1.87, t +1.30, 13/20), and against
+   * the pre-session tip the whole session went from -4.36 (t -2.57)
+   * to -1.93 (t -1.10) with only this term removed. It agrees with
+   * the human prior recorded 2026-08-05: "defense bonuses for cities
+   * basically don't matter long-term" -- a city is defended by what
+   * stands in it, and terrain the AI can pick between is worth less
+   * than the yields it gives up to stand on it.
+   *
+   * So the magnitude, not the sign, is what stock got wrong twice
+   * over: wrong direction AND too hot. Registered 0-80 for the
+   * tuning pile; a pass that finds a small positive optimum would be
+   * a real result, and the term is written and waiting for it. */
   double site_defence_weight;
 
   /* Refuse the maritime premium (stock naval_bonus(), NAVAL_EMPHASIS

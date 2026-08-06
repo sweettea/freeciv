@@ -921,7 +921,21 @@ static adv_want deep_site_defence_bonus(struct player *pplayer,
                                         const struct cityresult *result,
                                         int *factor)
 {
-  int defence = deep_site_defence_factor(pplayer, result);
+  int defence;
+
+  if (deep_tuning_get()->site_defence_weight <= 0.0) {
+    /* Off (the shipped default -- see the knob's comment). Skipped
+     * before the virtual city, because the factor costs a
+     * create_city_virtual + upgrade_city_extras per CANDIDATE and
+     * nothing downstream would read it. No RNG is consumed in that
+     * path, so this is a pure cost saving. */
+    if (factor != NULL) {
+      *factor = 0;
+    }
+    return 0;
+  }
+
+  defence = deep_site_defence_factor(pplayer, result);
 
   if (factor != NULL) {
     *factor = defence;
