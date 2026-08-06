@@ -544,6 +544,60 @@ static adv_want deep_stock_trade_bid(struct ai_type *ait,
 }
 
 /**********************************************************************//**
+  Overwrite a winning caravan bid with deep's price, bringing the
+  runner-up back when that is a REDUCTION.
+
+  Shared by both caravan producers, because the hazard is the same one:
+  if deep lowers the want a caravan won with and nothing else is
+  reconsidered, the city still builds the caravan deep has just said is
+  not worth it -- at a lower want, which changes nothing it decides.
+
+  The improvement runner-up is recoverable exactly:
+  building_advisor_choose() reads building_want[] and calls the AI's
+  choose_building hook, and neither writes anything else, so it can be
+  re-run. Stock's builder-trait scaling is the one multiplication that
+  follows it in domestic_advisor_choose_build(). The worker, founder
+  and wonder runners-up are NOT recoverable -- their producers all
+  reach dai_wants_role_unit(), which writes the player's tech_want[] --
+  so when the improvement does not clear the merit the want is simply
+  lowered and the censoring is COUNTED (recover=partial) rather than
+  assumed away.
+
+  Returns TRUE if the runner-up was recovered; sets *partial when it
+  was not.
+**************************************************************************/
+static bool deep_caravan_replace(struct player *pplayer, struct city *pcity,
+                                 struct adv_choice *choice, adv_want merit,
+                                 bool *partial)
+{
+  struct adv_choice *runner;
+  bool recovered = FALSE;
+
+  if (merit >= choice->want) {
+    choice->want = merit;
+    return FALSE;
+  }
+
+  runner = adv_new_choice();
+  building_advisor_choose(pcity, runner);
+  runner->want = runner->want
+    * (0.5 + (ai_trait_get_value(TRAIT_BUILDER, pplayer)
+              / (double) TRAIT_DEFAULT_VALUE / 2));
+  if (runner->want > merit && runner->type == CT_BUILDING
+      && runner->value.building != NULL) {
+    adv_choice_copy(choice, runner);
+    choice->want = MIN(runner->want, DAI_WANT_DOMESTIC_MAX);
+    recovered = TRUE;
+  } else {
+    choice->want = merit;
+    *partial = TRUE;
+  }
+  adv_free_choice(runner);
+
+  return recovered;
+}
+
+/**********************************************************************//**
   Substitute deep's amortized caravan want for stock's at the build
   seam, for one city. Called with the choice the domestic advisor just
   returned, before it is merged against the military choice.
@@ -551,15 +605,8 @@ static adv_want deep_stock_trade_bid(struct ai_type *ait,
   Three outcomes, all logged:
 
   - REPLACE: stock's trade bid is the returned winner, so the want it
-    won with is overwritten by deep's. When that is a REDUCTION the
-    winner it beat has to come back, or the city builds a caravan deep
-    has just said is not worth it. The improvement runner-up is
-    recoverable exactly -- building_advisor_choose() reads
-    building_want[] and writes a choice, with no side effect of any
-    kind, and stock's builder-trait scaling is one multiplication --
-    so it is recovered. The worker, founder and wonder runners-up are
-    not: their producers all reach dai_wants_role_unit(). The
-    censoring is counted (recover=partial) rather than assumed away.
+    won with is overwritten by deep's, and the runner-up comes back
+    when that is a reduction (deep_caravan_replace above).
   - PROMOTE: stock's bid lost but deep's price beats the winner.
   - KEEP: neither. Logged anyway, because the distribution of deep's
     want against stock's at the cities where nothing happens is most
@@ -601,26 +648,7 @@ void deep_trade_merit_apply(struct ai_type *ait, struct player *pplayer,
       && choice->want == stock_bid) {
     /* Stock's trade producer is the domestic winner. */
     mode = "replace";
-    if (merit < choice->want) {
-      struct adv_choice *runner = adv_new_choice();
-
-      building_advisor_choose(pcity, runner);
-      runner->want = runner->want
-        * (0.5 + (ai_trait_get_value(TRAIT_BUILDER, pplayer)
-                  / (double) TRAIT_DEFAULT_VALUE / 2));
-      if (runner->want > merit && runner->type == CT_BUILDING
-          && runner->value.building != NULL) {
-        adv_choice_copy(choice, runner);
-        choice->want = MIN(runner->want, DAI_WANT_DOMESTIC_MAX);
-        recovered = TRUE;
-      } else {
-        choice->want = merit;
-        partial = TRUE;
-      }
-      adv_free_choice(runner);
-    } else {
-      choice->want = merit;
-    }
+    recovered = deep_caravan_replace(pplayer, pcity, choice, merit, &partial);
   } else if (merit > choice->want) {
     mode = "promote";
     choice->type = CT_CIVILIAN;
