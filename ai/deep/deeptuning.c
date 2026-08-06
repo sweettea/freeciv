@@ -145,6 +145,8 @@ static const struct deep_tuning deep_tuning_defaults = {
   .sortie_win_floor = 0.85,             /* PLACEHOLDER, untuned */
   .op_take_target = 0.7,                /* PLACEHOLDER, untuned */
   .op_muster_wait = 10,                 /* PLACEHOLDER, untuned */
+  .op_launch_odds = 1,                  /* the bar, not a magnitude */
+  .op_hold_survivors = 1.0,             /* PLACEHOLDER, untuned */
   .satisfied_fear_discount = 0.0,       /* PLACEHOLDER, untuned */
   .colony_lift_weight = 0.5,            /* PLACEHOLDER, untuned */
   .invasion_reinforce_rate = 0.34,      /* PLACEHOLDER, untuned */
@@ -304,6 +306,8 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(sortie_win_floor) \
   TUNE_DOUBLE(op_take_target) \
   TUNE_INT(op_muster_wait) \
+  TUNE_INT(op_launch_odds) \
+  TUNE_DOUBLE(op_hold_survivors) \
   TUNE_DOUBLE(satisfied_fear_discount) \
   TUNE_DOUBLE(colony_lift_weight) \
   TUNE_DOUBLE(invasion_reinforce_rate) \

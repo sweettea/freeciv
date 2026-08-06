@@ -2723,6 +2723,34 @@ bool deep_op_target_threatens(const struct player *pplayer,
   smallest strongest-first prefix of the unclaimed pool that clears
   the formation bar. Returns TRUE if the slot went live.
 **************************************************************************/
+/**********************************************************************//**
+  The odds an assault on this target must clear, gate 2 included
+  (W34 A.2): op_take_target scaled by what this player's stance
+  charges for an assault, capped at 1.0 because it is a probability,
+  and never scaled at all for a target that threatens us.
+
+  Extracted so FORMATION and LAUNCH ask the same question -- a wave
+  that formed at this bar and is now released by a head count is
+  released against a garrison nobody re-priced. `count` is FALSE at
+  the launch seat so the stance census keeps counting decisions, not
+  re-reads of one decision.
+**************************************************************************/
+static double deep_op_assault_bar(struct player *pplayer,
+                                  struct city *target, bool count)
+{
+  double bar = deep_tuning_get()->op_take_target;
+  double omult = deep_stance_op_mult(pplayer);
+
+  if (omult != 1.0 && !deep_op_target_threatens(pplayer, target)) {
+    bar = MIN(1.0, bar * omult);
+    if (count) {
+      deep_plr_data(pplayer)->stance_op_gated++;
+    }
+  }
+
+  return bar;
+}
+
 static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
                          struct deep_operation *op, int oi)
 {
@@ -2838,15 +2866,7 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
    * or the gain is pushed, a certain take still forms. That cap is
    * the gate's floor, and the threatening exemption is the other one:
    * neither may be scaled away. */
-  bar = tune->op_take_target;
-  {
-    double omult = deep_stance_op_mult(pplayer);
-
-    if (omult != 1.0 && !deep_op_target_threatens(pplayer, target)) {
-      bar = MIN(1.0, bar * omult);
-      dp->stance_op_gated++;
-    }
-  }
+  bar = deep_op_assault_bar(pplayer, target, TRUE);
 
   /* Staging: nearest own city on the target's continent for a land
    * assault; for an amphibious one, the nearest own COASTAL city on
@@ -3683,16 +3703,53 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
 
   if (op->state == DEEP_OP_MUSTER) {
     int present = 0;
+    struct unit *here[DEEP_OP_MEMBERS];
+    double odds_now = 0.0, surv_now = 0.0;
+    bool go;
 
     for (i = 0; i < op->n_members; i++) {
       struct unit *m = game_unit_by_number(op->members[i]);
 
       if (m != NULL && same_pos(unit_tile(m), city_tile(staging))) {
-        present++;
+        here[present++] = m;
       }
     }
 
-    if (present >= op->required
+    /* The launch bar in the currency the formation bar was set in.
+     *
+     * A head count is the linear-sum error the substrate exists to
+     * replace: `required` was computed against the garrison of the
+     * turn the operation FORMED, and by the time the bodies are
+     * counted the target has had op_muster_wait turns to build. Ask
+     * the force that is actually standing here what it can take --
+     * and, now that the walk reports what the assault costs, whether
+     * enough of it would still be standing afterwards to hold what it
+     * takes. A wave that wins the city and dies doing it hands the
+     * city back next turn.
+     *
+     * The wait cap keeps its half-quorum head count: that path is
+     * the deliberate "go with what came" and it is a patience rule,
+     * not an odds one. */
+    if (tune->op_launch_odds && present > 0) {
+      int eta_here = 0;
+
+      for (i = 0; i < present; i++) {
+        int rate = MAX(unit_type_get(here[i])->move_rate, 1);
+        int ti = (real_map_distance(unit_tile(here[i]),
+                                    city_tile(target)) * SINGLE_MOVE
+                  + rate - 1) / rate;
+
+        eta_here = MAX(eta_here, ti);
+      }
+      odds_now = deep_take_odds_cost(nmap, target, here, present,
+                                     eta_here, NULL, &surv_now);
+      go = odds_now >= deep_op_assault_bar(pplayer, target, FALSE)
+           && surv_now >= tune->op_hold_survivors;
+    } else {
+      go = present >= op->required;
+    }
+
+    if (go
         || (game.info.turn - op->formed_turn >= tune->op_muster_wait
             && present >= (op->required + 1) / 2)) {
       /* Land or sea, the wave marches shadowed: the ferry system
@@ -3718,10 +3775,12 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
       deep_brief_allies(pplayer, target, TRUE, op->march_eta);
       log_base(deep_metric_log_level(),
                "deep-op turn=%d player=\"%s\" op=%d march target=%d"
-               " present=%d required=%d waited=%d eta=%d",
+               " present=%d required=%d waited=%d eta=%d odds=%.3f"
+               " surv=%.2f bar=%d",
                game.info.turn, player_name(pplayer), oi, op->target_city,
                present, op->required, game.info.turn - op->formed_turn,
-               op->march_eta);
+               op->march_eta, odds_now, surv_now,
+               tune->op_launch_odds ? 1 : 0);
       /* Fall through: the first march turn re-gates immediately. */
     } else if (game.info.turn - op->formed_turn >= tune->op_muster_wait) {
       /* Wait cap without even half a quorum: before banking, see if

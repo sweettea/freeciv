@@ -675,6 +675,19 @@ struct deep_tuning {
    * quorum) or dissolving. */
   double op_take_target;
   int op_muster_wait;
+  /* Launch on odds, not on a head count (combat E2): a mustered wave
+   * is released when the force STANDING at the staging city clears
+   * the same bar formation used, re-priced against the garrison as it
+   * is now -- `required` was computed against the garrison of the
+   * formation turn and the target has had op_muster_wait turns to
+   * build since. 0 restores the head count. The wait cap keeps its
+   * half-quorum count either way: that is a patience rule. */
+  int op_launch_odds;
+  /* And how much of the wave must be expected to SURVIVE taking the
+   * city, from the substrate's attacker-loss output: a wave that wins
+   * the city and dies doing it hands it back next turn. In units,
+   * expected. 0 disables the hold test. */
+  double op_hold_survivors;
   /* Satisfaction gate (T153 forensics): once the garrison floor is
    * met, urgency and grave danger are zero, and survival against
    * the observed wave clears the target, the injected fear terms
