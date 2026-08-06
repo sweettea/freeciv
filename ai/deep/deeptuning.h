@@ -1333,6 +1333,38 @@ struct deep_tuning {
    * nothing is correctly worth nothing. 0.0 = off = byte-identical.
    * PLACEHOLDER. */
   double horizon_upkeepfree_weight;
+
+  /* DARKFX -- culture, the term the Europe derby re-sized from
+   * "metric-gaming, report don't lead" to the plurality of the metric
+   * (findings/europe-derby-hindsight.md N1).
+   *
+   * get_civ_score() is citizens + 2 x techs + 5 x wonders + built/10 +
+   * kills/3 + culture/50, and culture's share of world score rises
+   * monotonically with horizon: 7.9% at T100, 29.5% at T300, 42.5% at
+   * T600. Nothing in deep prices any of its sources. In the derby deep
+   * held 7 Temples to stock's 28 and generated 1.41 history a city per
+   * turn to stock's 2.92, and the decomposed cohort gap was culture
+   * -361 against noise everywhere else.
+   *
+   * The credit is the score arithmetic and nothing else: a building's
+   * EFT_HISTORY accrues every turn between completion and the bell, so
+   * it is worth h x turns-left / 50 score points, and deep already has
+   * a want price for one score point -- the citizen, which scores
+   * exactly one. The metric-chasing guard is structural rather than
+   * argued: the horizon is the turns that actually remain, so the same
+   * weight buys three score points at a 150-turn cell and twelve at a
+   * 600-turn one, and shipping the weight small ships it small
+   * everywhere.
+   *
+   * 1.0 therefore means "a culture point is worth what deep pays for
+   * the citizen that scores the same point", which is an UPPER bound:
+   * the citizen also works a tile and the culture point does not. The
+   * real number is the tuning pile's. 0.0 = off = byte-identical.
+   * PLACEHOLDER.
+   *
+   * Note for the stance work: this un-blocks the culture axis
+   * deepstance.h declares inert. It is deliberately NOT wired here. */
+  double horizon_culture_weight;
 };
 
 void deep_tuning_init(void);

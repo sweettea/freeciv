@@ -1110,6 +1110,110 @@ static adv_want deep_upkeep_free_credit(struct city *pcity,
   return credit;
 }
 
+/* get_civ_score()'s own exchange rate between culture and score
+ * (server/score.c:361: `+ pplayer->score.culture / 50`). Read from the
+ * scoring code rather than chosen: it is the constant the benchmark
+ * itself is measured with. */
+#define DEEP_CULTURE_PER_SCORE 50
+
+/* DARKFX: the culture credit's execution counters. `war` is the
+ * subset paid to cities the survival model calls threatened, because
+ * this is the one credit the wartime gate deliberately does not
+ * refuse and that exemption has to be visible. */
+static int deep_culture_cands = 0;
+static int deep_culture_war = 0;
+static adv_want deep_culture_paid = 0;
+
+/**********************************************************************//**
+  Credit a building for the culture it will accumulate before the bell.
+  Returns the credit for pimprove in pcity, or 0.
+
+  The Europe derby's forensics are the evidence: culture/50 is 29.5% of
+  world score at T300 and 42.5% at T600, deep prices none of its
+  sources, and the decomposed cohort gap was culture -361 against noise
+  in every other term. Deep held 7 Temples to stock's 28 -- not because
+  it decided against them but because the horizon ladder has a credit
+  for cap-lifters, growth, bundles and health and none at all for a
+  Temple, so a Temple gets stock's base want (structurally zero: the
+  happiness effects are #if 0'd out of advdata.c's trigger switch) plus
+  History x 5.
+
+  The arithmetic is the score's own. A building carrying `h` History
+  adds h culture every turn it stands, so between completion and the
+  last turn it is worth h x turns-left culture, which get_civ_score()
+  pays at 1/50th of a point each -- and a point is what a citizen is
+  worth, which is a price this file already computes. history_interest_
+  pml is 0 in both shipped rulesets so the accumulation is linear; the
+  compounding form is kept for rulesets that set it, because
+  city_history_gain() does pay interest on the stock when it is not.
+
+  What is NOT priced here: EFT_PERFORMANCE (an instantaneous culture
+  term rather than an accumulating one; no shipped ruleset uses it) and
+  the culture stock a conquest transfers (derby N2, and a military
+  price, not a building one).
+**************************************************************************/
+static adv_want deep_culture_credit(struct city *pcity,
+                                    const struct impr_type *pimprove,
+                                    struct adv_data *adv)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int h, left, hor;
+  double gained, pml;
+  adv_want credit;
+
+  if (tune->horizon_culture_weight <= 0.0) {
+    return 0;
+  }
+  h = get_potential_improvement_bonus(pimprove, pcity, EFT_HISTORY,
+                                      RPT_CERTAIN, FALSE)
+      + get_potential_improvement_bonus(pimprove, pcity,
+                                        EFT_NATION_HISTORY,
+                                        RPT_CERTAIN, FALSE);
+  if (h <= 0) {
+    return 0;
+  }
+  /* city_history_gain() scales the flow by EFT_CULTURE_PCT. */
+  gained = (double) h * (100 + get_city_bonus(pcity, EFT_CULTURE_PCT))
+           / 100.0;
+
+  /* The horizon is the bell, not MORT: culture does not decay and the
+   * score is read once, at the end. This reads game state the endgame
+   * clamp also reads, and deliberately does so with endgame_horizon
+   * off -- the clamp is about a 24-turn planning window being too
+   * long, and this term's window is the whole game by construction.
+   * With no bell set at all there is no scored end, so the credit
+   * falls back to the same MORT every other credit plans over rather
+   * than inventing an infinite one. */
+  left = deep_turns_left();
+  hor = (left >= DEEP_NO_END_TURN) ? MORT : left;
+  if (hor <= 0) {
+    return 0;
+  }
+
+  pml = (double) game.info.history_interest_pml / 1000.0;
+  if (pml > 0.0) {
+    /* Future value of a constant flow compounding at pml per turn --
+     * city_history_gain() pays interest on the accumulated stock. */
+    gained *= (pow(1.0 + pml, hor) - 1.0) / pml;
+  } else {
+    gained *= hor;
+  }
+
+  /* Culture into score into the price of the citizen that scores the
+   * same single point. */
+  credit = gained / DEEP_CULTURE_PER_SCORE
+           * deep_unworked_tile_value(pcity, adv, 3, NULL)
+           * tune->horizon_culture_weight;
+  if (credit <= 0) {
+    return 0;
+  }
+
+  deep_culture_cands++;
+  deep_culture_paid += credit;
+
+  return credit;
+}
+
 /* One improvement of one city that deep added credit to during the
  * current build pass, and the value it left in stock's array. */
 struct deep_credit_entry {
@@ -1316,6 +1420,9 @@ void deep_adjust_building_wants(struct ai_type *ait,
   deep_govcenter_paid = 0;
   deep_upkeepfree_cands = 0;
   deep_upkeepfree_paid = 0;
+  deep_culture_cands = 0;
+  deep_culture_war = 0;
+  deep_culture_paid = 0;
 
   city_list_iterate(pplayer->cities, pcity) {
     adv_want cap_credit;
@@ -1365,7 +1472,8 @@ void deep_adjust_building_wants(struct ai_type *ait,
                    || def_ai_city_data(pcity, ait)->grave_danger > 0;
     }
     cap_credit = deep_capacity_credit(pcity, adv);
-    if (threatened && cap_credit <= 0) {
+    if (threatened && cap_credit <= 0
+        && tune->horizon_culture_weight <= 0.0) {
       /* Growth is a peace-time investment: no horizon credits while
        * the city is under threat (the contested ablation showed the
        * credits, not the site terms, carried the war-map score cost:
@@ -1447,6 +1555,23 @@ void deep_adjust_building_wants(struct ai_type *ait,
         /* DARKFX: what a Player-range free-upkeep effect saves every
          * city, rather than what its History value guesses. */
         add += deep_upkeep_free_credit(pcity, pimprove, adv);
+      }
+
+      {
+        /* DARKFX: culture accrues to a city whether or not it is at
+         * war, and it is the one term the wartime gate above must not
+         * refuse -- the derby's diagnosis is precisely that deep's
+         * threatened cities held no Temples for six hundred turns
+         * while the metric they were losing on was culture. The
+         * exemption is counted rather than assumed. */
+        adv_want ccred = deep_culture_credit(pcity, pimprove, adv);
+
+        if (ccred > 0) {
+          add += ccred;
+          if (threatened) {
+            deep_culture_war++;
+          }
+        }
       }
 
       if (!threatened && game.info.illness_on
@@ -1594,6 +1719,15 @@ void deep_adjust_building_wants(struct ai_type *ait,
              "deep-govcenter turn=%d player=\"%s\" cands=%d credit=%.1f",
              game.info.turn, player_name(pplayer),
              deep_govcenter_cities, (double) deep_govcenter_paid);
+  }
+
+  if (deep_culture_cands > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-culture turn=%d player=\"%s\" cands=%d war=%d"
+             " left=%d credit=%.1f",
+             game.info.turn, player_name(pplayer), deep_culture_cands,
+             deep_culture_war, deep_turns_left(),
+             (double) deep_culture_paid);
   }
 
   if (deep_upkeepfree_cands > 0) {
