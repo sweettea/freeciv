@@ -102,8 +102,23 @@ struct deep_tuning {
    * only water closes on its own continent -- the same geometry the
    * build side's boat_water_gate uses to refuse the keel
    * (get_lake_surrounder, deep_city_water_bridges). GEOMETRY, not a
-   * magnitude, so 0/1 like boat_water_gate rather than a weight: 1
-   * gates, 0 restores stock's blind premium and is the A/B arm. */
+   * magnitude, so 0/1 like boat_water_gate rather than a weight.
+   *
+   * DEFAULT 0 (do not gate), and that is a MEASUREMENT, not caution.
+   * isolated-150, 20 paired seeds, one binary, this key the only
+   * difference: gating scores 187.11 against 198.79 ungated (-11.68,
+   * se 8.02, t -1.46, 7/20) and lands 17.25 lifts against 21.55.
+   * Direction, not a claim, at twenty seeds -- but it is the only
+   * evidence there is, it points the same way as the contested
+   * residual, and nothing anywhere measures the gate positive.
+   *
+   * The likely reason, which the gate's design missed: the premium is
+   * not a shipping option, it is COASTAL YIELD. A Harbour feeds ocean
+   * tiles whether or not the sea leads anywhere, lakes carry food
+   * specials, and a closed sea is still tiles worked. Gating a yield
+   * term on navigability prices out real food. The build-side water
+   * gate is right for hulls and wrong here, and that asymmetry is the
+   * finding. Set to 1 to re-enable; the census reports it either way. */
   int site_naval_gate;
 
   /* And what that premium is WORTH, as a percentage of the site's own
@@ -832,6 +847,44 @@ struct deep_tuning {
    * corner, not a claim. PLACEHOLDER. */
   int trade_merit;
   double trade_merit_gain;
+
+  /* Wonder-caravan BUILD want on merit (R2b), the SAME reform applied
+   * to the larger claimant. R2's deep-want census found the caravan
+   * build queue is decided by dai_choose_help_wonder()
+   * (daidomestic.c:71), not by the trade producer: winning want p50
+   * 197 against 71.
+   *
+   * That producer prices a caravan as
+   *
+   *   want = wonder_city->building_want[wonder] / MAX(walk_turns, 1)
+   *
+   * behind a count gate (build one while build_points_left exceeds
+   * one caravan's shields times the caravans already on this
+   * continent). Two things are wrong with it and neither is the
+   * wonder's want, which D2 made honest: a caravan is credited with
+   * the WHOLE wonder's want regardless of what fraction of the wonder
+   * its shields actually buy, and the delay is divided by rather than
+   * discounted -- so a wonder 40 turns of building away and one due
+   * next turn are worth the same per turn of walking.
+   *
+   * wonder_merit != 0 re-denominates it per shield delivered: the
+   * wonder city's own want times the share of the wonder these
+   * shields pay for, with the shields already pledged by caravans in
+   * the field deducted first (the graded form of stock's count gate),
+   * amortized over the turns to build the caravan PLUS the turns to
+   * walk it there. No new scale is minted: the number that comes out
+   * is the wonder city's own building_want, scaled and discounted.
+   * 0 = off = stock's bid untouched, the compiled default.
+   * PLACEHOLDER.
+   *
+   * wonder_merit_gain is the residue, and it is DELIBERATELY not
+   * trade_merit_gain: the two wants have different denominators (an
+   * NPV in output points annuitized over MORT there, a building want
+   * scaled by a shield share here), so one number cannot calibrate
+   * both and sharing it would hide which producer a tuning pass had
+   * moved. 1.0 is the untuned corner, not a claim. PLACEHOLDER. */
+  int wonder_merit;
+  double wonder_merit_gain;
 };
 
 void deep_tuning_init(void);

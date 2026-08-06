@@ -34,7 +34,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .settler_guard_tolerance = 1.0,       /* PLACEHOLDER = stock bar */
   .site_enough_result = 250.0,          /* PLACEHOLDER = stock */
   .site_defence_weight = 0.0,           /* MEASURED off: D3 contested A/B */
-  .site_naval_gate = 1,                 /* geometry, not a magnitude */
+  .site_naval_gate = 0,                 /* MEASURED off: D3 isolated-150 */
   .site_naval_weight = 20.0,            /* PLACEHOLDER = NAVAL_EMPHASIS */
   .founder_pool_per_site = 0.06,        /* PLACEHOLDER, see deeptuning.h */
   .committed_fear_mult = 1.0,           /* PLACEHOLDER = no effect */
@@ -166,6 +166,8 @@ static const struct deep_tuning deep_tuning_defaults = {
   .rates_luxury_gain = 1.0,             /* PLACEHOLDER, untuned */
   .trade_merit = 0,                     /* PLACEHOLDER, 0 = stock's bid */
   .trade_merit_gain = 1.0,              /* PLACEHOLDER, untuned */
+  .wonder_merit = 0,                    /* PLACEHOLDER, 0 = stock's bid */
+  .wonder_merit_gain = 1.0,             /* PLACEHOLDER, untuned */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -311,7 +313,9 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(rates_science_gain) \
   TUNE_DOUBLE(rates_luxury_gain) \
   TUNE_INT(trade_merit) \
-  TUNE_DOUBLE(trade_merit_gain)
+  TUNE_DOUBLE(trade_merit_gain) \
+  TUNE_INT(wonder_merit) \
+  TUNE_DOUBLE(wonder_merit_gain)
 
 /**********************************************************************//**
   Load tuning overrides from $FREECIV_DEEP_TUNING, if set. Called once
