@@ -1100,6 +1100,140 @@ deep_floor_class_facts(struct player *pplayer)
   return fc;
 }
 
+/* What each live class is worth to THIS city, and the weight the
+ * floor takes from them. */
+struct deep_floor_weights {
+  double barb, sea, air, border, best;
+};
+
+/**********************************************************************//**
+  Is there water that LEADS ANYWHERE within `range` tiles of this tile?
+
+  The carrier refinement's geometry (human, 2026-08-05): land-based air
+  flies from a rival's cities and airbases and is range-limited by
+  them, but a carrier makes the effective airbase any offshore water,
+  so the reachable set becomes "everything within air range of open
+  water". Reuses the water-gate machinery -- deep_water_bridges() is
+  get_lake_surrounder() -- so a closed lake is not an airbase, exactly
+  as it is not a landing route.
+**************************************************************************/
+static bool deep_open_water_within(const struct civ_map *nmap,
+                                   const struct tile *ptile, int range)
+{
+  square_iterate(nmap, ptile, MAX(range, 1), atile) {
+    if (deep_water_bridges(tile_continent(atile))) {
+      return TRUE;
+    }
+  } square_iterate_end;
+
+  return FALSE;
+}
+
+/**********************************************************************//**
+  What each live threat class is worth to this particular city.
+
+  The classes are player-level facts; the WEIGHTS are per-city, which
+  is the whole point of the refinements (human, 2026-08-05): a
+  lake-locked interior city does not carry a landing threat the way a
+  port does, a deep-interior city is out of air range, and a border
+  city facing a land neighbour carries more than one facing an ocean.
+
+  Three geometry rules, all reusing machinery that already exists:
+
+  - **Sea.** Exterior = coastal AND on water that leads somewhere
+    (deep_city_water_bridges, i.e. get_lake_surrounder). Interior
+    cities carry floor_interior_weight of the class. Marines escalate:
+    before attack-from-hull tech exists anywhere a landing must
+    disembark first and there is a turn of visible warning, so the
+    class is mild; after it, the exterior weight is multiplied and the
+    interior weight divided by the same knob, which sharpens the split
+    rather than merely raising it.
+
+  - **Air.** Land-based air reaches a city within air_range of a rival
+    CITY. Carrier-capable air reaches any city within air_range of
+    water that leads anywhere. Deep-interior cities stay out of reach
+    in both cases; that is the class's own geometry and it is free.
+
+  - **Border.** Proximity to the nearest met non-allied city ON THIS
+    CITY'S LANDMASS, shaped R/(R+d) with R = density_fear_radius, so
+    the shape reuses the radius the density fear already uses and adds
+    one weight rather than a distance scale of its own. A rival with no
+    city on our landmass contributes nothing here, so an overseas-only
+    rival cannot outweigh a land neighbour for a border city.
+
+  ONE OWNER, and it is structural, not a convention. F3 (density fear)
+  prices exactly this proximity inside its radius -- and whenever F3 is
+  nonzero the city's danger is nonzero and the floor is not eligible at
+  all. So F3 owns the near field and the floor's border class owns only
+  the far field where F3 has truncated to zero. The same argument
+  retires the F5/barbarian and F2/boat-shadow double-charge questions:
+  when either fires, the floor is silent in that city.
+**************************************************************************/
+static void deep_floor_weigh(const struct civ_map *nmap, struct city *pcity,
+                             const struct deep_floor_class *fc,
+                             struct deep_floor_weights *w)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct player *pplayer = city_owner(pcity);
+  struct tile *ptile = city_tile(pcity);
+  Continent_id home = tile_continent(ptile);
+  int near_same = -1, near_any = -1;
+
+  memset(w, 0, sizeof(*w));
+
+  if (fc->barb) {
+    w->barb = tune->floor_barb_weight;
+  }
+
+  if (fc->sea) {
+    bool exterior = (is_terrain_class_near_tile(nmap, ptile, TC_OCEAN)
+                     && deep_city_water_bridges(ptile));
+    double esc = fc->marines ? MAX(tune->floor_marines_mult, 1.0) : 1.0;
+
+    w->sea = tune->floor_sea_weight
+             * (exterior ? esc : tune->floor_interior_weight / esc);
+  }
+
+  if (fc->air || fc->border) {
+    players_iterate_alive(aplayer) {
+      if (aplayer == pplayer
+          || pplayers_allied(pplayer, aplayer)
+          || player_diplstate_get(pplayer, aplayer)->type == DS_NO_CONTACT) {
+        continue;
+      }
+      city_list_iterate(aplayer->cities, acity) {
+        int d = real_map_distance(city_tile(acity), ptile);
+
+        if (near_any < 0 || d < near_any) {
+          near_any = d;
+        }
+        if (tile_continent(city_tile(acity)) == home
+            && (near_same < 0 || d < near_same)) {
+          near_same = d;
+        }
+      } city_list_iterate_end;
+    } players_iterate_alive_end;
+  }
+
+  if (fc->border && near_same >= 0) {
+    w->border = tune->floor_border_weight
+                * (double) tune->density_fear_radius
+                  / (tune->density_fear_radius + near_same);
+  }
+
+  if (fc->air
+      && (fc->carrier
+          ? deep_open_water_within(nmap, ptile, fc->air_range)
+          : (near_any >= 0 && near_any <= fc->air_range))) {
+    w->air = tune->floor_air_weight;
+  }
+
+  /* MAX, not sum: the floor buys a token garrison, and a second blind
+   * spot does not buy a second token. The classes decide whether to
+   * insure and how firmly, not how many units to insure with. */
+  w->best = MAX(MAX(w->barb, w->sea), MAX(w->air, w->border));
+}
+
 /**********************************************************************//**
   Keep a token garrison even where assessed danger is zero. Stock
   cities do this by habit and it silently insures them against every
@@ -1127,34 +1261,52 @@ deep_floor_class_facts(struct player *pplayer)
   floor, which is exactly when the floor is eligible). One owner per
   threat class therefore holds by construction: whenever a fear term
   prices a class, the floor is silent in that city.
+
+  CLASS-GATED (human direction, 2026-08-05). Insurance against what the
+  assessment cannot see is worth nothing while nothing it insures
+  against can happen. The floor is now the weight of the strongest LIVE
+  blind-spot class for this city, and zero when no class is live:
+
+    early game, no live class and no active threat
+      => no floor defender instead of a settler or a building.
+
+  "Active threat" needs no new test -- it is the danger == 0
+  precondition this function already had. At the placeholder weights a
+  city with any class live gets exactly the floor deep applied
+  unconditionally before, so the change is a pure gate at shipping
+  values.
 **************************************************************************/
-static void deep_apply_garrison_floor(struct city *pcity,
+static void deep_apply_garrison_floor(const struct civ_map *nmap,
+                                      struct city *pcity,
                                       struct ai_city *city_data,
                                       double upkeep_discount,
                                       double menace, bool log_it)
 {
   const struct deep_tuning *tune = deep_tuning_get();
+  const struct deep_floor_class *fc;
+  struct deep_floor_weights w;
   unsigned int applied;
 
   if (city_data->danger != 0
       || unit_list_size(city_tile(pcity)->units) >= tune->garrison_floor) {
     return;
   }
+  fc = deep_floor_class_facts(city_owner(pcity));
+  deep_floor_weigh(nmap, pcity, fc, &w);
   applied = (unsigned int) (tune->garrison_floor_danger * upkeep_discount
-                            * menace);
+                            * menace * w.best);
   city_data->danger = applied;
   if (log_it) {
-    const struct deep_floor_class *fc
-      = deep_floor_class_facts(city_owner(pcity));
-
     log_base(deep_metric_log_level(),
              "deep-floor turn=%d player=\"%s\" city=%d units=%d"
              " menace=%.3f updisc=%.3f barb=%d sea=%d air=%d border=%d"
-             " mar=%d carrier=%d airrange=%d applied=%u",
+             " mar=%d carrier=%d airrange=%d wbarb=%.3f wsea=%.3f"
+             " wair=%.3f wborder=%.3f w=%.3f applied=%u",
              game.info.turn, player_name(city_owner(pcity)), pcity->id,
              unit_list_size(city_tile(pcity)->units), menace,
              upkeep_discount, fc->barb, fc->sea, fc->air, fc->border,
-             fc->marines, fc->carrier, fc->air_range, applied);
+             fc->marines, fc->carrier, fc->air_range, w.barb, w.sea,
+             w.air, w.border, w.best, applied);
   }
 }
 
@@ -1296,7 +1448,8 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
     credit = deep_incoming_defence_credit(ait, pcity)
              + deep_muster_reserve_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
-    deep_apply_garrison_floor(pcity, city_data, updisc, menace, TRUE);
+    deep_apply_garrison_floor(&(wld.map), pcity, city_data, updisc,
+                              menace, TRUE);
   } city_list_iterate_end;
 }
 
@@ -2687,7 +2840,7 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     credit = deep_incoming_defence_credit(ait, pcity)
              + deep_muster_reserve_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
-    deep_apply_garrison_floor(pcity, city_data, updisc,
+    deep_apply_garrison_floor(nmap, pcity, city_data, updisc,
                               deep_garrison_menace(pplayer), FALSE);
 
     if (city_data->danger == 0 && deep_tuning_get()->rotation_want > 0

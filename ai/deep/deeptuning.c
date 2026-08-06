@@ -69,6 +69,15 @@ static const struct deep_tuning deep_tuning_defaults = {
   .garrison_floor_danger = 40,          /* PLACEHOLDER, untuned */
   .garrison_menace_slope = 1.0,         /* PLACEHOLDER, untuned */
   .menace_overseas_weight = 0.25,       /* PLACEHOLDER, untuned */
+  .floor_barb_weight = 1.0,             /* PLACEHOLDER, untuned */
+  .floor_sea_weight = 1.0,              /* PLACEHOLDER, untuned */
+  .floor_air_weight = 1.0,              /* PLACEHOLDER, untuned */
+  .floor_border_weight = 1.0,           /* PLACEHOLDER, untuned */
+  /* Same magnitude as menace_overseas_weight, which is this project's
+   * existing "it cannot reach us properly" discount, rather than a
+   * separately invented number. */
+  .floor_interior_weight = 0.25,        /* PLACEHOLDER, untuned */
+  .floor_marines_mult = 1.5,            /* PLACEHOLDER, untuned */
   .barbarian_fear = 30,                 /* PLACEHOLDER, untuned */
   .boat_shadow_fear = 25,               /* PLACEHOLDER, untuned */
   .density_fear_value = 6,              /* PLACEHOLDER, untuned */
@@ -227,6 +236,12 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_INT(garrison_floor_danger) \
   TUNE_DOUBLE(garrison_menace_slope) \
   TUNE_DOUBLE(menace_overseas_weight) \
+  TUNE_DOUBLE(floor_barb_weight) \
+  TUNE_DOUBLE(floor_sea_weight) \
+  TUNE_DOUBLE(floor_air_weight) \
+  TUNE_DOUBLE(floor_border_weight) \
+  TUNE_DOUBLE(floor_interior_weight) \
+  TUNE_DOUBLE(floor_marines_mult) \
   TUNE_INT(barbarian_fear) \
   TUNE_INT(boat_shadow_fear) \
   TUNE_INT(density_fear_value) \

@@ -309,6 +309,35 @@ struct deep_tuning {
    * must build and sail boats before they are a garrison problem). */
   double garrison_menace_slope;
   double menace_overseas_weight;
+  /* Weight the garrison floor carries while each threat class the
+   * danger assessment cannot see is LIVE (deep_floor_class_facts()).
+   * The floor takes the MAX over live classes, not the sum: it buys a
+   * token garrison, and a second blind spot does not buy a second
+   * token -- it decides WHETHER to insure and how firmly, not how
+   * many. With no live class the floor is zero and the settler or the
+   * building wins the auction (human direction, 2026-08-05).
+   *
+   * All PLACEHOLDERS, all untuned. At 1.0 each, a city with any class
+   * live gets exactly the floor deep applied unconditionally before
+   * this change, so the redesign is a pure gate at the shipping
+   * values. Tuning invariant to preserve: floor_border_weight should
+   * not fall below floor_sea_weight, or an overseas-only rival would
+   * outweigh a land neighbour for a border city. */
+  double floor_barb_weight;
+  double floor_sea_weight;
+  double floor_air_weight;
+  double floor_border_weight;
+  /* Geometry of the sea-landing class, per city. A city whose water
+   * leads nowhere (a closed lake, by get_lake_surrounder) or that has
+   * no water at all is INTERIOR and carries the class at
+   * floor_interior_weight; a city on water that leads somewhere is
+   * exterior and carries it in full. Once a rival can attack straight
+   * off a hull the exterior weight is multiplied by
+   * floor_marines_mult and the interior weight divided by it: no
+   * disembark means no turn of warning, and the coastal/interior
+   * split sharpens with one knob rather than two. */
+  double floor_interior_weight;
+  double floor_marines_mult;
   /* Flat danger added to every city from the turn the server can
    * first spawn barbarians (barbarianrate/onsetbarbarian gate);
    * zero before that turn. */
