@@ -7105,3 +7105,276 @@ docstring documents. No scoring contamination exists to fix.
 - **The hut-risk discount is inverted** and is still shipping that
   way. Any hut-value tuning done before it is fixed is tuning around a
   sign error, which is what v3b already did by hand.
+
+## G1: the garrison floor sized, then class-gated (2026-08-05)
+
+**The floor is a TAX on both cells, and it buys no reduction in city
+losses on either.** That is the sizing the session was told to take
+first, it is the first time the mechanism has been measured on any
+binary, and it reverses the assumption the floor has shipped on since
+the naval-blindness fix. Ten commits: `f740582fcf` the census,
+`f09e4375ed` the class facts, `92e289e0a2` the gate, `1637b6aa51` and
+`988f284760` two class-fact defects the counters caught, `d8c436217a`
+the escalation cap, `7c05d859e5` gate 6, plus `d652496196`,
+`9dcee7ad95` and this section. That is over the 5-8 fence; three of
+the commits are defect fixes the counters forced and one is the
+human's mid-session addition.
+
+### 1. The sizing (step 1), both cells
+
+20 paired seeds each, binary PINNED (`536df20ee44c`), `--server`,
+`--arms deep`, file-vs-file (`identity.ini` against `floor-off.ini`,
+which sets `garrison_floor_danger = 0`). The off-switch is
+`garrison_floor_danger`, not `garrison_floor`: the latter is also read
+by `deep_fear_satisfaction()` and by the melt, so zeroing it would
+move three mechanisms. **The off arm is proven by counter, not
+assumed** -- `floor-applied` is 0.00 on every game of both off arms
+while eligible city-turns stay in the thousands.
+
+    isolated-150         floor OFF   floor ON     delta      se      t   ON>OFF
+    score                  202.26     196.14     -6.12    3.18  -1.93     7/20
+    cities                  16.15      15.06     -1.09    0.39  -2.77     5/20
+    pop                     94.88      90.62     -4.25    1.40  -3.04     3/20
+    landarea               197475     190000     -7475    3829  -1.95     7/20
+    unitsbuilt              97.14     101.55     +4.41    2.30  +1.92    12/20
+    munits                  25.29      26.57     +1.29    0.97  +1.33    14/20
+    CITY LOSSES             24.85      25.65     +0.80    1.07  +0.75     9/20
+    floor-applied/game       0.00     180.65
+
+    lategame-80          floor OFF   floor ON     delta      se      t   ON>OFF
+    score                  177.16     174.64     -2.52    1.71  -1.47     5/20
+    cities                   8.82       8.17     -0.66    0.16  -4.16     4/20
+    pop                     45.58      42.17     -3.42    0.66  -5.17     3/20
+    landarea                99625      95142     -4483    1258  -3.56     5/20
+    unitsbuilt              48.25      46.45     -1.80    0.75  -2.41     4/20
+    munits                  17.79      16.77     -1.02    0.37  -2.76     6/20
+    CITY LOSSES              8.05       9.45     +1.40    0.82  +1.70    10/20
+    floor-applied/game       0.00     264.85
+
+**The loss guard does not merely fail to justify the floor; it points
+the other way on both cells.** The naval-blindness history that
+motivated the floor is now covered by the fear lattice itself (F1
+embarked cargo, F2 boat shadow, F6 survival deficit), and the floor's
+residual contribution is a standing purchase of defenders in cities
+where every one of those terms returned zero.
+
+**Where the tax falls.** On isolated-150 the first 40 turns are
+BYTE-IDENTICAL between the two arms, and the reason is not the floor's
+design: `deep_garrison_menace()` returns 0.0 before first contact, so
+the ungated floor already injects nothing there. The human's
+acceptance sentence was already true on that cell, for a reason nobody
+had written down. Divergence starts with contact:
+
+    isolated-150, deep-want picks     floor OFF   floor ON     delta      t
+    T1-40   settler picks               312.75     312.75      0.00     ---
+    T41-80  settler picks               510.80     487.55    -23.25   -3.74
+            DEFENCE share                0.011      0.038    +0.027   +5.12
+    T81-150 settler picks               659.80     505.95   -153.85   -4.75
+
+On lategame-80, where six players are in contact from the first turns,
+the tax lands in the early window exactly as the direction predicted:
+
+    lategame-80, T1-30                floor OFF   floor ON     delta      t
+    settler picks                       179.05     122.15    -56.90   -6.29
+    CIVILIAN share                       0.345      0.289    -0.056   -5.03
+    IMPROVEMENT share                    0.122      0.098    -0.025   -3.75
+    OFFENCE share                        0.428      0.513    +0.085   +7.99
+
+Fifty-seven settler decisions per game displaced in thirty turns, on
+19 of 20 seeds. That is the acceptance sentence's own evidence, taken
+against the arm that has no floor at all.
+
+### 2. The class-gated floor, and what it does and does not fix
+
+Built as directed: the floor carries the weight of the strongest LIVE
+blind-spot class for this city (MAX, not sum -- a second blind spot
+does not buy a second token garrison), zero when no class is live.
+Barbarian gate = the server's own. Sea = a met non-allied rival floats
+a landing hull, weighted per city by whether the city's water leads
+anywhere (`get_lake_surrounder`, so a closed lake is interior) and
+escalated by attack-from-hull capability. Air = a met rival's known
+tech can build a paradrop- or helicopter-class unit, reaching within
+air range of a rival city, or of any open water once a carrier is
+buildable. Border = proximity to the nearest met non-allied city ON
+THIS CITY'S LANDMASS, shaped `R/(R+d)` with R = `density_fear_radius`.
+
+    vs the UNGATED floor         iso-150             late-80
+    score                  -0.59  t -0.18      -1.24  t -1.10
+    CITY LOSSES            -0.10  t -0.06      -0.90  t -1.06
+    floor firings/game    180.65 -> 150.95    264.85 -> 257.65
+    injected danger/game    4057 -> 4247        10219 -> 7575
+    GATED TO ZERO/game            123.2                 8.8
+
+**The gate is correct and it is not the instrument that fixes the
+tax.** On both cells the classes it gates on are genuinely live most
+of the time -- 94.4% of eligible lategame city-turns have a land
+neighbour on the same landmass, 50% have a rival hull afloat -- so
+gating removes 16% of the firings on the island cell and 3% on the
+crowded one, and score moves by noise. The tax lives in the floor's
+MAGNITUDE, and every constant that sets it (`garrison_floor_danger`,
+`garrison_menace_slope`, and now the six class weights) is an untuned
+placeholder. E34.2b called these "the MIL block's most valuable
+unexplored dimensions"; this session says the same thing with a sign
+on it.
+
+The loss guard is addressed and no attribution was needed: losses did
+not rise on either cell against either baseline.
+
+### 3. The class gates, proven by counter
+
+Every gate is a server or ruleset fact and therefore free. All figures
+are over 20 games per cell, from the `deep-floor` census line.
+
+- **Barbarian, pre-onset zero.** civ2civ3 sets `onsetbarbs = 120`.
+  Isolated-150 runs to T150: **0 of 2891 `barb=1` lines fall below
+  T120**. Lategame-80 ends at T80, before the onset: **0 `barb=1`
+  lines in 20 games**.
+- **Sea, zero with no transport.** First `sea=1` at turn 62 / 66 / 81
+  on the first three isolated seeds -- zero before a met rival floats
+  a landing hull. Live share 11.8% (isolated) / 50.0% (lategame).
+- **Air, zero pre-flight.** **0 `air=1` lines in all 40 games, both
+  cells**, and 0 `carrier=1`. Neither cell reaches flight, so the
+  airborne class and the carrier escalation ship UNEXERCISED: their
+  code is proven inert, not proven correct.
+- **Interior cities barely carry the sea class.** `wsea` takes exactly
+  the four values the geometry defines and nothing else:
+
+        1.000  exterior, marines-capable rival   2806 lines
+        0.667  exterior, no marines yet            93
+        0.250  interior, no marines yet            24
+        0.167  interior, marines-capable          358
+
+  An interior city carries one sixth of what a port carries once the
+  escalation is live.
+- **Gate 6 is inert at identity.** `floor_gate=0` on every
+  `deep-stance` line of every game, and `fmult=1.000` on all 27 828
+  floor census lines. The uniform-floor baseline is intact and the
+  byte-identity property the W34 layer rests on is unchanged.
+
+### 4. One owner per class -- and it is STRUCTURAL, not a convention
+
+The floor is a RESIDUAL. Every anticipatory fear term is added before
+it, and `deep_fear_satisfaction()` returns 1.0 while the garrison is
+below the floor -- which is exactly when the floor is eligible -- so
+the fear terms are at FULL strength whenever the floor could fire.
+Therefore whenever a fear term prices its class, danger is nonzero and
+the floor is silent in that city. No double charge is constructible.
+The three ownership questions the brief asked to settle explicitly:
+
+- **F5 vs the barb class.** F5 owns the barbarian era outright: it is
+  flat and unconditional from the onset turn, so post-onset the floor
+  is eligible only where incoming-defence credits cancelled the
+  danger. The floor's barb class owns that remainder and nothing else.
+- **F2 vs the sea class.** F2 owns the AT-WAR boat owner. The floor's
+  sea class owns the met, non-allied, not-yet-at-war one -- the case
+  F2 refuses by construction.
+- **F3 vs the border class.** F3 owns proximity inside
+  `density_fear_radius`; when it fires the floor is silent. The
+  border class owns only the far field where F3's integer truncation
+  has taken it to zero. It reuses F3's radius as its shape constant
+  rather than introducing a distance scale of its own.
+
+### 5. Two defects the counters caught, and one still shipping
+
+**Counters before scores earned its place twice in one session.**
+
+1. **Barbarians and animals polluted every capability class.**
+   civ2civ3 runs an Animal Kingdom player, met from turn 1, that can
+   "build" anything; it reported the marines escalation live from turn
+   4 of every game. Excluded (`1637b6aa51`). The same commit fixed the
+   attack-off-hull test, which asked only about `USP_NATIVE_TILE`
+   while the two shipped rulesets key their conquest enabler on
+   `USP_LIVABLE_TILE`.
+
+2. **`utype_move_type()` cannot answer "does it float".** The sea
+   class measured as NEVER LIVE across 20 island games on a cell where
+   every seat demonstrably builds Triremes. A debug line printed on
+   the transports themselves says why:
+
+        DBG-cap rival=P1 type=Trireme mt=0        (UMT_LAND)
+
+   The class is `native_to` lake and ocean in BOTH shipped rulesets,
+   but `set_unit_move_type()` derives UMT_LAND for it. The fix asks
+   terrain nativity instead (`988f284760`) and the class then goes
+   live from turn 62.
+
+3. **THE SAME BLINDNESS IS STILL SHIPPING IN THE FEAR LATTICE.**
+   `deep_boat_shadow_fear` (F2), `deep_density_fear`'s float gate
+   (F3), `deep_reachable_free_land` and the ferry census are all
+   written as `transport_capacity > 0 && utype_move_type(ut) ==
+   UMT_SEA`, so **none of them can see a Trireme** -- which is to say
+   the entire early- and mid-game landing threat in the default
+   ruleset of every cell this project benchmarks. The fear lattice was
+   fenced this session, so they are UNCHANGED and owed. Each needs its
+   own A/B; F2's is the most interesting, because the boat shadow's
+   whole purpose is to fund a garrison before the boats load and it
+   has never once seen an ancient boat. Some part of what this session
+   measured as a floor tax may be the floor standing in for an F2
+   that never fires.
+
+### 6. Rider: the density reachability discount, finally isolated
+
+`menace_overseas_weight` 0.25 -> 1.0 on isolated-150, 20 paired seeds,
+same pin. One knob governs both reachability discounts
+(`deep_density_fear`'s cross-water weight and `deep_garrison_menace`'s
+overseas weight), so this arm isolates the DISCOUNT, not the density
+term alone -- the honest scope of the result.
+
+    score           197.70 vs 196.14   +1.56   se 0.76   t +2.05
+    city losses      25.60 vs  25.65   -0.05   se 0.45   t -0.11
+    floor firings   164.30 vs 180.65  -16.35   se 5.14   t -3.18
+
+**It fired on 6 of 20 seeds and 14 games were byte-identical.** On the
+fired-on subset every single seed improved: +0.5, +1.75, +2.25, +5.75,
++8.5, +12.5, mean **+5.21**. The gate that has been in every
+benchmarked binary since `92bd4a961a` is, on this cell, a small net
+cost. Twenty seeds are direction; this one is worth forty.
+
+### 7. Owed to the tuning pile
+
+    floor_barb_weight    1.0   PLACEHOLDER. Registered in S, MIL, ALL.
+    floor_sea_weight     1.0   At 1.0 each, a live class reproduces
+    floor_air_weight     1.0   the ungated floor exactly, so the
+    floor_border_weight  1.0   change ships as a pure gate.
+    floor_interior_weight 0.25 Same magnitude as menace_overseas_weight,
+                               this project's existing reachability
+                               discount, rather than invented separately.
+    floor_marines_mult   1.5   Moves BOTH sea weights DOWN from full,
+                               never up past it, so no live class can
+                               buy more floor than the ungated version.
+    stance_floor_gain    1.0   Gate 6. Identity at equal axes.
+
+    Tuning INVARIANT to preserve: floor_border_weight must not fall
+    below floor_sea_weight, or an overseas-only rival would outweigh a
+    land neighbour for a border city.
+
+    And the two that matter more than any of the above:
+    garrison_floor_danger (40) and garrison_menace_slope (1.0) are what
+    actually size the tax this session measured.
+
+### 8. What the next session must know
+
+- **The floor's SIZE is the open question, not its gating.** Sizing
+  says -6.12 / -2.52 score with no loss benefit; gating recovers none
+  of it because the classes are honestly live. The next move on this
+  mechanism is a magnitude sweep of `garrison_floor_danger` and
+  `garrison_menace_slope` (and now `floor_sea_weight`, which is the
+  binding class on both cells), not another structural change.
+- **Do not read the T1-40 identity on isolated-150 as the floor being
+  harmless early.** It is `deep_garrison_menace()` returning 0.0
+  before contact. On a cell with early contact (lategame-80) the floor
+  costs 57 settler decisions in the first 30 turns.
+- **The airborne class and the carrier escalation are unexercised.**
+  Zero firings in 40 games across both cells. To measure them at all a
+  cell must reach flight; neither of the standing tuning cells does.
+- **The Trireme blindness in F2/F3 is the highest-value item this
+  session uncovered and did not fix.** Section 5.3.
+- **The reachability discount is worth re-running at forty seeds.**
+  Section 6: six seeds moved, all six the same way.
+- **`benchmark/paircmp.py` now takes `--pat NAME=REGEX`**, repeatable,
+  so an epic pairs its own counters without editing the standing dict.
+  `benchmark/floor.py` reports the floor census, the per-class live
+  shares and GATED TO ZERO.
+
+`meson test -C build` 3/3 OK and `python3 benchmark/tune-audit.py`
+CLEAN **131/131/131/131** (was 124), before and after.
