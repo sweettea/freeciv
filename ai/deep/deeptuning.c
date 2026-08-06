@@ -202,6 +202,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .endgame_window = 0,                  /* PLACEHOLDER, 0 = off */
   .endgame_unfinished_gain = 1.0,       /* PLACEHOLDER, 1.0 = off */
   .endgame_wonder_gain = 1.0,           /* PLACEHOLDER, 1.0 = off */
+  .horizon_govcenter_weight = 0.0,      /* PLACEHOLDER, 0 = off */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -377,7 +378,8 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_INT(endgame_horizon) \
   TUNE_INT(endgame_window) \
   TUNE_DOUBLE(endgame_unfinished_gain) \
-  TUNE_DOUBLE(endgame_wonder_gain)
+  TUNE_DOUBLE(endgame_wonder_gain) \
+  TUNE_DOUBLE(horizon_govcenter_weight)
 
 /**********************************************************************//**
   Load tuning overrides from $FREECIV_DEEP_TUNING, if set. Called once

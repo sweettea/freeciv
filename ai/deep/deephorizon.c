@@ -777,6 +777,201 @@ static adv_want deep_bundle_credit(struct city *pcity,
   return credit;
 }
 
+/* DARKFX: how many cities the gov-centre credit found savings in
+ * during the current build pass, and the total credit it paid. The
+ * execution counter for a credit whose whole claim is "stock cannot
+ * see this at all". */
+static int deep_govcenter_cities = 0;
+static adv_want deep_govcenter_paid = 0;
+
+/**********************************************************************//**
+  The waste percentage the ruleset charges `pcity` on output `o` when
+  its nearest government centre is `dist` tiles away -- or when there
+  is no government centre anywhere, which the ruleset charges as total
+  loss.
+
+  This mirrors the distance arm of city_waste() (common/city.c:3345-
+  3386) rather than calling it, because the two things it needs are not
+  reachable: nearest_gov_center() is static, and city_waste() reads the
+  centres that exist NOW, so there is no way to ask it the
+  counterfactual question "what would this city lose if the nearest
+  centre were somewhere else".
+
+  Returned as an effective percentage: the flat waste level and the
+  distance term are summed and clipped exactly as the server clips
+  them, then reduced by EFT_OUTPUT_WASTE_PCT, so the difference between
+  two calls is the real saving and not just the distance term. The one
+  thing it does not reproduce is the notradesize/fulltradesize size
+  penalty, which is independent of distance and cancels in the
+  difference.
+**************************************************************************/
+static int deep_waste_pct_at(const struct city *pcity, Output_type_id o,
+                             int dist, bool have_center)
+{
+  const struct output_type *output = get_output_type(o);
+  int by_dist = get_city_output_bonus(pcity, output,
+                                      EFT_OUTPUT_WASTE_BY_DISTANCE);
+  int by_rel = get_city_output_bonus(pcity, output,
+                                     EFT_OUTPUT_WASTE_BY_REL_DISTANCE);
+  int level = get_city_output_bonus(pcity, output, EFT_OUTPUT_WASTE);
+  int waste_pct = get_city_output_bonus(pcity, output,
+                                        EFT_OUTPUT_WASTE_PCT);
+
+  if (by_dist <= 0 && by_rel <= 0) {
+    /* Distance costs this output nothing, so a centre saves it
+     * nothing either -- and the "no centre at all" total loss does not
+     * apply, because the server only reaches it through this test. */
+    return 0;
+  }
+  if (!have_center) {
+    level = 100;
+  } else {
+    level += by_dist * dist / 100;
+    if (by_rel > 0) {
+      level += by_rel * 50 * dist / 100
+               / MAX(MAP_NATIVE_WIDTH, MAP_NATIVE_HEIGHT);
+    }
+  }
+  level = CLIP(0, level, 100);
+
+  return level - level * waste_pct / 100;
+}
+
+/**********************************************************************//**
+  Credit a government centre with the distance waste it saves the REST
+  of the empire. Returns the credit for pimprove in pcity, or 0.
+
+  This is the effects audit's first ranked opportunity. EFT_GOV_CENTER
+  is listed in daieffects.c:176 as "already evaluated in base_want()"
+  and is not; base_want() runs only for advdata.c's eleven trigger
+  effects and GOV_CENTER is not one of them, so the civ2civ3
+  Ecclesiastical Palace -- 140 shields, and worth a fifth of the trade
+  of every distant city -- has literally no want beyond its History
+  WAG. And a City-range requirement would misprice it even if
+  base_want() did run, because the benefit is not in the city that
+  builds it.
+
+  The counterfactual is the ruleset's own arithmetic and nothing else:
+  for every other city, its nearest centre moves from wherever it is to
+  this candidate if that is closer, and the waste percentage the
+  ruleset then charges falls by a computable amount. There is no WAG in
+  the term; the only free number is the weight.
+**************************************************************************/
+static adv_want deep_gov_center_credit(struct city *pcity,
+                                       const struct impr_type *pimprove,
+                                       struct adv_data *adv)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct player *pplayer = city_owner(pcity);
+  const struct tile *ctile = city_tile(pcity);
+  bool have_center = FALSE;
+  adv_want credit = 0;
+  double trade_value;
+
+  if (tune->horizon_govcenter_weight <= 0.0) {
+    return 0;
+  }
+  if (get_potential_improvement_bonus(pimprove, pcity, EFT_GOV_CENTER,
+                                      RPT_CERTAIN, FALSE) <= 0) {
+    return 0;
+  }
+  if (is_gov_center(pcity)) {
+    /* A second centre in a city that already is one saves nobody
+     * anything: every other city's distance is unchanged. */
+    return 0;
+  }
+
+  city_list_iterate(pplayer->cities, gcity) {
+    if (is_gov_center(gcity)) {
+      have_center = TRUE;
+    }
+  } city_list_iterate_end;
+
+  /* A point of trade becomes gold, luxury and science at the current
+   * rates -- the same conversion deep_multiplier_credit() performs,
+   * which is the same one dai_city_want() performs via
+   * add_tax_income(). */
+  trade_value = (pplayer->economic.tax * adv->gold_priority
+                 + pplayer->economic.luxury * adv->luxury_priority
+                 + pplayer->economic.science * adv->science_priority)
+                / 100.0;
+
+  city_list_iterate(pplayer->cities, ocity) {
+    int now = FC_INFINITY, then;
+    adv_want saved = 0;
+
+    if (ocity == pcity || is_gov_center(ocity)) {
+      /* Its own centre is at distance zero and cannot be improved. */
+      continue;
+    }
+    city_list_iterate(pplayer->cities, gcity) {
+      if (is_gov_center(gcity)) {
+        now = MIN(now, real_map_distance(city_tile(ocity),
+                                         city_tile(gcity)));
+      }
+    } city_list_iterate_end;
+    then = real_map_distance(city_tile(ocity), ctile);
+    if (have_center) {
+      if (then >= now) {
+        continue;
+      }
+    } else {
+      now = 0; /* Unused: deep_waste_pct_at() ignores it. */
+    }
+
+    output_type_iterate(o) {
+      int total, dpct;
+
+      if (o != O_FOOD && o != O_SHIELD && o != O_TRADE) {
+        /* Only the three tile outputs carry distance waste; gold,
+         * luxury and science are derived from trade after it. */
+        continue;
+      }
+      /* prod[] has already had waste taken off it (city_refresh()),
+       * so the pre-waste output the percentages apply to is the sum
+       * of the two. */
+      total = ocity->prod[o] + ocity->waste[o];
+      if (total <= 0) {
+        continue;
+      }
+      dpct = deep_waste_pct_at(ocity, o, now, have_center)
+             - deep_waste_pct_at(ocity, o, then, TRUE);
+      if (dpct <= 0) {
+        continue;
+      }
+      saved = (adv_want) total * dpct / 100.0;
+      switch (o) {
+      case O_FOOD:
+        credit += saved * adv->food_priority;
+        break;
+      case O_SHIELD:
+        credit += saved * adv->shield_priority;
+        break;
+      case O_TRADE:
+        credit += saved * trade_value;
+        break;
+      default:
+        break;
+      }
+    } output_type_iterate_end;
+  } city_list_iterate_end;
+
+  if (credit <= 0) {
+    return 0;
+  }
+
+  /* Per-turn saving over the planning horizon, in the same dimension
+   * as the upkeep bill this credit has to beat (which is charged as
+   * gold-per-turn x deep_horizon_turns()). The benefit starts the turn
+   * the building finishes and does not wait on a growth step, so there
+   * is no delay to amortize -- the same call the plague term makes. */
+  credit *= deep_horizon_turns() * tune->horizon_govcenter_weight;
+  deep_govcenter_cities++;
+  deep_govcenter_paid += credit;
+
+  return credit;
+}
+
 /* One improvement of one city that deep added credit to during the
  * current build pass, and the value it left in stock's array. */
 struct deep_credit_entry {
@@ -979,6 +1174,8 @@ void deep_adjust_building_wants(struct ai_type *ait,
   deep_horizon_missed = 0;
   deep_endgame_refused = 0;
   deep_endgame_paid = 0;
+  deep_govcenter_cities = 0;
+  deep_govcenter_paid = 0;
 
   city_list_iterate(pplayer->cities, pcity) {
     adv_want cap_credit;
@@ -1104,6 +1301,9 @@ void deep_adjust_building_wants(struct ai_type *ait,
          * because a size GATE never reopens on its own; a Granary is
          * only ever an optimisation. */
         add += deep_growth_credit(pcity, pimprove, adv);
+        /* DARKFX: what a government centre here saves every OTHER
+         * city. Peace-time investment like the rest of the ladder. */
+        add += deep_gov_center_credit(pcity, pimprove, adv);
       }
 
       if (!threatened && game.info.illness_on
@@ -1240,6 +1440,18 @@ void deep_adjust_building_wants(struct ai_type *ait,
    * the city would really have carried into the auction, credits and
    * all, and the wonder premium on the same. */
   deep_endgame_bias_buildings(pplayer);
+
+  /* DARKFX's first execution counter. Zero lines a game with the knob
+   * off is the off-switch proof; `cands` counts the (city,
+   * improvement) pairs that found a saving, which on civ2civ3 is the
+   * Ecclesiastical Palace and nothing else, and on classic -- which
+   * has no second gov-centre building at all -- is structurally zero. */
+  if (deep_govcenter_cities > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-govcenter turn=%d player=\"%s\" cands=%d credit=%.1f",
+             game.info.turn, player_name(pplayer),
+             deep_govcenter_cities, (double) deep_govcenter_paid);
+  }
 
   /* The clamp's execution counter, one line per player per turn, and
    * the reason the "inert before the window" claim is checkable rather

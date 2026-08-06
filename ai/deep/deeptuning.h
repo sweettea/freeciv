@@ -1289,6 +1289,30 @@ struct deep_tuning {
   int endgame_window;
   double endgame_unfinished_gain;
   double endgame_wonder_gain;
+
+  /* DARKFX -- the effects audit's "dark" list: effects that carry real
+   * money and return 0 in all three of stock's valuation venues
+   * (findings/deep-dive-2026-08-05/economy-effects.md A2).
+   *
+   * horizon_govcenter_weight prices EFT_GOV_CENTER at what it saves
+   * the REST of the empire. civ2civ3's Ecclesiastical Palace is the
+   * concrete case: distance to the nearest government centre costs a
+   * Republic city 2% of its trade and 2% of its shields per tile, so a
+   * city twelve tiles from the Palace loses about half its trade, and
+   * a second centre two tiles away cuts that to a fifth. Stock cannot
+   * see any of it -- daieffects.c:176 files GOV_CENTER under "already
+   * evaluated in base_want()", base_want() does not run for it (it is
+   * not one of advdata.c's eleven trigger effects), and even if it did
+   * the effect's requirement is City range, so a simulation would
+   * measure an empire-wide benefit in one city.
+   *
+   * The credit is the counterfactual the ruleset's own waste formula
+   * gives: for every OTHER city, the waste saved by moving its nearest
+   * centre from where it is to this candidate, summed over outputs and
+   * valued at the same output priorities the rest of this file uses,
+   * over the planning horizon. 0.0 = off = byte-identical.
+   * PLACEHOLDER. */
+  double horizon_govcenter_weight;
 };
 
 void deep_tuning_init(void);
