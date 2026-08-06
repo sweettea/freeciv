@@ -166,8 +166,14 @@ def log_census(d, arm):
         return
     if seek:
         sent = [r for r in seek if r.get("sent", 0) > 0]
+        # DS_ARMISTICE is 0 (common/player.h:137), and a peace clause
+        # that carries lands the pair in armistice inside the suggest
+        # call. So `now=0` on a sent line IS a signed peace -- no stored
+        # state, no reconstruction.
+        got = [r for r in sent if r.get("now", -1) == 0]
         print("  peace pre-pass: windows seen %7.1f/game   PROPOSED %7.1f"
-              % (len(seek) / ng, len(sent) / ng))
+              "   SIGNED %7.1f"
+              % (len(seek) / ng, len(sent) / ng, len(got) / ng))
         if sent:
             print("     love at proposal p50 %6.1f   bar %6.1f"
                   % (sorted(r.get("love", 0) for r in sent)[len(sent) // 2],

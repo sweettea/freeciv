@@ -334,7 +334,7 @@ static void deep_peace_seek(struct ai_type *ait, struct player *pplayer,
   struct deep_plr *dp = deep_plr_data(pplayer);
   const struct player_diplstate *ds
     = player_diplstate_get(pplayer, aplayer);
-  int love = 0, bar = 0;
+  int love = 0, bar = 0, left;
   const char *why = "";
   bool wanted;
 
@@ -346,6 +346,14 @@ static void deep_peace_seek(struct ai_type *ait, struct player *pplayer,
     return;
   }
 
+  /* SNAPSHOT BEFORE PROPOSING. `ds` points at live state and the
+   * treaty concludes synchronously inside deep_treaty_suggest(), so
+   * reading turns_left afterwards reports the ARMISTICE's 16 and not
+   * the window that was open when the decision was made. The first
+   * probe's log said `left=16` on every successful proposal, which is
+   * a measurement wrong in its own output. */
+  left = ds->turns_left;
+
   dp->peace_windows++;
   wanted = deep_peace_wanted(ait, pplayer, aplayer, &love, &bar, &why);
 
@@ -355,11 +363,15 @@ static void deep_peace_seek(struct ai_type *ait, struct player *pplayer,
     deep_treaty_suggest(pplayer, aplayer, CLAUSE_PEACE, FALSE, 0);
   }
 
+  /* `now` is read after, on purpose: a proposal that concluded has
+   * already moved the pair to DS_ARMISTICE, so this one field
+   * separates "asked" from "got it" without any stored state. */
   log_base(deep_metric_log_level(),
            "deep-peaceseek turn=%d plr=\"%s\" to=\"%s\" left=%d love=%d"
-           " bar=%d sent=%d why=\"%s\"",
+           " bar=%d sent=%d now=%d why=\"%s\"",
            game.info.turn, player_name(pplayer), player_name(aplayer),
-           ds->turns_left, love, bar, wanted ? 1 : 0, why);
+           left, love, bar, wanted ? 1 : 0,
+           (int) player_diplstate_get(pplayer, aplayer)->type, why);
 }
 
 /**********************************************************************//**
