@@ -983,23 +983,55 @@ static bool deep_utype_strikes_from_hull(const struct unit_type *ut)
 }
 
 /**********************************************************************//**
-  Is this type a mobile airbase -- a hull that carries the things that
-  fly? Ruleset test: a sea transport whose cargo classes include a
-  class that is native to land and ocean at once.
+  Does this type carry cargo of some class over water?
+
+  `move_type != UMT_LAND` and NOT `== UMT_SEA`, which is the test the
+  rest of this module uses and which is WRONG in civ2civ3: the River
+  extra is `native_to` the Trireme class, so movement.c's
+  set_unit_move_type() sees a land-moving extra and derives UMT_BOTH.
+  Every "does this player float transports" test written as
+  `transport_capacity > 0 && utype_move_type() == UMT_SEA` therefore
+  misses the Trireme -- the ancient-era transport, which is to say the
+  whole early-game landing threat -- and the sea class measured as
+  never live on 20 island games before this was found. The pre-existing
+  instances (boat shadow, density float, reachable-land) are recorded
+  in STATUS rather than changed here; the fear lattice is fenced this
+  session.
 **************************************************************************/
-static bool deep_utype_is_carrier(const struct unit_type *ut)
+static bool deep_utype_floats(const struct unit_type *ut,
+                              enum unit_move_type cargo_mt)
 {
-  if (ut->transport_capacity <= 0 || utype_move_type(ut) != UMT_SEA) {
+  if (ut->transport_capacity <= 0 || utype_move_type(ut) == UMT_LAND) {
     return FALSE;
   }
   unit_class_iterate(pclass) {
-    if (pclass->move_type == UMT_BOTH
+    if (pclass->move_type == cargo_mt
         && BV_ISSET(ut->cargo, uclass_index(pclass))) {
       return TRUE;
     }
   } unit_class_iterate_end;
 
   return FALSE;
+}
+
+/**********************************************************************//**
+  A hull that can put a LANDING FORCE ashore: it floats and it carries
+  land units. A warship that carries nothing is not a landing threat --
+  it is a bombardment threat, which the boat shadow already prices.
+**************************************************************************/
+static bool deep_utype_floats_landing(const struct unit_type *ut)
+{
+  return deep_utype_floats(ut, UMT_LAND);
+}
+
+/**********************************************************************//**
+  A mobile airbase: a hull that carries the things that fly (a class
+  native to land and ocean at once, which is how a ruleset spells
+  flight).
+**************************************************************************/
+static bool deep_utype_is_carrier(const struct unit_type *ut)
+{
+  return deep_utype_floats(ut, UMT_BOTH);
 }
 
 /**********************************************************************//**
@@ -1076,9 +1108,7 @@ deep_floor_class_facts(struct player *pplayer)
 
     if (!fc->sea) {
       unit_list_iterate(aplayer->units, aunit) {
-        const struct unit_type *at = unit_type_get(aunit);
-
-        if (at->transport_capacity > 0 && utype_move_type(at) == UMT_SEA) {
+        if (deep_utype_floats_landing(unit_type_get(aunit))) {
           fc->sea = TRUE;
           break;
         }
