@@ -71,8 +71,19 @@ def report(name, pairs):
 
 
 def main():
-    off, on = sys.argv[1], sys.argv[2]
-    arm = sys.argv[4] if len(sys.argv) > 4 else "deep"
+    argv = list(sys.argv[1:])
+    # Extra counters, so an epic can pair its OWN execution counters
+    # without editing this file: --pat NAME=REGEX, repeatable. The
+    # standing lift/water-gate set below is kept because four
+    # workstreams' tables were produced with it.
+    extra = {}
+    while "--pat" in argv:
+        i = argv.index("--pat")
+        name, _, rx = argv[i + 1].partition("=")
+        extra[name] = rx
+        del argv[i:i + 2]
+    off, on = argv[0], argv[1]
+    arm = argv[3] if len(argv) > 3 else "deep"
     mo, mn = metrics(off, arm), metrics(on, arm)
     seeds = sorted(set(mo) & set(mn))
     print(f"paired seeds: {len(seeds)}  (off {len(mo)}, on {len(mn)})")
@@ -87,6 +98,7 @@ def main():
             "gate-second": r"deep-watergate-second turn=",
             "lift-arrived": r"deep-lift-op turn=\S+ player=\"[^\"]+\" op=\d+ arrive",
             "lift-formed": r"deep-lift-op turn=\S+ player=\"[^\"]+\" op=\d+ form"}
+    pats.update(extra)
     lo, ln = logcounts(off, arm, pats), logcounts(on, arm, pats)
     print()
     for k in pats:
