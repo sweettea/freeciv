@@ -7556,3 +7556,65 @@ tunable for the same decision. Wired; default 250.0 = the constant.
 - **Nothing in this session touched the lift's SUPPLY side.** The
   invalidation abort is a correctness fix on the demand side; the
   wait-tail lead from W36 is still open and still unowned.
+
+### 7. Addendum, same session: the naval GATE got its isolation, and lost it
+
+The gate arm this section recorded as owed finished after the section
+was written (a stale waiter relaunched it). It is a clean isolation --
+one binary, `site_naval_gate` the only difference -- and it says the
+gate does not pay:
+
+    isolated-150, 20 paired seeds, AFTER binary   gate OFF   gate ON
+    score                                           198.79    187.11
+    delta                                                     -11.68  (se 8.02, t -1.46, 7/20)
+    lift-arrived                                     21.55     17.25
+    settlers                                          2.26      3.09
+
+Direction, not a claim, at twenty seeds -- but it is the only evidence
+there is, it points the same way as the contested residual, and
+nothing anywhere measures the gate positive. **`site_naval_gate` now
+defaults to 0** (`f657986d1a`), with the mechanism and its census kept
+and tunable to 1.
+
+**Why the gate was wrong, and it is the interesting part.** The design
+took the premium for an option on SHIPPING and gated it on
+navigability -- the same test the build side uses to refuse a keel.
+But `naval_bonus()` is not a shipping term, it is COASTAL YIELD: a
+Harbour feeds ocean tiles whether or not the sea leads anywhere, lakes
+carry food specials, and a closed sea is still tiles a city works.
+Gating a yield term on navigability prices out real food. The build
+side's water gate is right about hulls and wrong about harvests, and
+"the same geometry answers both questions" is the assumption that
+failed. **Deep now prices the premium (`site_naval_weight`, stock's
+20) and no longer refuses it.**
+
+Shipped defaults measured end to end against the pre-session tip
+(`f4a5786723c9`, defence 0, gate 0, naval weight 20, lift
+re-validation live, enough-result wired):
+
+    cell            BEFORE    SHIPPED    delta      se      t   wins
+    contested        81.29      79.47    -1.82    1.47  -1.23   7/20
+    isolated-150    195.55     198.99    +3.44    4.09  +0.84  12/20
+
+Both within noise, opposite signs, and the -4.36 the corrected defence
+term cost at stock's magnitude is gone. Counters on the shipped
+binary, proving what is and is not running:
+
+    counter (per game)              contested   isolated-150
+    naval premium refused                0.00           0.00   (gate off)
+    lift-invalid                         3.15           7.55
+    games with any lift-invalid         15/20          19/20
+    lift re-aims                         0.00           0.30
+    lift-arrived                    6.90 -> 7.05   21.85 -> 22.45
+
+**And that corrects section 4's reading.** With the gate off,
+`lift-arrived` does NOT fall when the re-validation lands -- it rises
+slightly on both cells. The 6.90 -> 5.15 drop reported there was the
+naval gate suppressing coastal sites, not the re-validation losing
+deliveries. The re-validation aborts 3-7 doomed crossings a game and
+costs no arrivals at all.
+
+Owed, unchanged: forty seeds on the gate before anyone calls -11.68 a
+number, and a tuning pass on `site_defence_weight` and
+`site_naval_weight`, the two magnitudes this session turned from
+inherited constants into knobs.
