@@ -90,6 +90,22 @@ if [ -n "${TUNING:-}" ]; then
     echo "tuning file sets keys the server does not know: $bad" >&2
     exit 1
   }
+  # And the same failure one level deeper: a FLOAT tunable written
+  # without a decimal point is stored by secfile as an INT entry, and
+  # TUNE_DOUBLE's secfile_lookup_float_default() then falls back to the
+  # COMPILED DEFAULT. The key is spelled right, the entry exists, the
+  # result key differs -- and the arm silently runs the default. That
+  # is how session M1 (2026-08-06) lost a 40-game pair whose two arms
+  # came back bit-identical with `attack_loss_gain = 0` in one of them.
+  intfloat=$(awk -F'[=,]' 'FNR==NR {if ($1 ~ /^[a-z_0-9]+/) {k=$1; gsub(/ /,"",k); t=$NF; gsub(/[ \t]/,"",t); type[k]=t} next}
+                           /^[a-z_0-9]+[ \t]*=/ {k=$1; gsub(/[ \t]/,"",k); v=$2; gsub(/[ \t]/,"",v);
+                                                  if (type[k]=="float" && v !~ /[.]/ && v !~ /[eE]/) print k"="v}' \
+             "$here/tuning-params.ini" "$TUNING")
+  [ -z "$intfloat" ] || {
+    echo "tuning file writes float tunables with no decimal point, which" \
+         "the loader SILENTLY ignores: $intfloat" >&2
+    exit 1
+  }
   tunhash=$(sha256sum "$TUNING" | cut -d' ' -f1)
 else
   tunhash=none
