@@ -331,11 +331,15 @@ struct deep_tuning {
    * leads nowhere (a closed lake, by get_lake_surrounder) or that has
    * no water at all is INTERIOR and carries the class at
    * floor_interior_weight; a city on water that leads somewhere is
-   * exterior and carries it in full. Once a rival can attack straight
-   * off a hull the exterior weight is multiplied by
-   * floor_marines_mult and the interior weight divided by it: no
-   * disembark means no turn of warning, and the coastal/interior
-   * split sharpens with one knob rather than two. */
+   * exterior and carries it in full. floor_marines_mult moves both
+   * weights DOWNWARD from full and never upward past it: before
+   * attack-from-hull tech exists anywhere the exterior weight is
+   * 1/mult (a landing must disembark first, so a port gets a turn of
+   * warning and the class is mild), and once it exists the exterior
+   * weight reaches full while the interior weight is divided by mult.
+   * The split sharpens either way, and the ceiling stays at
+   * floor_sea_weight so no live class can buy MORE floor than the
+   * ungated floor did. */
   double floor_interior_weight;
   double floor_marines_mult;
   /* Flat danger added to every city from the turn the server can

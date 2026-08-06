@@ -1216,10 +1216,25 @@ static void deep_floor_weigh(const struct civ_map *nmap, struct city *pcity,
   if (fc->sea) {
     bool exterior = (is_terrain_class_near_tile(nmap, ptile, TC_OCEAN)
                      && deep_city_water_bridges(ptile));
-    double esc = fc->marines ? MAX(tune->floor_marines_mult, 1.0) : 1.0;
+    double esc = MAX(tune->floor_marines_mult, 1.0);
 
-    w->sea = tune->floor_sea_weight
-             * (exterior ? esc : tune->floor_interior_weight / esc);
+    /* The escalation moves BOTH weights and it moves them DOWNWARD
+     * from full, never upward past it. Before attack-from-hull tech
+     * exists anywhere a landing must disembark first, so a port gets
+     * a turn of visible warning and the class is mild (1/esc); after
+     * it, a port can be struck off the hull with no warning and the
+     * class reaches full weight while the interior weight drops by
+     * the same factor. The split sharpens either way -- 2.7x to 6x at
+     * the placeholder values -- and the ceiling stays at
+     * floor_sea_weight, so no live class can ever buy MORE floor than
+     * deep applied unconditionally before it was gated. */
+    if (fc->marines) {
+      w->sea = tune->floor_sea_weight
+               * (exterior ? 1.0 : tune->floor_interior_weight / esc);
+    } else {
+      w->sea = tune->floor_sea_weight
+               * (exterior ? 1.0 / esc : tune->floor_interior_weight);
+    }
   }
 
   if (fc->air || fc->border) {
