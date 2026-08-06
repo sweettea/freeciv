@@ -9395,3 +9395,197 @@ ship the symmetric default rather than a tilt nobody measured.
 - The defence-side stakes still reach only the counter-claim. The fear
   lattice, the garrison floor and the relief machinery price danger,
   not stakes, and nothing in this rider changed them.
+
+## ENDGAME: the AI learns the game ends, and it is worth half a point (2026-08-06)
+
+Four code/benchmark commits plus this one. `ai/deep`, `benchmark/` and
+doc only; zero `ai/default`, `ai/baseline` or `server/advisors`
+changes. Full tables in `findings/endgame-horizon-2026-08-06.md`.
+
+    4ba239a8b2  ai/deep: clamp the growth ladder's horizon to the turns
+                that remain
+    e9926b1094  ai/deep: play the last turns for the scoreboard, not
+                for the empire
+    c12565d6ea  ai/deep: deflate the unit the bell will not let a city
+                finish
+    b39daf69bd  benchmark: report the endgame horizon and the score
+                mode apart
+
+**Headline: nothing in `ai/`, `ai/default` or `server/advisors` had
+ever read `game.server.end_turn` -- plain readable state, zero readers
+-- so every AI in this tree plans over a fixed 24-turn horizon on the
+last turn of a game that 199 of 199 benchmark runs end on the turn
+limit. Deep now reads the bell. On two cells at 20 paired seeds the
+whole family measures positive and none of it resolves: +0.68 / +0.67
+/ +0.45 on lategame-80 and +0.25 / +1.55 on isolated-150, every |t|
+below 1.7. The one column with a t above 2 is the one the score metric
+pays five points for -- wonders +0.14 (t +2.60) on isolated-150.**
+
+### 1. Three mechanisms, not two, and the third one is a finding
+
+The brief asked for the horizon clamp to be measured apart from the
+score mode. Building it forced a third distinction that the counters
+now carry:
+
+- **the horizon clamp** -- `MORT` becomes `MIN(MORT, end_turn - turn)`
+  in the four horizon credits, in the plague-insurance term and in the
+  building upkeep bill. Both sides, deliberately: clamping only the
+  benefit would bias against every building the ruleset charges rent
+  for.
+- **the arrival test** -- `MAX(1, MORT/ttg)` floors at one growth step,
+  which is right with 200 turns to run and wrong with five, so a credit
+  whose first instalment lands after the last turn is refused outright.
+- **the score mode** -- inside the final `endgame_window` turns, a want
+  whose build cannot be COMPLETED is deflated and a great wonder that
+  still can be is paid a premium.
+
+**The clamp is provably inert before the window and the counter says so
+in absolute numbers: 0 clamps before T-24 against 162 865 (lategame)
+and 252 143 (isolated) after, across 40 games.** That is the brief's
+stop condition, met exactly.
+
+**The arrival test is NOT inert, and cannot be.** 31% / 27% of its
+refusals happen more than MORT turns from the end, the earliest on
+turn 8 of an 80-turn game -- because a city whose time-to-grow exceeds
+the whole remaining game has no growth to credit whatever the turn
+number is. It is a mid-game behaviour change, it is the arithmetically
+correct one, and neither cell regressed under it. Recorded rather than
+buried.
+
+**The brief's own formula would have been wrong-signed.**
+`amortize(value, MIN(delay, MORT, turns_left))` clamps the DELAY, and
+`amortize()` discounts for a wait -- so clamping the delay down makes a
+late benefit worth MORE. The quantity that needed clamping is the
+HORIZON: the `steps = MORT / ttg` family and the upkeep bill, not
+`amortize()`'s second argument. Flagged per the campaign rule about
+questioning a stale plan rather than bending code to it.
+
+### 2. The two cells
+
+Binary PINNED (`cc1fab22cea8`), `--server`, `--arms deep`, 20 paired
+seeds, every arm loading a tuning file with `pay_switch_penalty`,
+`switch_cost_price`, `peace_seek_gain` and `trade_route_love` all
+written out. `benchmark/tuning/eg-{off,clamp,deflate,mode}.ini`.
+
+    lategame-80        OFF    CLAMP-OFF    DEFLATE-OFF     MODE-OFF
+    score           169.47  +0.68 +1.37   +0.67 +1.61   +0.45 +0.86
+    pop              42.07  +0.24 +2.40   -0.17 -0.88   -0.11 -0.46
+    mean_city_size    5.38  +0.04 +2.69   +0.03 +0.90   +0.04 +1.13
+    unitsbuilt       39.67  -0.11 -0.73   +0.52 +2.69   +0.31 +1.92
+    wonders           0.22  -0.02 -0.81   -0.04 -2.03   -0.02 -1.00
+
+    isolated-150       OFF    CLAMP-OFF      MODE-OFF
+    score           184.06  +0.25 +0.19   +1.55 +0.90
+    unitsbuilt       89.15  +1.52 +2.38   +3.94 +5.47   (19/20)
+    wonders           1.48  +0.05 +1.29   +0.14 +2.60
+    munits           22.89  +0.62 +2.74   +0.03 +0.04
+
+    wonders COMPLETED in the last 15 turns, per deep seat
+      lategame-80    OFF 0.14  CLAMP 0.12  DEFLATE 0.10  MODE 0.12
+      isolated-150   OFF 0.39  CLAMP 0.44                MODE 0.50
+
+**The wonder premium works where wonders exist and nowhere else.** On
+isolated-150 (1.48 wonders per seat per game) the mode lifts in-window
+completions 28% and final wonders by t +2.60. On lategame-80 (0.22 per
+seat) the deflator *costs* wonders at t -2.03 -- a wonder is the
+longest build in the game and therefore the first thing an
+unfinishability test refuses -- and the premium buys back exactly what
+the deflator took, 0.17 -> 0.20, and no more. A verdict inherits its
+venue, for the sixth time.
+
+**What the deflator otherwise does is "build more, cheaper things":**
+unitsbuilt +3.94 at t +5.47 on 19 of 20 isolated seeds. Shields that
+were going into something the bell would interrupt go into something
+that finishes, and `built/10` is a score term. The in-window build
+distribution shows it directly: Musketeers 21.7% and Barracks II 13.0%
+against Settlers at 7.3%, where Settlers are 1453 of the same cell's
+rest-of-game picks.
+
+**What the clamp alone does is grow better.** On lategame-80 it is the
+only arm that moves population (pop t +2.40, mean city size t +2.69);
+on isolated-150 it buys units and cities instead (unitsbuilt t +2.38,
+munits t +2.74).
+
+### 3. Fold / no-fold, and the human owns both calls
+
+**Recommendation: fold nothing yet.** All four knobs ship at their
+compiled defaults, inert, registered PLACEHOLDERs.
+
+`endgame_horizon` is the fold CANDIDATE: it never measured negative on
+either cell, both guard columns are in its favour, and its correctness
+argument stands on its own. It is not folded because +0.68 (t +1.37)
+and +0.25 (t +0.19) is exactly the profile the project's own method
+note names -- twenty seeds are direction, forty are a claim -- and
+because of the fairness call below, which is not a session's to make.
+
+`endgame_window`, `endgame_unfinished_gain` and `endgame_wonder_gain`
+go to the pile as a COUPLED triple: the premium's population is
+precisely the wonders the deflator would otherwise refuse, so sweeping
+them one at a time measures the wrong thing (R3's own lesson about two
+rescales that are each survivable and not jointly survivable). The
+shipped probe values were 15 / 0.0 / 3.0 and 0.0 is the most aggressive
+setting the deflator's range allows.
+
+**FAIRNESS, and it is a human call: stock does not know the game ends
+either.** `ai/default` and `ai/baseline` are untouched and keep
+planning over a fixed 24 turns on the last turn of every game. With
+`endgame_horizon = 1` deep would be the only seat in any benchmark that
+reads the bell. That is defensible as benchmark realism (a human plays
+the bell in a scored game; 199/199 games end on the limit) and as a
+real-game feature wherever `endturn` is set -- but it is the OPPOSITE
+asymmetry to HEDGE's, where deep took on a cost stock does not pay.
+`endgame_horizon = 0` restores comparability with everything published
+before today.
+
+### 4. Off-switches proven
+
+Smoke cell, 10 paired seeds, `eg-off.ini` on both binaries. The
+pre-session binary `6051a0e8bbbe` (HEAD `1a3c2b8689`, rebuilt
+bit-for-bit and the same binary the concurrent defence-tilt run pinned)
+against the session binary `cc1fab22cea8`: **10/10 scorelogs
+bit-identical.**
+
+    70f2c13136a4  ed23c9303eb5  6bfeb8bbf7cf  2314c27e8c5e  7f08e0eb79de
+    ca1fe91c60b1  912773e6b97e  825c66af8f8b  4bd40ba5c2f7  7b74bb209f89
+
+Execution counters: **0.00 `deep-endgame` lines per game in the OFF arm
+of both cells** (40 games), against 243.7 / 189.1 player-turns a game
+with the clamp on; `deep-endgame-unit` 0.00 in OFF and CLAMP against
+191.3 / 212.5 in the mode arms.
+
+`meson test -C build` **4/4**; `python3 benchmark/tune-audit.py` CLEAN
+**164/164/164/164** (`endgame_horizon`, `endgame_window`,
+`endgame_unfinished_gain`, `endgame_wonder_gain`).
+
+### 5. What the next session must know
+
+- **A 40-seed `endgame_horizon` arm is the single most valuable
+  follow-up in this section**, and it is cheap: one knob, two cells,
+  the DONE cache already holds the 20.
+- **The deflator has never been run at a gentler setting than 0.0.** It
+  zeroes a 750-want founder sitting on `DAI_WANT_DOMESTIC_MAX` as
+  readily as it zeroes a Trireme.
+- **`city_turns_to_build()` does not model a caravan arriving to Help
+  Wonder**, so a wonder R2b's fleet would finish reads as unfinishable
+  and is deflated. Conservative -- it can only decline to pay a wonder,
+  never overpay one -- but it under-counts exactly the population R2b
+  built.
+- **Three consumers were deliberately NOT clamped because they ship
+  off**: `deeptrade.c`'s route horizon and `deeprates.c`'s three MORT
+  terms are dead code at `trade_merit = 0` / `wonder_merit = 0` /
+  `rates_enabled = 0`. The rates case is worth its own note -- MORT
+  appears symmetrically in all three of its terms, so a uniform clamp
+  there is a NO-OP on the pick. The endgame content in the rates is the
+  science term's `wait` test (a research that cannot finish before the
+  bell is worth nothing), which is a different change and was not
+  built.
+- **Culture is DARKFX's job.** `S-ENDGAME-horizon.md` §3 deprioritised
+  culture/History as metric-gaming; the derby forensics re-sized it as
+  the plurality of the metric at long horizons. That §3 line now reads
+  "leave culture to DARKFX", not "culture does not matter". The score
+  mode built here is horizon-blind about culture: it pays great wonders
+  through the score term only and prices no compounding stock at all.
+- **The window is the least examined number in the session.** 15 turns
+  is 19% of a T80 game and 10% of a T150 one; nothing measured whether
+  a fixed count, a fraction, or a per-city function of turns-to-build
+  is the right shape.
