@@ -670,6 +670,26 @@ struct deep_tuning {
    * about 2x by the identical argument, and multiplying only conquest
    * tilts the offence/defence budget. Parked for the human (STATUS). */
   double conquest_worth_mult;
+  /* The same argument pointed the other way (human call 2026-08-06):
+   * keeping our own city is worth what we keep AND what we deny the
+   * taker, so the defence-side stakes read carries its own multiple.
+   * Default 2.0 -- symmetric with conquest_worth_mult, which is what
+   * makes the offence/defence question a tunable TILT rather than a
+   * decision taken in code.
+   *
+   * READ THE RATIO, NOT THE LEVELS. conquest/defence > 1 is a
+   * conquest-hungry player, < 1 a hearth-guarding one, and 1:1 is
+   * exactly the pre-rider behaviour at every level because the one
+   * comparison that reads both sides (deep_op_poach_defender) is
+   * invariant under a common factor.
+   *
+   * Applied at the defence counter-claim's stakes read only.
+   * Deliberately NOT applied to the emergency triage comparator,
+   * which sorts our OWN cities and is invariant under a common
+   * factor by construction (and is lexicographic post-D1 besides),
+   * nor to target SCORING, which is an argmax a positive scalar
+   * cannot move. */
+  double defence_worth_mult;
   /* The pool a marginal attacker is priced against reaches only as
    * far as the marginal attacker itself does: a free blade that
    * cannot be at the target by the same arrival turn is not part of

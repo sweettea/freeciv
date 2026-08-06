@@ -406,6 +406,13 @@ MAP = {
         "both conquest lines carry worth= (stock's read of the city) "
         "and eworth= (after the multiplier), so the ratio IS the knob "
         "and it is on every evaluation win or lose."),
+    "defence_worth_mult": (
+        "S2", "mag", "direct", [("deep-op", "flag:poach")],
+        "the poach line carries worth= and dworth= (after the "
+        "multiplier) beside the risk it produced; MAP -- the knob is "
+        "one half of the offence/defence TILT and only the RATIO to "
+        "conquest_worth_mult is meaningful, so a sweep must move them "
+        "together or explicitly hold one."),
     "assault_pool_reach": (
         "S2", "gate", "direct", [("deep-kill", "")],
         "far= counts the free attackers the per-target pool dropped "

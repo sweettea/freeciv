@@ -3347,8 +3347,21 @@ struct unit *deep_op_poach_defender(struct ai_type *ait,
   const struct deep_tuning *tune = deep_tuning_get();
   const struct civ_map *nmap = &(wld.map);
   struct deep_plr *dp = deep_plr_data(pplayer);
-  double city_risk
-    = def_ai_city_data(pcity, ait)->worth * (1.0 - p_survival);
+  /* Both sides of this comparison carry their own stakes multiplier
+   * (human call 2026-08-06). Keeping our city is worth what we keep
+   * PLUS what we deny the taker, exactly as taking theirs is worth
+   * what we gain plus what we deny -- so the defence-side read gets
+   * defence_worth_mult and the op's expected take gets
+   * conquest_worth_mult, once each.
+   *
+   * That is what makes the RATIO the tilt and 1:1 a no-op: at equal
+   * multipliers this comparison is algebraically identical to the
+   * pre-rider one, however large both are. Multiplying only one side
+   * would have made "symmetric stakes" mean "double the defence",
+   * which is a tilt wearing a symmetry's clothes. */
+  double dmult = tune->defence_worth_mult;
+  double raw_own = def_ai_city_data(pcity, ait)->worth;
+  double city_risk = raw_own * dmult * (1.0 - p_survival);
   int oi, i;
 
   for (oi = 0; oi < DEEP_OPS_MAX; oi++) {
@@ -3378,7 +3391,8 @@ struct unit *deep_op_poach_defender(struct ai_type *ait,
     }
     eta = deep_op_eta(pplayer, op, target);
     odds = deep_take_odds_at_arrival(nmap, target, stream, ns, eta);
-    if (city_risk <= def_ai_city_data(target, ait)->worth * odds) {
+    if (city_risk <= def_ai_city_data(target, ait)->worth
+                     * tune->conquest_worth_mult * odds) {
       continue;                 /* The op's claim outbids the city. */
     }
     for (i = 0; i < op->n_members; i++) {
@@ -3407,9 +3421,11 @@ struct unit *deep_op_poach_defender(struct ai_type *ait,
     if (blade != NULL) {
       log_base(deep_metric_log_level(),
                "deep-op turn=%d player=\"%s\" op=%d poach unit=\"%s\""
-               " city=%d target=%d odds=%.2f",
+               " city=%d target=%d odds=%.2f worth=%.1f dworth=%.1f"
+               " risk=%.1f",
                game.info.turn, player_name(pplayer), oi,
-               unit_rule_name(blade), pcity->id, op->target_city, odds);
+               unit_rule_name(blade), pcity->id, op->target_city, odds,
+               raw_own, raw_own * dmult, city_risk);
       op->members[blade_i] = op->members[--op->n_members];
       return blade;
     }
