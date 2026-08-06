@@ -2718,12 +2718,6 @@ bool deep_op_target_threatens(const struct player *pplayer,
 }
 
 /**********************************************************************//**
-  Try to form a new operation in slot `oi`: is there a met, unclaimed
-  target our free attackers could actually take? required = the
-  smallest strongest-first prefix of the unclaimed pool that clears
-  the formation bar. Returns TRUE if the slot went live.
-**************************************************************************/
-/**********************************************************************//**
   The odds an assault on this target must clear, gate 2 included
   (W34 A.2): op_take_target scaled by what this player's stance
   charges for an assault, capped at 1.0 because it is a probability,
@@ -2751,6 +2745,12 @@ static double deep_op_assault_bar(struct player *pplayer,
   return bar;
 }
 
+/**********************************************************************//**
+  Try to form a new operation in slot `oi`: is there a met, unclaimed
+  target our free attackers could actually take? required = the
+  smallest strongest-first prefix of the unclaimed pool that clears
+  the formation bar. Returns TRUE if the slot went live.
+**************************************************************************/
 static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
                          struct deep_operation *op, int oi)
 {
