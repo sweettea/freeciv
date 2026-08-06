@@ -8609,6 +8609,19 @@ lategame-80 exactly (score -2.63, t -1.54; launches +1.50, t +1.76).
 Both lategame arms were then RE-RUN with the corrected file, and every
 lategame number in section 3 is from the corrected pair.
 
+### 5b. Provenance of the shipped tip
+
+The benchmarked binary is `8ce4a7617a7c`. The tip carries one further
+commit, `b3e6c2723b`, which moves the extracted assault-bar helper
+above the doc comment it had landed inside -- pure code motion, no
+statement changed, but the compiler reorders and the hash differs
+(`7301ac1a3176`). Proven behaviour-neutral the project's usual way:
+10 smoke seeds, `m1-all.ini`, both binaries, **all ten scorelogs
+bit-identical**:
+
+    59aeddeb566f  82fb0c66c073  e363f4dedec9  327b1c3a007d  83e497e71bb7
+    5e4c2bbd2be9  f954506e5f87  a8b2d7a81a5a  e7daec9dddb7  6e372be6425c
+
 ### 6. Owed to the tuning pile
 
     attack_loss_gain      1.0   PLACEHOLDER, and the epic's hottest
