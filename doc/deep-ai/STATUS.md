@@ -9159,8 +9159,11 @@ be a deliberate decision rather than an inherited assumption.
   act.** `trade-love-probe.ini` at twenty seeds against
   `trade-fold-off.ini` on primary-120-classic is the arm.
 - **`trade_partner_target_discount` ships at 0.0 with an execution
-  probe only** (section 6 of the findings). It is the one knob this
-  session did not give a scored arm.
+  probe only**: 44.67 applications per game on primary-120-classic at
+  0.5, concentrated on the seeds where deep both trades and fights
+  (140 / 126 / 2 / 0 / 0 / 0 over six games). It executes; it has no
+  scored arm, and the twenty-seed question -- does declining profitable
+  conquests against partners cost or pay -- is open.
 - **PEACE's timing/character decomposition is still not run and is now
   more urgent**, because `peace_seek_gain = 1.0` is shipping.
 - **civ2civ3 kills the trade route and PEACE does not revive it.**

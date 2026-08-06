@@ -422,16 +422,99 @@ switch-penalty keys. Arms `benchmark/tuning/trade-fold-{off,on}.ini`:
 the control is the world before the human call (both 0.0), the
 treatment is the new joint defaults written out.
 
-(FOLDPAIR)
+    metric                       OFF        ON     delta      se      t   wins
+    score                     168.05    169.97     +1.93    1.31  +1.47   13/20
+    techs                      52.75     53.12     +0.37    0.16  +2.36   13/20
+    pop                        41.67     42.38     +0.71    0.69  +1.02   13/20
+    mean_city_size              5.32      5.41     +0.09    0.07  +1.28   11/20
+    cities                      8.08      8.13     +0.05    0.15  +0.34    9/20
+    munits                     15.09     14.28     -0.82    0.44  -1.84    6/20
+    unitslost                  13.39     12.98     -0.41    0.63  -0.64    7/20
+    wonders                     0.20      0.18     -0.02    0.03  -0.52    3/20
+
+The direction is positive on score and clears twenty seeds on techs;
+score at t +1.47 does not, which is the same place PEACE left it
+(+1.47 on this cell, +1.48 on contested).
+
+### The decomposition, and the thing the human should see
 
 A third arm on the same cell and the same binary,
 `trade-off-peace.ini`, sits between them -- `peace_seek_gain = 1.0`
-with `trade_route_love = 0.0` -- so the pair decomposes into "the bar
-came off" and "commerce anchors it".
+with `trade_route_love = 0.0`. Comparing the three:
+
+    fold-off -> peace only    score +1.93 (t +1.47, 13/20)
+    peace only -> fold-on     score +0.00 -- 20 of 20 scorelogs
+                              BYTE-IDENTICAL
+
+**`trade_route_love` never executes on civ2civ3, and the entire +1.93
+is the bar removal.** The counter says so directly: **0
+`deep-trade-love` lines in all three arms, 60 games**, and the reason
+is section 7's number -- the arm holds **0.30 route endpoints per
+game**, so `deep_routes_with_players()` returns zero and the function
+returns before it can add anything.
+
+This matters beyond the table, because it is the human call's own
+safety argument: "trade want anchors love" is what makes removing the
+love bar something other than indiscriminate forgiveness. On the
+ruleset this project measures its economy on, **there is no commerce
+for the anchor to hold onto.** The mechanism is built, correct, and
+clamped; it has no population where it was measured. The bar removal
+therefore ships ALONE in practice on civ2civ3, and the pairing is a
+posture that only becomes real on a ruleset where foreign routes form.
+
+Classic is that ruleset -- 8.90 route endpoints a game on its off arm
+against civ2civ3's 0.30 -- and the love probe there is section 9a.
+
+### 9a. The anchor holds -- on the ruleset where commerce exists
+
+Execution probe, primary-120-classic, 6 games,
+`benchmark/tuning/trade-love-probe.ini` (`peace_seek_gain = 1.0`,
+`trade_route_love = 5.0`), same pinned binary:
+
+    deep-trade-love lines           64 over 6 games
+    seeds where it fired            3 of 6
+    love added per firing           +5 to one partner
+    structural cap observed         249  (req_love_for_alliance - 1)
+    ROUTE ENDPOINTS per game       7.67
+
+So the mechanism is live, the clamp reports the number it was designed
+to report, and the population is **routes** -- which is why it is 64
+lines here and 0 in 60 games of civ2civ3.
+
+The honest summary of the fold, then: the bar removal is measured and
+positive on civ2civ3 (+1.93, t +1.47); the anchor that is supposed to
+justify it is inert there and live on classic; and no cell has yet
+measured the two together where both act. That is the first thing a
+follow-up should run, and it is a one-arm question:
+`trade-love-probe.ini` at twenty seeds against `trade-fold-off.ini` on
+primary-120-classic.
 
 ---
 
-## 10. Owed to the tuning pile
+## 10. The partner discount executes; it was never scored
+
+The last knob of the switch tree needs a live route with a player we
+are AT WAR with, which needs a cell where routes form. Execution probe,
+primary-120-classic, 6 games,
+`benchmark/tuning/trade-spare-probe.ini` (peace 1.0, love 5.0,
+`trade_partner_target_discount = 0.5`), same pinned binary:
+
+    target-discount applications    44.67 per game
+    ... by seed                     140, 126, 2, 0, 0, 0
+    ROUTE ENDPOINTS per game         7.67
+    love applications per game       6.00
+
+It fires hard on the seeds where deep both trades and fights, and not
+at all on the three where it does not -- which is the shape this
+project's method note asks to be reported rather than averaged away
+("when a change fires on a minority of seeds, report the fired-on
+subset"). **It has no scored arm.** It ships at 0.0, the pure
+opportunist posture, and the twenty-seed question -- does declining
+profitable conquests against partners cost or pay -- is open.
+
+---
+
+## 11. Owed to the tuning pile
 
     trade_ceasefire_peace_odds  0.0  PLACEHOLDER. 0 = pure
                                      known-mechanics truncation. The
@@ -467,7 +550,9 @@ came off" and "commerce anchors it".
     trade_partner_target_discount
                                 0.0  PLACEHOLDER, and the STANCE knob:
                                      0 = pure opportunist, 1 = refuse a
-                                     partner outright.
+                                     partner outright. EXECUTION PROVED
+                                     (section 11) and never given a
+                                     scored arm.
     trade_merit                 0    unchanged from R2, and the master
                                      switch for the whole price.
     trade_merit_gain            1.0  unchanged. R2's measured useful
