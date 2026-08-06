@@ -922,6 +922,185 @@ static double deep_garrison_menace(struct player *pplayer)
 }
 
 /**********************************************************************//**
+  Can a unit of this type strike a city with no visible approach --
+  drop onto it, or fly to it and take it?
+
+  Expressed from ruleset CAPABILITY, never from a named-unit list: an
+  action whose result is a paradrop, or a class that is native to land
+  AND ocean (which is how a ruleset says "it flies": movement.c derives
+  the move type from native terrain, and there is no UMT_AIR) and that
+  can conquer a city. Classic's Paratroopers match the first and its
+  Helicopter the second; a ruleset that spells either capability
+  differently still matches, and a ruleset with neither reports the
+  class dead, which is the correct answer for that ruleset.
+**************************************************************************/
+static bool deep_utype_is_airborne(const struct unit_type *ut)
+{
+  return (utype_can_do_action_result(ut, ACTRES_PARADROP)
+          || utype_can_do_action_result(ut, ACTRES_PARADROP_CONQUER)
+          || (utype_move_type(ut) == UMT_BOTH && utype_can_take_over(ut)));
+}
+
+/**********************************************************************//**
+  Can a unit of this type attack straight off a hull -- the "Marines"
+  capability, again as a ruleset fact rather than a flag name?
+
+  utype_can_do_action_result_when_ustate(..., USP_NATIVE_TILE, FALSE)
+  asks the ruleset's own action enablers whether an attack (or a city
+  conquest) is possible while the actor is NOT standing on native
+  terrain. In classic that is exactly the set {enabler_attack_marines,
+  enabler_attack_att_from_non_native}: an ordinary Musketeer's only
+  attack enabler requires UnitState OnNativeTile, so it fails, and a
+  Marine's does not, so it passes. No flag name appears here.
+**************************************************************************/
+static bool deep_utype_strikes_from_hull(const struct unit_type *ut)
+{
+  return (utype_can_do_action_result_when_ustate(ut, ACTRES_ATTACK,
+                                                 USP_NATIVE_TILE, FALSE)
+          || utype_can_do_action_result_when_ustate(ut, ACTRES_CONQUER_CITY,
+                                                    USP_NATIVE_TILE, FALSE));
+}
+
+/**********************************************************************//**
+  Is this type a mobile airbase -- a hull that carries the things that
+  fly? Ruleset test: a sea transport whose cargo classes include a
+  class that is native to land and ocean at once.
+**************************************************************************/
+static bool deep_utype_is_carrier(const struct unit_type *ut)
+{
+  if (ut->transport_capacity <= 0 || utype_move_type(ut) != UMT_SEA) {
+    return FALSE;
+  }
+  unit_class_iterate(pclass) {
+    if (pclass->move_type == UMT_BOTH
+        && BV_ISSET(ut->cargo, uclass_index(pclass))) {
+      return TRUE;
+    }
+  } unit_class_iterate_end;
+
+  return FALSE;
+}
+
+/**********************************************************************//**
+  Which of the threat classes the danger assessment cannot see are
+  actually LIVE for this player this turn (human direction 2026-08-05).
+
+  Every test here is a server or ruleset FACT and therefore free: the
+  server's own barbarian gate, whether a met non-allied rival owns a
+  hull that floats, whether its known tech lets it build something that
+  flies or something that attacks off a hull, and whether it holds a
+  city on a landmass we stand on. Nothing in this function is tunable,
+  so none of it can be mis-set; the weights the classes carry are the
+  tunables, and they live at the consumer.
+
+  "Met non-allied" rather than "at war" is deliberate and it is the
+  one-owner rule doing the work. The at-war cases are already priced by
+  the fear terms above -- embarked cargo (F1), the boat shadow (F2),
+  neighbouring cities (F3), the barbarian era (F5) -- and every one of
+  those makes danger nonzero, which makes the floor ineligible in that
+  city. So the floor can only ever speak about the rival that COULD go
+  to war and has not, which is exactly the risk an assessment of
+  present danger is blind to.
+
+  Same-continent rivals with boats count toward the sea class: a
+  landing is not only trans-oceanic, and a neighbour can coastal-hop
+  around a defended border. The test is "floats transports", not
+  "floats transports and lives elsewhere".
+**************************************************************************/
+static const struct deep_floor_class *
+deep_floor_class_facts(struct player *pplayer)
+{
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  struct deep_floor_class *fc = &dp->floor_class;
+  Continent_id ours[64];
+  int n_ours = 0;
+
+  if (fc->turn == game.info.turn && game.info.turn > 0) {
+    return fc;
+  }
+  memset(fc, 0, sizeof(*fc));
+  fc->turn = game.info.turn;
+
+  /* The server's own gate, the same one barbarian.c uses. */
+  fc->barb = (BARBS_DISABLED != game.server.barbarianrate
+              && game.info.turn >= game.server.onsetbarbarian);
+
+  city_list_iterate(pplayer->cities, pcity) {
+    Continent_id c = tile_continent(city_tile(pcity));
+    int i;
+
+    for (i = 0; i < n_ours; i++) {
+      if (ours[i] == c) {
+        break;
+      }
+    }
+    if (i == n_ours && c > 0 && n_ours < 64) {
+      ours[n_ours++] = c;
+    }
+  } city_list_iterate_end;
+
+  players_iterate_alive(aplayer) {
+    if (aplayer == pplayer
+        || pplayers_allied(pplayer, aplayer)
+        || player_diplstate_get(pplayer, aplayer)->type == DS_NO_CONTACT) {
+      continue;
+    }
+
+    if (!fc->sea) {
+      unit_list_iterate(aplayer->units, aunit) {
+        const struct unit_type *at = unit_type_get(aunit);
+
+        if (at->transport_capacity > 0 && utype_move_type(at) == UMT_SEA) {
+          fc->sea = TRUE;
+          break;
+        }
+      } unit_list_iterate_end;
+    }
+
+    if (!fc->border) {
+      city_list_iterate(aplayer->cities, acity) {
+        Continent_id c = tile_continent(city_tile(acity));
+
+        for (int i = 0; i < n_ours; i++) {
+          if (ours[i] == c) {
+            fc->border = TRUE;
+            break;
+          }
+        }
+        if (fc->border) {
+          break;
+        }
+      } city_list_iterate_end;
+    }
+
+    /* Tech-gated capabilities: what this rival's KNOWN tech would let
+     * it build, not what it happens to own. A class whose first unit
+     * is one turn from the shipyard is live; the point of insurance is
+     * that it precedes the event. */
+    unit_type_iterate(ut) {
+      if (!can_player_build_unit_direct(aplayer, ut, RPT_CERTAIN, FALSE)) {
+        continue;
+      }
+      if (deep_utype_is_airborne(ut)) {
+        int reach = MAX(ut->paratroopers_range,
+                        ut->move_rate / SINGLE_MOVE);
+
+        fc->air = TRUE;
+        fc->air_range = MAX(fc->air_range, reach);
+      }
+      if (!fc->marines && deep_utype_strikes_from_hull(ut)) {
+        fc->marines = TRUE;
+      }
+      if (!fc->carrier && deep_utype_is_carrier(ut)) {
+        fc->carrier = TRUE;
+      }
+    } unit_type_iterate_end;
+  } players_iterate_alive_end;
+
+  return fc;
+}
+
+/**********************************************************************//**
   Keep a token garrison even where assessed danger is zero. Stock
   cities do this by habit and it silently insures them against every
   threat the assessment cannot see (landings, barbarian spawns); deep
@@ -965,12 +1144,17 @@ static void deep_apply_garrison_floor(struct city *pcity,
                             * menace);
   city_data->danger = applied;
   if (log_it) {
+    const struct deep_floor_class *fc
+      = deep_floor_class_facts(city_owner(pcity));
+
     log_base(deep_metric_log_level(),
              "deep-floor turn=%d player=\"%s\" city=%d units=%d"
-             " menace=%.3f updisc=%.3f applied=%u",
+             " menace=%.3f updisc=%.3f barb=%d sea=%d air=%d border=%d"
+             " mar=%d carrier=%d airrange=%d applied=%u",
              game.info.turn, player_name(city_owner(pcity)), pcity->id,
              unit_list_size(city_tile(pcity)->units), menace,
-             upkeep_discount, applied);
+             upkeep_discount, fc->barb, fc->sea, fc->air, fc->border,
+             fc->marines, fc->carrier, fc->air_range, applied);
   }
 }
 

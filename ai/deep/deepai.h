@@ -27,6 +27,30 @@ struct section_file;
 
 struct ai_type *deep_ai_get_self(void);
 
+/* Which threat classes the danger assessment CANNOT SEE are actually
+ * live in this game, for this player, this turn. Every field is a
+ * server or ruleset FACT -- a setting, a diplomatic state, a unit a
+ * rival owns, a unit type a rival's known tech lets it build -- so
+ * none of them is a tunable and none of them can be wrong in a way a
+ * benchmark would have to discover. Recomputed at most once per player
+ * per turn; not saved.
+ *
+ * The garrison floor is the consumer: insurance against what the
+ * assessment misses is worth nothing while the thing it insures
+ * against cannot happen yet. */
+struct deep_floor_class {
+  int turn;                     /* Cache validity, -1 when never filled */
+  bool barb;                    /* Server can spawn barbarians NOW */
+  bool sea;                     /* A met non-allied rival floats transports */
+  bool marines;                 /* ... and can attack off the hull */
+  bool air;                     /* A met non-allied rival can build a
+                                 * paradrop- or helicopter-class unit */
+  bool carrier;                 /* ... and a hull that carries them */
+  int air_range;                /* Reach of the best such unit, tiles */
+  bool border;                  /* A met non-allied rival holds a city on
+                                 * a landmass where we hold one */
+};
+
 /* Per-player state of the deep AI. The embedded default-AI state must
  * stay the first member: every forwarded dai_* call finds its data in
  * this module's player slot and casts it to struct ai_plr. */
@@ -96,6 +120,9 @@ struct deep_plr {
    * refreshed at most once per turn per player. */
   int free_land_permille;
   int free_land_turn;
+  /* Threat classes the danger field cannot see, this turn. Cache
+   * only: every field is recomputed from server and ruleset facts. */
+  struct deep_floor_class floor_class;
   int free_land_tiles;          /* Unowned known land, absolute */
   int free_land_reach;          /* ... of it, on landmasses we stand on */
   int own_land_tiles;           /* Land we own, absolute */
