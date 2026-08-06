@@ -142,12 +142,24 @@ population is now counted for free: `offshore=` on the
 continent that a caravan built here cannot walk to, and `offpct=` what
 the ruleset would pay for them.
 
-    cell                     offshore partners per seam line (p10/p50/p90)
-    primary-120-classic                 0 / 0 / 0
+    cell                    seam lines   with >=1 offshore partner
+    primary-120-classic         78 272                          0
+    isolated-150 (island)        2 089                  169 (8.1%)
 
 The classic tuning cell has **no overseas legal partners at all**, so
 nothing built for design call 3 could have been measured there. The
-island cell's number is in section 8.
+island cell -- civ2civ3, the venue the design call named -- has them on
+**8.1% of city-turns, one or two at a time**, and `offpct=200` on every
+one of those lines: the INIC premium the design call was aiming at is
+real and is exactly the 2x it expected.
+
+That is the whole population. A mechanism that needs an overseas
+candidate enumeration, a lift-wait model and an escort posture would be
+built to reach one-or-two partners on 8% of the city-turns of one cell
+-- and the same island cell produces **6 priced trade destinations in 4
+games** in total (section 8), so the land population it would be added
+to is itself empty. Sized rather than built, which is what W36's method
+note asks for.
 
 The drop-pick watch item is therefore moot for this session: no new
 passenger class reached the lift protocol, because none could.
@@ -238,23 +250,188 @@ at its default 0.0 no optimism is expressed.
 
 ## 6. A/B: primary-120-classic, 20 paired seeds
 
-(TABLES)
+Binary PINNED (`b9321020ec2b`, server + `libfreeciv.so`, `--server`),
+`--arms deep`, both arms loading a tuning FILE, both pinning
+`pay_switch_penalty = 1` and `switch_cost_price = 1`. Arms
+`benchmark/tuning/trade-{off,g1}.ini`. **Both arms ran at the
+pre-fold diplomacy defaults** (`peace_seek_gain = 0.0`), so this pair
+measures the PRICE and nothing else. Twenty seeds are direction.
+
+    metric                       OFF        ON     delta      se      t   wins
+    score                     137.60    139.57     +1.97    2.05  +0.96   11/20
+    cities                     21.48     21.95     +0.47    0.55  +0.85   10/20
+    pop                        68.08     69.81     +1.73    1.66  +1.04   12/20
+    unitsbuilt                 83.92     82.42     -1.50    1.06  -1.41    6/20
+    techs                      28.20     28.19     -0.01    0.44  -0.02    8/20
+    unitskilled                 9.75     10.55     +0.80    0.59  +1.35   13/20
+    wonders                     0.45      0.48     +0.03    0.04  +0.85    6/20
+
+Mechanism, same seeds, per game:
+
+    metric                       OFF        ON
+    seam evaluations            0.00   3946.05
+    ... with a destination      0.00   3913.60
+    mode=replace                0.00    230.20
+    mode=promote                0.00      0.15
+    mode=keep                   0.00   3715.70
+    cease-fire truncations      0.00    691.20
+    capped enumerations         0.00      0.00
+    trade dispatches            5.45      1.10
+    wonder dispatches           9.60      5.60
+    ROUTE ENDPOINTS             8.90      3.00
+
+**The price executes 3 946 times a game and, at the untuned corner, it
+still WITHDRAWS.** Route endpoints fall 8.90 -> 3.00 and trade
+dispatches 5.45 -> 1.10, which is the same direction R2 measured at
+gain 1.0 on the inverted price (10.0 -> 3.5). Correcting the annuity
+doubled the number without moving it onto stock's scale: the merit is
+a median **0.21** of stock's bid where R2 measured 0.114, so the gain
+that would put deep's number on stock's median is **~4.8**, not R2's
+~8.8. Half of R2's deflator was the bug and half is real.
+
+Score is +1.97 at t +0.96 -- the right sign, twenty seeds cannot
+resolve it, and it is not the number this session rests on.
+
+**The calibration corpus, 78 272 priced evaluations over 20 games:**
+
+    quantity            p10      p50      p90
+    deep's npv        28.10    49.40    67.90
+    caravan.c cnpv   -16.50     4.40    25.40
+    deep's merit       0.80    15.40    34.30
+    stock's bid       65.50    70.90    79.00
+    merit / stock      0.01     0.21     0.47
+    windfall          26.00    56.00    80.00
+    per-turn flow      2.00     2.00     2.00
+    priced life       12.00    16.00    18.00
+    candidates seen   22.00    41.00    68.00
+    ... priced         5.00    12.00    24.00
+
+    an ongoing route is available on 95.5% of priced destinations
+    caravan.c's NPV is NEGATIVE on 37.1% of them
+
+**Two mechanisms executed and one of them has almost no population.**
+The rank the marginal caravan was sold:
+
+    rank 0   77 858     rank 1   365   rank 2   37   rank 3   10   rank 4   2
+
+99.5% of decisions are made by a city with no trade caravan already in
+the field, so the slot opportunity cost -- correct, structural, and the
+brief's first job -- **binds on 414 of 78 272 decisions (0.5%)**. It is
+not wrong; it has nowhere to act on this cell. Cease-fire truncation is
+the opposite: 691 truncations a game, touching 3.6% of seam rows, on a
+ruleset where a cease-fire pair CAN legally trade (`TRT_IN`, 200% on
+classic) and loses the route the turn the cease-fire lapses.
 
 ---
 
-## 7. A/B: lategame-80 (civ2civ3, peace pinned), 20 paired seeds
+## 7. The civ2civ3 cell: the population is still not there
 
-(TABLES)
+lategame-80, 20 seeds, `trade_merit = 0`, `peace_seek_gain` PINNED to
+1.0 -- i.e. PEACE's pre-pass running at the setting it measured its own
+population at, which is what the brief required of any civ2civ3 arm.
+
+    ROUTE ENDPOINTS per game     0.30
+    trade dispatches             1.15
+    wonder dispatches            5.15
+
+**Thirty hundredths of a route endpoint per game.** civ2civ3 makes a
+domestic route illegal (`National` pct 0) and pays `IN` 100 / `INIC`
+200, so the only legal partner is a foreign city -- and even with the
+pre-pass manufacturing peace, deep opens 0.3 route endpoints a game
+against classic's 8.90. R2's verdict that the trade-route subsystem is
+effectively dead on this project's default ruleset **survives PEACE**.
+
+This is why the civ2civ3 measurement in section 10 is about the LOVE
+and the PEACE, not about the price: there is no route population on
+that ruleset for the price to move.
 
 ---
 
 ## 8. The island cell, and what cross-water would be worth
 
-(TABLES)
+isolated-150 (civ2civ3), 4 games, `trade_merit = 1`, peace pinned.
+
+    seam lines                               2 089
+    ... with >= 1 offshore legal partner       169   (8.1%)
+    ... offpct on every one of those             200
+    seam rows with a REACHABLE destination        6
+    ROUTE ENDPOINTS per game                    0.00
+    trade dispatches per game                   0.00
+    wonder dispatches per game                  7.50
+
+Six priced land destinations in four games, zero routes, and the whole
+caravan fleet on the wonder errand. The offshore partners are there and
+they pay double -- and the mechanism that would reach them has to be
+built on top of a land population that is empty.
+
+On the same 6 rows `cnpv` is negative **100% of the time**, which is
+the inverted annuity at its purest: every reachable destination on that
+cell offers a real ongoing route, so every one of them was priced below
+zero before this session.
 
 ---
 
-## 9. Owed to the tuning pile
+## 9. The fold: the love bar comes off, and commerce anchors the peace
+
+**Human call, 2026-08-06** -- "remove the love bar, trade want anchors
+love". Two compiled defaults flip, and they flip together:
+
+    peace_seek_gain   0.0 -> 1.0
+    trade_route_love  0.0 -> 5.0
+
+The pairing IS the argument. Waiving stock's `req_love_for_peace`
+threshold on its own makes deep forgive indiscriminately -- it would
+propose peace to anyone inside a cease-fire window regardless of how
+the relationship has gone. Waiving it while commerce pays love means
+the affection deep acts on is EARNED: a partner that trades with us
+adds love every turn a route is live, and one that stops decays back
+toward wariness at stock's own 4% a turn. The forgiveness is bought,
+per turn, by a route that either exists or does not.
+
+Everything structural PEACE refused to waive is still refused: a live
+war countdown, an alliance with our enemy, `H_AWAY`, the non-attack
+precondition. Only the love threshold goes.
+
+This overrides rule 7's hold on shipping an unswept number, and it is
+recorded as a values decision rather than a measurement: both values
+stay registered PLACEHOLDERs with the full tuner range, and 0.0 on
+either side restores the previous behaviour exactly.
+
+**The flip is proved to be exactly those two values.** Smoke cell, 10
+paired seeds: the post-flip binary (`2d0d5143f974`) loading only the
+standing switch-penalty pins, against the pre-flip binary
+(`b9321020ec2b`) loading `trade-fold-on.ini` which writes both values
+out:
+
+    seed  1 02f919562a12   seed  6 5e4c2bbd2be9
+    seed  2 dbb34daf64a7   seed  7 6e6396263ef4
+    seed  3 6bfeb8bbf7cf   seed  8 a8b2d7a81a5a
+    seed  4 2314c27e8c5e   seed  9 08fd7320077b
+    seed  5 c1895900116f   seed 10 7b74bb209f89
+    => 10/10 identical
+
+Eight of those ten hashes differ from the pre-session hashes in section
+4, so the fold is not merely loadable -- it changes play on 8 of 10
+smoke seeds.
+
+### The confirm pair
+
+lategame-80 (civ2civ3), 20 paired seeds, binary pinned
+(`b9321020ec2b`), both arms loading a tuning FILE, both pinning the
+switch-penalty keys. Arms `benchmark/tuning/trade-fold-{off,on}.ini`:
+the control is the world before the human call (both 0.0), the
+treatment is the new joint defaults written out.
+
+(FOLDPAIR)
+
+A third arm on the same cell and the same binary,
+`trade-off-peace.ini`, sits between them -- `peace_seek_gain = 1.0`
+with `trade_route_love = 0.0` -- so the pair decomposes into "the bar
+came off" and "commerce anchors it".
+
+---
+
+## 10. Owed to the tuning pile
 
     trade_ceasefire_peace_odds  0.0  PLACEHOLDER. 0 = pure
                                      known-mechanics truncation. The
@@ -268,21 +445,37 @@ at its default 0.0 no optimism is expressed.
                                      1 - gain * dangerous fraction);
                                      the gain is how much of it to
                                      charge.
-    trade_route_love            0.0  PLACEHOLDER, love per active
-                                     foreign route per turn. The scale
-                                     it must be read against is the
-                                     -50/turn best_target bleed and the
-                                     125 peace bar. Clamped
-                                     structurally at
+    trade_route_love            5.0  SHIPPED ON (human call, section
+                                     9). Still a PLACEHOLDER: it is the
+                                     value the measurement arm used,
+                                     chosen to give the mechanism a
+                                     population, never swept. The scale
+                                     to read it against is the -50/turn
+                                     best_target bleed and the 125
+                                     peace bar. Clamped structurally at
                                      req_love_for_alliance.
+    peace_seek_gain             1.0  SHIPPED ON (same call). PEACE's
+                                     maximum-population setting, and
+                                     PEACE explicitly declined to ship
+                                     it on measurement grounds; the
+                                     human overrode that on values
+                                     grounds and on the pairing above.
+                                     The timing/character
+                                     decomposition PEACE asked for is
+                                     STILL NOT RUN and is now more
+                                     urgent, not less.
     trade_partner_target_discount
                                 0.0  PLACEHOLDER, and the STANCE knob:
                                      0 = pure opportunist, 1 = refuse a
                                      partner outright.
     trade_merit                 0    unchanged from R2, and the master
-                                     switch for everything above.
+                                     switch for the whole price.
     trade_merit_gain            1.0  unchanged. R2's measured useful
                                      range (5-10) was measured on the
-                                     INVERTED price and does not carry
-                                     over; section 6 has the new
-                                     calibration.
+                                     INVERTED price and DOES NOT CARRY
+                                     OVER: on the corrected price the
+                                     merit is a median 0.21 of stock's
+                                     bid, so ~4.8 is where it sits on
+                                     stock's median. That gain was NOT
+                                     run this session and is the first
+                                     thing a follow-up should measure.
