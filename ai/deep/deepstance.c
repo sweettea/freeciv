@@ -308,7 +308,7 @@ void deep_stance_log(struct player *pplayer)
            " cult=%.3f src=%s mode=%s preset=%s identity=%d"
            " trait_exp=%d trait_bld=%d trait_trd=%d trait_agg=%d"
            " fear_gate=%d op_gate=%d growth_gate=%d expand_gate=%d"
-           " assault_gate=%d",
+           " assault_gate=%d floor_gate=%d",
            game.info.turn, player_name(pplayer),
            plr_data->stance.econ, plr_data->stance.mil,
            plr_data->stance.cult,
@@ -333,7 +333,8 @@ void deep_stance_log(struct player *pplayer)
            plr_data->stance_op_gated,
            plr_data->stance_growth_gated,
            plr_data->stance_expand_gated,
-           plr_data->stance_assault_gated);
+           plr_data->stance_assault_gated,
+           plr_data->stance_floor_gated);
 }
 
 /**********************************************************************//**
@@ -414,6 +415,38 @@ double deep_stance_assault_mult(const struct player *pplayer)
 {
   return deep_stance_mil_mult(pplayer,
                               deep_tuning_get()->stance_assault_gain);
+}
+
+/**********************************************************************//**
+  Gate 6 (human, 2026-08-05): the multiplier on the CLASS-GATED
+  GARRISON FLOOR -- the standing insurance a city keeps against the
+  threat classes the danger assessment cannot see.
+
+  This is the one place a stance gets to express a PERSONALITY rather
+  than a preference: early-war and early-peace are different players,
+  and the difference shows up first as whether quiet cities carry a
+  garrison at all. A high-mil stance garrisons up early; a high-econ
+  stance runs a near-zero floor and buys settlers and buildings with
+  the shields. It reads (mil/econ)^gain -- gate 1's direction, because
+  the floor is a military want -- and it is one gain over machinery
+  that already exists, with no new personality layer.
+
+  Gate 1 explicitly refuses to scale the floor, and that refusal is
+  still right for gate 1: gate 1 scales ANTICIPATION toward the floor
+  and must not push it below. Gate 6 is a different claim -- how much
+  insurance this personality buys against blind spots -- and it is
+  bounded from below by the same thing everything else is: the floor
+  only fires where assessed danger is already zero, so no observed
+  threat is being ignored, and the survival deficit remains unscaled.
+
+  Exactly 1.0 at identity axes whatever the gain, so the shipping
+  benchmark baseline is a uniform floor and every byte-identity proof
+  in the layer still holds.
+**************************************************************************/
+double deep_stance_floor_mult(const struct player *pplayer)
+{
+  return deep_stance_mil_mult(pplayer,
+                              deep_tuning_get()->stance_floor_gain);
 }
 
 /**********************************************************************//**

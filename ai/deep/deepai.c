@@ -209,6 +209,8 @@ static void dpai_player_save(struct player *pplayer,
                      "player%d.deep_state.stance_expand_gated", plrno);
   secfile_insert_int(file, plr_data->stance_assault_gated,
                      "player%d.deep_state.stance_assault_gated", plrno);
+  secfile_insert_int(file, plr_data->stance_floor_gated,
+                     "player%d.deep_state.stance_floor_gated", plrno);
 
   /* The operations layer (W33 phase 4). Free slots save only their
    * NONE state, so quiet players cost a handful of keys. */
@@ -305,6 +307,10 @@ static void dpai_player_load(struct player *pplayer,
   plr_data->stance_assault_gated
     = secfile_lookup_int_default(file, 0,
                                  "player%d.deep_state.stance_assault_gated",
+                                 plrno);
+  plr_data->stance_floor_gated
+    = secfile_lookup_int_default(file, 0,
+                                 "player%d.deep_state.stance_floor_gated",
                                  plrno);
 
   /* Read back out loud: this hook runs before the next phase

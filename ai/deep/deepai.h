@@ -86,6 +86,10 @@ struct deep_plr {
    * scaled -- the assault wants NOT exempted as reconquest of a
    * target that threatens us. Same contract as the other four. */
   int stance_assault_gated;
+  /* And for gate 6 (the class-gated garrison floor, 2026-08-05):
+     floor injections actually scaled by a non-identity stance. Same
+     contract as the other five. */
+  int stance_floor_gated;
   /* Operation slots (W33); DEEP_OP_NONE marks a free slot. Saved
    * (W33 phase 4): a mid-march wave that dissolved on every reload
    * cost human-game players their assaults; member ids are

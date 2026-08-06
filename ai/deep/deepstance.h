@@ -61,7 +61,7 @@ const char *deep_stance_source_name(int source);
 void deep_stance_refresh(struct player *pplayer);
 void deep_stance_log(struct player *pplayer);
 
-/* The five gates (W34 A.2), each a multiplier on an EXISTING want or
+/* The six gates (W34 A.2; gate 6 added 2026-08-05), each a multiplier on an EXISTING want or
  * bar and each exactly 1.0 whenever the axes are equal. Gates 1 and 5
  * read (mil/econ) because they price MILITARY wants -- anticipated
  * threat, and the attacker demand a target's worth creates -- which a
@@ -72,5 +72,9 @@ double deep_stance_op_mult(const struct player *pplayer);
 double deep_stance_growth_mult(const struct player *pplayer);
 double deep_stance_expand_mult(const struct player *pplayer);
 double deep_stance_assault_mult(const struct player *pplayer);
+/* Gate 6 reads (mil/econ) like gates 1 and 5: the garrison floor is a
+ * military want, and it is where an early-war and an early-peace
+ * personality first differ. */
+double deep_stance_floor_mult(const struct player *pplayer);
 
 #endif /* FC__DEEPSTANCE_H */

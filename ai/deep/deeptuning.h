@@ -719,6 +719,11 @@ struct deep_tuning {
    * it. Targets that THREATEN us keep the unscaled want, by the same
    * test gate 2 uses. PLACEHOLDER. */
   double stance_assault_gain;
+  /* Gate 6: exponent on (mil/econ) scaling the class-gated garrison
+   * floor. PLACEHOLDER. 1.0 is identity at equal axes, so the
+   * benchmark baseline is a uniform floor; a pinned or trait-seeded
+   * stance turns it into an early-war / early-peace personality. */
+  double stance_floor_gain;
 
   /* Tax/science/luxury rates (the rates epic). Stock's
    * dai_manage_taxes() is a SOLVENCY ladder: it finds the minimum tax
