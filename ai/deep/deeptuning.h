@@ -657,6 +657,13 @@ struct deep_tuning {
    * the codebase values a shield; 0 restores the pre-E2 want, which
    * priced an attack as if winning it were free. */
   double attack_loss_gain;
+  /* The pool a marginal attacker is priced against reaches only as
+   * far as the marginal attacker itself does: a free blade that
+   * cannot be at the target by the same arrival turn is not part of
+   * the wave the build is joining (military audit C4, second half).
+   * 0 restores the whole-continent pool. Geometry, not a magnitude,
+   * so 0/1 like boat_water_gate. */
+  int assault_pool_reach;
   /* Kill sortie (E3): a garrison blade attacks an adjacent besieger
    * when the duel odds clear this floor AND the city still clears
    * survival_target without it. <= 0 disables. */

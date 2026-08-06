@@ -3603,7 +3603,7 @@ static void deep_assault_want(struct ai_type *ait,
   double best_score = 0.0, p0, p1, marginal;
   Continent_id home = tile_continent(city_tile(pcity));
   struct unit *pool[32];      /* deep_take_odds caps the stream anyway */
-  int n_pool = 0, n_elsewhere = 0, eta, rate, csize;
+  int n_pool = 0, n_elsewhere = 0, n_far = 0, eta, rate, csize;
   struct unit *vunit;
   adv_want tworth, want, gross;
   double l0 = 0.0, l1 = 0.0, loss;
@@ -3670,32 +3670,6 @@ static void deep_assault_want(struct ai_type *ait,
   }
   tworth = def_ai_city_data(target, ait)->worth;
 
-  /* The pool that will actually fight for THIS target: own attackers
-   * on this continent, not tied to home defence, and not committed to
-   * a different intention. Counting every free attacker as one stream
-   * across concurrent operations priced the marginal blade against a
-   * force that never assembles -- with four ops running, p1 - p0 goes
-   * to zero and the build side stops funding attackers exactly when
-   * the campaigns need them (military audit C4). Members of the op
-   * aimed at this city stay in: they are the wave. */
-  unit_list_iterate(pplayer->units, punit) {
-    if (n_pool >= (int) ARRAY_SIZE(pool) - 1) {
-      break;
-    }
-    if (punit->hp <= 0
-        || unit_has_type_flag(punit, UTYF_CIVILIAN)
-        || adv_unit_att_rating(punit) <= 0
-        || tile_continent(unit_tile(punit)) != home
-        || def_ai_unit_data(punit, ait)->task == AIUNIT_DEFEND_HOME) {
-      continue;
-    }
-    if (deep_op_claimed_elsewhere(pplayer, punit->id, target->id)) {
-      n_elsewhere++;
-      continue;
-    }
-    pool[n_pool++] = punit;
-  } unit_list_iterate_end;
-
   {
     /* March or sail time is the defender's budget on BOTH terrains
      * (one law): the marginal odds are priced against the garrison
@@ -3715,6 +3689,58 @@ static void deep_assault_want(struct ai_type *ait,
     eta = (real_map_distance(city_tile(pcity), city_tile(target))
            * SINGLE_MOVE + rate - 1) / rate + (overseas ? 2 : 0);
   }
+
+  /* The pool that will actually fight for THIS target: own attackers
+   * on this continent, not tied to home defence, not committed to a
+   * different intention, and CLOSE ENOUGH TO BE THERE.
+   *
+   * Counting every free attacker as one stream across concurrent
+   * operations priced the marginal blade against a force that never
+   * assembles -- with four ops running, p1 - p0 goes to zero and the
+   * build side stops funding attackers exactly when the campaigns
+   * need them (military audit C4). D1 fixed the first half by
+   * excluding units an operation has claimed for somewhere else.
+   * This is the second half, and it is the same law the odds already
+   * run on: the marginal blade is priced at ITS arrival turn, so a
+   * free unit that cannot be at the target by then is no more part of
+   * that wave than a unit that does not exist. Nothing is invented --
+   * the bar is eta, computed above, in the currency the take odds are
+   * already taken in.
+   *
+   * Members of the op aimed at THIS city are exempt: they are
+   * committed to arrive whenever they arrive, which is what being the
+   * wave means. */
+  unit_list_iterate(pplayer->units, punit) {
+    if (n_pool >= (int) ARRAY_SIZE(pool) - 1) {
+      break;
+    }
+    if (punit->hp <= 0
+        || unit_has_type_flag(punit, UTYF_CIVILIAN)
+        || adv_unit_att_rating(punit) <= 0
+        || tile_continent(unit_tile(punit)) != home
+        || def_ai_unit_data(punit, ait)->task == AIUNIT_DEFEND_HOME) {
+      continue;
+    }
+    if (deep_op_claimed_elsewhere(pplayer, punit->id, target->id)) {
+      n_elsewhere++;
+      continue;
+    }
+    if (tune->assault_pool_reach
+        && deep_op_claiming(pplayer, punit->id) < 0) {
+      int urate = MAX(tile_continent(city_tile(target)) != home
+                      ? rate : unit_type_get(punit)->move_rate, 1);
+      int uturns = (real_map_distance(unit_tile(punit),
+                                      city_tile(target)) * SINGLE_MOVE
+                    + urate - 1) / urate
+                   + (tile_continent(city_tile(target)) != home ? 2 : 0);
+
+      if (uturns > eta) {
+        n_far++;
+        continue;
+      }
+    }
+    pool[n_pool++] = punit;
+  } unit_list_iterate_end;
 
   vunit = unit_virtual_create(pplayer, pcity, punittype, 1);
   p0 = n_pool > 0
@@ -3871,12 +3897,12 @@ static void deep_assault_want(struct ai_type *ait,
 
   log_base(deep_metric_log_level(),
            "deep-kill turn=%d player=\"%s\" city=%d target=%d barb=%d"
-           " worth=" ADV_WANT_PRINTF " pool=%d elsewhere=%d p0=%.3f"
+           " worth=" ADV_WANT_PRINTF " pool=%d elsewhere=%d far=%d p0=%.3f"
            " p1=%.3f ck=%d type=\"%s\" gross=" ADV_WANT_PRINTF
            " loss=%.2f want=" ADV_WANT_PRINTF,
            game.info.turn, player_name(pplayer), pcity->id, target->id,
            is_barbarian(city_owner(target)) ? 1 : 0,
-           tworth, n_pool, n_elsewhere, p0, p1, csize,
+           tworth, n_pool, n_elsewhere, n_far, p0, p1, csize,
            utype_rule_name(punittype), gross, loss, want);
 
   if (want > choice->want) {
