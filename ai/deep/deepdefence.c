@@ -4286,6 +4286,57 @@ static bool deep_choice_target(const struct adv_choice *choice,
 }
 
 /**********************************************************************//**
+  The endgame score mode's UNIT half: inside the final
+  `endgame_window` turns, deflate a unit nobody will finish building.
+
+  The improvement half runs earlier, on building_want[] itself
+  (deephorizon.c), so this seam deliberately touches VUT_UTYPE targets
+  only -- deflating a building here as well would charge it twice for
+  the same bell. Between them the whole auction is covered: every
+  candidate at this seam is a unit or an improvement.
+
+  The emergency tier is exempt, as every deep gate exempts it. A city
+  that needs a defender this turn is not playing for score, and a
+  half-built defender that will not arrive is still the only thing
+  standing between the city and a capture that costs far more than the
+  metric.
+
+  Returns the want removed, or 0 when nothing was.
+**************************************************************************/
+static adv_want deep_endgame_unit_deflate(struct player *pplayer,
+                                          struct city *pcity,
+                                          struct adv_choice *choice,
+                                          const char *who)
+{
+  double mult = deep_tuning_get()->endgame_unfinished_gain;
+  struct universal target;
+  adv_want was;
+
+  if (mult == 1.0
+      || !deep_in_endgame_window()
+      || choice->want <= 0
+      || deep_want_from_choice(choice).tier == DWT_EMERGENCY
+      || !deep_choice_target(choice, &target)
+      || target.kind != VUT_UTYPE
+      || deep_finishes_in_time(pcity, &target)) {
+    return 0;
+  }
+
+  was = choice->want;
+  choice->want = choice->want * mult;
+
+  log_base(deep_metric_log_level(),
+           "deep-endgame-unit turn=%d player=\"%s\" city=%d who=\"%s\""
+           " pick=\"%s\" left=%d ttb=%d want=" ADV_WANT_PRINTF
+           " to=" ADV_WANT_PRINTF,
+           game.info.turn, player_name(pplayer), pcity->id, who,
+           adv_choice_rule_name(choice), deep_turns_left(),
+           city_turns_to_build(pcity, &target, TRUE), was, choice->want);
+
+  return was - choice->want;
+}
+
+/**********************************************************************//**
   Debit one candidate by the shields its own production change would
   really forfeit, and return the debit in want.
 
@@ -4656,6 +4707,15 @@ static void deep_city_choose_build(struct ai_type *ait,
          * switch debit: the debit is an absolute shield-equivalent
          * cost and must be charged against the rescaled bid. */
         deep_want_scale_apply(pplayer, pcity, &(city_data->choice), "mil");
+
+        /* And the bell, on both sides, before the debit: a build that
+         * cannot finish is worth its deflator whichever advisor
+         * proposed it, and the switch cost is an absolute
+         * shield-equivalent that must be charged against the bid the
+         * auction will actually compare. */
+        deep_endgame_unit_deflate(pplayer, pcity, &(city_data->choice),
+                                  "mil");
+        deep_endgame_unit_deflate(pplayer, pcity, newchoice, "dom");
 
         deep_switch_cost_apply(pplayer, pcity, &(city_data->choice), "mil");
         deep_switch_cost_apply(pplayer, pcity, newchoice, "dom");
