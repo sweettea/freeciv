@@ -9290,3 +9290,108 @@ better-targeted.
 - **Contested is NOT re-measured here** (BALANCE owns that cell's
   re-measure). The multiplier is live in both cells' defaults from
   this commit, so any contested number taken before it is stale.
+
+## M1 rider 3: the offence/defence stakes become a tilt (2026-08-06)
+
+One code commit (`558841bf07`) and this section. The conquest rider
+left an asymmetry its own argument condemns -- keeping our city keeps
+its value AND denies it to the taker -- so `defence_worth_mult` is
+that half, default **2.0**, range 1.0-3.0, sibling of
+`conquest_worth_mult`.
+
+**Verdict: doubling the defence stakes does NOT regress. Score -0.13
+(t -0.29) on the pair the rider required, so the SYMMETRIC default
+ships as landed (2.0/2.0) and the symmetric case does not go to the
+pile.** The mechanism moves exactly as designed and the tilt is now a
+knob rather than a decision taken in code.
+
+### 1. The tilt is the ratio, and 1:1 is invariant
+
+Both sides of the one comparison that reads both -- the defence
+counter-claim in `deep_op_poach_defender` -- now carry their own
+multiplier: our risk by `defence_worth_mult`, the op's expected take
+by `conquest_worth_mult`, once each. That is what makes a common
+factor cancel, so 1:1 is algebraically the pre-rider behaviour at any
+level and only the RATIO means anything:
+
+    conquest / defence  > 1   conquest-hungry
+                        = 1   pre-rider behaviour, any level
+                        < 1   hearth-guarding
+
+Multiplying only the defence side would have made "symmetric stakes"
+mean "double the defence" -- a tilt wearing a symmetry's clothes.
+Documented in that language in `tuning-params.ini`, in the header, and
+in `knobcensus.py` where the entry is marked **MAP**: a sweep must
+move the pair together or explicitly hold one.
+
+### 2. The other worth readers, exempt with reasons
+
+- **Emergency triage comparator** (`deepdefence.c`): sorts our OWN
+  cities, so a common positive factor cannot change any comparison --
+  and post-D1 it is lexicographic (surv, urgency, capital, worth, id)
+  with worth only the fourth key. **Exempt by construction**, as the
+  brief predicted.
+- **Target scoring** (`worth / (1 + distance)`, both in
+  `deep_op_pick_target` and `deep_assault_want`): picks an argmax that
+  a positive scalar cannot move -- the same reason gate 5 is applied
+  after the snap-up sweep. **Exempt.**
+- **The overseas lift-demand magnitude** (`deepdefence.c`, `worth =
+  MAX(worth, target_worth)` feeding a ferry build want): reads a
+  target's worth but SIZES A BUILD rather than comparing stakes, so
+  scaling it would move naval wants against the domestic ladder for
+  reasons this rider is not about. **Untouched and flagged**, not
+  silently skipped -- if the human wants stakes to propagate into
+  build magnitudes, that is a separate call with its own pair.
+
+### 3. The pair
+
+Binary PINNED (`6051a0e8bbbe`), lategame-80, 20 paired seeds,
+`defence_worth_mult` 1.0 vs 2.0 against a fixed
+`conquest_worth_mult = 2.0` -- so the arms are tilt ratio **2.0
+(conquest-hungry) vs 1.0 (symmetric)**. Standing pins in both.
+
+    metric                    tilt 2.0    tilt 1.0    delta      se      t
+    score                       169.60      169.47    -0.13    0.47  -0.29
+    unitsbuilt                   39.39       39.67    +0.27    0.16  +1.70
+    unitslost                    12.04       12.33    +0.29    0.32  +0.92
+    unitskilled                  10.82       11.03    +0.20    0.29  +0.70
+    munits                       14.70       14.49    -0.21    0.18  -1.15
+    cities                        8.11        8.15    +0.04    0.08  +0.53
+    mean_city_size                5.40        5.38    -0.03    0.02  -1.08
+
+    poach events                 12.90       15.25    +2.35    2.83  +0.83
+    netval refusals               5.05        3.45    -1.60    1.12  -1.43
+    operations launched           3.90        4.15    +0.25    0.41  +0.61
+
+Eight of twenty games are identical; on the twelve that moved the mean
+is -0.22 (se 0.79, 4/12). **No regression beyond noise, so the
+default stays 2.0.**
+
+### 4. What the defence doubling actually buys
+
+    per arm                      tilt 2.0    tilt 1.0
+    poaches (total)                   258         305
+    mean own-city worth               582         601
+    ... as dworth (after mult)        582        1201
+    mean risk the city bid            550        1149
+    mean ODDS of the op outbid       0.03        0.16
+
+**That last row is the mechanism in one number.** Under a
+conquest-hungry tilt a sinking city can only outbid operations that
+were nearly hopeless anyway (mean take odds 0.03); at symmetric stakes
+it outbids operations with real prospects (0.16), 18% more often. The
+knob does what it says, the counter proves it, and the score cannot
+tell the difference at twenty seeds -- which is the honest reason to
+ship the symmetric default rather than a tilt nobody measured.
+
+### 5. Owed
+
+- `defence_worth_mult` ships at **2.0**, registered in all four audit
+  places, M/MIL/ALL blocks, generated `deep-tuning` line, and
+  `knobcensus.py` (MAP). Off-switch is 1.0, proven by counter
+  (`worth == dworth` on every poach line of the 1.0 arm).
+- **The RATIO is the tuning object, not either level.** Both knobs at
+  2.0 is one point on a line; the pile should sweep the ratio.
+- The defence-side stakes still reach only the counter-claim. The fear
+  lattice, the garrison floor and the relief machinery price danger,
+  not stakes, and nothing in this rider changed them.
