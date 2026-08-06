@@ -931,19 +931,46 @@ static double deep_garrison_menace(struct player *pplayer)
   the neighbours we know about actually are -- zero before contact,
   when the world cannot reach us and every garrison displaces a
   Settler at compounding time.
+
+  Census (`deep-floor`, one line per ELIGIBLE city-turn from the
+  once-per-turn caller only): the floor owns most of deep's standing
+  army by the E34.2/E34.2b measurement -- 73-74% of military
+  city-turns sit at raw danger zero -- and had no counter at all, so
+  neither its size nor an off-switch could be proven. `applied` is the
+  danger actually injected, so an arm with the floor switched off
+  reports eligible city-turns with applied=0 and the switch is proven
+  rather than assumed.
+
+  Eligibility is a RESIDUAL: every anticipatory fear term above has
+  already been added, so the floor can only fire in a city where F1-F6
+  all came back zero (and satisfaction cannot have shrunk them --
+  `deep_fear_satisfaction` returns 1.0 while the garrison is below the
+  floor, which is exactly when the floor is eligible). One owner per
+  threat class therefore holds by construction: whenever a fear term
+  prices a class, the floor is silent in that city.
 **************************************************************************/
 static void deep_apply_garrison_floor(struct city *pcity,
                                       struct ai_city *city_data,
                                       double upkeep_discount,
-                                      double menace)
+                                      double menace, bool log_it)
 {
   const struct deep_tuning *tune = deep_tuning_get();
+  unsigned int applied;
 
-  if (city_data->danger == 0
-      && unit_list_size(city_tile(pcity)->units) < tune->garrison_floor) {
-    city_data->danger
-      = (unsigned int) (tune->garrison_floor_danger * upkeep_discount
-                        * menace);
+  if (city_data->danger != 0
+      || unit_list_size(city_tile(pcity)->units) >= tune->garrison_floor) {
+    return;
+  }
+  applied = (unsigned int) (tune->garrison_floor_danger * upkeep_discount
+                            * menace);
+  city_data->danger = applied;
+  if (log_it) {
+    log_base(deep_metric_log_level(),
+             "deep-floor turn=%d player=\"%s\" city=%d units=%d"
+             " menace=%.3f updisc=%.3f applied=%u",
+             game.info.turn, player_name(city_owner(pcity)), pcity->id,
+             unit_list_size(city_tile(pcity)->units), menace,
+             upkeep_discount, applied);
   }
 }
 
@@ -1085,7 +1112,7 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
     credit = deep_incoming_defence_credit(ait, pcity)
              + deep_muster_reserve_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
-    deep_apply_garrison_floor(pcity, city_data, updisc, menace);
+    deep_apply_garrison_floor(pcity, city_data, updisc, menace, TRUE);
   } city_list_iterate_end;
 }
 
@@ -2477,7 +2504,7 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
              + deep_muster_reserve_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
     deep_apply_garrison_floor(pcity, city_data, updisc,
-                              deep_garrison_menace(pplayer));
+                              deep_garrison_menace(pplayer), FALSE);
 
     if (city_data->danger == 0 && deep_tuning_get()->rotation_want > 0
         && deep_tuning_get()->rotation_power_ratio > 0.0) {
