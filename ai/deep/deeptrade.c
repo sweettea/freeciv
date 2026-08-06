@@ -27,6 +27,7 @@
 #include "game.h"
 #include "improvement.h"
 #include "map.h"
+#include "maphand.h"
 #include "movement.h"
 #include "player.h"
 #include "traderoutes.h"
@@ -868,6 +869,58 @@ static int deep_route_candidates(struct player *pplayer, struct city *src,
   return n;
 }
 
+static bool deep_route_reach_allows(const struct player *src,
+                                    const struct player *dest);
+
+/**********************************************************************//**
+  How many legal trade partners sit on ANOTHER continent -- the cities
+  a caravan built here would want and cannot walk to.
+
+  A census, and nothing reads it. Design call 3 (cross-water caravans)
+  asked for trade caravans to become lift-eligible behind a gate; they
+  already are. deep_lift_wants_boat() filters on "not transported, no
+  ferry assigned, has a goto tile" and has no unit-class test at all,
+  so a caravan holding a cross-continent goto would be picked up by the
+  next lift formation exactly like a settler.
+
+  The binding constraint is upstream of that: the destination search is
+  a LAND pathfinder over the caravan's own unit class, in deep's
+  enumeration and in caravan.c's alike, so an overseas city is never a
+  candidate and the goto that would make it lift-eligible is never set.
+  (Stock reaches them only by setting ignore_transit_time, i.e. by
+  pretending the crossing is free -- the very defect deep removed.)
+
+  So before anything is built, the population is counted: how many
+  legal partners are out of reach for want of a boat, and what the
+  ruleset would pay for them. civ2civ3 pays INIC 200% against IN 100%,
+  which is the 2x premium the design call was aiming at.
+**************************************************************************/
+static int deep_route_offshore(const struct player *pplayer,
+                               const struct city *src, int *ic_premium)
+{
+  Continent_id home = tile_continent(city_tile(src));
+  int n = 0;
+
+  *ic_premium = 0;
+  players_iterate_alive(aplayer) {
+    city_list_iterate(aplayer->cities, acity) {
+      if (tile_continent(city_tile(acity)) == home
+          || !map_is_known(city_tile(acity), pplayer)
+          || !deep_route_reach_allows(pplayer, aplayer)
+          || !can_cities_trade(src, acity)) {
+        continue;
+      }
+      n++;
+      *ic_premium
+        = MAX(*ic_premium,
+              trade_route_type_trade_pct(cities_trade_route_type(src,
+                                                                 acity)));
+    } city_list_iterate_end;
+  } players_iterate_alive_end;
+
+  return n;
+}
+
 /**********************************************************************//**
   How much of the walk to 'dest' is dangerous, as a fraction of the
   path's length.
@@ -963,6 +1016,8 @@ struct deep_trade_case {
   int life;
   double danger;                /* fraction of the path that is dangerous */
   double survival;              /* the factor that came out of it */
+  int offshore;                 /* legal partners we cannot walk to */
+  int offshore_pct;             /* what the ruleset would pay for them */
 };
 
 /**********************************************************************//**
@@ -1056,6 +1111,8 @@ static adv_want deep_trade_merit_want(struct ai_type *ait,
     unit_virtual_destroy(ghost);
     return 0;
   }
+
+  tc->offshore = deep_route_offshore(pplayer, pcity, &tc->offshore_pct);
 
   n = deep_route_candidates(pplayer, pcity, ghost, MORT,
                             !has_handicap(pplayer, H_MAP),
@@ -1301,13 +1358,13 @@ void deep_trade_merit_apply(struct ai_type *ait, struct player *pplayer,
            " stock=%.1f merit=%.1f npv=%.1f cnpv=%.1f eta=%d build=%d"
            " dest=%d committed=%d slots=%d rank=%d seen=%d priced=%d"
            " trunc=%d wind=%.1f flow=%.2f life=%d risk=%.2f capped=%d"
-           " recover=%s",
+           " offshore=%d offpct=%d recover=%s",
            game.info.turn, player_name(pplayer), pcity->id, mode,
            (double) stock_bid, (double) merit, tc.npv, tc.caravan_npv,
            tc.eta, tc.build, tc.dest != NULL ? tc.dest->id : -1,
            tc.committed, tc.slots, tc.rank, tc.seen, tc.priced,
            tc.truncated, tc.windfall, tc.per_turn, tc.life, tc.danger,
-           tc.capped ? 1 : 0,
+           tc.capped ? 1 : 0, tc.offshore, tc.offshore_pct,
            recovered ? "yes" : (partial ? "partial" : "-"));
 }
 
