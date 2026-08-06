@@ -92,6 +92,15 @@ struct deep_tuning {
    * gates, 0 restores stock's blind premium and is the A/B arm. */
   int site_naval_gate;
 
+  /* And what that premium is WORTH, as a percentage of the site's own
+   * value: stock's naval_bonus() pays a compile-time NAVAL_EMPHASIS
+   * (20) -- a fifth of the whole site score for standing next to
+   * water, one of the largest single terms in site scoring, never
+   * measured by anyone. PLACEHOLDER 20.0 reproduces stock operation
+   * for operation; the knob exists so the magnitude can be tuned
+   * where stock had a constant. 0 removes the premium. */
+  double site_naval_weight;
+
   /* Founders to keep alive per SITE the unclaimed land could still
    * hold (deep_remaining_sites()) before Join City may dissolve one. A
    * founder pool must be nonzero -- a settler in hand is the only way

@@ -934,6 +934,28 @@ static adv_want deep_site_defence_bonus(struct player *pplayer,
 }
 
 /**********************************************************************//**
+  What coastal access is worth at a candidate site: site_naval_weight
+  percent of the site's own value, replacing stock's compile-time
+  NAVAL_EMPHASIS (naval_bonus(), daisettler.c).
+
+  Same shape, same adjacency test, same float arithmetic -- at the
+  default 20.0 this is `(total * 20) / 100` operation for operation,
+  which is what keeps the knob's introduction inert. What it adds is
+  that the number can now be MOVED: a maritime premium of a fifth of a
+  site's whole value is one of the largest single terms in site
+  scoring and has never been measured, in stock or here.
+**************************************************************************/
+static adv_want deep_site_naval_bonus(const struct cityresult *result)
+{
+  if (!is_terrain_class_near_tile(&(wld.map), result->tile, TC_OCEAN)) {
+    return 0;
+  }
+
+  return (result->total * (adv_want) deep_tuning_get()->site_naval_weight)
+         / 100.0f;
+}
+
+/**********************************************************************//**
   Desirability of founding at ptile; derived from stock
   city_desirability(), calling the deep evaluator.
 **************************************************************************/
@@ -1037,11 +1059,11 @@ static struct cityresult *deep_city_desirability(struct ai_type *ait,
    * deep_city_water_bridges); the gate's own sizing found closed-water
    * hulls were 6.9% of hulls owning 11.2% of idle time.
    *
-   * The magnitude is stock's and unchanged: this refuses a premium, it
-   * never resizes one. site_naval_gate = 0 restores the old
-   * behaviour and is the A/B switch. */
+   * site_naval_gate = 0 restores stock's blind premium and is the
+   * geometry A/B switch; site_naval_weight is its MAGNITUDE, which
+   * stock hard-codes as NAVAL_EMPHASIS and nothing has ever measured. */
   {
-    adv_want naval = naval_bonus(cr);
+    adv_want naval = deep_site_naval_bonus(cr);
 
     if (naval > 0) {
       if (deep_tuning_get()->site_naval_gate > 0
