@@ -85,8 +85,19 @@ def wonder_series(scorelog):
 def game(gamedir):
     text = (gamedir / "game.log").read_text(errors="replace")
     rows = seam_rows(text)
+    # Three nested populations, and the distinction matters: a line with
+    # a wonder want is not a line that got PRICED. The want function
+    # returns 0 early -- with walk and build still at their -1 sentinel
+    # -- when the wonder is already fully funded by caravans in the
+    # field, which is stock's count gate expressed as a zero. Mixing
+    # those zeros into the percentiles reads as "deep prices half of
+    # them at nothing", when what happened is that deep refused half of
+    # them for a stated reason.
     el = [r for r in rows if r.get("wwant", 0) > 0]
-    fin = [r for r in el if r.get("build", INF) < INF]
+    priced = [r for r in el if r.get("walk", -1) >= 0]
+    refused = [r for r in el if r.get("walk", -1) < 0]
+    fin = [r for r in priced if r.get("build", INF) < INF]
+    noshields = [r for r in priced if r.get("build", INF) >= INF]
     modes = Counter(r["mode"] for r in rows)
     rec = Counter(r["recover"] for r in rows)
 
@@ -106,7 +117,9 @@ def game(gamedir):
     final = sum(s[max(s)] for s in ws.values() if s)
 
     return {
-        "lines": len(rows), "eligible": len(el), "finite": len(fin),
+        "lines": len(rows), "eligible": len(el), "priced": len(priced),
+        "refused_funded": len(refused), "no_shields": len(noshields),
+        "finite": len(fin),
         "replace": modes["replace"], "promote": modes["promote"],
         "keep": modes["keep"],
         "recover_yes": rec["yes"], "recover_partial": rec["partial"],
@@ -139,7 +152,8 @@ def main():
             continue
         games = [game(d) for d in dirs]
         print("== %s   (%d games, arm %s)" % (root, len(games), arm))
-        for k in ("lines", "eligible", "finite", "replace", "promote",
+        for k in ("lines", "eligible", "priced", "refused_funded",
+                  "no_shields", "finite", "replace", "promote",
                   "keep", "recover_yes", "recover_partial", "picks",
                   "disp_wonder", "disp_route", "wonders_final",
                   "wonders_built", "pledged_pos"):
