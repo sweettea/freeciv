@@ -205,6 +205,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .horizon_govcenter_weight = 0.0,      /* PLACEHOLDER, 0 = off */
   .horizon_upkeepfree_weight = 0.0,     /* PLACEHOLDER, 0 = off */
   .horizon_culture_weight = 0.0,        /* PLACEHOLDER, 0 = off */
+  .buy_per_gold = 0,                    /* PLACEHOLDER, 0 = off */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -383,7 +384,8 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(endgame_wonder_gain) \
   TUNE_DOUBLE(horizon_govcenter_weight) \
   TUNE_DOUBLE(horizon_upkeepfree_weight) \
-  TUNE_DOUBLE(horizon_culture_weight)
+  TUNE_DOUBLE(horizon_culture_weight) \
+  TUNE_INT(buy_per_gold)
 
 /**********************************************************************//**
   Load tuning overrides from $FREECIV_DEEP_TUNING, if set. Called once

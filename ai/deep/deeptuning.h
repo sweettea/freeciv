@@ -1365,6 +1365,25 @@ struct deep_tuning {
    * Note for the stance work: this un-blocks the culture axis
    * deepstance.h declares inert. It is deliberately NOT wired here. */
   double horizon_culture_weight;
+
+  /* DARKFX -- the rush-buy policy, the audit's third ranked
+   * opportunity and the one that costs no new valuation at all.
+   *
+   * The greedy buy loop spends the treasury in want order and never
+   * looks at the price (daicity.c:560, and deep inherited it). Buy
+   * cost is QUADRATIC in the shields remaining for units, so the same
+   * gold buys roughly four times the shields when it tops up a nearly
+   * finished build instead of starting a bare one -- and the loop
+   * cannot see the difference, because want is a property of the thing
+   * being built and the discount is a property of how far along it is.
+   *
+   * buy_per_gold = 1 ranks the loop by want per gold instead. The
+   * triage is deliberately untouched: a city whose urgency or
+   * grave_danger says it is about to fall is ranked on want exactly as
+   * before and outranks every bargain in the empire, because a
+   * defender that arrives cheap next turn is worth nothing. 0 = off =
+   * byte-identical. PLACEHOLDER. */
+  int buy_per_gold;
 };
 
 void deep_tuning_init(void);

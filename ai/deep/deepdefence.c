@@ -4094,15 +4094,56 @@ static void deep_spend_gold(struct ai_type *ait, struct player *pplayer)
 
     /* Find highest wanted item on the buy list */
     adv_init_choice(&bestchoice);
-    city_list_iterate(pplayer->cities, acity) {
-      struct ai_city *acity_data = def_ai_city_data(acity, ait);
+    if (deep_tuning_get()->buy_per_gold > 0) {
+      /* DARKFX: rank by want per GOLD. Buy cost is quadratic in the
+       * shields still missing for a unit, so the same treasury buys
+       * several times the shields when it tops up a nearly finished
+       * build; want alone cannot see that, because want belongs to the
+       * thing and the discount belongs to its progress.
+       *
+       * The triage keeps its own tier and its own ordering: a city
+       * whose urgency or grave_danger says it may fall this turn is
+       * ranked on want exactly as before and beats every bargain in
+       * the empire. A completed production (cost 0) also stays on want
+       * so the loop still reaches it and retires it, as before. */
+      double bestkey = 0.0;
+      int besttier = -1;
 
-      if (acity_data->choice.want
-          > bestchoice.want && ai_fuzzy(pplayer, TRUE)) {
-        adv_choice_copy(&bestchoice, &(acity_data->choice));
-        pcity = acity;
-      }
-    } city_list_iterate_end;
+      city_list_iterate(pplayer->cities, acity) {
+        struct ai_city *acity_data = def_ai_city_data(acity, ait);
+        int cost;
+        int tier;
+        double key;
+
+        if (acity_data->choice.want <= 0) {
+          continue;
+        }
+        tier = (acity_data->urgency > 1 || acity_data->grave_danger != 0)
+               ? 1 : 0;
+        cost = city_production_buy_gold_cost(acity);
+        key = (tier > 0 || cost <= 0)
+              ? (double) acity_data->choice.want
+              : (double) acity_data->choice.want / cost;
+
+        if ((tier > besttier || (tier == besttier && key > bestkey))
+            && ai_fuzzy(pplayer, TRUE)) {
+          besttier = tier;
+          bestkey = key;
+          adv_choice_copy(&bestchoice, &(acity_data->choice));
+          pcity = acity;
+        }
+      } city_list_iterate_end;
+    } else {
+      city_list_iterate(pplayer->cities, acity) {
+        struct ai_city *acity_data = def_ai_city_data(acity, ait);
+
+        if (acity_data->choice.want
+            > bestchoice.want && ai_fuzzy(pplayer, TRUE)) {
+          adv_choice_copy(&bestchoice, &(acity_data->choice));
+          pcity = acity;
+        }
+      } city_list_iterate_end;
+    }
 
     /* We found nothing, so we're done */
     if (pcity == NULL) {
@@ -4190,6 +4231,16 @@ static void deep_spend_gold(struct ai_type *ait, struct player *pplayer)
                adv_choice_rule_name(&bestchoice),
                buycost,
                bestchoice.want);
+      /* DARKFX's buy census, ungated so the two ranking policies are
+       * comparable: what the gold actually bought, in shields. */
+      log_base(deep_metric_log_level(),
+               "deep-buy turn=%d player=\"%s\" city=%d kind=\"%s\""
+               " gold=%d shields=%d want=%.1f urgency=%d tier=\"%s\"",
+               game.info.turn, player_name(pplayer), pcity->id,
+               adv_choice_rule_name(&bestchoice), buycost,
+               MAX(0, city_production_build_shield_cost(pcity)
+                      - pcity->shield_stock),
+               (double) bestchoice.want, city_data->urgency, "normal");
       really_handle_city_buy(pplayer, pcity);
     } else if (city_data->grave_danger != 0
                && bestchoice.type == CT_DEFENDER
@@ -4202,6 +4253,14 @@ static void deep_spend_gold(struct ai_type *ait, struct player *pplayer)
       try_to_sell_stuff(pplayer, pcity);
       if (pplayer->economic.gold - expenses >= buycost) {
         CITY_LOG(LOG_BUY, pcity, "now we can afford it (sold something)");
+        log_base(deep_metric_log_level(),
+                 "deep-buy turn=%d player=\"%s\" city=%d kind=\"%s\""
+                 " gold=%d shields=%d want=%.1f urgency=%d tier=\"%s\"",
+                 game.info.turn, player_name(pplayer), pcity->id,
+                 adv_choice_rule_name(&bestchoice), buycost,
+                 MAX(0, city_production_build_shield_cost(pcity)
+                        - pcity->shield_stock),
+                 (double) bestchoice.want, city_data->urgency, "sold");
         really_handle_city_buy(pplayer, pcity);
       }
       increase_maxbuycost(pplayer, buycost);
