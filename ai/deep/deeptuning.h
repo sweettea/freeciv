@@ -71,6 +71,18 @@ struct deep_tuning {
    * site at home; lowering it makes it settle for less, faster. */
   double site_enough_result;
 
+  /* What defensible ground is worth at a candidate site, as a
+   * PERCENTAGE of the site's own value paid per 100% of terrain
+   * defence: at 20, a hills site (+100% in civ2civ3) is worth 20%
+   * more than the same yields on the flat, and grassland earns
+   * nothing. Replaces stock's result_defense_bonus(), which is
+   * upstream bug #1 and pays defensible ground LESS (deepsite.c).
+   * PLACEHOLDER 20.0 = stock's own DEFENSE_EMPHASIS, the only
+   * magnitude in this area any game has ever been played with; the
+   * SHAPE is corrected, the size is owed a tuning pass. 0 disables
+   * the term, which is this change's off switch. */
+  double site_defence_weight;
+
   /* Founders to keep alive per SITE the unclaimed land could still
    * hold (deep_remaining_sites()) before Join City may dissolve one. A
    * founder pool must be nonzero -- a settler in hand is the only way

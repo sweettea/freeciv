@@ -851,6 +851,80 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
 }
 
 /**********************************************************************//**
+  The composite defence factor of a candidate site, on stock's scale:
+  10 is flat open ground, +1 per 10% of terrain defence, with the free
+  extras a new city is given (river, and whatever the ruleset grants)
+  compounded on top. Shape and inputs are stock's
+  result_defense_bonus(); only what is DONE with the number differs,
+  which is why the composite is computed the same way here.
+**************************************************************************/
+static int deep_site_defence_factor(struct player *pplayer,
+                                    const struct cityresult *result)
+{
+  int defence = 10 + tile_terrain(result->tile)->defense_bonus / 10;
+  int extra_bonus = 0;
+  struct tile *vtile = tile_virtual_new(result->tile);
+  struct city *vcity = create_city_virtual(pplayer, vtile, "");
+
+  tile_set_worked(vtile, vcity);        /* Link tile_city(vtile). */
+  upgrade_city_extras(vcity, NULL);     /* Give the city its free extras. */
+  extra_type_iterate(pextra) {
+    if (tile_has_extra(vtile, pextra)) {
+      extra_bonus += pextra->defense_bonus;
+    }
+  } extra_type_iterate_end;
+  tile_virtual_destroy(vtile);          /* Destroys vcity with it. */
+
+  defence += (defence * extra_bonus) / 100;
+
+  return defence;
+}
+
+/**********************************************************************//**
+  What a candidate site's defensibility is worth -- valued UPWARDS.
+
+  Stock's result_defense_bonus() is upstream bug #1
+  (findings/upstream-bugs.md): it returns
+  `100/(total+1) * (100/defence * DEFENSE_EMPHASIS)`, so the defence
+  factor sits in a DENOMINATOR and better ground scores less. At site
+  total 500 it pays grassland 39.9 and mountains 20.0, and its own
+  docstring says the opposite of what it computes ("a % of total
+  results equal to a given % of the defense bonus %"). 00-context
+  section 5 used it as the example of a bug ai/deep "simply doesn't
+  have"; deep called it at this file's site scorer until this session
+  (findings/mechanism-map.md D-D).
+
+  This is the docstring's formula, taken literally: the premium is
+  site_defence_weight percent of the site's own value, scaled by the
+  terrain's defence percentage. Flat ground is the zero point -- it is
+  what "no defence bonus" means in every ruleset -- so a site earns a
+  premium for the ground it holds and never a penalty. Rule 2's
+  doctrine: the correct behaviour lands here, ai/default keeps the bug
+  and it is offered upstream separately.
+
+  The weight defaults to stock's own DEFENSE_EMPHASIS (20), which is
+  the one magnitude in this area anybody has ever run a game with, and
+  is registered as a PLACEHOLDER for the tuning pile rather than
+  presented as measured. Setting it to 0 removes the term entirely and
+  is this change's off switch.
+**************************************************************************/
+static adv_want deep_site_defence_bonus(struct player *pplayer,
+                                        const struct cityresult *result,
+                                        int *factor)
+{
+  int defence = deep_site_defence_factor(pplayer, result);
+
+  if (factor != NULL) {
+    *factor = defence;
+  }
+
+  /* (defence - 10) / 10 is exactly the ruleset's own defence
+   * percentage as a fraction: 0.0 on flat ground, 1.0 for +100%. */
+  return result->total * (deep_tuning_get()->site_defence_weight / 100.0)
+         * ((defence - 10) / 10.0);
+}
+
+/**********************************************************************//**
   Desirability of founding at ptile; derived from stock
   city_desirability(), calling the deep evaluator.
 **************************************************************************/
@@ -917,7 +991,29 @@ static struct cityresult *deep_city_desirability(struct ai_type *ait,
     return NULL;
   }
 
-  cr->total += result_defense_bonus(pplayer, cr);
+  {
+    int factor = 0;
+    adv_want defence = deep_site_defence_bonus(pplayer, cr, &factor);
+
+    /* One line per CANDIDATE is far too much for a benchmark log, so
+     * it is written at LOG_VERBOSE: invisible at the server's default
+     * verbosity (where every deep-* metric line lives) and captured by
+     * a probe run with -d 3 on a corpus position. Stock's inverted
+     * term is reported beside the deep one -- it is extern, and having
+     * both on one line makes the ranking flip checkable on a real
+     * position instead of by arithmetic. The whole block, including
+     * that call, is skipped when the level is off. */
+    if (log_do_output_for_level(LOG_VERBOSE)) {
+      log_verbose("deep-sitedef turn=%d player=\"%s\" at=(%d,%d)"
+                  " terrain=\"%s\" factor=%d total=%.2f deep=%.2f"
+                  " stock=%.2f",
+                  game.info.turn, player_name(pplayer), TILE_XY(cr->tile),
+                  terrain_rule_name(tile_terrain(cr->tile)), factor,
+                  (double) cr->total, (double) defence,
+                  (double) result_defense_bonus(pplayer, cr));
+    }
+    cr->total += defence;
+  }
   cr->total += naval_bonus(cr);
 
   /* Add remaining points, which is our potential (always 0 here --
