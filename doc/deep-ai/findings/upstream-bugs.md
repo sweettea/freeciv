@@ -124,6 +124,65 @@ not exist, at gold upkeep. Observed live (Europe playtest T153,
 on the garrison floor and grave danger (deepdefence.c); fix left out
 of ai/default per the freeze rule.
 
+## caravan.c's annuity() is inverted, so a FINITE horizon prices an
+## ongoing trade route NEGATIVE
+
+`common/aicore/caravan.c:446`:
+
+    static double annuity(double payment, int term, double rate)
+    {
+      return perpetuity(payment, rate) * (1.0 - 1.0 / pow(rate, term));
+    }
+
+The closed form of an annuity at discount `rate < 1` is
+`payment/(1-rate) * (1 - rate^term)`. The code writes `1 - 1/rate^term`.
+For `rate < 1`, `rate^term < 1`, so `1/rate^term > 1` and the bracket is
+**negative** — and it grows without bound in `term`. At the values this
+project runs (`rate = 0.95`, `horizon = MORT = 24`):
+
+    arrival   annuity() as written   correct value   (per 1 trade/turn)
+        0            -48.496              +14.160
+        4            -29.151              +10.450
+        8            -16.878               +7.429
+       12             -9.193               +4.967
+       16             -4.466               +2.963
+
+`perpetuity()` (the infinite-horizon branch) is correct at +20.000, which
+is why nothing upstream has ever tripped over this: **every in-tree
+caller uses `horizon = FC_INFINITY`**, which takes the `perpetuity()`
+branch at `caravan.c:545`. `caravan_parameter_init_default()` sets
+`FC_INFINITY`, and `ai/default` never overrides it. The buggy branch is
+reachable only by a caller that sets a finite horizon.
+
+`ai/deep` is that caller. R2 (`deeptrade.c`, 2026-08-05) set
+`parameter.horizon = MORT` for the caravan BUILD want, deliberately, to
+avoid perpetuity's 20x and to stop the pathfinder walking the whole map
+— and thereby landed on the only defective branch in the file. The
+consequence is specific and severe: in `get_discounted_reward()` the
+value is `trade + windfall`, so a destination where a route can
+**actually be established** (`trade_benefit > 0`) is priced tens of
+points BELOW one where it cannot, and `caravan.c:569`'s
+`trade + windfall >= wonder` test then discards it. Deep's own
+destination CHOOSER (`deep_choose_trade_targets`) keeps
+`FC_INFINITY` and is unaffected.
+
+Not fixed in place: `ai/baseline` and `ai/default` both link this file
+and both are measurement controls, so a fix here would move every
+benchmark number the project has ever taken. `ai/deep` computes the
+annuity itself instead (`deeptrade.c`, `deep_route_annuity()`), from the
+same primitives in `common/traderoutes.c`, and its census reconstructs
+`caravan.c`'s own number beside it so the two can be compared rather
+than assumed.
+
+Second, smaller defect in the same neighbourhood
+(`caravan.c:333`, `one_city_trade_benefit()`): the broken-route ledger
+does `city_owner(losercity)` on the result of
+`game_city_by_number(plost->partner)` **without a null check**, while
+every other partner lookup in `traderoutes.c` guards it. A trade route
+whose partner city has been destroyed but whose route record has not yet
+been reaped would dereference null. Not observed; noted because deep's
+re-derivation guards it.
+
 ## pf danger maps read past an empty segment when the start is dangerous
 
 `common/aicore/path_finding.c`: `pf_danger_map_create_segment()`'s
