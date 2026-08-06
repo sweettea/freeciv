@@ -650,6 +650,13 @@ struct deep_tuning {
    * takes the best at-war city on this continent), amortized over
    * the march. <= 0 disables. */
   double attack_value_weight;
+  /* Cost of victory (combat E2, military audit G1): the expected
+   * attacker losses of the priced assault, in shields at
+   * SHIELD_WEIGHTING, are subtracted from the want before it is
+   * amortized. 1.0 charges the loss at exactly the rate the rest of
+   * the codebase values a shield; 0 restores the pre-E2 want, which
+   * priced an attack as if winning it were free. */
+  double attack_loss_gain;
   /* Kill sortie (E3): a garrison blade attacks an adjacent besieger
    * when the duel odds clear this floor AND the city still clears
    * survival_target without it. <= 0 disables. */

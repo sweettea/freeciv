@@ -140,12 +140,18 @@ static int deep_collect_defenders(struct city *pcity,
 **************************************************************************/
 static double deep_garrison_vs_stream(const struct civ_map *nmap,
                                       struct deep_combatant *att, int n_att,
-                                      struct deep_combatant *def, int n_def)
+                                      struct deep_combatant *def, int n_def,
+                                      double *att_death)
 {
   int att_hp[DEEP_WAVE_MAX], def_hp[DEEP_STACK_MAX];
   struct deep_duel pair[DEEP_WAVE_MAX * DEEP_STACK_MAX];
   int i, j;
 
+  if (att_death != NULL) {
+    for (j = 0; j < n_att; j++) {
+      att_death[j] = 0.0;
+    }
+  }
   if (n_att == 0) {
     return 1.0;
   }
@@ -170,7 +176,8 @@ static double deep_garrison_vs_stream(const struct civ_map *nmap,
     }
   }
 
-  return deep_stack_survival(n_att, att_hp, n_def, def_hp, pair);
+  return deep_stack_survival_losses(n_att, att_hp, n_def, def_hp, pair,
+                                    att_death);
 }
 
 /**********************************************************************//**
@@ -356,7 +363,7 @@ static double deep_city_survival_core(const struct civ_map *nmap,
   }
   qsort(att, n_att, sizeof(att[0]), deep_combatant_cmp);
 
-  return deep_garrison_vs_stream(nmap, att, n_att, def, n_def);
+  return deep_garrison_vs_stream(nmap, att, n_att, def, n_def, NULL);
 }
 
 /**********************************************************************//**
@@ -418,11 +425,48 @@ double deep_take_odds_at_arrival(const struct civ_map *nmap,
                                  struct unit *const *stream, int n_stream,
                                  int eta)
 {
+  return deep_take_odds_cost(nmap, acity, stream, n_stream, eta, NULL,
+                             NULL);
+}
+
+/**********************************************************************//**
+  The take odds AND what taking it is expected to cost: the same walk,
+  reporting expected attacker losses in shields and the expected size
+  of the force still standing afterwards.
+
+  loss_shields is the sum over the stream of P(this unit dies) times
+  its build cost -- the currency the build auction and the granary are
+  already priced in, so "is it worth what it costs" is finally a
+  subtraction rather than a comparison of scales (military audit G1).
+  survivors is the same walk's other half: what would garrison the
+  city we just took (the hold-the-city test).
+
+  Both inherit every assumption the substrate ships with, stated in
+  findings "Combat workstream epic 1": one wave, no healing, no
+  promotion, no reinforcement between duels, military garrison only,
+  observed units only, and the 32/16 computational caps -- a stream
+  longer than 32 is priced on its 32 strongest, and the rest are
+  charged nothing.
+**************************************************************************/
+double deep_take_odds_cost(const struct civ_map *nmap, struct city *acity,
+                           struct unit *const *stream, int n_stream,
+                           int eta, double *loss_shields,
+                           double *survivors)
+{
   struct deep_combatant att[DEEP_WAVE_MAX], def[DEEP_STACK_MAX];
   int n_att = 0, n_def, j, reinforce = 0;
   struct unit *virt[DEEP_STACK_MAX];
   int n_virt = 0;
   double survival;
+  double death[DEEP_WAVE_MAX];
+  bool want_cost = (loss_shields != NULL || survivors != NULL);
+
+  if (loss_shields != NULL) {
+    *loss_shields = 0.0;
+  }
+  if (survivors != NULL) {
+    *survivors = 0.0;
+  }
 
   for (j = 0; j < n_stream; j++) {
     deep_combatant_add(att, &n_att, DEEP_WAVE_MAX, stream[j],
@@ -476,7 +520,23 @@ double deep_take_odds_at_arrival(const struct civ_map *nmap,
     qsort(def, n_def, sizeof(def[0]), deep_combatant_cmp);
   }
 
-  survival = deep_garrison_vs_stream(nmap, att, n_att, def, n_def);
+  survival = deep_garrison_vs_stream(nmap, att, n_att, def, n_def,
+                                     want_cost ? death : NULL);
+
+  if (want_cost) {
+    double dead = 0.0, shields = 0.0;
+
+    for (j = 0; j < n_att; j++) {
+      dead += death[j];
+      shields += death[j] * unit_build_shield_cost_base(att[j].punit);
+    }
+    if (loss_shields != NULL) {
+      *loss_shields = shields;
+    }
+    if (survivors != NULL) {
+      *survivors = n_att - dead;
+    }
+  }
 
   for (j = 0; j < n_virt; j++) {
     unit_virtual_destroy(virt[j]);

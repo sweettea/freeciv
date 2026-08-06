@@ -3605,7 +3605,8 @@ static void deep_assault_want(struct ai_type *ait,
   struct unit *pool[32];      /* deep_take_odds caps the stream anyway */
   int n_pool = 0, n_elsewhere = 0, eta, rate, csize;
   struct unit *vunit;
-  adv_want tworth, want;
+  adv_want tworth, want, gross;
+  double l0 = 0.0, l1 = 0.0, loss;
 
   if (tune->attack_value_weight <= 0.0 || punittype == NULL) {
     return;
@@ -3717,12 +3718,13 @@ static void deep_assault_want(struct ai_type *ait,
 
   vunit = unit_virtual_create(pplayer, pcity, punittype, 1);
   p0 = n_pool > 0
-       ? deep_take_odds_at_arrival(nmap, target, pool, n_pool, eta)
+       ? deep_take_odds_cost(nmap, target, pool, n_pool, eta, &l0, NULL)
        : 0.0;
   pool[n_pool] = vunit;
-  p1 = deep_take_odds_at_arrival(nmap, target, pool, n_pool + 1, eta);
+  p1 = deep_take_odds_cost(nmap, target, pool, n_pool + 1, eta, &l1, NULL);
   unit_virtual_destroy(vunit);
   marginal = p1 - p0;
+  loss = l1 - l0;
 
   csize = 0;
   if (tune->op_take_target > 0.0 && p1 < tune->op_take_target) {
@@ -3742,15 +3744,23 @@ static void deep_assault_want(struct ai_type *ait,
     int cap = MIN(DEEP_OP_MEMBERS, (int) ARRAY_SIZE(pool) - n_pool);
 
     while (made < cap) {
-      double pk;
+      double pk, lk;
 
       virts[made] = unit_virtual_create(pplayer, pcity, punittype, 1);
       pool[n_pool + made] = virts[made];
       made++;
-      pk = deep_take_odds_at_arrival(nmap, target, pool,
-                                     n_pool + made, eta);
+      pk = deep_take_odds_cost(nmap, target, pool, n_pool + made, eta,
+                               &lk, NULL);
       if (pk >= tune->op_take_target) {
-        marginal = MAX(marginal, (pk - p0) / made);
+        if ((pk - p0) / made > marginal) {
+          /* The campaign rate replaces the marginal one, and its cost
+           * comes with it: a member of the smallest sufficient force
+           * is worth the average odds gain and is charged the average
+           * loss the campaign runs up. Mixing one's benefit with the
+           * other's price would be the cheapest possible attack. */
+          marginal = (pk - p0) / made;
+          loss = (lk - l0) / made;
+        }
         csize = made;
         break;
       }
@@ -3760,9 +3770,33 @@ static void deep_assault_want(struct ai_type *ait,
     }
   }
 
-  want = military_amortize(pplayer, pcity,
-                           tune->attack_value_weight * tworth * marginal,
-                           MAX(1, eta), build_cost_balanced(punittype));
+  /* Cost of victory (military audit G1, mechanism-map coupling 1).
+   * The want has always been worth x Dp with no losses term: deep
+   * could answer "will I take it" and never "is it worth what it
+   * costs". The substrate now reports what the stream is expected to
+   * lose, and the marginal blade is charged the marginal loss its
+   * presence adds -- the same difference form as the benefit, so a
+   * unit that shields the wave is charged less than one that only
+   * feeds the walls, and a unit that reduces losses is charged
+   * nothing at all.
+   *
+   * The currency is shields at SHIELD_WEIGHTING, the codebase's own
+   * shields-to-want rate (advbuilding.h) and the one HEDGE's switch
+   * debit already uses -- so this is the same money the granary is
+   * bid in, which is what "same currency" in G1 means. The gain is
+   * the referee.
+   *
+   * Charged BEFORE the amortization, not after: the losses are paid
+   * at the same moment the odds are won, so both sides of the trade
+   * discount together. */
+  gross = tune->attack_value_weight * tworth * marginal;
+  {
+    adv_want cost = (adv_want) (tune->attack_loss_gain * loss
+                                * SHIELD_WEIGHTING);
+
+    want = military_amortize(pplayer, pcity, MAX(gross - cost, 0),
+                             MAX(1, eta), build_cost_balanced(punittype));
+  }
 
   if (tune->op_take_target > 0.0 && p1 >= tune->op_take_target) {
     /* Snap-up sweep (human doctrine, T160: "build quick snap-up
@@ -3776,7 +3810,7 @@ static void deep_assault_want(struct ai_type *ait,
 
     unit_type_iterate(ut) {
       struct unit *v2;
-      double pa;
+      double pa, la = 0.0;
       adv_want w2;
       int rate2, eta2;
 
@@ -3792,15 +3826,20 @@ static void deep_assault_want(struct ai_type *ait,
               * SINGLE_MOVE + rate2 - 1) / rate2 + (overseas ? 2 : 0);
       v2 = unit_virtual_create(pplayer, pcity, ut, 1);
       pool[n_pool] = v2;
-      pa = deep_take_odds_at_arrival(nmap, target, pool, n_pool + 1,
-                                     eta2);
+      pa = deep_take_odds_cost(nmap, target, pool, n_pool + 1, eta2,
+                               &la, NULL);
       unit_virtual_destroy(v2);
       if (pa < tune->op_take_target) {
         continue;               /* Too light to snap it up alone. */
       }
+      /* Priced net, exactly as the main line is: the race is between
+       * types, and a cheap fast one that dies is not a bargain. */
       w2 = military_amortize(pplayer, pcity,
-                             tune->attack_value_weight * tworth
-                             * (pa - p0),
+                             MAX(tune->attack_value_weight * tworth
+                                 * (pa - p0)
+                                 - (adv_want) (tune->attack_loss_gain
+                                               * (la - l0)
+                                               * SHIELD_WEIGHTING), 0),
                              MAX(1, eta2), build_cost_balanced(ut));
       if (w2 > want) {
         want = w2;
@@ -3833,11 +3872,12 @@ static void deep_assault_want(struct ai_type *ait,
   log_base(deep_metric_log_level(),
            "deep-kill turn=%d player=\"%s\" city=%d target=%d barb=%d"
            " worth=" ADV_WANT_PRINTF " pool=%d elsewhere=%d p0=%.3f"
-           " p1=%.3f ck=%d type=\"%s\" want=" ADV_WANT_PRINTF,
+           " p1=%.3f ck=%d type=\"%s\" gross=" ADV_WANT_PRINTF
+           " loss=%.2f want=" ADV_WANT_PRINTF,
            game.info.turn, player_name(pplayer), pcity->id, target->id,
            is_barbarian(city_owner(target)) ? 1 : 0,
            tworth, n_pool, n_elsewhere, p0, p1, csize,
-           utype_rule_name(punittype), want);
+           utype_rule_name(punittype), gross, loss, want);
 
   if (want > choice->want) {
     choice->value.utype = punittype;

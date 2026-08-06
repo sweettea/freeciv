@@ -140,6 +140,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .survival_horizon = 3,                /* PLACEHOLDER, untuned */
   .tired_attack_floor = 0.9,            /* PLACEHOLDER, untuned */
   .attack_value_weight = 1.0,           /* PLACEHOLDER, untuned */
+  .attack_loss_gain = 1.0,              /* PLACEHOLDER, untuned */
   .sortie_win_floor = 0.85,             /* PLACEHOLDER, untuned */
   .op_take_target = 0.7,                /* PLACEHOLDER, untuned */
   .op_muster_wait = 10,                 /* PLACEHOLDER, untuned */
@@ -297,6 +298,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_INT(survival_horizon) \
   TUNE_DOUBLE(tired_attack_floor) \
   TUNE_DOUBLE(attack_value_weight) \
+  TUNE_DOUBLE(attack_loss_gain) \
   TUNE_DOUBLE(sortie_win_floor) \
   TUNE_DOUBLE(op_take_target) \
   TUNE_INT(op_muster_wait) \

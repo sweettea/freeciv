@@ -40,5 +40,9 @@ double deep_take_odds_at_arrival(const struct civ_map *nmap,
                                  struct city *acity,
                                  struct unit *const *stream, int n_stream,
                                  int eta);
+double deep_take_odds_cost(const struct civ_map *nmap, struct city *acity,
+                           struct unit *const *stream, int n_stream,
+                           int eta, double *loss_shields,
+                           double *survivors);
 
 #endif /* FC__DEEPCOMBAT_H */
