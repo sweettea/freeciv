@@ -9589,3 +9589,162 @@ with the clamp on; `deep-endgame-unit` 0.00 in OFF and CLAMP against
   is 19% of a T80 game and 10% of a T150 one; nothing measured whether
   a fixed count, a fraction, or a per-city function of turns-to-build
   is the right shape.
+
+## DARKFX: the dark effects priced, and one credit that was wrong (2026-08-06)
+
+Five code commits plus this one. `ai/deep`, `benchmark/` and doc only;
+zero `ai/default`, `ai/baseline` or `server/advisors` changes. Full
+tables in `findings/darkfx-2026-08-06.md`.
+
+    dfc4d62271  ai/deep: credit a government centre with the waste it
+                saves other cities
+    4c4480ad21  ai/deep: price a Player-range free-upkeep effect at the
+                empire it acts on
+    24e5c0be4f  ai/deep: pay a building for the culture it accumulates
+                before the bell
+    937d763190  ai/deep: rank the rush-buy loop by want per gold
+    a7a1cf68ce  ai/deep: price a government centre as a move, not as a
+                second copy
+
+**Headline: three of the effects audit's four ranked opportunities are
+built, all behind PLACEHOLDER weights at 0 = off = byte-identical, and
+the session's most useful output is not a score. The gov-centre
+credit's first formulation left the OLD Palace standing while crediting
+a new one -- and both gov-centre buildings are one per player, so every
+city in the empire became a permanent Palace candidate: 3454 firings a
+game at a mean credit of 2827 against a whole-ladder mean of 85, and
+the arm lost 49.40 score (t -10.67) on 0 of 20 seeds. Pricing the same
+term as a MOVE -- today's centres against the centres that survive it,
+with the losing city charged the waste it starts paying -- turned the
+identical arm into +2.15 (t +0.83).**
+
+### 1. The numbers
+
+Binaries pinned to scratch with `libfreeciv.so` beside them,
+`--server`, `--arms deep`, 20 paired seeds, `benchmark/tuning/dark-
+{off,struct,cult,buy}.ini`, every arm writing out the standing pins
+(`pay_switch_penalty`, `switch_cost_price`, `peace_seek_gain`,
+`trade_route_love`) and all four ENDGAME knobs off. **Every probe
+weight is 1.0 -- the term's own arithmetic at face value; no number in
+this session was chosen for looking reasonable.**
+
+    isolated-150 (T150, 4p)      OFF     delta      t    wins
+    STRUCT before the move fix  184.06   -49.40  -10.67   0/20
+    STRUCT after the move fix   184.06    +2.15   +0.83  10/20
+    CULT   (culture = 1.0)      184.06   -19.43   -5.55   3/20
+    BUY    (buy_per_gold = 1)   184.06    +5.58   +1.64  13/20
+
+    contested (T150, 8p)         OFF     delta      t    wins
+    BUY                          82.44    -0.12   -0.08  10/20
+    STRUCT                       82.44    -1.89   -0.88   9/20
+
+Off-switches proven: smoke cell, 10 paired seeds, `dark-off.ini` on
+both binaries. Pre-session `e0e1c20ba166` (HEAD `78f80af132`) against
+session `333eb32e3846`: **10/10 scorelogs bit-identical**, and the same
+ten hashes ENDGAME published. **0.00 `deep-govcenter`, 0.00
+`deep-upkeepfree`, 0.00 `deep-culture` lines a game in the OFF arm of
+isolated-150** (20 games). The move fix changed the binary and not the
+OFF arm: 20/20 isolated-150 scorelogs bit-identical across the two
+pins, so both share one baseline.
+
+`meson test -C build` **4/4**; `python3 benchmark/tune-audit.py` CLEAN
+**168/168/168/168** (`horizon_govcenter_weight`,
+`horizon_upkeepfree_weight`, `horizon_culture_weight`,
+`buy_per_gold`).
+
+### 2. Culture: the arithmetic is right, the venue is wrong
+
+The culture credit is NOT oversized -- mean 131 want against the
+ladder's 85. What it does is double how many things get credit at all
+(414 586 credited improvements to 830 533), because civ2civ3 puts
+History on thirty-eight effects and a Temple is buildable everywhere
+from turn one. The cell paid in the exact column the derby said deep
+was already short of: cities -1.18, settlers -0.91, pop -12.46.
+
+That is the derby's own caveat, measured. Culture is **14.5% of world
+score at T150** and 29.5% at T300; at the tuning cells' horizon,
+paying culture at the score's exchange rate buys 14.5% of the metric
+with shields that were buying the other 85.5%. **The lever to test
+first is the venue, not the weight** -- the credit already scales with
+the turns that remain.
+
+**And the venue could not be run.** garden2b is `ENDTURN=300`, a single
+game exceeds the harness's ten-minute foreground block, and the DONE
+cache is per-game so a killed block loses every in-flight game (0/20
+after two blocks). `run_in_background` killed `run.sh`'s children
+exactly as the ENDGAME note says: 0 servers alive, 0 DONE. **Every
+long-horizon question in this project is now blocked on the harness
+and not on the code.**
+
+Two arithmetic corrections to the evidence base, both checkable:
+
+- **`history_interest_pml = 0` in BOTH rulesets** (civ2civ3
+  `game.ruleset:383`, classic `:378`). `city_history_gain()` carries an
+  interest term and it is multiplied by zero in every cell we run;
+  culture accumulates LINEARLY. The derby doc's "the history stock
+  earns interest ... compounds" is true of the formula and inert in the
+  venue.
+- **The derby was civ2civ3, not classic** (its own §0(a) records the
+  civ2civ3 `mapsize=PLAYER` on that map). This matters because classic
+  has **zero** History effects, so a classic derby could not have
+  produced the Temple and History readings at all.
+
+### 3. Buy per gold: the mechanism barely moves
+
+    shields bought per gold spent     OFF      ON     change
+    isolated-150                     0.3881  0.3994   +2.9%
+    contested                        0.4088  0.4087    0.0%
+    emergency-tier share of buys      31.6% / 33.2%   untouched
+
+The audit's "top-ups are ~4x cheaper per shield" is a fact about the
+cost curve, not about the buy list: a third of purchases are in the
+triage tier this change deliberately leaves alone, and in the rest the
+want spread still dominates the price spread. So the +5.58 on
+isolated-150 is **not attributable to the mechanism that was meant to
+cause it**. Read the execution counter before the score.
+
+### 4. Two items closed on evidence, no code
+
+- **Disasters.** All six civ2civ3 disasters have `frequency = 10` and
+  the setting is `disasters = 100`, so every one of them is
+  `100 x 10 / 1 000 000 = 0.001 per city per turn` -- against illness
+  at 10-30 per mille, one to two orders of magnitude smaller. Mfg./
+  Nuclear Plant's pop-loss expectation over a MORT horizon is 0.024
+  citizens, about 0.4 want. Below the resolution of every credit in the
+  file. Reported and skipped, per the brief's own instruction.
+- **Border push.** Nothing dark to price: neither ruleset carries a
+  single building- or wonder-gated border effect. The only
+  border-family type present is `Tile_Claimable` (four instances each,
+  terrain-gated, no improvement requirement). `site_claim_bonus` stays
+  deep's only border credit.
+
+### 5. Deferred with written designs (findings §7)
+
+Items 4 (specialist type as a decision -- two CM factors derived from
+the treasury guard and the tech-upkeep bill) and 5 (`MAX_RATES` as a
+closed-form ceiling term in deep's `gov_value` wrapper, priced at R1's
+marginal value of the BINDING constraint). Both have their knob names,
+their default-off shape and their trap written down.
+
+### 6. What the next session must know
+
+- **The parity weights are the obvious first entries in the tuning
+  pile and were not run.** The move fix cut the gov credit's FIRING
+  RATE, not its size: 2350 and 2734 mean want against the ladder's 85,
+  so parity is roughly 0.036 and 0.031.
+- **The structural pair is venue-split and neither side resolves:**
+  +2.15 (t +0.83) isolated, -1.89 (t -0.88) contested.
+- **The culture credit's wartime exemption owes its own arm.** 0.65 of
+  its credits land in cities the survival model calls threatened -- the
+  gate the derby blamed for zero Temples in six hundred turns -- and
+  whether that exemption or the credit itself costs the expansion
+  column is one A/B nobody has run.
+- **All three new credits are civ2civ3-only** and structurally inert on
+  every `*-classic` cell: classic has no Ecclesiastical Palace, no
+  History effect of any kind, and no KRC/SoZ free upkeep.
+- **The MinSize free-upkeep ladder is City-range Food upkeep**, not the
+  Player-range empire term the brief grouped it with; it belongs with
+  the capacity credit and this session's credit correctly skips it.
+- **Pricing an effect requires knowing whether its building is additive
+  or unique, and nothing in the effects tables says which.** That is
+  what cost 49 points and it will recur.
