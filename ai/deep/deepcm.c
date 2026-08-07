@@ -59,6 +59,21 @@
  * their cm_parameter cleared, so the change is incremental and
  * reversible per city. */
 
+/* The postures, in the priority order the state machine walks them:
+ * war beats everything, then the growth cap, then a wonder in
+ * progress, then grow-hard. A city that matches none runs the stock
+ * default. Named as an enum rather than left implicit in an if-chain
+ * because the chain now has to be evaluated more than once for the
+ * same city -- once for the posture the city takes, and once for the
+ * posture it would have taken instead. */
+enum deep_cm_posture {
+  DEEP_CM_NO_POSTURE = 0,
+  DEEP_CM_WAR,
+  DEEP_CM_CAP,
+  DEEP_CM_WONDER,
+  DEEP_CM_GROW
+};
+
 /**********************************************************************//**
   Fill the stock default booleans and minimal surpluses; only the
   factors differ between deep's rules (keeping the safety rails while
@@ -165,6 +180,116 @@ static bool deep_cm_survival_ok(struct city *pcity)
 }
 
 /**********************************************************************//**
+  The posture a city takes when it is NOT on war footing: the second,
+  third and fourth arms of the state machine, in their original order.
+  Split out from the chain so that the war branch's counterfactual has
+  something to compare against -- "what would this city be doing if it
+  were not at war" is exactly this function.
+**************************************************************************/
+static enum deep_cm_posture deep_cm_peace_posture(struct ai_type *ait,
+                                                  struct city *pcity)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct ai_city *city_data = def_ai_city_data(pcity, ait);
+
+  if (!city_can_grow_to(pcity, city_size_get(pcity) + 1)) {
+    /* Growth-capped: food is nearly worthless, work the mines and
+     * trade specials instead. */
+    return DEEP_CM_CAP;
+  }
+  if (VUT_IMPROVEMENT == pcity->production.kind
+      && is_wonder(pcity->production.value.building)) {
+    /* Wonder under construction: shields, with trade kept up to
+     * fund completion. */
+    return DEEP_CM_WONDER;
+  }
+  if (city_size_get(pcity) < tune->cm_grow_below
+      && (city_data->danger == 0
+          || (assess_defense(ait, pcity)
+              + deep_cm_sortie_value(pcity)
+              >= tune->cm_grow_safety_margin * city_data->danger
+              && deep_cm_survival_ok(pcity)))) {
+    /* Young city with headroom whose fear, if any, is already PAID
+     * FOR: grow-hard yields to the garrison only while defence
+     * lags the assessed danger. assess_defense_quadratic()
+     * returns (sum of linear defense)^2, so this is plain
+     * linear defense >= linear danger, written in the squared
+     * currency the build side's danger-percent formula uses --
+     * the two sides agree bit-for-bit on when a garrison is
+     * "enough" -- linear defence plus sortie value vs margined
+     * danger. The margin multiplies danger before comparison
+     * and deliberately spans BOTH directions of the argument:
+     * below 1, because defence multipliers (walls, fortify,
+     * terrain) make small garrisons genuinely repel big attack
+     * sums and assess_danger() overcounts (it sums every unit in
+     * radius; they rarely all come); above 1, because attackers
+     * strike sequentially and parity means winning N straight
+     * fights. Ships neutral at 1.0; the tuner referees. Growth
+     * never comes at the expense of needed defenders, but a
+     * satisfied garrison never taxes growth (human refinement
+     * 2026-07-30; the garden2b pile regression was grow-mad
+     * shieldless coasts).
+     * Deep runs fewer cities than stock at stock's growth pace
+     * (mean size 3.5->5.4 IDENTICAL both sides, garden2b); quality
+     * must compensate quantity, and civ2civ3 has no rapture, so
+     * the CM food weight is the only growth lever there is. */
+    return DEEP_CM_GROW;
+  }
+  return DEEP_CM_NO_POSTURE;
+}
+
+/**********************************************************************//**
+  Write a posture's factors into a parameter already filled by
+  deep_cm_base(). Returns FALSE for the no-posture case, which means
+  the city runs the stock default and gets its cm_parameter cleared.
+**************************************************************************/
+static bool deep_cm_apply_posture(struct cm_parameter *cmp,
+                                  struct city *pcity,
+                                  enum deep_cm_posture posture)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+
+  switch (posture) {
+  case DEEP_CM_WAR:
+    /* Under threat: shields now; the happy factor stops the
+     * arrangement fighting the (stock-ignored) happiness signal. */
+    cmp->factor[O_FOOD] = tune->cm_war_food;
+    cmp->factor[O_SHIELD] = tune->cm_war_shield;
+    cmp->factor[O_TRADE] = tune->cm_war_trade;
+    break;
+  case DEEP_CM_CAP:
+    cmp->factor[O_FOOD] = tune->cm_cap_food;
+    cmp->factor[O_SHIELD] = tune->cm_cap_shield;
+    cmp->factor[O_TRADE] = tune->cm_cap_trade;
+    break;
+  case DEEP_CM_WONDER:
+    cmp->factor[O_FOOD] = tune->cm_war_food;
+    cmp->factor[O_SHIELD] = tune->cm_wonder_shield;
+    cmp->factor[O_TRADE] = tune->cm_wonder_trade;
+    break;
+  case DEEP_CM_GROW:
+    cmp->factor[O_FOOD] = tune->cm_grow_food;
+    cmp->factor[O_SHIELD] = tune->cm_grow_shield;
+    cmp->factor[O_TRADE] = tune->cm_grow_trade;
+    break;
+  case DEEP_CM_NO_POSTURE:
+    return FALSE;
+  }
+  cmp->happy_factor = tune->cm_happy_factor;
+
+  if (tune->cm_trade_quality_slope > 0.0) {
+    /* Let the map set the trade appetite: scale the state's trade
+     * factor by catchment trade-richness. */
+    double scaled = cmp->factor[O_TRADE]
+                    * pow(deep_cm_trade_richness(pcity),
+                          tune->cm_trade_quality_slope);
+
+    cmp->factor[O_TRADE] = MAX(0, (int) (scaled + 0.5));
+  }
+  return TRUE;
+}
+
+/**********************************************************************//**
   Derive and set (or clear) cm_parameter for every owned city.
 **************************************************************************/
 void deep_set_city_manager_params(struct ai_type *ait,
@@ -175,7 +300,8 @@ void deep_set_city_manager_params(struct ai_type *ait,
   city_list_iterate(pplayer->cities, pcity) {
     struct ai_city *city_data = def_ai_city_data(pcity, ait);
     struct cm_parameter cmp;
-    bool matched = TRUE;
+    enum deep_cm_posture posture;
+    bool matched;
     bool threatened;
 
     deep_cm_base(&cmp, pcity);
@@ -221,75 +347,9 @@ void deep_set_city_manager_params(struct ai_type *ait,
       threatened = city_data->urgency > 0 || city_data->grave_danger > 0;
     }
 
-    if (threatened) {
-      /* Under threat: shields now; the happy factor stops the
-       * arrangement fighting the (stock-ignored) happiness signal. */
-      cmp.factor[O_FOOD] = tune->cm_war_food;
-      cmp.factor[O_SHIELD] = tune->cm_war_shield;
-      cmp.factor[O_TRADE] = tune->cm_war_trade;
-      cmp.happy_factor = tune->cm_happy_factor;
-    } else if (!city_can_grow_to(pcity, city_size_get(pcity) + 1)) {
-      /* Growth-capped: food is nearly worthless, work the mines and
-       * trade specials instead. */
-      cmp.factor[O_FOOD] = tune->cm_cap_food;
-      cmp.factor[O_SHIELD] = tune->cm_cap_shield;
-      cmp.factor[O_TRADE] = tune->cm_cap_trade;
-      cmp.happy_factor = tune->cm_happy_factor;
-    } else if (VUT_IMPROVEMENT == pcity->production.kind
-               && is_wonder(pcity->production.value.building)) {
-      /* Wonder under construction: shields, with trade kept up to
-       * fund completion. */
-      cmp.factor[O_FOOD] = tune->cm_war_food;
-      cmp.factor[O_SHIELD] = tune->cm_wonder_shield;
-      cmp.factor[O_TRADE] = tune->cm_wonder_trade;
-      cmp.happy_factor = tune->cm_happy_factor;
-    } else if (city_size_get(pcity) < tune->cm_grow_below
-               && (city_data->danger == 0
-                   || (assess_defense(ait, pcity)
-                       + deep_cm_sortie_value(pcity)
-                       >= tune->cm_grow_safety_margin
-                          * city_data->danger
-                       && deep_cm_survival_ok(pcity)))) {
-      /* Young city with headroom whose fear, if any, is already PAID
-       * FOR: grow-hard yields to the garrison only while defence
-       * lags the assessed danger. assess_defense_quadratic()
-       * returns (sum of linear defense)^2, so this is plain
-       * linear defense >= linear danger, written in the squared
-       * currency the build side's danger-percent formula uses --
-       * the two sides agree bit-for-bit on when a garrison is
-       * "enough" -- linear defence plus sortie value vs margined
-       * danger. The margin multiplies danger before comparison
-       * and deliberately spans BOTH directions of the argument:
-       * below 1, because defence multipliers (walls, fortify,
-       * terrain) make small garrisons genuinely repel big attack
-       * sums and assess_danger() overcounts (it sums every unit in
-       * radius; they rarely all come); above 1, because attackers
-       * strike sequentially and parity means winning N straight
-       * fights. Ships neutral at 1.0; the tuner referees. Growth never comes at the expense of
-       * needed defenders, but a satisfied garrison never taxes
-       * growth (human refinement 2026-07-30; the garden2b pile
-       * regression was grow-mad shieldless coasts).
-       * Deep runs fewer cities than stock at stock's growth pace
-       * (mean size 3.5->5.4 IDENTICAL both sides, garden2b); quality
-       * must compensate quantity, and civ2civ3 has no rapture, so
-       * the CM food weight is the only growth lever there is. */
-      cmp.factor[O_FOOD] = tune->cm_grow_food;
-      cmp.factor[O_SHIELD] = tune->cm_grow_shield;
-      cmp.factor[O_TRADE] = tune->cm_grow_trade;
-      cmp.happy_factor = tune->cm_happy_factor;
-    } else {
-      matched = FALSE;
-    }
-
-    if (matched && tune->cm_trade_quality_slope > 0.0) {
-      /* Let the map set the trade appetite: scale the state's trade
-       * factor by catchment trade-richness. */
-      double scaled = cmp.factor[O_TRADE]
-                      * pow(deep_cm_trade_richness(pcity),
-                            tune->cm_trade_quality_slope);
-
-      cmp.factor[O_TRADE] = MAX(0, (int) (scaled + 0.5));
-    }
+    posture = (threatened ? DEEP_CM_WAR
+                          : deep_cm_peace_posture(ait, pcity));
+    matched = deep_cm_apply_posture(&cmp, pcity, posture);
 
     if (matched) {
       if (pcity->cm_parameter == NULL) {
