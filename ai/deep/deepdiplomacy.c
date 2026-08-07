@@ -34,6 +34,7 @@
 #include "srv_log.h"
 
 /* server/advisors */
+#include "advdata.h"
 #include "advtools.h"
 
 /* ai */
@@ -484,6 +485,141 @@ static int deep_gift_price_of_love(const struct player *aplayer, int want)
 }
 
 /**********************************************************************//**
+  What one advance is worth to the player RECEIVING it, in the gold
+  the treaty balance is kept in.
+
+  ai/default's own price (dai_goldequiv_tech, daidiplomacy.c:158-179)
+  is `3 x goal bulbs + tech_want/turn`, halved when the prereqs are
+  already known. Deep reads the first term and drops the second: the
+  tech_want half is the receiver's private opinion of what it wants,
+  and dropping it makes this a LOWER bound on what the counterparty
+  will bank -- which is the safe direction, because the whole point is
+  to be sure a proposal clears.
+
+  It is not a copy of a static function so much as the same two
+  ruleset reads; the halving is stock's and is kept, because a tech
+  whose prereqs are known is genuinely nearer and therefore cheaper.
+**************************************************************************/
+static int deep_tech_worth_to(const struct player *aplayer, Tech_type_id tech)
+{
+  const struct research *theirs = research_get(aplayer);
+  enum tech_state state = research_invention_state(theirs, tech);
+  int worth;
+
+  if (state == TECH_KNOWN
+      || !research_invention_gettable(theirs, tech,
+                                      game.info.tech_trade_allow_holes)) {
+    return 0;
+  }
+  worth = research_goal_bulbs_required(theirs, tech) * 3;
+  if (state == TECH_PREREQS_KNOWN) {
+    worth /= 2;
+  }
+
+  return worth;
+}
+
+/**********************************************************************//**
+  May we hand `tech` to `aplayer` without arming somebody we are
+  fighting?
+
+  This is ai/default's own tech-leak veto (compute_tech_sell_price,
+  daidiplomacy.c:239-258) read as a TARGETING CRITERION rather than as
+  a price adjustment. Stock refuses a sale when the buyer is allied to
+  a player the seller finds dangerous; deep applies the same refusal
+  and adds the channel stock does not model, because stock was written
+  for a ruleset family where it does not exist:
+
+  - ALLIANCE. An ally of the receiver gets the tech outright through
+    dai_share(), so a receiver allied to anyone we are at war with is
+    refused, whatever they would pay.
+
+  - EMBASSY LEAKAGE. Under tech_leakage = "Embassies" -- civ2civ3's
+    setting -- every embassy an enemy holds with a player who knows a
+    tech makes that tech cheaper for the enemy (common/research.c:
+    954-981). So handing a tech to a player our enemy has an embassy
+    with is handing a discount to our enemy, one step removed. Stock
+    prices tech leakage between ALLIES and has no term for this at
+    all.
+
+  Both tests are skipped for players who already know the tech: they
+  cannot learn it twice, and refusing on their account would make the
+  veto tighten as the tech spread, which is backwards.
+**************************************************************************/
+static bool deep_tech_safe_to_give(const struct player *pplayer,
+                                   const struct player *aplayer,
+                                   Tech_type_id tech)
+{
+  bool embassies = game.info.tech_leakage == TECH_LEAKAGE_EMBASSIES;
+
+  players_iterate_alive(eplayer) {
+    if (eplayer == pplayer || eplayer == aplayer
+        || research_invention_state(research_get(eplayer), tech)
+           == TECH_KNOWN) {
+      continue;
+    }
+    if (player_diplstate_get(pplayer, eplayer)->type != DS_WAR
+        && !adv_is_player_dangerous((struct player *) pplayer,
+                                    (struct player *) eplayer)) {
+      continue;
+    }
+    if (pplayers_allied(aplayer, eplayer)) {
+      return FALSE;
+    }
+    if (embassies && player_has_embassy(eplayer, aplayer)) {
+      return FALSE;
+    }
+  } players_iterate_alive_end;
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  The cheapest advance we could safely hand `aplayer` that is worth at
+  least `floor` gold to them, or A_NONE.
+
+  Cheapest rather than best on purpose: a gift is a concession, and
+  the concession that buys the same thing for less is the better one.
+  `floor` exists because the love the gift buys arrives in steps of
+  ten (see deep_gift_price_of_love) -- below one step a gift is a
+  tech given away for nothing at all.
+**************************************************************************/
+static Tech_type_id deep_gift_tech_pick(const struct player *pplayer,
+                                        const struct player *aplayer,
+                                        int floor, int *worth_out)
+{
+  const struct research *mine = research_get(pplayer);
+  Tech_type_id best = A_NONE;
+  int best_worth = 0;
+
+  advance_index_iterate(A_FIRST, idx) {
+    int worth;
+
+    if (research_invention_state(mine, idx) != TECH_KNOWN) {
+      continue;
+    }
+    worth = deep_tech_worth_to(aplayer, idx);
+    if (worth < floor || worth <= 0) {
+      continue;
+    }
+    if (best != A_NONE && worth >= best_worth) {
+      continue;
+    }
+    if (!deep_tech_safe_to_give(pplayer, aplayer, idx)) {
+      continue;
+    }
+    best = idx;
+    best_worth = worth;
+  } advance_index_iterate_end;
+
+  if (worth_out != nullptr) {
+    *worth_out = best_worth;
+  }
+
+  return best;
+}
+
+/**********************************************************************//**
   The gift lever's census. One line per turn per pair deep is in a
   non-war, non-allied relationship with -- the exact population the
   two gift paths can act on -- carrying what the relationship is worth
@@ -542,6 +678,144 @@ static void deep_gift_probe(struct ai_type *ait, struct player *pplayer,
             * refused peace clause add up. Two prices for two
             * different products, and they are not the same number. */
            shortfall * shortfall / 10);
+}
+
+/**********************************************************************//**
+  Offer one advance to `aplayer`, optionally alongside a pact clause
+  so the offer is legal at all, and report whether it was taken.
+
+  ai/default refuses EVERY tech clause while `ds_after == DS_WAR`
+  (dai_treaty_evaluate: an ADVANCE is not on its gift list unless the
+  ruleset's tech_cost_style is Civ1|2, and neither shipped ruleset
+  sets that). So a gift to a player we are still nominally at war with
+  has to carry the clause that changes ds_after -- a cease-fire, which
+  costs the receiver nothing (its own valuation is 0 or greed(love))
+  and is exempt from the allied-with-our-enemy veto that blocks peace.
+
+  `pact` is CLAUSE_LAST for "no pact clause needed". The pact goes on
+  FIRST so the final evaluation sees the complete treaty; every
+  create_clause call clears both accept flags, so an intermediate
+  state can never conclude by itself.
+**************************************************************************/
+static bool deep_gift_send(struct ai_type *ait, struct player *pplayer,
+                           struct player *aplayer, Tech_type_id tech,
+                           enum clause_type pact)
+{
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  bool taken;
+
+  if (!could_meet_with_player(pplayer, aplayer)) {
+    return FALSE;
+  }
+
+  dp->gift_open_plus1 = player_number(aplayer) + 1;
+  dp->gift_tech = tech;
+  dp->gifts_offered++;
+
+  deep_treaty_clear(pplayer, aplayer);
+  if (pact != CLAUSE_LAST) {
+    deep_treaty_suggest(pplayer, aplayer, pact, FALSE, 0);
+  }
+  deep_treaty_suggest(pplayer, aplayer, CLAUSE_ADVANCE, FALSE, tech);
+
+  dp->gift_open_plus1 = 0;
+  dp->gift_tech = A_NONE;
+
+  taken = research_invention_state(research_get(aplayer), tech)
+          == TECH_KNOWN;
+  if (taken) {
+    dp->gifts_taken++;
+  }
+
+  return taken;
+}
+
+/**********************************************************************//**
+  Lever 1b. Buy back the love a partner has bled, with the currency
+  deep actually holds.
+
+  THE MEASUREMENT THAT CHOSE THE INSTRUMENT. The brief asked for
+  "small gold/tech gift clauses". The gift census (commit before this
+  one, 8 games over contested and lategame-80) says gold is not
+  available: the treasury above ai/default's own reserve is a MEDIAN
+  of 17 gold on contested and 0 on lategame-80, against a love price
+  whose 90th percentile is 1085 and 1729, and the price is affordable
+  on 6.1% and 1.3% of the rows with a shortfall. Deep is not a rich
+  player with a diplomacy budget; it is a player that spends its gold
+  the turn it arrives.
+
+  A tech is the instrument it does hold. ai/default prices one at
+  three times the bulbs it would take the receiver to get there --
+  hundreds to thousands of gold, at no cost to any treasury -- and
+  dai_treaty_accepted() converts a wholly-beneficial treaty into love
+  at a rate this file computes exactly. So the gift is a tech, chosen
+  as the CHEAPEST safe one that still buys a whole ten-love step.
+
+  What deep pays is not gold, and the willingness bound says so: the
+  gift happens when what the receiver banks is no more than
+  gift_love_gain times what the relationship is worth to us. Both
+  sides of that comparison are in gold and neither is invented.
+
+  EXPLOITABILITY, stated rather than hidden: this hands real advances
+  to a rival to keep them friendly, and a human who reads this can
+  farm it -- keep deep's love just under its own peace bar and collect
+  a tech. The structural limits are that the gift is refused when it
+  would arm anyone we are fighting (deep_tech_safe_to_give), that it
+  stops the moment love clears the bar, and that gift_love_gain tunes
+  the whole thing to zero.
+**************************************************************************/
+static void deep_love_gift(struct ai_type *ait, struct player *pplayer,
+                           struct player *aplayer)
+{
+  const struct deep_tuning *t = deep_tuning_get();
+  const struct player_diplstate *ds
+    = player_diplstate_get(pplayer, aplayer);
+  struct ai_plr *theirs;
+  bool close_here;
+  double worth;
+  int love, bar, step, tech_worth = 0, gain;
+  Tech_type_id tech;
+
+  if (ds->type != DS_PEACE && ds->type != DS_ARMISTICE
+      && ds->type != DS_CEASEFIRE) {
+    /* Durability is only a question where there is something to keep.
+     * A war is BALANCE's other lever, and an alliance is already past
+     * every bar this one could raise. */
+    return;
+  }
+
+  love = aplayer->ai_common.love[player_index(pplayer)];
+  theirs = dai_plr_data_get(ait, aplayer, &close_here);
+  bar = theirs->diplomacy.req_love_for_peace;
+  if (close_here) {
+    dai_data_phase_finished(ait, aplayer);
+  }
+  if (love >= bar) {
+    return;                     /* Nothing to buy. */
+  }
+
+  /* One step of love is the smallest gift that moves anything: the
+   * rule is integer division by (cities x 10 + 1) and then x 10. */
+  step = city_list_size(aplayer->cities) * 10 + 1;
+  worth = deep_peace_worth(pplayer, aplayer, nullptr, nullptr);
+  if (worth <= 0.0) {
+    return;
+  }
+
+  tech = deep_gift_tech_pick(pplayer, aplayer, step, &tech_worth);
+  if (tech == A_NONE || tech_worth > t->gift_love_gain * worth) {
+    return;
+  }
+
+  gain = MIN(tech_worth / step, theirs->diplomacy.love_incr * 150) * 10;
+  log_base(deep_metric_log_level(),
+           "deep-lovegift turn=%d plr=\"%s\" to=\"%s\" ds=%d love=%d"
+           " bar=%d tech=\"%s\" price=%d worth=%.1f expect=%d took=%d",
+           game.info.turn, player_name(pplayer), player_name(aplayer),
+           (int) ds->type, love, bar,
+           advance_rule_name(advance_by_number(tech)), tech_worth, worth,
+           gain,
+           deep_gift_send(ait, pplayer, aplayer, tech, CLAUSE_LAST) ? 1 : 0);
 }
 
 /**********************************************************************//**
@@ -724,6 +998,36 @@ bool deep_treaty_evaluate(struct ai_type *ait, struct player *pplayer,
   int n = 0, peace = 0, embassy = 0;
   double balance = 0.0;
 
+  /* Our own offer, mid-construction. ai/default's valuation of GIVING
+   * a tech away is a refusal by design (compute_tech_sell_price is
+   * subtracted, and its is_dangerous flag returns -BIG_NUMBER), so
+   * without this branch deep would veto every gift it just decided to
+   * make. The recognition is exact rather than permissive: the only
+   * clauses allowed are the pact clause deep attached and the single
+   * advance it chose, all of them from deep's own side. Anything else
+   * in the treaty means this is not the offer deep is making, and it
+   * goes to ai/default like everything else. */
+  if (dp->gift_open_plus1 == player_number(aplayer) + 1) {
+    bool mine = TRUE;
+    int gifts = 0;
+
+    clause_list_iterate(ptreaty->clauses, pclause) {
+      if (pclause->type == CLAUSE_ADVANCE && pclause->from == pplayer
+          && pclause->value == dp->gift_tech) {
+        gifts++;
+      } else if (pclause->type != CLAUSE_CEASEFIRE
+                 && pclause->type != CLAUSE_PEACE) {
+        mine = FALSE;
+      }
+    } clause_list_iterate_end;
+
+    if (mine && gifts == 1) {
+      handle_diplomacy_accept_treaty_req(pplayer, player_number(aplayer));
+      return TRUE;
+    }
+    return FALSE;
+  }
+
   clause_list_iterate(ptreaty->clauses, pclause) {
     n++;
     if (pclause->type == CLAUSE_PEACE) {
@@ -808,6 +1112,10 @@ void deep_diplomacy_prepass(struct ai_type *ait, struct player *pplayer)
     if (t->gift_border_value > 0.0 && is_ai(aplayer)
         && !pplayers_allied(pplayer, aplayer)) {
       deep_gift_probe(ait, pplayer, aplayer);
+    }
+    if (t->gift_love_gain > 0.0 && is_ai(aplayer)
+        && !pplayers_allied(pplayer, aplayer)) {
+      deep_love_gift(ait, pplayer, aplayer);
     }
     if (t->embassy_price_gain > 0.0) {
       deep_embassy_offer(ait, pplayer, aplayer);

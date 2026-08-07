@@ -1225,6 +1225,38 @@ struct deep_tuning {
    * carry their own. PLACEHOLDER, untuned. */
   double gift_border_value;
 
+  /* BALANCE lever 1 -- buying a partner's love, and what deep is
+   * willing to pay for it.
+   *
+   * ai/default converts a wholly-beneficial treaty into affection at
+   * a rate that is exactly computable from readable state
+   * (dai_treaty_accepted, daidiplomacy.c:775-782): love rises by
+   * balance / (their cities x 10 + 1), capped, times ten. So the
+   * price of a relationship is not a guess.
+   *
+   * THE INSTRUMENT IS A TECH AND THAT WAS MEASURED, NOT CHOSEN. The
+   * gift census over eight games says deep's treasury above
+   * ai/default's own gold reserve has a median of 17 gold on
+   * contested and 0 on lategame-80, while the gold that would clear
+   * the love bar has a 90th percentile of 1085 and 1729. Gold is not
+   * a currency this AI holds. A tech is: stock prices one at three
+   * times the receiver's remaining bulbs, which is hundreds to
+   * thousands of gold and costs no treasury at all.
+   *
+   * gift_love_gain is the willingness bound: deep hands over an
+   * advance when what the receiver banks for it is no more than this
+   * multiple of what the relationship is worth to us (routes at stake
+   * plus border pressure, both in gold). It is therefore a ratio
+   * between two computed quantities and not a magnitude -- but the
+   * two quantities live on different scales (a peace is worth single
+   * digits at gift_border_value = 1.0; a tech costs thousands), so
+   * the pair of knobs has to be swept together and the ranges in
+   * tuning-params.ini say so.
+   *
+   * 0.0 = off = no gift is ever offered = byte-identical.
+   * PLACEHOLDER. */
+  double gift_love_gain;
+
   /* PEACE -- the embassy clause, which is arithmetically impossible
    * in the one ruleset where embassies matter most.
    *

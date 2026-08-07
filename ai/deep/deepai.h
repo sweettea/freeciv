@@ -181,6 +181,20 @@ struct deep_plr {
   int peace_taken;              /* peace clauses deep's evaluate accepted */
   int embassy_priced;           /* embassy clauses deep priced itself */
   int embassy_cleared;          /* ... treaties that cleared on deep's sums */
+  /* BALANCE. The treaty deep is CONSTRUCTING right now, so that deep's
+   * own treaty_evaluate can recognise its own offer and sign it: the
+   * clause handler evaluates both sides synchronously inside the
+   * suggest call, and stock's valuation of GIVING a tech away is a
+   * flat refusal, so without this deep would veto every gift it made.
+   * Player NUMBER PLUS ONE, so a zeroed slot means "no offer open" --
+   * fc_calloc gives us zeros and player 0 is a real player. Cleared
+   * the moment the suggestion returns; never saved, because it cannot
+   * outlive one call. */
+  int gift_open_plus1;
+  int gift_tech;                /* advance in that offer, or A_NONE */
+  int gifts_offered;            /* tech gifts proposed */
+  int gifts_taken;              /* ... that the counterparty signed */
+  int proxies_armed;            /* of those, gifts to a proxy */
   /* The diplomatic state at which we last asked this player for an
    * embassy, PLUS ONE, so a zeroed slot means "never asked". Deep's
    * embassy valuation does not change with the turn number -- that is
