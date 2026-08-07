@@ -104,6 +104,32 @@ lift/convoy window family (time-geometry, venue-dependent), gift/proxy
 gains (BALANCE ships them 0), `trade_merit_gain`/`wonder_merit_gain`
 (calibration residues), rates gains. No derivation pretends otherwise.
 
+## 4a. Overnight validation (2026-08-07, 40 paired seeds per cell, pinned binary)
+
+`principled-v1.ini` vs pure defaults, whole-file A/B:
+
+| cell | diff | t | wins |
+|---|---|---|---|
+| lategame-80 | +0.07 | +0.05 | 18/40 |
+| contested | −0.24 | −0.11 | 25/40 |
+| isolated-150 | −0.69 | −0.24 | 13/37* |
+
+*3 principled-arm games lost to a tmpfs-full incident mid-batch (also the
+source of a torn scorelog line; `extract.py` now tolerates those).
+
+**Score-neutral everywhere at claim power — which is a PASS for a
+centers file** (a center's job is to be sane and well-placed for the
+sweep, not to win unswept). But the arms are NOT behaviorally identical:
+on contested the principled arm fights more (unitskilled +1.7, unitslost
++2.0, t≈2), settles less (settledarea t −2.41), and survives marginally
+less (alive t −1.96). Attribution points at the combat pair —
+`survival_target` 0.85 and `op_take_target` 0.60 — buying wars that
+don't pay on a T150 bell. Adjustment: **op_take_target center moves
+0.60 → 0.65** (split the derivation and the caution; the sweep range
+still brackets both), survival stays 0.85 but its range floor stays 0.5
+so the campaign can walk it back per-block. Everything else adopted as
+centers unchanged.
+
 ## 5. Campaign guidance distilled
 
 1. v4 centers = compiled defaults ⊕ `principled-v1.ini` ⊕ R3's corpus
