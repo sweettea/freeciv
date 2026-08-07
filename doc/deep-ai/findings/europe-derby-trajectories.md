@@ -601,3 +601,36 @@ codebase sees it.
    after T140 are storm, not statecraft.
 - One seed, one map; the storm's severity has RNG in it. Derby 3
   (post-DARKFX binary) re-rolls the experiment.
+
+---
+
+## Derby 3 FINAL (T300, classic Europe, EVEN traits + trait-seeded stances, post-DARKFX binary)
+
+**Stock 2008, Deep 1793 — 0.89×, the same ratio as derby 1 by the
+opposite road.** Champion: **Def_Iberia 393** — the empire that was a
+5-city rump at T96 and finished at 54 cities by grinding its own rebel
+successor state back down. Podium: Iberia, Deep_Rus 343 (second despite
+losing ~60 cities to the Polubotok uprising — banked tech and culture
+don't burn), Deep_Iceland 326 (the hermit: 7 cities and ~50 buildings,
+the best per-city score in three derbies).
+
+Arc: deep won the opening (city crossover T32 vs derby-2's T60; peak
+223 cities at T96) and lost the middlegame to the same storm as always
+— but the NEW finding is timing asymmetry: **stock's storm landed early
+(Iberia, T72) leaving 200 turns of recovery runway; deep's landed late
+(Rus T104-168, Osmanli/Gallia after) leaving none.** Early disaster is
+recoverable; late disaster is fatal. Reconquest was the single most
+profitable activity on the map — Iberia won the derby on it — and deep
+barely does it (its rallies at T200-224 were small and kept reversing).
+
+Personality table (deep): the dove-builders finished 2nd/3rd/5th; the
+two hawks (Gallia 196, Anglia 171) finished last among deeps — hawk
+axes without tuned force-sizing bought wars and floors, not score. The
+balance experiment (§ venues 6a) has its first data point.
+
+Queue confirmations, nothing new needed: uprising-pressure pricing +
+consolidation (queued), deterrence economy (queued), floor magnitudes
+(pile), storm-150 venue (campaign). One NEW item → EXPANSION #39:
+**reclamation doctrine** — pricing the retaking of one's own (and
+anyone's) rebel-held cities as the discount real estate it demonstrably
+is. One seed, one map; hypotheses, not results (rule 6).
