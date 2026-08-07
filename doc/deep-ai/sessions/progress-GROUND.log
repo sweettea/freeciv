@@ -10,3 +10,5 @@ One line per commit or major step.
 7. ai/deep: fortify on ground worth holding (item 4)
 8. ai/deep: pillage the enemy yield a blade is standing on (item 2) + raid-population census
 9. doc: record the ground-value round's facts (channel asymmetry, capture census, pillage sizing, barb derivation)
+10. doc: STATUS -- the ground-value round, the venue split and the attribution
+11. rebase onto epic/w03-horizon-content tip e675c35251; append conflicts in deeptuning/tuning-blocks and one doc-comment adjacency in deepdefence.c resolved; meson test 4/4, tune-audit CLEAN 177/177/177/177

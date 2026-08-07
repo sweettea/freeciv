@@ -9917,3 +9917,251 @@ like. Both ship at zero.
 `meson test -C build` **4/4**; `python3 benchmark/tune-audit.py` CLEAN
 **172/172/172/172** (four new keys: `conquest_culture_gain`,
 `gift_border_value`, `gift_love_gain`, `proxy_arm_gain`).
+## GROUND: the terrain-value round -- and the prize is the hold (2026-08-06)
+
+**Four mechanisms briefed, three built, one retired on its own census;
+plus the barbarian re-shape. The bundle is +4.03 on civ2civ3 contested
+and -1.52 on classic, and the isolation says the entire civ2civ3 move
+is the cheapest thing in the round -- the fortify hold, briefed as a
+"small consumer" of the fortress want.** Nine code and doc commits on
+`epic/ground-terrain` (shas after the rebase onto `e675c35251`):
+`6b70834776` the capture census, `3bec4d64be` the barbarian re-shape,
+`fdf45b29bb` the widened advisor hook, `341582f8e7` the choke export,
+`43f021db71` the base want, `d4d6cb73b7` its ruleset fix,
+`cf66426b00` the fortify hold, `116104c3ef` pillage, `8899c268e0` the
+findings, plus this section. The A/B numbers below were taken on the
+PRE-rebase binary `dfde58a6691b`; the rebase touched only append
+seams (`deeptuning`, `tuning-blocks.ini`) and one doc-comment
+adjacency in `deepdefence.c`, and a 2-seed re-smoke on the rebased
+binary reproduces every mechanism counter exactly (deep-fort 701,
+deep-ground 564, deep-pillage 359 lines, unchanged).
+Detail in `findings/ground-terrain-2026-08-06.md`.
+
+### 1. The A/B, both cells, 20 paired seeds
+
+Binary PINNED (`dfde58a6691b`), `--server`, `--arms deep`,
+file-vs-file (`identity.ini` against `ground-off.ini`, which sets
+`base_fort_gain = 0.0`, `fortify_ground = 0`,
+`pillage_denial_gain = 0.0`). **Every off-switch is proven by
+counter**, and by the right counter: `offers` -- base candidates the
+advisor put on the table -- stays at ~88 000 (civ2civ3) / ~105 000
+(classic) per game in BOTH arms, while `evals` goes 0 -> 78 751 /
+0 -> 101 893.
+
+    contested (civ2civ3)     OFF        ON     delta      se      t   ON>OFF
+    score                  81.07     85.10     +4.03    1.98  +2.03    13/20
+    cities                  4.60      4.59     -0.01    0.13  -0.09     5/20
+    unitsbuilt             49.59     46.46     -3.12    1.56  -2.00     7/20
+    techs                  18.25     19.17     +0.92    0.50  +1.83    10/20
+    pop                    25.93     26.82     +0.89    0.79  +1.13    10/20
+    munits                 14.09     13.39     -0.70    0.48  -1.47     8/20
+    unitslost              15.07     13.24     -1.84    1.66  -1.11     9/20
+    unitskilled             9.26      8.47     -0.78    1.42  -0.55     6/20
+    CITY LOSSES             1.05      1.60     +0.55    0.42  +1.31     8/20
+      fort worker-turns     0.00    314.40
+      fortify holds         0.00    440.25
+      pillages started      0.00      7.80
+
+    contested-classic        OFF        ON     delta      se      t   ON>OFF
+    score                  83.23     81.71     -1.52    1.14  -1.33     7/20
+    cities                  6.15      6.17     +0.03    0.15  +0.17    10/20
+    unitsbuilt             50.76     48.26     -2.50    0.76  -3.29     6/20
+    pop                    25.19     24.60     -0.59    0.62  -0.96     6/20
+    mean_city_size          4.09      3.98     -0.11    0.07  -1.55     7/20
+    munits                 14.53     15.19     +0.67    0.56  +1.20    12/20
+    unitslost              14.24     11.84     -2.41    0.48  -5.06     2/20
+    unitskilled            13.42     10.95     -2.47    0.47  -5.26     2/20
+    landarea            46337.50  47493.75  +1156.25 1005.65  +1.15    10/20
+    CITY LOSSES             6.35      5.45     -0.90    1.61  -0.56     9/20
+      fort worker-turns     0.00     47.60
+      fortify holds         0.00    691.60
+      pillages started      0.00      9.90
+
+**The loss guard passes on both cells.** Units lost fall on both
+(-1.84 / -2.41), city losses move +0.55 (t +1.31) and -0.90
+(t -0.56). Pillage does not cannibalise defence at this size.
+
+**The venue split is real and it is the OPPOSITE of the one the brief
+predicted.** Classic was expected to pay extra -- flat +100% defence,
+`border_sq = 5`, NoStackDeath. It is the cell that does not pay. What
+classic does show is the round's biggest single behaviour change:
+units lost AND units killed both fall by ~2.4 at t > 5, on 18 of 20
+seeds each. **Fewer battles happen in either direction**, which is the
+fortify hold keeping blades off the field, and on classic that trade
+is neutral-to-negative rather than positive.
+
+### 2. The attribution: the producer is a wash, the consumer is the prize
+
+One isolation arm on civ2civ3 contested, same pin, `fortify_ground = 0`
+with the two want mechanisms left on:
+
+    base want + pillage, no hold   -0.17   se 0.89   t -0.19   12/20
+    ... plus the fortify hold      +4.20   se 2.14   t +1.96   13/20
+
+**Teaching deep to BUILD fortresses is worth nothing on its own.** It
+also costs a little expansion: -0.06 cities (t -2.03, 2/20) and -619
+landarea (t -1.94), which is the worker-turns going into bases instead
+of tiles. Teaching a blade already standing on good ground to STAY
+there is worth the whole +4.
+
+The caveat that keeps this honest, and it is not small: **the hold
+fires on chokepoints as well as on bases, and a chokepoint exists
+whether or not anyone built anything.** So the +4.20 is not
+attributable to the fortresses it was designed to consume. The 2x2
+(`base_fort_gain` x `fortify_ground`) is owed and is the first thing
+a tuning pass on this family should run.
+
+### 3. Capture Units: the gate is open and the population is empty
+
+`deep-capture-venue inuse=1` on all 20 civ2civ3 games -- the enabler is
+live, the census is running, the silence is real. Against that, over
+**40 civ2civ3 games of 150 turns**:
+
+    exposed tiles (ours, an enemy capturer could take this instant)   0
+    offered tiles (theirs, ours could take this instant)              0
+
+Neither half was built. The reason is in the enabler: the actor needs
+the Capturer flag, WAR and a foreign target; the target must be
+Capturable, not transporting and not a city centre -- and **only three
+civ2civ3 unit types carry Capturable** (Migrants, Caravan, Freight,
+`units.ruleset:560, 2638, 2691`). Nineteen capturer types against
+three capturable ones is not the surface the ranked opportunity list
+implied. **`action-surface.md`'s opportunity #2 is retired on census.**
+
+### 4. Pillage ships small and sizes its own sequel
+
+The shipped pass acts only on a blade ALREADY STANDING on an
+at-war-owned improved tile -- no movement logic, cannot send anyone
+anywhere. Per game, 20 seeds:
+
+    counter                        civ2civ3    classic
+    standing (unit-turns)             54.05     125.10
+    pillages started                   7.80       9.90
+    nearby   (the raid population)   837.70    1420.10
+
+**The raid is 15x / 11x the population of what shipped.** That number
+was taken before building the raid, not after, and it is the only
+argument for or against building it.
+
+### 5. The barbarian re-shape: mechanism yes, score no
+
+Isolated against a PROBE binary that keeps everything else and
+restores the pre-session step function (`010767f0abc3`, uncommitted,
+built and pinned before the tip was rebuilt and re-verified by sha).
+Venue: `raging-120` -- contested geometry, `barbarians HORDES`,
+`onsetbarbs 40`, so the uprising machinery actually runs inside the
+horizon. 20 paired seeds.
+
+    raging-120              STEP       TIP     delta      se      t   TIP>STEP
+    score                  75.10     75.28     +0.17    1.36  +0.13    10/20
+    CITY LOSSES            16.55     16.80     +0.25    2.48  +0.10     9/20
+    cities conquered       47.10     47.00     -0.10    1.84  -0.05     9/20
+    pre-onset ramp turns    0.00     67.95   +67.95          +55.83    20/20
+    summed injected fear   36 255    72 562  +36 307          +9.85    20/20
+
+**The re-shape fires, doubles the terror it injects, opens 68
+city-turns of anticipation per game that did not exist -- and moves
+neither score nor city losses.** Twenty seeds are direction. What the
+counters do establish is that the shape is now the server's: at HORDES
+with four cities the scale reaches 2.52 (fear 75 against the old flat
+30) and pre-onset lines carry `pre=1` from turn 31 against an onset of
+40.
+
+**Byte-identity in the no-barb cell: PROVED.** `nobarb-120`
+(`barbarians DISABLED`), TIP against STEP, 10 seeds: **10/10 scorelogs
+identical, 80/80 metric rows identical, 0 `deep-barb` lines.** The
+whole class drops out free where the server cannot raise a horde.
+
+Note for anyone reading the contested numbers: on that cell deep holds
+~4.6 cities, so the willingness probability is ~0.017 and the
+re-shaped barbarian term truncates to ZERO where the old one was a
+flat 30. The re-shape is in both arms of section 1's A/B, so it is
+controlled there -- but it means contested is no longer a cell where
+the barbarian term does anything.
+
+### 6. The channel asymmetry, and the counter that caught it
+
+The first cut of the base want read `extra->defense_bonus` and
+measured **zero evaluations against 625 candidate offers in two
+civ2civ3 games**. Cause:
+
+    classic    defense_bonus = 100 on the Fortress extra -- a FIELD
+    civ2civ3   no defense_bonus field at all; +50% Fort and +50%
+               Fortress are Defend_Bonus EFFECTS
+
+**A ruleset fact that is a field in one ruleset can be an effect in
+another, and only the ruleset's own evaluator sees both.** The fix is
+`get_virtual_defense_power()` on a virtual tile. This is a new entry
+for the ruleset-asymmetry list beside Rapture_Grow and Enter
+Marketplace, and it is a trap for anything that starts reasoning about
+tile defence.
+
+It was caught because `deep-fort` counts `offers` BEFORE any gate and
+`evals` after them. "The advisor offered the candidate" and "we priced
+it" are different questions and a zero want has to answer the first
+one first.
+
+### 7. The seam in `server/advisors/`, declared
+
+Rule 4 permits an extension point that is inert until a consumer
+registers. `aw_task_value_fn` already existed and was already
+registered by deep; this round WIDENED it to carry the candidate
+activity and its target extra, because a hook that sees a tile and a
+number cannot raise a fortress's value without raising irrigation's on
+the same tile. With no hook registered not one line of `autoworkers.c`
+behaves differently, and the frozen baseline never registers one. The
+brief's stop condition was "the hook can't express a base want without
+advisor changes BEYOND the inert-extension rule" -- widening an
+already-inert hook is inside the rule, not beyond it, and it is
+recorded here so the call can be reversed if the human disagrees.
+
+### 8. Owed to the tuning pile
+
+    base_fort_gain        40.0  PLACEHOLDER. Registered in ALL.
+    fortify_ground           1  PLACEHOLDER (0/1 off-switch).
+    pillage_denial_gain    1.0  PLACEHOLDER. Threshold AND scale:
+                                the pass acts when gain x denied
+                                output reaches 1.
+    barb_anticipation_turns 10  PLACEHOLDER. The LEAD, not the shape.
+    barb_size_ref_cities    10  PLACEHOLDER. Pure normalisation: the
+                                empire size at which the shared
+                                barbarian scaling is 1.0. It must be
+                                tuned WITH barbarian_fear and
+                                floor_barb_weight -- alone it just
+                                rescales them.
+
+    First run, and it is not a sweep: the 2x2 of base_fort_gain x
+    fortify_ground on both cells. Section 2 cannot tell the fortress
+    from the chokepoint and that is the question.
+
+### 9. What the next session must know
+
+- **The prize was the consumer, not the producer.** Item 4 was briefed
+  as a "small consumer of (1)" and it is the entire measured move.
+  Item 1, the structural hole the whole round was designed around, is
+  -0.17 on its own. Be suspicious of ranking opportunities by how
+  structural the hole looks.
+- **The classic cell is not a smaller version of the civ2civ3 one.**
+  Same code, opposite sign, and the mechanism counters differ by 6x in
+  one direction (fort worker-turns 314 vs 48) and 1.6x in the other
+  (fortify holds 440 vs 692).
+- **Do not read the fortress want as measured.** It is measured as a
+  BUNDLE component and as an isolated wash; it has never been measured
+  against a cell where its want could not be confounded with the
+  chokepoint hold.
+- **The capture family is closed on population, not on design.** If a
+  future cell routes many caravans through contested ground the census
+  is already in the tree and costs nothing.
+- **The pillage RAID is sized and unbuilt.** 15x the standing
+  population. It needs movement logic, which is the part the shipped
+  pass deliberately does not have.
+- **The barbarian demand-side twin is still #39/#43** -- the expansion
+  want debit for uprising pressure. Not built here. The supply side is
+  now shaped and the seam is `deep_barb_empire_scale()`, which is
+  exactly the quantity an expansion debit would multiply.
+- **`deep-fort`, `deep-ground`, `deep-pillage`, `deep-barb`,
+  `deep-capture` and `deep-capture-venue` are the new census lines.**
+  `benchmark/paircmp.py --pat NAME=REGEX` pairs any of them.
+
+`meson test -C build` **4/4 OK** and `python3 benchmark/tune-audit.py`
+**CLEAN 173/173/173/173** (was 168), before and after.
