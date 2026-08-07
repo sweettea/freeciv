@@ -30,9 +30,29 @@
 #include "aitraits.h"
 
 #include "deepai.h"
+#include "deepdefence.h"
 #include "deeptuning.h"
 
 #include "deepstance.h"
+
+/* What source 2 read for one player, kept between deep_stance_refresh()
+ * and deep_stance_log() -- which run back to back for the same player,
+ * in one loop, at phase begin (deepai.c). Keeping it here rather than
+ * in struct deep_plr costs nothing and saves nothing: the census is
+ * the LOG LINE, and a second full read just to print it would double
+ * the cost of the layer. The player number is carried so a line can
+ * never quietly report another seat's position. */
+struct deep_stance_read {
+  int plrno;                    /* -1 = nothing read this phase */
+  double land;                  /* Unclaimed share of known land, 0..1 */
+  double warfrac;               /* Rivals we are at war with, 0..1 */
+  double threat;                /* Saturated border pressure, 0..1 */
+  double pressure;              /* ... its raw input, per city we hold */
+  int rivals;
+  int at_war;
+};
+
+static struct deep_stance_read last_read = { .plrno = -1 };
 
 /**********************************************************************//**
   Identity: every axis equal, which is what every gate must read as
@@ -108,19 +128,20 @@ const char *deep_stance_source_name(int source)
 
 /**********************************************************************//**
   The source actually in force, which is not always the one the tuning
-  file asked for: source 2 (position, A.4 step 3) is E34.4 and is not
-  built. A file that asks for it gets identity and says so out loud,
-  once -- a switch nobody verified has already cost this project a
-  40-game batch.
+  file asked for: a file that asks for a source this build does not
+  have gets identity and says so out loud, once -- a switch nobody
+  verified has already cost this project a 40-game batch. Sources 0
+  (identity), 1 (traits, E34.3) and 2 (traits+position, E34.4) are
+  built; anything else falls back.
 **************************************************************************/
 static int deep_stance_source_effective(void)
 {
   int want = deep_tuning_get()->stance_source;
 
-  if (want == 0 || want == 1) {
+  if (want >= 0 && want <= 2) {
     return want;
   }
-  if (want > 0 && want < 3) {
+  {
     static bool warned = FALSE;
 
     if (!warned) {
@@ -225,6 +246,115 @@ static void deep_stance_seed_from_traits(struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Source 2's POSITION: what the map is offering this player and what it
+  is threatening it with, read from signals deep already computes for
+  other consumers rather than from a new survey.
+
+    land    deep_free_land_share() -- the LIVE unclaimed share of known
+            land, which is what "high econ expands WHILE LAND REMAINS"
+            (W34 A.2 gate 4) is asking about one level up.
+    war     the share of live rivals we are actually at war with.
+    threat  standing border pressure from every rival, the same density
+            lattice the per-city fear is built from, taken PER CITY WE
+            HOLD and saturated through p / (p + ref).
+
+  The per-city normalisation is the part that is a claim rather than a
+  convenience: total pressure scales with (our cities x their cities),
+  so an empire that doubles in size doubles its raw pressure without
+  its position having changed at all. Pressure per city we hold is what
+  "how crowded is my border" means, and it is the quantity a stance
+  should read.
+
+  The saturating form p / (p + ref) is deep_land_pressure()'s shape,
+  chosen for the same reason: it is bounded without a clip and it keeps
+  discriminating on both sides of the reference.
+**************************************************************************/
+static void deep_stance_read_position(struct player *pplayer,
+                                      struct deep_stance_read *rd)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  double press = 0.0;
+  double ref = MAX(tune->stance_pressure_ref, 0.0);
+  int ncities = city_list_size(pplayer->cities);
+
+  rd->rivals = 0;
+  rd->at_war = 0;
+  rd->land = deep_free_land_share(pplayer);
+  players_iterate_alive(aplayer) {
+    if (aplayer == pplayer || is_barbarian(aplayer)) {
+      continue;
+    }
+    rd->rivals++;
+    if (player_diplstate_get(pplayer, aplayer)->type == DS_WAR) {
+      rd->at_war++;
+    }
+    press += deep_border_pressure_from(pplayer, aplayer);
+  } players_iterate_alive_end;
+
+  rd->pressure = press / MAX(1, ncities);
+  rd->threat = (ref > 0.0 && rd->pressure > 0.0)
+    ? rd->pressure / (rd->pressure + ref) : 0.0;
+  rd->warfrac = (rd->rivals > 0)
+    ? (double)rd->at_war / (double)rd->rivals : 0.0;
+}
+
+/**********************************************************************//**
+  Source 2 (W34 A.4 step 3): the trait prior MODULATED by POSITION. It
+  does not replace the prior -- a trait says who
+  this player is, position says what the map is offering it -- so the
+  position and tech terms are added to the trait INDEX, before the span
+  turns an index into a weight.
+
+  Adding on the index means the span clamp keeps its meaning: an axis
+  still cannot leave [1 - span, 1 + span], so a corner pinned by
+  stance_forced is still exactly the extreme a free player can reach,
+  which is the property E34.1 chose the span for and the one that makes
+  a constant tuned pinned mean the same thing free.
+
+  Direction of each term, both of them the same claim as the gate that
+  will read them:
+    econ  <- land offered
+    mil   <- war and border pressure
+
+  With the gain at zero this is EXACTLY source 1: x + 0.0 * y == x
+  for every finite x, and a trait index is already inside the clamp, so
+  the clip is a no-op. That is the per-source off-switch an A/B needs,
+  and it is why the gain rather than the source is what a tuning run
+  should move first.
+**************************************************************************/
+static void deep_stance_seed_from_position(struct player *pplayer,
+                                           double span,
+                                           struct deep_stance_read *rd,
+                                           struct deep_stance *st)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  double pgain = tune->stance_position_gain;
+  double e_trait = (deep_stance_trait_index(pplayer, TRAIT_EXPANSIONIST)
+                    + deep_stance_trait_index(pplayer, TRAIT_BUILDER)
+                    + deep_stance_trait_index(pplayer, TRAIT_TRADER)) / 3.0;
+  double m_trait = deep_stance_trait_index(pplayer, TRAIT_AGGRESSIVE);
+  double e_pos, m_pos, e_idx, m_idx;
+
+  deep_stance_read_position(pplayer, rd);
+
+  /* Both position terms are means of sub-signals on [0, 1] mapped to
+   * [-1, +1], so "nothing on offer and nobody at war" is -1 on both
+   * axes rather than 0 on one and -1 on the other. */
+  e_pos = 2.0 * rd->land - 1.0;
+  m_pos = rd->threat + rd->warfrac - 1.0;
+
+  e_idx = e_trait + pgain * e_pos;
+  m_idx = m_trait + pgain * m_pos;
+
+  st->econ = 1.0 + span * MIN(MAX(e_idx, -1.0), 1.0);
+  st->mil = 1.0 + span * MIN(MAX(m_idx, -1.0), 1.0);
+
+  if (e_idx != e_trait || m_idx != m_trait) {
+    deep_plr_data(pplayer)->stance_pos_moved++;
+  }
+}
+
+/**********************************************************************//**
   Set a player's axes for this turn.
 
   Three things resolve here, in the order A.4 lands them: IDENTITY
@@ -251,9 +381,20 @@ void deep_stance_refresh(struct player *pplayer)
    * is enforced separately -- gate 1 never scales it. */
   span = MIN(MAX(tune->stance_trait_span, 0.0), 0.9);
 
+  last_read.plrno = -1;
+
   if (!deep_stance_pinned()) {
-    if (deep_stance_source_effective() == 1) {
+    switch (deep_stance_source_effective()) {
+    case 1:
       deep_stance_seed_from_traits(pplayer, span, &plr_data->stance);
+      break;
+    case 2:
+      deep_stance_seed_from_position(pplayer, span, &last_read,
+                                     &plr_data->stance);
+      last_read.plrno = player_number(pplayer);
+      break;
+    default:
+      break;
     }
     return;
   }
@@ -302,13 +443,25 @@ void deep_stance_log(struct player *pplayer)
   const struct deep_plr *plr_data = deep_plr_data(pplayer);
   const struct deep_tuning *tune = deep_tuning_get();
   bool pinned = deep_stance_pinned();
+  /* Source 2's inputs, or a row of zeroes when no source read them:
+   * the four ways this source can fail to differentiate seats are a
+   * flat map, a peaceful map and a gain of zero, and only the raw
+   * signals tell them apart. pressure is on the line UNSATURATED because
+   * stance_pressure_ref is a placeholder and the tuning pass needs to
+   * see the distribution it is meant to sit in the middle of. */
+  bool read = (last_read.plrno == player_number(pplayer));
+  double land = read ? last_read.land : 0.0;
+  double warfrac = read ? last_read.warfrac : 0.0;
+  double threat = read ? last_read.threat : 0.0;
+  double pressure = read ? last_read.pressure : 0.0;
 
   log_base(deep_metric_log_level(),
            "deep-stance turn=%d player=\"%s\" econ=%.3f mil=%.3f"
            " cult=%.3f src=%s mode=%s preset=%s identity=%d"
            " trait_exp=%d trait_bld=%d trait_trd=%d trait_agg=%d"
            " fear_gate=%d op_gate=%d growth_gate=%d expand_gate=%d"
-           " assault_gate=%d floor_gate=%d",
+           " assault_gate=%d floor_gate=%d"
+           " land=%.3f war=%.3f threat=%.3f press=%.2f pos_moved=%d",
            game.info.turn, player_name(pplayer),
            plr_data->stance.econ, plr_data->stance.mil,
            plr_data->stance.cult,
@@ -334,7 +487,14 @@ void deep_stance_log(struct player *pplayer)
            plr_data->stance_growth_gated,
            plr_data->stance_expand_gated,
            plr_data->stance_assault_gated,
-           plr_data->stance_floor_gated);
+           plr_data->stance_floor_gated,
+           /* Source 2's own census: the position and tech signals as
+            * read, and the cumulative count of turns on which they
+            * actually moved an axis off the trait prior. Zero on every
+            * line at sources 0 and 1 -- the same contract the six gate
+            * counters keep. */
+           land, warfrac, threat, pressure,
+           plr_data->stance_pos_moved);
 }
 
 /**********************************************************************//**

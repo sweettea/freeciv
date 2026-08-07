@@ -1195,6 +1195,21 @@ struct deep_tuning {
    * benchmark baseline is a uniform floor; a pinned or trait-seeded
    * stance turns it into an early-war / early-peace personality. */
   double stance_floor_gain;
+  /* SOURCE 2 (W34 E34.4, A.4 step 3): how far the POSITION -- free
+   * land, war, border pressure -- may move an axis off the trait prior,
+   * in index units, the same units stance_trait_span then scales, so
+   * the clamp that keeps a free player inside the pinned corner still
+   * binds. PLACEHOLDER. Zero is exactly source 1, which is the
+   * per-term off-switch an A/B needs. */
+  double stance_position_gain;
+  /* The border pressure PER CITY WE HOLD at which source 2 reads the
+   * threat term as half its maximum: threat = p / (p + ref), the
+   * saturating shape deep_land_pressure() uses. In density-lattice
+   * units (density_fear_value / (1 + d) summed over city pairs), so it
+   * moves with density_fear_value and cannot be reasoned about
+   * independently of it. PLACEHOLDER, and the stance line carries the
+   * raw pressure so a tuning pass can see the distribution. */
+  double stance_pressure_ref;
 
   /* Tax/science/luxury rates (the rates epic). Stock's
    * dai_manage_taxes() is a SOLVENCY ladder: it finds the minimum tax

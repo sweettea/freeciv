@@ -90,6 +90,12 @@ struct deep_plr {
      floor injections actually scaled by a non-identity stance. Same
      contract as the other five. */
   int stance_floor_gated;
+  /* And for SOURCE 2 (W34 E34.4): turns on which position or research
+     lean actually moved an axis off the trait prior it modulates.
+     Same contract as the gate counters -- zero at stance_source 0 and
+     1, and the only thing that tells "the source is inert" apart from
+     "the gains are zero". */
+  int stance_pos_moved;
   /* Operation slots (W33); DEEP_OP_NONE marks a free slot. Saved
    * (W33 phase 4): a mid-march wave that dissolved on every reload
    * cost human-game players their assaults; member ids are
