@@ -70,6 +70,8 @@
 #include "deepsettler.h"
 #include "deeptuning.h"
 
+#include "deepwonder.h"
+
 #include "deeptrade.h"
 
 #define DEEP_TRADE_BRIEF_MAX 3
@@ -1610,6 +1612,26 @@ static adv_want deep_wonder_merit_want(struct ai_type *ait,
                               / (double) wc->cost),
                   MAX(wc->walk, 0) + MAX(wc->build, 0))
     * tune->wonder_merit_gain;
+
+  /* RACE TO WIN (WRACE step 2). A finish line is where a delivered
+   * caravan pays most: the shields it carries decide the race rather
+   * than merely advancing a build nobody contests. Symmetric to the
+   * go/no-go, and deliberately one-sided -- it only lifts a race we
+   * are AHEAD in, because feeding a race we are losing is the
+   * go/no-go's business and it has already priced that want down.
+   * Exactly 1.0 at wrace_urgency_gain = 0, off a race, or behind. */
+  {
+    double urg = deep_wonder_race_urgency(wonder_city, wonder);
+
+    if (urg != 1.0) {
+      log_base(deep_metric_log_level(),
+               "deep-wrace-feed turn=%d player=\"%s\" city=%d"
+               " wonder=\"%s\" urgency=%.3f want=%.1f",
+               game.info.turn, player_name(pplayer), pcity->id,
+               improvement_rule_name(wonder), urg, (double) want);
+      want = (adv_want) (want * urg);
+    }
+  }
 
   return MIN(want, DAI_WANT_DOMESTIC_MAX);
 }

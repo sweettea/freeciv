@@ -393,7 +393,7 @@ void deep_wonder_race(struct ai_type *ait, struct player *pplayer)
   const struct deep_tuning *tune = deep_tuning_get();
   struct adv_data *adv = adv_data_get(pplayer, NULL);
   struct city *wcity;
-  int declined = 0, priced = 0;
+  int declined = 0, priced = 0, abandoned = 0;
 
   deep_race_adjudicate(pplayer);
 
@@ -459,6 +459,22 @@ void deep_wonder_race(struct ai_type *ait, struct player *pplayer)
     deep_race_note(pplayer, pimprove, ours, theirs, p, decline);
     if (decline) {
       declined++;
+      /* ABANDONMENT, counted separately from declining to start: the
+       * shields are already in the stock and the salvage is what a
+       * switch recovers, which is deep's switch-cost machinery's
+       * question and not this pass's. What this pass owes the
+       * decision is a want of zero and a number saying it happened. */
+      if (VUT_IMPROVEMENT == wcity->production.kind
+          && wcity->production.value.building == pimprove) {
+        abandoned++;
+        log_base(deep_metric_log_level(),
+                 "deep-wrace-abandon turn=%d player=\"%s\" city=%d"
+                 " wonder=\"%s\" ours=%d theirs=%d p=%.3f obsolete=%d"
+                 " stock=%d",
+                 game.info.turn, player_name(pplayer), wcity->id,
+                 improvement_rule_name(pimprove), ours, theirs, p,
+                 ob_eta, wcity->shield_stock);
+      }
     } else {
       priced++;
     }
@@ -471,9 +487,9 @@ void deep_wonder_race(struct ai_type *ait, struct player *pplayer)
   if (priced + declined > 0) {
     log_base(deep_metric_log_level(),
              "deep-wrace-sum turn=%d player=\"%s\" city=%d priced=%d"
-             " declined=%d",
+             " declined=%d abandoned=%d",
              game.info.turn, player_name(pplayer), wcity->id, priced,
-             declined);
+             declined, abandoned);
   }
 }
 
