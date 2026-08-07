@@ -670,6 +670,39 @@ struct deep_tuning {
    * about 2x by the identical argument, and multiplying only conquest
    * tilts the offence/defence budget. Parked for the human (STATUS). */
   double conquest_worth_mult;
+  /* BALANCE -- the OTHER half of what a conquest takes, and the one
+   * nothing in this tree has ever priced: the culture stock.
+   *
+   * `pcity->history` is a per-city accumulator that transfer_city()
+   * does not touch (server/citytools.c changes `pcity->owner` on the
+   * same struct), player_culture() sums city_culture() over the
+   * cities a player owns, and get_civ_score() pays culture at 1/50th
+   * of a point. So the stock is a score asset that changes hands
+   * WHOLE at the moment of capture -- the Europe derby's Carthago
+   * inherited Gdansk's 2445 and grew it to 6408 (derby N2) -- while
+   * conquest_worth_mult prices only the city's ongoing output.
+   *
+   * The accumulation is LINEAR, not compounding:
+   * `history_interest_pml = 0` in both civ2civ3 and classic
+   * (findings/darkfx-2026-08-06.md §4), so the stock earns nothing on
+   * itself and the old annuity framing is dead. That does not change
+   * what the transfer is worth -- a stock is a stock -- it changes
+   * only what the loser's counterfactual would have been.
+   *
+   * The exchange rate is the score's own and is not invented:
+   * history/50 score points, each priced at what deep already pays
+   * for the citizen that scores exactly one point, which is the
+   * identical chain horizon_culture_weight uses for the FLOW. 1.0
+   * therefore means "the transferred stock is worth what its score is
+   * worth", and it is an upper bound for the same reason the flow's
+   * is: the citizen works a tile too.
+   *
+   * Applied inside deep_conquest_worth(), so all three conquest seats
+   * see it at once and none can see it twice. 0.0 = off =
+   * byte-identical. PLACEHOLDER, and note the venue: classic has no
+   * History effect of any kind, so this is civ2civ3-only by
+   * construction. */
+  double conquest_culture_gain;
   /* The same argument pointed the other way (human call 2026-08-06):
    * keeping our own city is worth what we keep AND what we deny the
    * taker, so the defence-side stakes read carries its own multiple.

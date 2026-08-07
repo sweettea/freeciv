@@ -62,9 +62,108 @@
 /* server */
 #include "notify.h"
 
+#include "deephorizon.h"
 #include "deeptrade.h"
 
 #include "deepops.h"
+
+/* server/advisors */
+#include "advdata.h"
+
+/* get_civ_score()'s own exchange rate between culture and score
+ * (server/score.c:361: `+ pplayer->score.culture / 50`). The same
+ * constant deephorizon.c's culture credit reads, and for the same
+ * reason: it is the rate the benchmark itself is scored at. */
+#define DEEP_CULTURE_PER_SCORE 50
+
+/* BALANCE census: how many conquest valuations carried a culture
+ * component, and what the component summed to. Read alongside
+ * `deep-netval` and the assault want, because the term is a bid
+ * modifier and never appears as a line of its own. */
+static int deep_conq_culture_cands = 0;
+static double deep_conq_culture_paid = 0.0;
+
+/**********************************************************************//**
+  What taking `target` is worth to `pplayer`, in the want currency
+  stock's own city worth is denominated in.
+
+  Two components, both applied ONCE here so that every conquest seat
+  reads the same number:
+
+  - `worth x conquest_worth_mult`: the take plus the denial (M1 rider
+    2, human call 2026-08-06). Unchanged; this function only gathers
+    the three call sites that already computed it.
+
+  - The CULTURE STOCK the city carries. `pcity->history` is not
+    recomputed under a new owner and transfer_city() never touches it
+    (server/citytools.c:1077-, which changes `pcity->owner` on the
+    same struct), so a captured city brings its whole accumulated
+    history across: the Europe derby's Carthago inherited Gdansk's
+    2445 and grew it (derby N2). player_culture() sums city_culture()
+    over the cities a player owns, and get_civ_score() pays culture at
+    1/50th of a point -- so the stock is a score asset that changes
+    hands whole and nothing in deep or in ai/default has ever priced
+    it. The exchange is the score's own: history / 50 score points,
+    each worth what deep pays for the citizen that scores exactly one
+    point, which is the identical chain deephorizon.c's culture credit
+    uses for the flow.
+
+  What is deliberately NOT counted: city_culture()'s EFT_PERFORMANCE
+  term, which is an instantaneous function of the buildings standing
+  and is recomputed under the new owner rather than transferred, and
+  the flow the city will earn afterwards, which is the building
+  credit's business and would be double-counted here.
+
+  The citizen price is read at the TARGET with our own adv weights --
+  what a citizen there would be worth to us. That inherits the base's
+  own omniscience (census finding #4: stock's `worth` is an
+  omniscient read of an enemy city) and no more; W04's estimator
+  replaces the base and this term with it.
+**************************************************************************/
+double deep_conquest_worth(struct ai_type *ait, struct player *pplayer,
+                           struct city *target)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  double worth = def_ai_city_data(target, ait)->worth
+                 * tune->conquest_worth_mult;
+  struct adv_data *adv;
+  double culture;
+
+  if (tune->conquest_culture_gain <= 0.0 || target->history <= 0) {
+    return worth;
+  }
+  adv = adv_data_get(pplayer, NULL);
+  if (adv == NULL) {
+    return worth;
+  }
+  culture = (double) target->history / DEEP_CULTURE_PER_SCORE
+            * deep_unworked_tile_value(target, adv, 3, NULL)
+            * tune->conquest_culture_gain;
+  if (culture <= 0.0) {
+    return worth;
+  }
+  deep_conq_culture_cands++;
+  deep_conq_culture_paid += culture;
+
+  return worth + culture;
+}
+
+/**********************************************************************//**
+  The culture component's execution counter, emitted once per player
+  per turn by the operations pass.
+**************************************************************************/
+void deep_conquest_culture_census(struct player *pplayer)
+{
+  if (deep_conq_culture_cands <= 0) {
+    return;
+  }
+  log_base(deep_metric_log_level(),
+           "deep-conqculture turn=%d player=\"%s\" priced=%d paid=%.1f",
+           game.info.turn, player_name(pplayer),
+           deep_conq_culture_cands, deep_conq_culture_paid);
+  deep_conq_culture_cands = 0;
+  deep_conq_culture_paid = 0.0;
+}
 
 /**********************************************************************//**
   The slot index of the live operation claiming this unit, or -1.
@@ -3391,8 +3490,7 @@ struct unit *deep_op_poach_defender(struct ai_type *ait,
     }
     eta = deep_op_eta(pplayer, op, target);
     odds = deep_take_odds_at_arrival(nmap, target, stream, ns, eta);
-    if (city_risk <= def_ai_city_data(target, ait)->worth
-                     * tune->conquest_worth_mult * odds) {
+    if (city_risk <= deep_conquest_worth(ait, pplayer, target) * odds) {
       continue;                 /* The op's claim outbids the city. */
     }
     for (i = 0; i < op->n_members; i++) {
@@ -3885,11 +3983,12 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
        * construction the launches the odds bar alone WOULD have
        * taken. */
       if (go && tune->op_net_value) {
-        /* Same conquest_worth_mult as the build side, applied once
-         * here: taking the city gains us its value and denies it to
-         * the owner (human call 2026-08-06). */
+        /* Same conquest worth as the build side, applied once here:
+         * taking the city gains us its value and denies it to the
+         * owner (human call 2026-08-06), plus the culture stock that
+         * changes hands with it (BALANCE). */
         double raw_worth = def_ai_city_data(target, ait)->worth;
-        double eff_worth = raw_worth * tune->conquest_worth_mult;
+        double eff_worth = deep_conquest_worth(ait, pplayer, target);
         double value = odds_now * eff_worth;
         double cost = tune->attack_loss_gain * loss_now * SHIELD_WEIGHTING;
 
@@ -4293,4 +4392,6 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
       deep_op_drive(ait, pplayer, &dp->ops[oi], oi);
     }
   }
+
+  deep_conquest_culture_census(pplayer);
 }

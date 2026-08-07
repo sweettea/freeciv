@@ -142,6 +142,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .attack_value_weight = 1.0,           /* PLACEHOLDER, untuned */
   .attack_loss_gain = 1.0,              /* PLACEHOLDER, untuned */
   .conquest_worth_mult = 2.0,           /* human band ~1.9-2.2 */
+  .conquest_culture_gain = 0.0,         /* PLACEHOLDER, 0 = off */
   .defence_worth_mult = 2.0,            /* symmetric: tilt = ratio */
   .assault_pool_reach = 1,              /* geometry, not a magnitude */
   .sortie_win_floor = 0.85,             /* PLACEHOLDER, untuned */
@@ -328,6 +329,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(attack_value_weight) \
   TUNE_DOUBLE(attack_loss_gain) \
   TUNE_DOUBLE(conquest_worth_mult) \
+  TUNE_DOUBLE(conquest_culture_gain) \
   TUNE_DOUBLE(defence_worth_mult) \
   TUNE_INT(assault_pool_reach) \
   TUNE_DOUBLE(sortie_win_floor) \

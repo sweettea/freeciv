@@ -3705,9 +3705,14 @@ static void deep_assault_want(struct ai_type *ait,
    * budget) is parked for the human, and the base being multiplied is
    * still stock's omniscient read of an enemy city (census finding
    * #4). W04's estimator replaces the base; the multiplier survives
-   * that swap unchanged. */
+   * that swap unchanged.
+   *
+   * BALANCE adds the second component of the same worth -- the
+   * culture stock a captured city carries across -- inside
+   * deep_conquest_worth(), so all three conquest seats read one
+   * function rather than three copies of a product. */
   raw_worth = def_ai_city_data(target, ait)->worth;
-  tworth = raw_worth * tune->conquest_worth_mult;
+  tworth = deep_conquest_worth(ait, pplayer, target);
 
   {
     /* March or sail time is the defender's budget on BOTH terrains

@@ -161,4 +161,14 @@ struct unit *deep_op_poach_defender(struct ai_type *ait,
                                     struct city *pcity,
                                     double p_survival);
 
+/* What taking this city is worth to us: stock's cached city worth
+ * times conquest_worth_mult (take plus denial), plus the culture
+ * stock the capture transfers whole. ONE function behind all three
+ * conquest seats -- the assault want, the operation's net-value gate
+ * and the defence counter-claim -- so the referee cannot differ
+ * between them. */
+double deep_conquest_worth(struct ai_type *ait, struct player *pplayer,
+                           struct city *target);
+void deep_conquest_culture_census(struct player *pplayer);
+
 #endif /* FC__DEEPOPS_H */
