@@ -1216,6 +1216,21 @@ struct deep_tuning {
    * raw pressure so a tuning pass can see the distribution. */
   double stance_pressure_ref;
 
+  /* Spy-action valuation (W35 E35.1, deepspy.c). spy_enabled is the
+   * off-switch: 0 (the compiled default) leaves stock's fixed ladder
+   * deciding what a diplomat does and runs deep's seam census only,
+   * so a default game is byte-identical.
+   *
+   * spy_gold_value is one gold in the want currency, and it is the
+   * exchange rate three of the four families ride on -- a stolen
+   * tech's bulb cost at stock's own x3, and the incite cost the server
+   * charges. spy_sabotage_gain prices shields DESTROYED against
+   * shields produced: denial is not acquisition, and the two are not
+   * worth the same. Both PLACEHOLDER. */
+  int spy_enabled;
+  double spy_gold_value;
+  double spy_sabotage_gain;
+
   /* Tax/science/luxury rates (the rates epic). Stock's
    * dai_manage_taxes() is a SOLVENCY ladder: it finds the minimum tax
    * that balances the books, the minimum science that avoids tech

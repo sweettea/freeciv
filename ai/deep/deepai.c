@@ -64,6 +64,7 @@
 #include "deepdiplomacy.h"
 #include "deepsettler.h"
 #include "deepsite.h"
+#include "deepspy.h"
 #include "deepstance.h"
 #include "deeptrade.h"
 #include "deeptuning.h"
@@ -941,6 +942,12 @@ static void dpai_switch_to_explore(struct unit *punit, struct tile *target,
 static void dpai_do_first_activities(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
+
+  /* Before anything touches a unit: stock's diplomat handling bribes,
+   * defends, targets, walks and ACTS in one call, so the action choice
+   * can only be intercepted upstream of it (deepspy.c). Off by
+   * default, in which case this is a census and nothing else. */
+  deep_spy_manage(deftype, pplayer);
 
   deep_do_first_activities(deftype, pplayer);
 

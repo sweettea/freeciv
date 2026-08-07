@@ -354,6 +354,7 @@ else
       'ai/deep/deepops.c',
       'ai/deep/deeprates.c',
       'ai/deep/deepsite.c',
+      'ai/deep/deepspy.c',
       'ai/deep/deepstance.c',
       'ai/deep/deeptrade.c',
       'ai/deep/deepsettler.c',
