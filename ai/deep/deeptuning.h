@@ -957,6 +957,25 @@ struct deep_tuning {
    * are. 0 = off, restoring best-chance selection with no value term
    * at all. */
   double sortie_prize_gain;
+  /* THE DETERRENCE DIVIDEND (M4b item 2; human 2026-08-06, "we aren't
+   * valuing defensive units highly enough... a musket behind walls is
+   * pretty dang strong").
+   *
+   * A defender's priced value today is its contribution to WAVE
+   * SURVIVAL and nothing else, so a blade that loses is worth zero --
+   * which is false. It is worth the attacker shields it destroys on
+   * the way down, and CONSEQ's fight-vs-deny design prices exactly
+   * that quantity at the write-off seam ("what resisting COSTS the
+   * taker", findings/conseq-wrace §2b). Same term, consumed here.
+   *
+   * Priced as the MARGINAL attrition this candidate defender adds --
+   * deep_city_defence_read() with and without it, in shields -- times
+   * the observed attack pressure on the city (deep_garrison_menace(),
+   * the same 0..1 read the garrison floor is sized by), times this
+   * gain. It does NOT touch defence_worth_mult, which prices the CITY;
+   * this prices the ATTRITION, and the two are added, not multiplied.
+   * 0 = off. */
+  double deterrence_gain;
   /* Assault operations (E6): form when the free-attacker pool's take
    * odds against the best met target clear op_take_target (<= 0
    * disables); muster at the staging city up to op_muster_wait turns

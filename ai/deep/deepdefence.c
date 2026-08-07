@@ -3932,6 +3932,10 @@ static int deep_birth_cands = 0, deep_birth_priced = 0;
 static int deep_birth_urgent = 0;
 static double deep_birth_paid = 0.0, deep_birth_odds = 0.0;
 
+/* The deterrence dividend's counters, reset on the same schedule. */
+static int deep_deter_priced = 0;
+static double deep_deter_paid = 0.0;
+
 /**********************************************************************//**
   What a first defender in an EMPTY city is actually worth.
 
@@ -4050,6 +4054,18 @@ static void deep_birth_census(struct player *pplayer)
   deep_birth_urgent = 0;
   deep_birth_odds = 0.0;
   deep_birth_paid = 0.0;
+
+  /* The dividend's own line, on the same schedule. Zero lines a game
+   * with deterrence_gain at its default is half the off-switch
+   * proof; the other half is that the two DP runs never happen. */
+  if (deep_deter_priced > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-deter-sum turn=%d player=\"%s\" priced=%d paid=%.1f",
+             game.info.turn, player_name(pplayer), deep_deter_priced,
+             deep_deter_paid);
+  }
+  deep_deter_priced = 0;
+  deep_deter_paid = 0.0;
 }
 
 /**********************************************************************//**
@@ -4061,6 +4077,99 @@ static void deep_birth_census(struct player *pplayer)
   internally, which is why adjusting danger at phase start cannot
   affect production.
 **************************************************************************/
+/**********************************************************************//**
+  THE DETERRENCE DIVIDEND (M4b item 2; human 2026-08-06: "we aren't
+  valuing defensive units highly enough... a musket behind walls is
+  pretty dang strong").
+
+  Every price this module puts on a defender is a price on WAVE
+  SURVIVAL -- the survival deficit fear, the garrison floor, the
+  counter-claim -- so a blade that is going to lose is worth nothing,
+  and that is simply false. It is worth the attacker shields it
+  destroys on the way down. CONSEQ's fight-vs-deny design named the
+  same quantity from the other side ("what resisting COSTS the taker",
+  findings/conseq-wrace §2b) and this is that term, consumed rather
+  than reimplemented.
+
+  The honest price of ONE MORE defender is marginal, so it is priced
+  marginally: run the chained-duel model against the observed wave
+  twice, once with a virtual unit of the candidate type standing in
+  the city and once without, and take the difference in expected
+  attacker shields destroyed. The tile-aware get_total_defense_power()
+  seam (deepcombat.c:174) is inside that read, which is what makes
+  "behind walls" arithmetic rather than rhetoric: the same musket
+  prices higher in a walled city because its duels really are better.
+
+  Times the observed attack pressure -- deep_garrison_menace(), the
+  same 0..1 read the garrison floor is already sized by, so the term
+  that insures against a threat and the term that prices killing it
+  agree about how much threat there is.
+
+  NOT double-counting defence_worth_mult: that multiplier prices the
+  CITY at the counter-claim's stakes read. This prices the ATTRITION,
+  a disjoint quantity, and the two are added by different seams.
+
+  Returns 0 and costs nothing when the city faces no wave, which is
+  every city in peacetime -- the two DP runs never happen.
+**************************************************************************/
+static adv_want deep_deterrence_dividend(const struct civ_map *nmap,
+                                         struct city *pcity,
+                                         const struct unit_type *ut,
+                                         double menace)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct deep_defence_read now, plus;
+  struct unit *v;
+  double marginal;
+  adv_want div;
+
+  if (tune->deterrence_gain <= 0.0 || ut == NULL || menace <= 0.0) {
+    return 0;
+  }
+  /* The verdict this phase already took: no wave, no dividend, and no
+   * DP runs at all. */
+  {
+    int wave = 0;
+
+    (void) deep_city_survival_verdict(nmap, pcity, tune->survival_horizon,
+                                      &wave);
+    if (wave <= 0) {
+      return 0;
+    }
+  }
+
+  deep_city_defence_read(nmap, pcity, tune->survival_horizon, NULL, 0,
+                         &now);
+  v = unit_virtual_create(city_owner(pcity), pcity,
+                          (struct unit_type *) ut, 0);
+  unit_tile_set(v, city_tile(pcity));
+  deep_city_defence_read(nmap, pcity, tune->survival_horizon, &v, 1,
+                         &plus);
+  unit_virtual_destroy(v);
+
+  marginal = plus.att_loss - now.att_loss;
+  if (marginal <= 0.0) {
+    /* The stack is already deep enough that the wave dies before this
+     * body is reached, or the caps truncated it. Nothing owed. */
+    return 0;
+  }
+  div = (adv_want) (marginal * menace * tune->deterrence_gain);
+  if (div <= 0) {
+    return 0;
+  }
+
+  deep_deter_priced++;
+  deep_deter_paid += div;
+  log_base(deep_metric_log_level(),
+           "deep-deter turn=%d player=\"%s\" city=%d type=\"%s\""
+           " wave=%d marg=%.1f menace=%.3f surv=%.3f div=%.1f",
+           game.info.turn, player_name(city_owner(pcity)), pcity->id,
+           utype_rule_name(ut), now.wave, marginal, menace, now.surv,
+           (double) div);
+
+  return div;
+}
+
 static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
                                                      const struct civ_map *nmap,
                                                      struct player *pplayer,
@@ -4244,15 +4353,24 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
       if (dai_process_defender_want(ait, nmap, pplayer, pcity, danger,
                                     choice, martial_value)) {
         double priced = 0.0;
+        /* The dividend rides on top of whichever tier this branch
+         * settles on: it is a value the FIRST defender also earns,
+         * and an empty city is precisely where the marginal blade
+         * imposes the most attrition. */
+        adv_want div
+          = deep_deterrence_dividend(nmap, pcity,
+                                     choice->type == CT_DEFENDER
+                                     ? choice->value.utype : NULL,
+                                     deep_garrison_menace(pplayer));
 
         if (deep_birth_guard_want(ait, nmap, pcity, urgency, &priced)) {
           /* Threat-blind flat 100 replaced by its price. NORMAL tier,
            * so the auction and W34's gates can both see it. */
           deep_want_apply(choice, (struct deep_want) {
-            .tier = DWT_NORMAL, .value = priced });
+            .tier = DWT_NORMAL, .value = priced + div });
         } else {
           deep_want_apply(choice, (struct deep_want) {
-            .tier = DWT_EMERGENCY, .value = danger });
+            .tier = DWT_EMERGENCY, .value = danger + div });
         }
         adv_choice_set_use(choice, "first defender");
         build_walls = FALSE;
@@ -4345,6 +4463,14 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
           }
 
           uchoice.want += martial_value;
+          /* The same dividend on the ordinary defender want: what this
+           * body will cost the wave, on top of what it does for the
+           * wave's odds. */
+          uchoice.want
+            += deep_deterrence_dividend(nmap, pcity,
+                                        uchoice.type == CT_DEFENDER
+                                        ? uchoice.value.utype : NULL,
+                                        deep_garrison_menace(pplayer));
           if (danger > 0) {
             adv_choice_set_use(&uchoice, "defender");
           } else {
