@@ -1197,6 +1197,92 @@ static adv_want deep_culture_paid = 0;
   the culture stock a conquest transfers (derby N2, and a military
   price, not a building one).
 **************************************************************************/
+/* Item 3's execution counters, per player pass. */
+static int deep_popins_cands = 0;
+static double deep_popins_paid = 0.0;
+
+/**********************************************************************//**
+  WALLS AS POP-LOSS INSURANCE (M4b item 3).
+
+  Stock prices EFT_UNIT_NO_LOSE_POP at units x 2 (daieffects.c:456): a
+  WAG over a headcount that never asks whether the city is under
+  attack, so a walled capital in the interior and a walled border city
+  with an army outside it are worth the same.
+
+  The mechanic is exact and CONSEQ verified both halves of it. Capture
+  costs the city one size point, flat and once
+  (unit_conquer_city(), server/citytools.c:2141) -- and walls do NOT
+  insure that. But every SUCCESSFUL attack costs another citizen under
+  `killcitizen` plus UCF_KILLCITIZEN and absent this very effect
+  (server/unithand.c:4601), and that is exactly what the effect
+  removes.
+
+  So the honest price is E[successful attacks] x what a citizen is
+  worth. The first factor is not a guess: a defender dies precisely
+  when an attack on it succeeds, so the chained-duel model's expected
+  defender deaths ARE the expected successful attacks, which is why
+  the DP now reports them. Capped at the citizens the city has left to
+  lose, because the server cannot reduce it below size 1 -- past that
+  the city is captured and this effect is not what was needed.
+
+  The citizen is valued at deep_unworked_tile_value(), the same
+  valuation the health credit beside it uses, so the two are directly
+  comparable and this gain carries the same horizon scale that one
+  does.
+
+  NOT a double count of the walls' Defend_Bonus: that bonus is already
+  inside the odds, because the survival read prices every duel through
+  the tile-aware get_total_defense_power() seam. This is the
+  ADDITIONAL stream on top of it. And a city that already has the
+  effect from another source (civ2civ3 gives it to the Great Wall too,
+  effects.ruleset:3123) is owed nothing.
+
+  `hits` is computed once per city by the caller: it costs a DP run,
+  and running one per improvement would be sixty per city per turn.
+**************************************************************************/
+static adv_want deep_pop_insurance_credit(struct city *pcity,
+                                          const struct impr_type *pimprove,
+                                          struct adv_data *adv,
+                                          double hits)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  double losable, insured;
+  adv_want credit;
+
+  if (tune->pop_insurance_gain <= 0.0 || hits <= 0.0) {
+    return 0;
+  }
+  if (get_city_bonus(pcity, EFT_UNIT_NO_LOSE_POP) > 0) {
+    return 0;                   /* Already insured; nothing to buy. */
+  }
+  if (get_potential_improvement_bonus(pimprove, pcity,
+                                      EFT_UNIT_NO_LOSE_POP,
+                                      RPT_CERTAIN, FALSE) <= 0) {
+    return 0;
+  }
+
+  /* The server reduces the city by one per successful attack and
+   * cannot take it below 1; the step past that is the capture, which
+   * this effect does not insure. */
+  losable = (double) city_size_get(pcity) - 1.0;
+  if (losable <= 0.0) {
+    return 0;
+  }
+  insured = MIN(hits, losable);
+
+  credit = (adv_want) (insured
+                       * deep_unworked_tile_value(pcity, adv, 3, NULL)
+                       * tune->pop_insurance_gain);
+  if (credit <= 0) {
+    return 0;
+  }
+
+  deep_popins_cands++;
+  deep_popins_paid += credit;
+
+  return credit;
+}
+
 static adv_want deep_culture_credit(struct city *pcity,
                                     const struct impr_type *pimprove,
                                     struct adv_data *adv)
@@ -1468,10 +1554,17 @@ void deep_adjust_building_wants(struct ai_type *ait,
   deep_culture_cands = 0;
   deep_culture_war = 0;
   deep_culture_paid = 0;
+  deep_popins_cands = 0;
+  deep_popins_paid = 0.0;
 
   city_list_iterate(pplayer->cities, pcity) {
     adv_want cap_credit;
     bool threatened;
+    /* Item 3's input, taken ONCE per city: expected successful enemy
+     * attacks over the survival horizon. One DP run, not one per
+     * improvement. Zero without the knob, so the off arm does no work
+     * at all. */
+    double pop_hits = 0.0;
     /* What this city's credit actually DELIVERS this turn, as opposed
      * to what it intends. The two are not the same number: stock
      * clears building_want[] only on its own recalc schedule
@@ -1516,9 +1609,30 @@ void deep_adjust_building_wants(struct ai_type *ait,
       threatened = def_ai_city_data(pcity, ait)->urgency > 0
                    || def_ai_city_data(pcity, ait)->grave_danger > 0;
     }
+    if (tune->pop_insurance_gain > 0.0 && tune->survival_target > 0.0) {
+      int wave = 0;
+
+      /* The cached verdict answers "is anyone coming" for free; only
+       * then is the fuller read worth its DP run. */
+      (void) deep_city_survival_verdict(&(wld.map), pcity,
+                                        tune->survival_horizon, &wave);
+      if (wave > 0) {
+        struct deep_defence_read dr;
+
+        deep_city_defence_read(&(wld.map), pcity, tune->survival_horizon,
+                               NULL, 0, &dr);
+        pop_hits = dr.hits;
+      }
+    }
+
     cap_credit = deep_capacity_credit(pcity, adv);
     if (threatened && cap_credit <= 0
-        && tune->horizon_culture_weight <= 0.0) {
+        && tune->horizon_culture_weight <= 0.0
+        /* And the pop insurance, for the sharper reason: a THREATENED
+         * city is the only city that has any expected successful
+         * attacks at all, so gating the insurance on peace would gate
+         * it on having no population. */
+        && !(tune->pop_insurance_gain > 0.0 && pop_hits > 0.0)) {
       /* Growth is a peace-time investment: no horizon credits while
        * the city is under threat (the contested ablation showed the
        * credits, not the site terms, carried the war-map score cost:
@@ -1618,6 +1732,11 @@ void deep_adjust_building_wants(struct ai_type *ait,
           }
         }
       }
+
+      /* M4b item 3, and NOT gated on !threatened for the same reason
+       * culture is not: a wall's insurance value is zero in a city
+       * nobody is attacking and maximal in one that is. */
+      add += deep_pop_insurance_credit(pcity, pimprove, adv, pop_hits);
 
       if (!threatened && game.info.illness_on
           && city_size_get(pcity) + 1 >= game.info.illness_min_size) {
@@ -1809,6 +1928,15 @@ void deep_adjust_building_wants(struct ai_type *ait,
              game.info.turn, player_name(pplayer), deep_culture_cands,
              deep_culture_war, deep_turns_left(),
              (double) deep_culture_paid);
+  }
+
+  /* Item 3's counter. Zero lines a game at the default gain is half
+   * the off-switch proof; the other half is that no DP run happens. */
+  if (deep_popins_cands > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-popins turn=%d player=\"%s\" cands=%d credit=%.1f",
+             game.info.turn, player_name(pplayer), deep_popins_cands,
+             deep_popins_paid);
   }
 
   if (deep_upkeepfree_cands > 0) {

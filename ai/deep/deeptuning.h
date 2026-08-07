@@ -1002,6 +1002,28 @@ struct deep_tuning {
    * 0 = off. Moves every unit want in the auction, so it is A/B'd
    * alone and not only in the bundle. */
   double unit_upkeep_charge;
+  /* WALLS AS POP-LOSS INSURANCE (M4b item 3). Stock prices
+   * EFT_UNIT_NO_LOSE_POP at units x 2 (daieffects.c:456) -- a WAG over
+   * a headcount, with no reference to whether the city is under
+   * attack. The mechanic is exact and CONSEQ verified it: capture
+   * costs one size point flat (server/citytools.c:2141), but EVERY
+   * successful attack costs another under `killcitizen` +
+   * UCF_KILLCITIZEN (server/unithand.c:4601), and that is the one the
+   * effect insures.
+   *
+   * Honest price: E[successful attacks] x the citizen's stream value.
+   * The first factor is the chained-duel model's own `hits` output
+   * (deep_city_defence_read()) against the observed wave, capped at
+   * the citizens the city actually has to lose. The second is
+   * deep_unworked_tile_value(), the same citizen valuation every
+   * other credit in this ladder uses -- so this credit is directly
+   * comparable with the health credit beside it, and this gain
+   * absorbs the horizon scale exactly as horizon_health_weight does.
+   *
+   * ADDITIONAL to walls' Defend_Bonus, which is already inside the
+   * odds the tile-aware defence read computes -- so no double count.
+   * 0 = off. */
+  double pop_insurance_gain;
   /* Assault operations (E6): form when the free-attacker pool's take
    * odds against the best met target clear op_take_target (<= 0
    * disables); muster at the staging city up to op_muster_wait turns
