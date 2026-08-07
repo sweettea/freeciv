@@ -35,12 +35,17 @@ love mechanism (one love ledger, no double-charging).
    pressure delta — the mechanism's OWN metric is "did the menacer get
    busier elsewhere," measurable from diplstate + the fear terms.
 
-3. **Culture stock in conquest worth (derby N2).** Conquest transfers
-   the accumulated history stock (Carthago inherited Gdansk's 2445 and
-   compounded it to 6408); `conquest_worth_mult` doubles city worth but
-   nothing prices that annuity. Add the captured city's culture stock x
-   the score term's value as a component of conquest worth (tunable,
-   PLACEHOLDER), at the same call sites as the multiplier.
+3. **Culture stock in conquest worth (derby N2; corrected per DARKFX
+   2026-08-06).** Conquest transfers the accumulated history stock
+   (Carthago inherited Gdansk's 2445 and grew it to 6408 — by LINEAR
+   accumulation: `history_interest_pml = 0` in both rulesets, so the
+   stock earns no interest and the old "annuity/compounds" framing is
+   dead). The stock is still a score asset that changes hands whole:
+   `conquest_worth_mult` doubles city worth but nothing prices it. Add
+   the captured city's culture stock x the score term's value as a
+   component of conquest worth (tunable, PLACEHOLDER), at the same call
+   sites as the multiplier. Read `findings/darkfx-2026-08-06.md` for
+   the culture-channel facts before wiring.
 
 ## Discipline
 
