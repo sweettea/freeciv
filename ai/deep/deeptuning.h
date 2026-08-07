@@ -536,6 +536,27 @@ struct deep_tuning {
   double expiry_building_gain;
   double expiry_unit_gain;
   int expiry_unit_gap;
+
+  /* THE LAST-DITCH DEFENCE LADDER (human, 2026-08-07). Both
+   * PLACEHOLDERs, both 0 = off = byte-identical.
+   *
+   * sell_defend_gain is rung 1, SELL TO DEFEND: when a city wants a
+   * defender bought and the treasury cannot cover the rush, sell the
+   * highest-value sellable building that is not itself defending the
+   * city and put the gold toward the buy. A DEFENCE move, not a
+   * concession, so the trigger is deliberately looser than the
+   * abandonment slice's -- the misfire cost is one building against a
+   * saved city. The gain is the BAR and not a scale: sell only while
+   * the building's sale price is at most gain x the rush cost, so at
+   * 1.0 the building may be worth up to what the defender costs.
+   *
+   * late_buy_gate is rung 3, THE FINAL DEFENCE BUY: at the end of
+   * deep's phase, spend gold the turn ADDED since the main buy pass,
+   * restricted to the triage population (urgency, grave danger, or
+   * below-target survival against a live wave). Never the general want
+   * ladder. */
+  double sell_defend_gain;
+  int late_buy_gate;
   /* Land-race coupling: fresh founder wants scale by
    * (1 + weight * map crowding); crowded maps race, empty ones
    * don't. 0 disables. */

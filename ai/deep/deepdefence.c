@@ -5125,6 +5125,253 @@ static int deep_emergency_cmp(const void *a_, const void *b_)
   return a->id - b->id;
 }
 
+/* Rung 1's census, per player per turn. */
+static int deep_sd_short = 0, deep_sd_sold = 0, deep_sd_bought = 0;
+static int deep_sd_gold = 0;   /* sale proceeds raised this phase */
+static int deep_late_mark = -1; /* treasury the main buy pass left */
+
+/**********************************************************************//**
+  RUNG 1: SELL TO DEFEND (human design, 2026-08-07 -- "sell a bldg then
+  buy defense unit as a lastditch").
+
+  A DEFENSIVE move, not a concession, and that is what separates it
+  from the abandonment rung: the building is spent to KEEP the city,
+  not written off with it. The misfire cost is one building against a
+  city that turns out not to have needed saving, so the trigger is
+  deliberately LOOSER than the abandonment slice's -- a defender is
+  wanted, the treasury cannot cover the rush, and the write-off
+  family's own danger read says the city is below survival target
+  against a wave that exists.
+
+  Stock has a sibling of this and it is far narrower: it fires only
+  when grave_danger is set AND the city has literally no defence, and
+  it sells through try_to_sell_stuff(). This rung fires on the
+  SHORTFALL, which is the condition that actually predicts a city
+  bought nothing.
+
+  WHAT IT SELLS: the highest-value sellable building, minus the ones
+  that are themselves defending this city. Selling City Walls to buy
+  the Musketeer standing behind them is a trade the city can lose on
+  net, and it is the reason stock spares them too; the exclusion is
+  stated here rather than hidden so it can be reversed by whoever
+  disagrees. Great and small wonders are not sellable at all
+  (is_building_sellable() is is_improvement()), so they never enter.
+
+  ONE SALE PER CITY PER TURN is the server's rule (`did_sell`,
+  server/cityhand.c), honoured explicitly the way deep_balance_treasury()
+  does.
+
+  TIMING, stated because it bounds what this rung can do: the bought
+  unit arrives at turn change, so this saves a city from NEXT turn's
+  wave. An attack landing this turn is rung 2's problem, and rung 2 is
+  census-and-design in this session.
+
+  sell_defend_gain 0 = off, and the branch returns FALSE before
+  reading anything.
+**************************************************************************/
+static bool deep_sell_to_defend(struct ai_type *ait, struct player *pplayer,
+                                struct city *pcity,
+                                const struct adv_choice *bestchoice,
+                                int buycost, int expenses)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  struct impr_type *best = NULL;
+  int best_gold = 0, wave = 0, shortfall;
+  double surv;
+
+  if (tune->sell_defend_gain <= 0.0
+      || bestchoice->type != CT_DEFENDER
+      || pcity->did_sell
+      || buycost <= 0
+      || pplayer->economic.gold - expenses >= buycost) {
+    return FALSE;               /* No shortfall to close. */
+  }
+
+  /* The write-off family's own read, and the same call every other
+   * consumer of it makes. */
+  surv = deep_city_survival_verdict(nmap, pcity, tune->survival_horizon,
+                                    &wave);
+  if (wave == 0 || surv >= tune->survival_target) {
+    return FALSE;
+  }
+  deep_sd_short++;
+  shortfall = buycost - (pplayer->economic.gold - expenses);
+
+  /* The gain is the BAR, not a scale: sell only when the building we
+   * would give up is worth less than the defender is, in the one
+   * currency both are quoted in here -- gold. */
+  city_built_iterate(pcity, pimprove) {
+    int gold;
+
+    if (!can_city_sell_building(pcity, pimprove)
+        || building_has_effect(pimprove, EFT_DEFEND_BONUS)) {
+      continue;
+    }
+    gold = impr_sell_gold(pimprove);
+    if (gold > best_gold) {
+      best_gold = gold;
+      best = (struct impr_type *) pimprove;
+    }
+  } city_built_iterate_end;
+
+  if (best == NULL || best_gold <= 0
+      || pplayer->economic.gold + best_gold - expenses < buycost
+      || best_gold > tune->sell_defend_gain * buycost) {
+    log_base(deep_metric_log_level(),
+             "deep-selldefend turn=%d player=\"%s\" city=%d surv=%.3f"
+             " wave=%d shortfall=%d sold=\"-\" gold=%d bought=0",
+             game.info.turn, player_name(pplayer), pcity->id, surv, wave,
+             shortfall, best_gold);
+    return FALSE;
+  }
+
+  do_sell_building(pplayer, pcity, best, "sold");
+  pcity->did_sell = TRUE;
+  deep_sd_sold++;
+  deep_sd_gold += best_gold;
+
+  {
+    bool bought = pplayer->economic.gold - expenses >= buycost;
+
+    if (bought) {
+      really_handle_city_buy(pplayer, pcity);
+      deep_sd_bought++;
+    }
+    log_base(deep_metric_log_level(),
+             "deep-selldefend turn=%d player=\"%s\" city=%d surv=%.3f"
+             " wave=%d shortfall=%d sold=\"%s\" gold=%d bought=%d"
+             " unit=\"%s\"",
+             game.info.turn, player_name(pplayer), pcity->id, surv, wave,
+             shortfall, improvement_rule_name(best), best_gold,
+             bought ? 1 : 0,
+             utype_rule_name(bestchoice->value.utype));
+  }
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  RUNG 3: THE FINAL DEFENCE BUY (human addition, 2026-08-07).
+
+  The main buy pass runs at a fixed point inside the phase, and the
+  phase keeps earning after it. Money that arrives later waits a whole
+  turn that an endangered city may not have.
+
+  WHERE THIS ACTUALLY SITS, said plainly because the honest seam
+  matters more than the label: the last statement of
+  deep_do_last_activities(), which is the final thing deep does in its
+  own phase -- after deep_spend_gold(), after deep_balance_treasury(),
+  after dai_manage_tech(). It is NOT a server phase_finished hook;
+  that callback is a data-lifecycle hook called from many places
+  including deep's own reads of another player's ai_plr, and hanging a
+  spending action on it would fire it at times that have nothing to do
+  with the end of a turn.
+
+  What that placement means for the money it can find, in today's
+  ordering: rung 1's own sale is spent inside deep_spend_gold() the
+  moment it happens, so this pass is not what banks it; what it does
+  catch is any income the server credits between the two points, the
+  tech pass's refunds, and -- the durable reason to have it -- any
+  future reordering that moves an earner after the buy. The counter
+  says how much it actually found, so the claim is checkable rather
+  than argued.
+
+  BUDGET: strictly the gold ADDED since the main pass left the
+  treasury. deep_balance_treasury() sells buildings to stay solvent,
+  and spending that would undo the guard that raised it, so the
+  watermark is taken AFTER the treasury guard runs.
+
+  POPULATION: triage only -- urgency, grave danger, or the write-off
+  family's own below-target survival against a live wave. Never the
+  general want ladder; a late pass that could buy a Granary is a
+  second spending policy, not an emergency valve.
+
+  late_buy_gate 0 = off, and the pass returns before reading a city.
+**************************************************************************/
+static void deep_late_defence_buy(struct ai_type *ait,
+                                  struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  int budget, spent = 0, bought = 0, cands = 0;
+
+  if (tune->late_buy_gate <= 0 || deep_late_mark < 0) {
+    deep_late_mark = -1;
+    return;
+  }
+  budget = pplayer->economic.gold - deep_late_mark;
+  deep_late_mark = -1;
+  if (budget <= 0) {
+    return;
+  }
+
+  city_list_iterate(pplayer->cities, pcity) {
+    struct ai_city *city_data = def_ai_city_data(pcity, ait);
+    int buycost, wave = 0;
+    double surv = 1.0;
+
+    if (VUT_UTYPE != pcity->production.kind) {
+      continue;                 /* An emergency buys a body. */
+    }
+    if (city_data->urgency == 0 && city_data->grave_danger == 0) {
+      surv = deep_city_survival_verdict(nmap, pcity,
+                                        tune->survival_horizon, &wave);
+      if (wave == 0 || surv >= tune->survival_target) {
+        continue;
+      }
+    }
+    cands++;
+    buycost = city_production_buy_gold_cost(pcity);
+    if (buycost <= 0 || buycost > budget - spent) {
+      continue;
+    }
+    /* Never spend the empire into the reaper the treasury guard just
+     * pulled it out of. */
+    if (player_get_expected_income(pplayer)
+        < -(pplayer->economic.gold - buycost)) {
+      continue;
+    }
+    really_handle_city_buy(pplayer, pcity);
+    spent += buycost;
+    bought++;
+    log_base(deep_metric_log_level(),
+             "deep-latebuy turn=%d player=\"%s\" city=%d unit=\"%s\""
+             " cost=%d added=%d fromsale=%d urgency=%u grave=%d"
+             " surv=%.3f",
+             game.info.turn, player_name(pplayer), pcity->id,
+             utype_rule_name(pcity->production.value.utype), buycost,
+             budget, MIN(deep_sd_gold, budget), city_data->urgency,
+             city_data->grave_danger != 0 ? 1 : 0, surv);
+  } city_list_iterate_end;
+
+  if (cands > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-latebuy-sum turn=%d player=\"%s\" triage=%d added=%d"
+             " fromsale=%d bought=%d spent=%d",
+             game.info.turn, player_name(pplayer), cands, budget,
+             MIN(deep_sd_gold, budget), bought, spent);
+  }
+}
+
+/**********************************************************************//**
+  Rung 1's execution counter, one line per player per turn.
+**************************************************************************/
+static void deep_sell_defend_census(struct player *pplayer)
+{
+  if (deep_sd_short > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-selldefend-sum turn=%d player=\"%s\" shortfalls=%d"
+             " sold=%d bought=%d",
+             game.info.turn, player_name(pplayer), deep_sd_short,
+             deep_sd_sold, deep_sd_bought);
+  }
+  deep_sd_short = 0;
+  deep_sd_sold = 0;
+  deep_sd_bought = 0;
+  deep_sd_gold = 0;
+}
+
 /**********************************************************************//**
   Buy and upgrade stuff. Derived from dai_spend_gold(); the difference
   is what happens to explorers standing in a city. Stock scraps every
@@ -5356,6 +5603,10 @@ static void deep_spend_gold(struct ai_type *ait, struct player *pplayer)
                       - pcity->shield_stock),
                (double) bestchoice.want, city_data->urgency, "normal");
       really_handle_city_buy(pplayer, pcity);
+    } else if (deep_sell_to_defend(ait, pplayer, pcity, &bestchoice,
+                                   buycost, expenses)) {
+      /* Rung 1 fired and reported. Nothing further to try here. */
+      increase_maxbuycost(pplayer, buycost);
     } else if (city_data->grave_danger != 0
                && bestchoice.type == CT_DEFENDER
                && assess_defense(ait, pcity) == 0) {
@@ -6494,10 +6745,17 @@ void deep_do_last_activities(struct ai_type *ait, struct player *pplayer)
    * cannot cover the coming turn, choose our own sacrifice before
    * the server chooses one for us. */
   deep_balance_treasury(ait, pplayer);
+  /* The watermark for rung 3, taken AFTER the treasury guard: gold the
+   * guard raised to stay solvent is not spendable income. */
+  deep_late_mark = pplayer->economic.gold;
   TIMING_LOG(AIT_TECH, TIMER_START);
   dai_manage_tech(ait, pplayer);
   TIMING_LOG(AIT_TECH, TIMER_STOP);
   dai_manage_spaceship(pplayer);
+
+  /* LAST, and this is the honest end of deep's phase. */
+  deep_late_defence_buy(ait, pplayer);
+  deep_sell_defend_census(pplayer);
 
   TIMING_LOG(AIT_ALL, TIMER_STOP);
 }
