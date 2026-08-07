@@ -12,7 +12,13 @@ factors from solvency.
    -- census correction. choice.want is -1 at 554/554 evaluations; the
    auction's chosen want does not exist at this seam.
 7. byte-identity at all-zeros: 10/10 SAME, pre 85c7dfbad4 vs tip, smoke cell
-8. doc: record the CM completion round's facts (findings/cm-completion-2026-08-07.md)
-9. doc: STATUS -- the CM completion round
+8. A/B lategame-80, 20 paired seeds, cm-off vs cm-all: score -0.77 (t -0.51),
+   pop +1.09 (t +1.49), mean_city_size +0.14 (t +1.51), settlers -0.23 (t -1.96)
+9. A/B garden2b-150, 20 paired seeds, same files: score +3.92 (t +0.93),
+   pop +3.12 (t +1.12), unitsbuilt +7.05 (t +1.29). Both arms from a TRACKED
+   BACKGROUND runner looping run.sh until 20 DONE -- foreground blocks are
+   capped at 10 min and a killed block loses every in-flight game.
+10. doc: record the CM completion round's facts (findings/cm-completion-2026-08-07.md)
+11. doc: STATUS -- the CM completion round
 </content>
 </invoke>

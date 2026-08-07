@@ -10166,6 +10166,178 @@ recorded here so the call can be reversed if the human disagrees.
 `meson test -C build` **4/4 OK** and `python3 benchmark/tune-audit.py`
 **CLEAN 173/173/173/173** (was 168), before and after.
 
+## CM-COMPLETION: the posture change gets a price (2026-08-07)
+
+Six commits on `epic/cm-completion` off `85c7dfbad4`, run in the bench
+worktree in parallel with CONSEQ+WRACE. Full detail:
+`findings/cm-completion-2026-08-07.md`. Progress log:
+`sessions/progress-CM.log`.
+
+**The centerpiece works and is not zero.** Putting a city on war
+footing has been free in this codebase since W09-lite: the state
+machine swapped one factor set for another and the food it cost
+appeared in no want, no danger field and no counter. The CM solver
+already answers the question -- `cm_query_result()` does not touch the
+city -- so `deep_cm_counterfactual()` now runs the arrangement under
+BOTH candidate postures and remembers the two surplus vectors.
+
+18 904 flip candidates priced across 40 games on two cells, and the
+two cells agree on every ratio:
+
+                                          lategame-80   garden2b-150
+    flip candidates priced                     14 307         4 597
+      both arrangements feasible                 60%            51%
+    of those:
+      surplus vector differs                     31%            35%
+      growth cost > 0                            22%            25%
+      flips revoked at gain 1.0                 5.9%           6.8%
+
+    mean surplus delta, war minus alternative:
+      lategame-80    food -0.31   shield +0.67   trade -0.44
+      garden2b-150   food -0.30   shield +0.59   trade -0.23
+
+That trade -- roughly 0.6 shields bought with 0.3 food and 0.2-0.4
+trade per priced city-turn -- is the first time the cost of a war
+footing has been a number in this project rather than an assumption.
+Agreement across two cells is worth stating given how many verdicts
+here have inherited their venue.
+
+**The solver bill is ~1.1% of game time**: 1 434 extra
+`cm_query_result()` calls per game on lategame-80 (498 on garden2b),
+5.05 s CPU against a ~450 s game, worst single turn 0.292 s. It is that cheap by construction, not by
+luck: the counterfactual is evaluated INSIDE the free-flip test, so
+only cities the gate was about to flip get priced. A charge can revoke
+a flip but cannot create one, so nothing else needs the price. No bail
+was required.
+
+**`set_default_city_manager()` was made non-static** (`server/cityturn.h`,
+visibility only) and it was load-bearing: 78% (lategame-80) and 59%
+(garden2b) of the priced population has no deep posture at all, so its
+alternative IS stock's default. Without it the counterfactual would
+have been blind on most of the cities that actually go to war footing.
+
+### The census caught a wrong design item
+
+Item 2 was briefed to price the grow-hard entry against "the auction's
+own top want at the city". **That want does not exist at this seam.**
+`city_data->choice.want` is reset to -1 by the buy pass at the end of
+the turn (`deepdefence.c:4660`) and this test runs in
+`first_activities` at the top of the next. First probe: `build=-1.0`
+on **554 of 554** evaluations, `fires=1` on all 554. The test was
+vacuous.
+
+The correction reads `pcity->server.adv->building_want[]`, the
+standing building auction -- live here, what the build decision
+actually reads, and made honest by D2. It is also better dimensioned:
+`infracache.h` states `building_want[]` is "output multiplied by a
+priority", which is exactly what `deep_unworked_tile_value()` returns,
+so both sides are in ONE currency and `cm_grow_price_blend` is a
+trade-off weight rather than the unit conversion W01's unbuilt
+`want_t` was going to have to be. After the fix, 89 of 545 fire.
+
+The gap it leaves, recorded rather than papered over: `building_want[]`
+covers buildings only, so a city whose best build is a UNIT shows a
+smaller build side and leans toward growth. Fixing that needs a
+snapshot of `choice` before the buy pass clears it, in a file this
+session did not own.
+
+### Specialist factors: the gold half works, the science half is inert
+
+DARKFX item 4, absorbed with its design. 9 328 player-turns:
+
+                          lategame-80 (9 328)   garden2b-150 (5 933)
+    gold factor  = 2      4 606   49%           3 718   63%
+                 = 3      3 019   32%             943   16%
+                 = 4      1 703   18%           1 272   21%
+    science moved off 2     646  6.9%               0    0%
+
+The science half is inert because civ2civ3 charges almost no tech
+upkeep at these tech levels (`upkeep=0` and `upkeep=1` dominate the
+census), and on garden2b-150 it moved the factor on ZERO of 5 933
+player-turns. Same shape as DARKFX's "civ2civ3-only" finding in
+reverse: a property to state, not a defect to fix.
+
+Stated honestly and not sold: these are the CM's OUTPUT factors, so
+they weight trade-derived gold and science as well as the specialists.
+That is what the design asked for and it is defensible, but it is
+broader than the name suggests.
+
+### Off switch and score
+
+Four new knobs, all PLACEHOLDER at 0. Smoke cell, 10 paired seeds,
+both arms loading the same `cm-off.ini`, differing only in the binary
+(`85c7dfbad4` vs this tip): **10/10 byte-identical**. That covers the
+refactor and the visibility change too. Execution counters on the
+all-on arm: 14 307 `deep-cmpost`, 19 183 `deep-cmgrow`, 9 328
+`deep-cmspec`.
+
+lategame-80, 20 paired seeds, file-vs-file, all three mechanisms at
+gain 1.0:
+
+    metric                  OFF        ON     delta      se      t   wins
+    score                168.20    167.43     -0.77    1.51  -0.51   10/20
+    pop                   41.55     42.64     +1.09    0.73  +1.49   12/20
+    mean_city_size         5.37      5.50     +0.14    0.09  +1.51   13/20
+    settlers               0.53      0.30     -0.23    0.11  -1.96    4/20
+    techs                 53.08     52.91     -0.18    0.11  -1.55    6/20
+    cities                 8.01      8.02     +0.01    0.17  +0.05    9/20
+
+garden2b-150, same two files, same binary:
+
+    metric                  OFF        ON     delta      se      t   wins
+    score                252.45    256.38     +3.92    4.22  +0.93   11/20
+    pop                  113.15    116.28     +3.12    2.79  +1.12   10/20
+    mean_city_size         4.37      4.48     +0.11    0.12  +0.93   12/20
+    unitsbuilt           150.97    158.03     +7.05    5.45  +1.29   12/20
+    techs                 32.85     33.52     +0.68    0.58  +1.16   10/20
+    cities                28.07     27.65     -0.42    0.68  -0.63    7/20
+
+Score is inside noise on both. **This is not the venue split that has
+bitten this project seven times**: the growth column points the same
+way on both cells (`pop` +1.09 / +3.12, `mean_city_size` +0.14 /
++0.11). Where they differ is what the growth is spent on -- lategame
+loses settlers (t -1.96), garden2b builds more units (t +1.29) -- a
+downstream allocation difference, not a disagreement about the
+mechanism. Twenty seeds are direction; three untuned placeholders at
+1.0 are not a calibration.
+
+### What the next session must know
+
+- **The 40% infeasible rate is the biggest open item.** `valid=0` on
+  5 715 of 14 307 priced city-turns: one of the two solves found no
+  arrangement meeting `deep_cm_base()`'s minimal surpluses. The live
+  `auto_arrange_workers()` relaxes through three fallbacks; the
+  counterfactual does not, and declares no opinion instead. Correct
+  and conservative, but it halves the reach. Mirroring the relaxation
+  ladder is a small, well-defined increment.
+- **`deep_cm_posture_delta()` is exposed and has no consumer.** The
+  fear machinery's `satisfied_fear_discount` is the intended one; it
+  lives in `deepdefence.c`, which a parallel session owned. FALSE from
+  the accessor means "no opinion", not "costs nothing", and it answers
+  only for cities the war gate priced this turn.
+- **garden2b-150 IS reachable, and here is the recipe.** DARKFX §8
+  recorded it as unreachable; that is true only of foreground blocks,
+  which are hard-capped at ten minutes, and a killed block loses every
+  in-flight game because the DONE cache is per-game. A 20-game arm
+  makes 4 games in the first foreground block and 2 in the second.
+  Both arms here completed from a *tracked background command* running
+  `run.sh` in a relaunch-until-20-DONE loop -- about 60 minutes per arm
+  under a machine load of ~23 on 12 cores (the parallel session's
+  batches). isolated-150 was attempted the same way and abandoned for
+  time.
+- **Four PLACEHOLDERs for the cloud pile**, none searched:
+  `cm_war_growth_charge` (0-1; it is subtracted from a probability, so
+  it cannot usefully exceed `cm_war_survival`), `cm_grow_price_blend`
+  (0-4, a same-currency trade-off weight), `cm_specialist_gold_gain`
+  and `cm_specialist_sci_gain` (0-4).
+- **Read the two execution counters before the score at any gain.**
+  `deep-cmpost kept=0` and `deep-cmgrow fires=1` both move at gain
+  1.0 (503 and 1 066); at smaller gains they may be zero, and a "no
+  effect" reading would then be a non-execution reading. Fifth time
+  this note has earned its place.
+
+`meson test -C build` **4/4 OK** and `python3 benchmark/tune-audit.py`
+**CLEAN 181/181/181/181** (was 177), before and after.
 ## CONSEQ: the write-off is an alarm, and the birth guard was paying 100 for nothing (2026-08-07)
 
 Eight code commits plus the shared doc pair, paired in one session with
