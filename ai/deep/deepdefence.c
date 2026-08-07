@@ -2741,11 +2741,108 @@ static void deep_relay_execute(struct ai_type *ait, struct player *pplayer,
   }
 }
 
+/* THE WRITE-OFF LEDGER. One entry per city-turn the counter-claim
+ * machinery declares unholdable, resolved `horizon` turns later
+ * against the only question that matters: did it actually fall?
+ *
+ * The write-off signal has been shipping since W14 and its PRECISION
+ * has never been measured. Everything the brief wants to hang off it
+ * -- evacuation, a fire sale -- destroys value irreversibly if the
+ * signal is loose, so the census comes FIRST and the mechanism is
+ * sized against what it says. Free: it allocates only when a write-off
+ * happens and it runs with every lever off.
+ *
+ * Not saved. A reload loses the open entries, which costs the census
+ * accuracy on the resolving turn and nothing else. */
+struct deep_writeoff_memo {
+  int plr_no;
+  int city_id;
+  int turn;                     /* when it was written off */
+  int due;                      /* turn the verdict is taken */
+  double p;
+  int wave;
+};
+
+static struct deep_writeoff_memo *deep_writeoffs = NULL;
+static int deep_writeoff_n = 0, deep_writeoff_cap = 0;
+
+/**********************************************************************//**
+  Record one write-off for later adjudication.
+**************************************************************************/
+static void deep_writeoff_record(const struct player *pplayer,
+                                 const struct city *pcity, double p,
+                                 int wave, int horizon)
+{
+  struct deep_writeoff_memo *e;
+  int i;
+
+  for (i = 0; i < deep_writeoff_n; i++) {
+    e = &deep_writeoffs[i];
+    if (e->plr_no == player_number(pplayer) && e->city_id == pcity->id) {
+      /* Already open. The FIRST verdict is the one being scored --
+       * re-arming the clock every turn would make a long siege look
+       * like one late call. */
+      return;
+    }
+  }
+  if (deep_writeoff_n >= deep_writeoff_cap) {
+    deep_writeoff_cap = MAX(32, deep_writeoff_cap * 2);
+    deep_writeoffs = fc_realloc(deep_writeoffs,
+                                deep_writeoff_cap
+                                * sizeof(*deep_writeoffs));
+  }
+  e = &deep_writeoffs[deep_writeoff_n++];
+  e->plr_no = player_number(pplayer);
+  e->city_id = pcity->id;
+  e->turn = game.info.turn;
+  e->due = game.info.turn + MAX(1, horizon);
+  e->p = p;
+  e->wave = wave;
+}
+
+/**********************************************************************//**
+  Adjudicate every write-off whose horizon has run out.
+
+  TRUE  = the city is no longer ours (lost or destroyed) -- the signal
+          was right.
+  FALSE = we still hold it -- a FALSE write-off, and every turn of it
+          is a turn a sale or an evacuation would have destroyed value
+          in a city that went on to hold.
+
+  Deliberately the plain ownership test and not "was it attacked":
+  the consumer's decision is irreversible and the only thing that
+  justifies it is the city actually changing hands.
+**************************************************************************/
+static void deep_writeoff_adjudicate(struct player *pplayer)
+{
+  int i = 0;
+
+  while (i < deep_writeoff_n) {
+    struct deep_writeoff_memo *e = &deep_writeoffs[i];
+
+    if (e->plr_no != player_number(pplayer) || game.info.turn < e->due) {
+      i++;
+      continue;
+    }
+    log_base(deep_metric_log_level(),
+             "deep-writeoff turn=%d player=\"%s\" city=%d called=%d"
+             " p=%.3f wave=%d lost=%d",
+             game.info.turn, player_name(pplayer), e->city_id, e->turn,
+             e->p, e->wave,
+             player_city_by_number(pplayer, e->city_id) == NULL ? 1 : 0);
+    deep_writeoffs[i] = deep_writeoffs[--deep_writeoff_n];
+  }
+}
+
 static void deep_defend_counter_claims(struct ai_type *ait,
                                        struct player *pplayer)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   const struct civ_map *nmap = &(wld.map);
+
+  /* Before this turn's verdicts, so an entry is never adjudicated on
+   * the turn it is written. */
+  deep_writeoff_adjudicate(pplayer);
 
   if (tune->survival_target <= 0.0) {
     return;
@@ -2868,6 +2965,7 @@ static void deep_defend_counter_claims(struct ai_type *ait,
                " p=%.3f wave=%d pool=%d best=%.3f",
                game.info.turn, player_name(pplayer), pcity->id, p, wave,
                n_cand, relieved);
+      deep_writeoff_record(pplayer, pcity, p, wave, tune->survival_horizon);
       continue;   /* Cannot be held tonight: do not feed it blades. */
     }
 
