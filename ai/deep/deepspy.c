@@ -33,6 +33,7 @@
 
 /* server */
 #include "cityturn.h"
+#include "diplomats.h"
 #include "unithand.h"
 #include "unittools.h"
 
@@ -74,6 +75,7 @@ struct deep_spy_census {
   int at_seam;          /* ... standing where an action is possible */
   int acted[DSK_COUNT]; /* ... where deep acted, by family */
   int abstained;        /* ... at the seam with no positive deep price */
+  int refused;          /* ... where the server did not run the action */
 };
 
 static struct deep_spy_census census[MAX_NUM_PLAYER_SLOTS];
@@ -182,15 +184,27 @@ static double deep_spy_action_value(struct ai_type *ait,
       *kind = DSK_EMBASSY;
       value = tune->embassy_science_value;
     }
-  } else if (action_has_result(paction, ACTRES_SPY_STEAL_TECH)) {
-    if (!pplayers_allied(pplayer, tplayer)) {
+  } else if (action_has_result(paction, ACTRES_SPY_STEAL_TECH)
+             || action_has_result(paction,
+                                  ACTRES_SPY_TARGETED_STEAL_TECH)) {
+    /* Stock's guard, kept because it is a RULE and not a price: a
+     * city that has already been robbed once resists a diplomat that
+     * the theft would consume (civ2civ3 "may only be stolen once from
+     * a given enemy city by Diplomats"). Without it deep re-priced the
+     * same impossible theft every turn and stalled the unit -- 107
+     * attempts in ten smoke games, all refused. */
+    bool consumed = utype_is_consumed_by_action(paction,
+                                                unit_type_get(punit));
+
+    if (!pplayers_allied(pplayer, tplayer)
+        && (!consumed
+            || diplomats_unignored_tech_stealings(punit, target) == 0)) {
       *kind = DSK_STEAL;
-      value = deep_spy_tech_worth(pplayer, A_UNSET);
-    }
-  } else if (action_has_result(paction, ACTRES_SPY_TARGETED_STEAL_TECH)) {
-    if (!pplayers_allied(pplayer, tplayer)) {
-      *kind = DSK_STEAL;
-      value = deep_spy_tech_worth(pplayer, (Tech_type_id)sub_tgt_id);
+      value = deep_spy_tech_worth(pplayer,
+                                  action_has_result(
+                                      paction,
+                                      ACTRES_SPY_TARGETED_STEAL_TECH)
+                                  ? (Tech_type_id)sub_tgt_id : A_UNSET);
     }
   } else if (action_has_result(paction, ACTRES_SPY_INCITE_CITY)) {
     int cost = city_incite_cost(pplayer, target);
@@ -273,9 +287,16 @@ static double deep_spy_city_choice(struct ai_type *ait, struct unit *punit,
         || action_get_target_kind(paction) != ATK_CITY) {
       continue;
     }
+    /* BOTH tests: action_prob_possible() is stock's, and it answers
+     * "might be possible"; is_action_enabled_unit_on_city() is the one
+     * the server's own handler applies before it runs anything. Deep
+     * commits a unit to the action it chooses, so it asks the
+     * stricter question. */
     if (!action_prob_possible(action_prob_vs_city(nmap, punit,
                                                   action_number(paction),
-                                                  target))) {
+                                                  target))
+        || !is_action_enabled_unit_on_city(nmap, action_number(paction),
+                                           punit, target)) {
       continue;
     }
     (*legal)++;
@@ -325,10 +346,12 @@ static void deep_spy_log(const struct player *pplayer)
 
   log_base(deep_metric_log_level(),
            "deep-spy turn=%d player=\"%s\" on=%d seen=%d at_seam=%d"
-           " abstained=%d embassy=%d steal=%d incite=%d sabotage=%d",
+           " abstained=%d refused=%d embassy=%d steal=%d incite=%d"
+           " sabotage=%d",
            game.info.turn, player_name(pplayer),
            deep_tuning_get()->spy_enabled, c->seen, c->at_seam,
-           c->abstained, c->acted[DSK_EMBASSY], c->acted[DSK_STEAL],
+           c->abstained, c->refused, c->acted[DSK_EMBASSY],
+           c->acted[DSK_STEAL],
            c->acted[DSK_INCITE], c->acted[DSK_SABOTAGE]);
 }
 
@@ -373,7 +396,7 @@ void deep_spy_manage(struct ai_type *ait, struct player *pplayer)
     int best_sub = 0;
     int legal = 0;
     double best = 0.0;
-    int id;
+    int id, moves0;
 
     if (!utype_has_flag(unit_type_get(punit), UTYF_DIPLOMAT)
         || punit->moves_left <= 0) {
@@ -434,14 +457,27 @@ void deep_spy_manage(struct ai_type *ait, struct player *pplayer)
              city_name_get(best_city), best);
 
     id = punit->id;
+    moves0 = punit->moves_left;
     unit_activity_handling(punit, ACTIVITY_IDLE, ACTION_NONE);
     unit_do_action(pplayer, id, best_city->id, best_sub, "",
                    action_number(chosen));
-    c->acted[best_kind]++;
 
+    /* Did the server RUN it. An action it refuses is silent -- the
+     * request is answered with an illegal-action packet and the unit
+     * stands exactly where it was -- so a counter that trusted the
+     * request would report a mechanism that never fired, which is this
+     * project's most expensive recurring mistake. Every diplomat
+     * action that happens charges movement or eats the unit. A refused
+     * one is NOT held: stock gets its normal turn with the unit. */
     acted_unit = game_unit_by_number(id);
-    if (acted_unit != NULL) {
-      deep_hold_unit(ait, acted_unit, "spy");
+    if (acted_unit == NULL || acted_unit->moves_left != moves0) {
+      c->acted[best_kind]++;
+      if (acted_unit != NULL) {
+        deep_hold_unit(ait, acted_unit, "spy");
+      }
+    } else {
+      c->refused++;
+      continue;
     }
   } unit_list_iterate_safe_end;
 
