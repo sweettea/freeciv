@@ -10165,3 +10165,276 @@ recorded here so the call can be reversed if the human disagrees.
 
 `meson test -C build` **4/4 OK** and `python3 benchmark/tune-audit.py`
 **CLEAN 173/173/173/173** (was 168), before and after.
+
+## CONSEQ: the write-off is an alarm, and the birth guard was paying 100 for nothing (2026-08-07)
+
+Eight code commits plus the shared doc pair, paired in one session with
+WRACE by standing human call. `ai/deep`, `benchmark/` and doc only;
+**zero `ai/default`, `ai/baseline` or `server/advisors` changes**. Full
+tables in `findings/conseq-wrace-2026-08-07.md`.
+
+    a28474416c  ai/deep: clamp a bought advance at the alliance bar
+    b80ee0b42d  ai/deep: price the first defender instead of pinning
+                it at 100
+    ae2cd644f5  ai/deep: adjudicate every write-off against what
+                happened
+    3e2a4ba86e  ai/deep: route a survival deficit at a tech wall into
+                the research want
+    a1c73eb334  ai/deep: damp two pumps by what their output never does
+    4e8e25bbea  ai/deep: stop paying full price for things about to
+                expire
+    edc01351af  ai/deep: record what the write-off had already tried
+    4110b0eedd  ai/deep: sell a building to buy the defender, and spend
+                late gold late
+    37127fa779  ai/deep: walk the civilians out of a city that is
+                falling
+
+**Headline: the write-off signal, shipping since W14 and never
+measured, has a precision of 0.027 and a recall of 0.969 on contested
+-- 2 326 city-turns of alarm per 20 games to catch 31 of 32 losses.
+Conditioning it on "no reinforcement can reach it AND the enemy is
+adjacent" lifts precision to 0.202, and ADJACENCY carries the entire
+lift while the treasury test carries none. Even that slice holds two
+times in three, so the brief's fire sale is retired as a gate and
+replaced by a priced comparison with the census as its prior.** The
+session's second result is that the inherited first-defender rule pays
+a flat, emergency-tier 100 on 14 000 decisions a game where P(walk-in)
+is exactly zero.
+
+### 1. The write-off census, and the conditional table
+
+    20 seeds, one arm, pin 9619996eb4818e
+    cell          writeoff     first    lost   PRECISION   recall
+                  city-turns   calls
+    contested        2 326       964      27     0.028     0.969
+    raging-120       3 279     1 430     195     0.136     0.679
+
+    contested slices:  p == 0  0.044   wave >= 8  0.015   wave >= 12  0.007
+
+A bigger wave is LESS likely to take the city: the signal's own
+certainty axis runs backwards.
+
+The raw number is the wrong one, because the write-off fires BEFORE the
+defence machinery answers and most flagged cities survive because the
+answer works. The enriched ledger records `relief` (best survival the
+whole reachable pool reaches), `pool`, `adj` and `buy` at the moment of
+the call:
+
+    contested, 40 games, 1 966 adjudications
+    slice                                       n     lost   precision
+    RAW                                      1 966      53     0.027
+    p < 0.01                                 1 143      45     0.039
+    p < 0.01 & relief <= p                     841      41     0.049
+    ... & enemy ADJACENT                       109      22     0.202
+    EXHAUSTED (... & rush unaffordable)         71      14     0.197
+    adj >= 2 & p < 0.01 & relief <= p           38      12     0.316
+
+### 2. The birth guard: 88.6% of first defenders were priced at zero
+
+    contested, 20 paired seeds, pin 724e885dc2ab61, birth_guard_gain 1.0
+    metric                  OFF        ON     delta      se      t   wins
+    score                 85.10     84.99     -0.11    2.49  -0.05   8/20
+    cities                 4.59      4.74     +0.16    0.12  +1.29  15/20
+    cities gained         38.25     39.75     +1.50    1.01  +1.48  15/20
+    CITY LOSSES            1.60      1.80     +0.20    0.47  +0.42  11/20
+      priced firsts        0.00    747.75  +747.75   56.94 +13.13  20/20
+
+Over 14 955 priced decisions: **P(walk-in) == 0 exactly on 88.6%**,
+mean priced want 13.11 against the inherited flat 100, 96.0% below it,
+mean city worth 339.65. That is derby 3's turn-2 Warriors cohort
+explained. Correcting it is score-neutral on this cell and buys a small
+consistent expansion move with the loss guard passing -- the brief
+demanded both numbers before trading safety for tempo and both are
+here.
+
+### 3. The last-ditch ladder: one rung works, one has no population
+
+    contested, 20 paired seeds, pin bdd23bb77f8b04, conseq-lastditch.ini
+    metric                  OFF        ON     delta      se      t   wins
+    score                 85.10     84.46     -0.64    0.53  -1.22   4/20
+    mean_city_size         5.94      5.77     -0.17    0.09  -2.00   5/20
+    CITY LOSSES            1.60      1.55     -0.05    0.34  -0.15   4/20
+      shortfalls seen      0.00     41.05    +41.05    6.68  +6.14  18/20
+      buildings sold       0.00      2.65     +2.65    0.66  +4.03  15/20
+      ... that bought      0.00      2.65     +2.65    0.66  +4.03  15/20
+      late buys            0.00      0.00     +0.00    0.00    n/a   0/20
+
+Rung 1 (sell to defend) converts **perfectly** -- every sale completed
+its buy -- and costs city size, which is the buildings themselves.
+Sales: 44 Barracks, 3 Temple, 2 Aqueduct, 1 Colosseum over 20 games, so
+the bar is mostly selecting the cheapest militarily-idle building. The
+sign is negative at face value and that is a bar question, not a design
+one.
+
+**Rung 3 (the final defence buy) has ZERO population**: not one
+`deep-latebuy` line and not one `deep-latebuy-sum`, meaning the budget
+was never positive. In today's phase ordering nothing credits gold
+between the main buy pass and the end of deep's phase. It stays, off,
+as the seam for a future reordering, and its counter is what will say
+so.
+
+Rung 2a (civilian evacuation) is built with its arm archived and **was
+not A/B'd** -- the host restart took `/tmp` and the pins.
+
+### 4. Items 1, 4, 5: execution proven, score unmeasured
+
+Probe: contested, 10 seeds, every new knob at face value 1.0.
+
+    deep-defwall (tech routings)    226.5 /game
+    deep-damper pump=attacker       163.2 /game
+    deep-damper pump=diplomat       184.2 /game
+    deep-expiry                    1545.8 /game  (15 398 impr : 60 unit)
+
+The 250:1 building-to-unit split on expiry is the tier discipline
+working: the unit deferral needs a successor whose whole requirement
+conjunction lands inside the current build AND a city with no danger
+and no urgency.
+
+Obsolescence semantics verified and written down: an obsolete
+improvement is AUTO-SOLD (`server/cityturn.c:236`); an obsolete wonder
+is not sellable at all (`common/improvement.c:1122`) so it stands and
+pays nothing; either way the effects lapse
+(`common/requirements.c:2360`); and the trigger is the OWNER's research
+(`improvement_obsolete()` carries `.player` and nothing wider), with all
+16 civ2civ3 `obsolete_by` tech requirements at `REQ_RANGE_PLAYER`.
+
+### 5. Not built
+
+**Item 3 (home-city upkeep redistribution) was never reached** -- no
+census, no code, no claim, and its stop condition is untested.
+
+**Item 2's fire sale is retired as a gate** and replaced by a written
+design (findings §2b): a priced comparison of stand-and-fight against
+denial, whose `P(hold)` is `1 - precision(slice)` and whose slice is
+nameable from the ledger this session shipped. Two mechanics verified
+for its "what resisting costs the taker" term: capture costs exactly
+one size point, fixed (`server/citytools.c:2141`), but each successful
+attack costs another under `killcitizen` + `UCF_KILLCITIZEN`
+(`server/unithand.c:4601`), and `razechance` destroys a fraction of the
+buildings a denial sale would sell, so denial must not double-count
+them.
+
+### 6. Off-switch proof
+
+Smoke cell, 10 paired seeds, `identity.ini` on both binaries, pin
+`9619996eb4818e` against pin `724e885dc2ab61`: **10/10 scorelogs
+byte-identical.** The three commits before the first pin are inert by
+construction and by counter (the clamp is unreachable at
+`gift_love_gain = 0`, the birth guard returns FALSE before reading
+anything at 0, the ledger only reads and logs); the ladder and the
+evacuation are gated the same way and their off-arm counters are 0.00
+in the A/B above.
+
+`meson test -C build` **4/4 OK**; `python3 benchmark/tune-audit.py`
+**CLEAN 192/192/192/192** (was 177).
+
+### 7. What the next session must know
+
+- **Condition on ADJACENCY, never on the treasury.** 0.049 -> 0.202 is
+  all adjacency; adding the affordability test moves it to 0.197.
+- **The prior for any last-ditch act is "the city holds."** Two in
+  three, in the tightest slice the ledger can name.
+- **Rung 3's seam is empty.** Do not build on it.
+- **`sell_defend_gain` is the first tuning entry the session earned**:
+  perfect conversion, visible cost, and 83% of sales are Barracks.
+- **`/tmp` and the pins do not survive a host restart.** Every table
+  above is analysis output, not a re-derivable artefact.
+
+## WRACE: the race can be read, and its default answer is wrong (2026-08-07)
+
+Four code commits, paired with CONSEQ. `ai/deep`, `benchmark/` and doc
+only. Full tables in `findings/conseq-wrace-2026-08-07.md`.
+
+    e0ab700087  ai/deep: read the wonder race, and adjudicate it
+                afterwards
+    c294d596b2  ai/deep: act on the race verdict, on both sides of the
+                line
+    4e8e25bbea  ai/deep: stop paying full price for things about to
+                expire   (shared with CONSEQ item 4)
+
+**Headline: the race is readable and the composed valuation is now one
+expression, but the estimator's DEFAULT is its bug -- it counts only
+rivals who have already started, so its median P(win) is 1.000 against
+an observed win rate of 0.371 over 35 resolved races. It therefore
+UNDER-declines, which is the safe direction for a mechanism that ships
+off. And the race-to-win multiplier has no population at all in the one
+venue this harness can reach.**
+
+### 1. The module
+
+`ai/deep/deepwonder.c`: `deep_tech_eta()` (own research only -- stock's
+obsolescence estimator takes a MIN over every player's bulb rate, which
+is a rival model wearing a minimum sign), `deep_impr_obsolete_eta()`
+(MINIMUM over the disjunctive `obsolete_by`),
+`deep_utype_successor_eta()` (MAXIMUM over the successor's conjunctive
+build requirements), `deep_wonder_rival_eta()` -- **the one function
+W04 substitutes, and the reason the read is one function rather than
+four inline loops** -- `deep_wonder_p_win()` and the race ledger.
+
+The human's 2026-08-05 formula is now one valuation: `P(win) x want x
+completion-ETA discount x obsolescence truncation`. The two truncations
+this session owed are built; `P(win)` is a linear ramp on the margin in
+turns scaled by `wrace_margin_turns`, so a dead heat is 0.5 and losing
+by the whole margin is 0.0 -- which IS the go/no-go bar, needing no
+second knob. No rival at all is 1.0 and not 0.999, so the race term
+cannot tax an uncontested wonder.
+
+### 2. The calibration, which is the stop condition's question
+
+    contested probe, 10 seeds: 4 902 evaluations, 261 declined (5.3%)
+    estimated P(win)      mean 0.938   median 1.000
+    composition factor    mean 0.292   median 0.256  (all gains at 1.0)
+    races resolved 35:    won 13   lost 22   observed rate 0.371
+    losses at estimated p >= 0.75:  2 of 22
+
+The brief's stop condition is "the completion estimator disagrees with
+observed completions by more than its own margin". In the form stated
+it does not trip -- only 2 of 22 losses were recorded at p >= 0.75, so
+the estimator's CONFIDENT predictions are not the failures. What fails
+is its default of "nobody is racing me". The fix is a prior on
+unstarted rivals, not a different margin. (The resolved set includes
+wonders deep evaluated and never started, which inflates the loss
+count; the honest reading is "it says uncontested far too often".)
+
+The face-value composition factor of 0.292 means the three truncations
+together cut a wonder want by 70%. That is a large move and it is
+entirely untuned.
+
+### 3. Race-to-win: zero population, and the venue is unreachable
+
+`deep-wrace-feed` is **0.0 a game**. In order:
+
+1. The first probe did not set `wonder_merit`, and the help-wonder
+   caravan pass is gated on it. The probe's fault; fixed and re-run.
+2. With `wonder_merit = 1`: 659 caravan evaluations over 10 games with
+   a real wonder city, still zero feeds. The multiplier returns 1.0
+   when no rival is building the same wonder, and on contested there
+   never is -- the same fact the median `P(win) = 1.000` reports from
+   the other side.
+3. **primary-120, the brief's own venue, could not be run**: 0 DONE
+   after two full foreground blocks, and the DONE cache is per-game so
+   a killed block loses everything in flight. This is DARKFX's and
+   ENDGAME's standing finding for the third time: **every long-horizon
+   question in this project is blocked on the harness, not the code.**
+   Made worse here by a parallel session driving the box to load
+   average 34 on 12 cores.
+
+### 4. Counters and off-switches
+
+`deep-wrace` (490.2 evaluations a game, logged with every gain OFF --
+the census arm and the acting arm are one binary), `deep-wrace-sum`,
+`deep-wrace-end` (3.5), `deep-wrace-abandon` (0.3), `deep-wrace-feed`
+(0.0). Byte-identity across the module: 10/10 smoke scorelogs, §6 of
+the CONSEQ section.
+
+### 5. What the next session must know
+
+- **Fix the estimator's default before tuning any of its gains.** A
+  prior on rivals who have not started is the whole calibration gap.
+- **Do not measure the wonder round on contested.** Its races are
+  uncontested by construction, which makes three of the five WRACE
+  knobs unobservable there.
+- **The five `wrace_*` knobs sweep as a BLOCK**, and `wrace_margin_turns`
+  is a scale rather than a bar, so it moves P(win) everywhere at once.
+- **Item 4's building truncation is the largest new population in the
+  pair** (15 398 a game) and has never been scored.
