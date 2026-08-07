@@ -1,0 +1,14 @@
+BALANCE session progress log (2026-08-06). One line per commit/major step.
+start  HEAD 6eff59f822, branch epic/w03-horizon-content; brief S-BALANCE-statecraft.md read, reading list done (CLAUDE.md, NEXT-SESSION.md 5, diplomacy-gamestate.md, darkfx-2026-08-06.md, PEACE + TRADE STATUS tails).
+c1 91ec07258d  ai/deep: price the culture stock a conquest carries across -- conquest_culture_gain 0.0, deep_conquest_worth() unifies 3 seats; audit 169; meson 4/4
+c2 31be0df640  ai/deep: value the peace a partner's routes and border give us -- gift_border_value 0.0, deep-gift census; audit 170
+probe  gift census, 4 games contested + 4 lategame-80, pin 19c5fda29e5c. VERDICT: gold is not a currency deep has. spare treasury above dai_gold_reserve: median 17 / 0, max 164 / 100. love price p90 1085 / 1729; greed (peace-clearing) price p90 5904 / 6812. affordable on 6.1% / 1.3% of shortfall rows. TRADE AT STAKE IS EXACTLY ZERO on both civ2civ3 cells (0 routes) -- the trade half of the peace valuation is inert on the venue, as TRADE's 0.30 endpoints/game predicted. Design pivots to the tech clause, which stock prices at 3x bulbs and costs no treasury.
+c3 a0bdbd41bc  ai/deep: buy a partner's love with the currency deep actually has -- gift_love_gain 0.0, tech clause; audit 171
+probe  love gift, 2 games contested, pin2: 87 offers, 82 taken (94%), median price 78g, expect +40 love. Recipients do NOT structurally refuse.
+c4 f957dcf28e  ai/deep: arm a distant power against the player menacing us -- proxy_arm_gain 0.0; audit 172
+probe  proxy arming, 2 games contested + 2 lategame-80: 97 candidate-turns, ZERO offers. 92/97 at DS_WAR where the cease-fire that legalises a tech clause costs greed(love)= median 9486g against a best safe unlocking tech of 45g (tech_trade_allow_holes FALSE caps a gift at one step). 5 non-war rows: leak veto removes every tech. lategame-80: 0 candidates, nobody is distant.
+ab     contested 20 seeds, pin 20294f6a010ad8, arms deep: OFF 82.44; CULT +0.76 (t +0.90, 9/20, 2265 census lines); LOVE +8.28 (t +3.65, 15/20; techs +2.80 t +4.11; unitsbuilt -4.92; 644 lovegift lines)
+ab     lategame-80 20 seeds: OFF 169.47; CULT +0.15 (t +0.31, 4/20, 1368 lines); LOVE +8.92 (t +4.57, 17/20; techs +2.98 t +11.26 20/20; unitslost -1.90)
+ab     HEAD-TO-HEAD contested mixed_dc 20 seeds: deep +1.93 (t +0.72), CLASSIC +5.26 (t +2.15), GAP deep-classic -3.34 (t -0.86). The all-deep gain is positive-sum and the counterparty banks MORE of it.
+proof  off-switch: pre-session d1e99bdd547c96 (6eff59f822) vs session 20294f6a010ad8, smoke 10 seeds, same ini -- 10/10 scorelogs byte-identical, and the ten hashes are DARKFX's published ten.
+c5 382518defc  benchmark: archive the BALANCE arms

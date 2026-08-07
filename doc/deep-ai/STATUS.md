@@ -9748,3 +9748,172 @@ their default-off shape and their trap written down.
 - **Pricing an effect requires knowing whether its building is additive
   or unique, and nothing in the effects tables says which.** That is
   what cost 49 points and it will recur.
+
+## BALANCE: the AI can buy affection, and the buyer loses (2026-08-06)
+
+Five commits plus this one. `ai/deep`, `benchmark/` and doc only; **zero
+`ai/default`, `ai/baseline` or `server/advisors` changes** (`git diff
+--stat 6eff59f822..HEAD -- ai/default ai/baseline server/advisors` is
+empty). Full tables in `findings/balance-statecraft-2026-08-06.md`.
+
+    91ec07258d  ai/deep: price the culture stock a conquest carries
+                across
+    31be0df640  ai/deep: value the peace a partner's routes and border
+                give us
+    a0bdbd41bc  ai/deep: buy a partner's love with the currency deep
+                actually has
+    f957dcf28e  ai/deep: arm a distant power against the player
+                menacing us
+    382518defc  benchmark: archive the BALANCE arms
+
+**Headline: the love-buying gift is the biggest single-lever score move
+this project has measured in self-play -- +8.28 on contested and +8.92
+on lategame-80, both past t = 3.6 -- and the head-to-head says it is a
+TRANSFER, not an advantage. Seated against `ai/default` in one game,
+deep gains +1.93 (t +0.72) and the counterparty gains +5.26 (t +2.15);
+deep's margin moves -3.34.** Everything ships at its compiled default,
+which is off.
+
+### 1. The census came first and it retired half the brief
+
+The brief asked for "small gold/tech gift clauses". The gold half was
+dead before any gift code existed. Over eight games, deep's treasury
+above ai/default's own gold reserve has a **median of 17 gold on
+contested and 0 on lategame-80** (max 164 / 100), while the gold that
+buys the love shortfall has a p90 of 1085 / 1729 and the gold that
+clears a refused peace clause -- `greed()`, the square of the shortfall
+over ten -- has a p90 of 5904 / 6812. Affordable on 6.1% and 1.3% of
+the rows with a shortfall. **Deep is not a player with a diplomacy
+budget; it is a player that spends its gold the turn it arrives.**
+
+Also measured there, and it matters for the peace valuation this
+session built: **trade at stake was exactly ZERO on every row of both
+civ2civ3 cells.** TRADE's 0.30 route endpoints a game is what that
+looks like from the diplomacy side, so `deep_peace_worth` on these
+cells is entirely its border term.
+
+So the instrument became the tech clause -- ai/default prices one at
+three times the receiver's remaining bulbs, out of no treasury at all.
+
+### 2. The love gift executes, is accepted, and gives the game away
+
+32.2 offers a game on contested at 96% accepted (median price 45 gold,
+expected +40 love); 22.6 a game on lategame-80 at **100%** accepted
+(median 1575 gold, expected **+300** love). Recipients do not
+structurally refuse -- the brief's first stop condition is cleared.
+
+    contested (T150, 8p)          OFF       ON    delta      t   wins
+    score                       82.44    90.72    +8.28  +3.65  15/20
+    techs                       18.56    21.36    +2.80  +4.11  15/20
+    unitsbuilt                  49.71    44.79    -4.92  -3.63   5/20
+    unitslost                   14.78    12.04    -2.74  -1.50   7/20
+
+    lategame-80 (T80, 6p)         OFF       ON    delta      t   wins
+    score                      169.47   178.39    +8.92  +4.57  17/20
+    techs                       53.00    55.98    +2.98 +11.26  20/20
+    pop                         42.07    44.32    +2.25  +2.87  13/20
+    unitskilled                 11.03     9.16    -1.87  -2.64   6/20
+
+    contested, mixed_dc (deep odd seats, ai/default even)
+    metric        side          OFF       ON    delta      t   wins
+    score         deep        86.15    88.08    +1.93  +0.72  13/20
+    score         classic     89.85    95.11    +5.26  +2.15  13/20
+    score         GAP d-c     -3.70    -7.04    -3.34  -0.86  10/20
+    techs         classic     20.21    22.06    +1.85  +3.23  15/20
+
+Score pays two points a tech, so +2.80 and +2.98 techs are +5.60 and
++5.96 of the two self-play totals. In an all-deep world every seat
+gifts every other seat and everyone's tech count rises; the metric
+reads that as a win because the metric is the arm's own mean score.
+**Seated against a player who does not reciprocate, the only
+significant score move belongs to the receiver.**
+
+### 3. Proxy arming: the targeting is right and the clause is illegal
+
+97 structurally eligible candidate-turns in two games of contested with
+the willingness bound made non-binding, and **zero offers**. Two
+independent walls, both ai/default's:
+
+- A tech clause is refused outright while `ds_after == DS_WAR`, and the
+  cease-fire that would change `ds_after` is priced at `greed(their
+  love)`. Distant powers we have never dealt with sit at a median love
+  of **-308**, so the cease-fire costs them a median **9486 gold**.
+- `tech_trade_allow_holes = FALSE` caps a legal gift at one step of the
+  receiver's tree, and a proxy worth arming is backward by
+  construction, so the best safe advance that unlocks a better attacker
+  for such a power is worth **45 gold**.
+
+Nothing between 45 and 9486 can be tuned. On lategame-80 the candidate
+count is **zero** -- nobody on that map is distant. The lever ships
+with a census that says one line per eligible candidate whether or not
+an offer follows, carrying `need` beside `reach`, because four changes
+in this project have measured as "no effect" while never executing.
+
+### 4. Culture in conquest worth: priced, executes, flat
+
++0.76 (t +0.90, 9/20) on contested and +0.15 (t +0.31, 4/20) on
+lategame-80, on 37 663 and 12 076 conquest valuations that carried a
+culture component (mean 159 and 82 want). `pcity->history` transfers
+whole -- `transfer_city()` changes the owner on the same struct -- and
+the exchange is `history / 50` score points at the citizen price that
+scores exactly one point, the identical chain DARKFX's culture FLOW
+credit uses. The flow at the same face-value weight cost -19.43; the
+stock is flat, because it only fires where an assault is being valued.
+The three conquest seats now read one `deep_conquest_worth()`.
+
+### 5. Off-switch proof
+
+Pre-session `6eff59f822` (pinned `d1e99bdd547c96`, built in a throwaway
+worktree) against the session binary `20294f6a010ad8`, smoke cell, 10
+paired seeds, both loading the same two-key ini: **10/10 scorelogs
+byte-identical**, and the ten hashes are the same ten DARKFX and
+ENDGAME published. Zero `deep-conqculture` / `deep-gift` /
+`deep-lovegift` / `deep-proxy` lines in the OFF arms of both A/B cells.
+
+### 6. Exploitability and ethics of play, said plainly
+
+With `gift_love_gain` above zero, deep buys friendship with technology,
+and a human can farm it: hold deep's love just under its own peace bar
+and collect an advance. Section 2 says the farming works. With
+`proxy_arm_gain` above zero, deep arms your rivals to keep you busy --
+never someone allied to you and never someone you hold an embassy with,
+because both hand the advance back, but the intent is what it looks
+like. Both ship at zero.
+
+### 7. What the next session must know
+
+- **The primary metric cannot see a positive-sum mechanism, and this is
+  the first lever whose self-play and head-to-head readings disagree
+  about whether it helps.** `mixed_dc` already existed and cost one
+  extra pair of arms. Any lever that GIVES another player something
+  must go through it. 00-context §6 guarded the mirror-image failure
+  (an AI tuned to beat ai/default specifically); this is the other one.
+- **The mixed pair was run unmirrored** (`mixed_dc` only). Seat bias is
+  identical in both arms so the paired delta stands, but a mirrored
+  pair is the 40-seed version of the claim.
+- **`gift_love_gain` needs the alliance clamp `trade_route_love`
+  already has.** The lategame-80 median gift is expected to add +300
+  love against a 250 alliance bar, and pairs ending allied go from
+  27.1% to 33.2%. It was NOT added after the fact because every number
+  above was taken without it.
+- **Nothing here is tuned.** 100 x 100 was chosen to make the
+  willingness bound non-binding, so a refusal would be the
+  counterparty's rather than the budget's. `gift_border_value` x
+  `gift_love_gain` is a product and must be swept as one; the same for
+  `gift_border_value` x `proxy_arm_gain`.
+- **The gold instrument is structurally dead, not mis-tuned.** A
+  gold-denominated diplomacy lever needs a treasury policy first.
+- **Proxy arming cannot be revived by tuning.** It could be revived by
+  `tech_trade_allow_holes = TRUE` or by a cell where distant powers are
+  met before love has bled; neither is in the suite.
+- **`deep_peace_worth`'s trade half has never been exercised** -- zero
+  routes on both civ2civ3 cells. It is live on classic and no classic
+  arm was run.
+- **The culture stock still has not been asked its real question.** Both
+  cells here are short-horizon and culture is 14.5% of world score at
+  T150 against 29.5% at T300. The long-horizon cell remains unreachable
+  from this harness, exactly as DARKFX left it.
+
+`meson test -C build` **4/4**; `python3 benchmark/tune-audit.py` CLEAN
+**172/172/172/172** (four new keys: `conquest_culture_gain`,
+`gift_border_value`, `gift_love_gain`, `proxy_arm_gain`).
