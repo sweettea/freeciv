@@ -196,6 +196,7 @@ static const struct deep_tuning deep_tuning_defaults = {
    * waived. PLACEHOLDER value -- 1.0 is the setting PEACE measured its
    * population at, not a tuned optimum. */
   .peace_seek_gain = 1.0,
+  .gift_border_value = 0.0,             /* PLACEHOLDER, 0 = off */
   .embassy_price_gain = 0.0,            /* PLACEHOLDER, 0 = off */
   .embassy_give_gain = 1.0,             /* PLACEHOLDER, untuned */
   .leader_check_gain = 0.0,             /* PLACEHOLDER, 0 = off */
@@ -377,6 +378,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(scale_ferry) \
   TUNE_DOUBLE(emergency_value_cap) \
   TUNE_DOUBLE(peace_seek_gain) \
+  TUNE_DOUBLE(gift_border_value) \
   TUNE_DOUBLE(embassy_price_gain) \
   TUNE_DOUBLE(embassy_give_gain) \
   TUNE_DOUBLE(leader_check_gain) \

@@ -815,6 +815,67 @@ static unsigned int deep_density_fear(struct city *pcity)
 }
 
 /**********************************************************************//**
+  The density lattice above, aggregated per PAIR instead of per city:
+  how much standing border pressure `aplayer` alone puts on all of
+  `pplayer`'s cities.
+
+  Same radius, same 1/(1+d) falloff, same reachability discount for a
+  neighbour whose army cannot float -- the tunables are read, not
+  re-minted, so a border-pressure number and a city's density fear can
+  never disagree about what a close neighbour is. What it deliberately
+  does NOT carry is the anticipation ramp or the per-city census
+  counters: those belong to the fear that gets INJECTED into a city's
+  danger, and this is a valuation of a relationship.
+
+  BALANCE's consumer is the peace valuation: the pressure a war with
+  this player would turn into an actual front.
+**************************************************************************/
+double deep_border_pressure_from(const struct player *pplayer,
+                                 const struct player *aplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  double fear = 0.0;
+  int floats = -1;
+
+  if (tune->density_fear_value <= 0 || pplayer == aplayer) {
+    return 0.0;
+  }
+
+  city_list_iterate(aplayer->cities, acity) {
+    city_list_iterate(pplayer->cities, pcity) {
+      int d = real_map_distance(city_tile(acity), city_tile(pcity));
+      double w;
+
+      if (d > tune->density_fear_radius) {
+        continue;
+      }
+      w = tune->density_fear_value / (1.0 + d);
+      if (tile_continent(city_tile(acity))
+          != tile_continent(city_tile(pcity))) {
+        if (floats < 0) {
+          floats = 0;
+          unit_list_iterate(aplayer->units, aunit) {
+            const struct unit_type *at = unit_type_get(aunit);
+
+            if (at->transport_capacity > 0
+                && utype_move_type(at) == UMT_SEA) {
+              floats = 1;
+              break;
+            }
+          } unit_list_iterate_end;
+        }
+        if (floats == 0) {
+          w *= tune->menace_overseas_weight;
+        }
+      }
+      fear += w;
+    } city_list_iterate_end;
+  } city_list_iterate_end;
+
+  return fear;
+}
+
+/**********************************************************************//**
   Flat fear of barbarian uprisings, active from the first turn the
   server can actually spawn them -- the same gate barbarian.c uses --
   and zero before it, so pre-onset production is not taxed. The

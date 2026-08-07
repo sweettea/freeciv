@@ -22,6 +22,10 @@ void deep_choose_trade_targets(struct ai_type *ait, struct player *pplayer);
 
 int deep_routes_with_players(const struct player *pplayer, int *routes,
                              int size);
+/* What those routes are worth per turn, for one partner: the trade a
+ * war with them would cancel. */
+int deep_route_value_with(const struct player *pplayer,
+                          const struct player *aplayer);
 void deep_trade_route_love(struct ai_type *ait, struct player *pplayer);
 
 void deep_trade_merit_apply(struct ai_type *ait, struct player *pplayer,

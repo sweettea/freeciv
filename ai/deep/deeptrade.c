@@ -334,6 +334,37 @@ int deep_routes_with_players(const struct player *pplayer, int *routes,
 }
 
 /**********************************************************************//**
+  The per-turn trade our cities actually earn from routes with
+  `aplayer`, summed over both endpoints we own.
+
+  The sibling of deep_routes_with_players(), which counts routes; this
+  one reads what they are WORTH, because a treaty is priced in a
+  currency and a count is not one. `proute->value` is the live figure
+  the city's own trade surplus is built from, so nothing is modelled
+  here and nothing is estimated.
+**************************************************************************/
+int deep_route_value_with(const struct player *pplayer,
+                          const struct player *aplayer)
+{
+  int total = 0;
+
+  city_list_iterate(pplayer->cities, pcity) {
+    trade_routes_iterate(pcity, proute) {
+      const struct city *partner = game_city_by_number(proute->partner);
+
+      if (partner == NULL || proute->value <= 0) {
+        continue;
+      }
+      if (city_owner(partner) == aplayer) {
+        total += proute->value;
+      }
+    } trade_routes_iterate_end;
+  } city_list_iterate_end;
+
+  return total;
+}
+
+/**********************************************************************//**
   Interdependence: an active trade route is a standing reason to keep
   the peace with the player at the other end of it.
 

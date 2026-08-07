@@ -1206,6 +1206,25 @@ struct deep_tuning {
    * 0.0 restores stock's bar exactly. PLACEHOLDER. */
   double peace_seek_gain;
 
+  /* BALANCE -- the exchange rate between the density lattice's units
+   * and gold, and the switch that turns the gift census on.
+   *
+   * deep_border_pressure_from() aggregates the SAME weights a city's
+   * density fear is built from (density_fear_value / (1 + d), the
+   * reachability discount for a neighbour who cannot float an army)
+   * per player pair, so it answers "how much of a front would a war
+   * with this player be". Its units are danger. A treaty is priced in
+   * gold. There is no read anywhere in this tree for the rate between
+   * them -- so it is a knob, flagged for the tuner, rather than a
+   * number chosen in the code.
+   *
+   * 0.0 does two things at once and that is deliberate: the border
+   * half of the peace valuation vanishes, and the `deep-gift` census
+   * stops being emitted. There is no behaviour behind either, so this
+   * is an off switch for a MEASUREMENT, and the two gift levers below
+   * carry their own. PLACEHOLDER, untuned. */
+  double gift_border_value;
+
   /* PEACE -- the embassy clause, which is arithmetically impossible
    * in the one ruleset where embassies matter most.
    *

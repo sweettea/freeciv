@@ -43,6 +43,14 @@ double deep_remaining_sites(const struct player *pplayer);
  * exists. Exposed for the founder-pool census. */
 int deep_reachable_free_land(const struct player *pplayer);
 
+/* The density lattice aggregated per player PAIR: how much standing
+ * border pressure one player alone puts on all of ours. Same radius,
+ * falloff and reachability discount as the per-city fear; no
+ * anticipation ramp, because this values a relationship rather than
+ * insuring a city. */
+double deep_border_pressure_from(const struct player *pplayer,
+                                 const struct player *aplayer);
+
 /* Land pressure: land_pressure_tiles / (land_pressure_tiles +
  * land-per-player). Same evidence as deep_map_crowding() and the same
  * direction, but it never saturates, so it keeps discriminating below

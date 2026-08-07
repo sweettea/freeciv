@@ -33,14 +33,20 @@
 #include "diplhand.h"
 #include "srv_log.h"
 
+/* server/advisors */
+#include "advtools.h"
+
 /* ai */
 #include "handicaps.h"
 
 /* ai/default */
 #include "daidata.h"
+#include "daitools.h"
 
 #include "deepai.h"
+#include "deepdefence.h"
 #include "deepops.h"
+#include "deeptrade.h"
 #include "deeptuning.h"
 
 #include "deepdiplomacy.h"
@@ -319,6 +325,75 @@ static bool deep_peace_wanted(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
+  What a non-war relationship with `aplayer` is worth to `pplayer`,
+  in GOLD -- the currency every treaty clause is already denominated
+  in, so a valuation and a price can be compared without a second
+  exchange rate being minted between them.
+
+  Two components, both read from live state:
+
+  - THE TRADE AT STAKE. Active routes with them earn
+    deep_route_value_with() trade a turn, and a war cancels them
+    (common/traderoutes.c's own cancellation rules) -- so the stock at
+    risk is that flow over deep's standing horizon. MORT is exactly
+    amortize()'s annuity factor in this project, which is why the
+    trade evaluator already divides by it to turn a stock into a flow;
+    multiplying the other way mints nothing. A trade point is counted
+    as one gold, which is CONSERVATIVE: ai/default values the bulb
+    half of a trade point at 3 gold (dai_goldequiv_tech).
+
+  - THE BORDER PRESSURE. Their cities near ours are where a land war
+    would actually be fought, and deep already has the lattice that
+    measures exactly that (deep_border_pressure_from(), the density
+    fear aggregated per pair). Its units are danger, not gold, and
+    there is no honest read anywhere in the tree for the exchange
+    between them -- so gift_border_value is that rate, a PLACEHOLDER
+    flagged for the tuner rather than a number picked here.
+
+  What this is NOT: an estimate of who would win. Deep has a combat
+  model and it is not cheap enough to run against every player every
+  turn, and the question a gift asks is narrower -- what am I
+  protecting -- than the question a war plan asks.
+**************************************************************************/
+static double deep_peace_worth(const struct player *pplayer,
+                               const struct player *aplayer,
+                               double *trade_out, double *border_out)
+{
+  const struct deep_tuning *t = deep_tuning_get();
+  double trade = (double) deep_route_value_with(pplayer, aplayer) * MORT;
+  double border = deep_border_pressure_from(pplayer, aplayer)
+                  * t->gift_border_value;
+
+  if (trade_out != nullptr) {
+    *trade_out = trade;
+  }
+  if (border_out != nullptr) {
+    *border_out = border;
+  }
+
+  return trade + border;
+}
+
+/**********************************************************************//**
+  Gold this player may spend on diplomacy at all: everything above the
+  reserve ai/default's own treasury guard keeps.
+
+  STRUCTURAL, not a fraction: dai_gold_reserve() is the floor deep
+  already refuses to spend below (it is what deep_balance_treasury()
+  is defending), so re-using it means a gift can never be the reason a
+  building gets sold. A second "fraction of treasury" knob on top of
+  it would be a number chosen here, and the willingness bound below is
+  already the tunable that decides how much of an affordable gift is
+  actually worth making.
+**************************************************************************/
+static int deep_gift_budget(struct player *pplayer)
+{
+  int spare = pplayer->economic.gold - dai_gold_reserve(pplayer);
+
+  return MAX(spare, 0);
+}
+
+/**********************************************************************//**
   Lever 1. On the turns the cease-fire window is open, ask.
 
   ai/default computes the same answer and is not allowed to act on it:
@@ -372,6 +447,101 @@ static void deep_peace_seek(struct ai_type *ait, struct player *pplayer,
            game.info.turn, player_name(pplayer), player_name(aplayer),
            left, love, bar, wanted ? 1 : 0,
            (int) player_diplstate_get(pplayer, aplayer)->type, why);
+}
+
+/**********************************************************************//**
+  What ai/default's own gift rule would charge to move `aplayer`'s
+  love for us by `want` points, in gold, or 0 if it cannot.
+
+  This is not a model of the recipient: it is dai_treaty_accepted()'s
+  arithmetic read backwards (daidiplomacy.c:775-782). A treaty whose
+  every clause is beneficial to the receiver adds
+
+      love += MIN(balance / (cities x 10 + 1), love_incr x 150) x 10
+
+  so the gold that buys L love is ceil(L/10) x (cities x 10 + 1),
+  grossed up for the diplgoldcost the server skims off a transfer.
+  Note the granularity that falls straight out of it: love arrives in
+  steps of ten, and anything under one step buys nothing at all --
+  which is why a gift must be sized rather than dribbled.
+**************************************************************************/
+static int deep_gift_price_of_love(const struct player *aplayer, int want)
+{
+  int steps = (want + 9) / 10;
+  int per_step = city_list_size(aplayer->cities) * 10 + 1;
+  int gold;
+
+  if (want <= 0 || game.server.diplgoldcost >= 100) {
+    return 0;
+  }
+  gold = steps * per_step;
+
+  /* The receiver banks value x (100 - diplgoldcost) / 100 (the GOLD
+   * clause, daidiplomacy.c:460-466), so what leaves our treasury is
+   * larger than what lands in theirs. */
+  return (gold * 100 + (99 - game.server.diplgoldcost))
+         / (100 - game.server.diplgoldcost);
+}
+
+/**********************************************************************//**
+  The gift lever's census. One line per turn per pair deep is in a
+  non-war, non-allied relationship with -- the exact population the
+  two gift paths can act on -- carrying what the relationship is worth
+  to us, what we could spend, how far the counterparty's love is from
+  its own peace bar, and what closing that gap would cost.
+
+  Logged before any of it is spent, and logged with the levers off, so
+  the session has the distribution BEFORE it has the mechanism: the
+  brief's stop condition is "recipients structurally refuse", and a
+  refusal is only legible against the price that was on the table.
+**************************************************************************/
+static void deep_gift_probe(struct ai_type *ait, struct player *pplayer,
+                            struct player *aplayer)
+{
+  const struct player_diplstate *ds
+    = player_diplstate_get(pplayer, aplayer);
+  struct ai_plr *theirs;
+  bool close_here;
+  double trade = 0.0, border = 0.0, worth;
+  int love, bar, shortfall, gold;
+
+  if (ds->type != DS_CEASEFIRE && ds->type != DS_ARMISTICE
+      && ds->type != DS_PEACE) {
+    return;
+  }
+
+  worth = deep_peace_worth(pplayer, aplayer, &trade, &border);
+
+  /* Their love for US, and their own bar: both live AI state, and
+   * both of the same class ai/default's treaty valuation already
+   * reads across the table (compute_tech_sell_price() prices a tech
+   * from the TAKER's research, dai_goldequiv_clause() reads the
+   * counterparty's cities). This introduces no information deep did
+   * not already have; W04's honest-information work owns the question
+   * of whether any of it should be readable. */
+  love = aplayer->ai_common.love[player_index(pplayer)];
+  theirs = dai_plr_data_get(ait, aplayer, &close_here);
+  bar = theirs->diplomacy.req_love_for_peace;
+  if (close_here) {
+    dai_data_phase_finished(ait, aplayer);
+  }
+
+  shortfall = MAX(bar - love, 0);
+  gold = deep_gift_price_of_love(aplayer, shortfall);
+
+  log_base(deep_metric_log_level(),
+           "deep-gift turn=%d plr=\"%s\" to=\"%s\" ds=%d worth=%.1f"
+           " trade=%.1f border=%.1f budget=%d theirlove=%d bar=%d"
+           " short=%d price=%d clear=%d",
+           game.info.turn, player_name(pplayer), player_name(aplayer),
+           (int) ds->type, worth, trade, border,
+           deep_gift_budget(pplayer), love, bar, shortfall, gold,
+           /* What the SAME shortfall costs as a treaty balance rather
+            * than as love: greed() charges the square of it over ten
+            * (daidiplomacy.c:125-134), which is the gold that makes a
+            * refused peace clause add up. Two prices for two
+            * different products, and they are not the same number. */
+           shortfall * shortfall / 10);
 }
 
 /**********************************************************************//**
@@ -623,7 +793,8 @@ void deep_diplomacy_prepass(struct ai_type *ait, struct player *pplayer)
       || has_handicap(pplayer, H_AWAY)) {
     return;
   }
-  if (t->peace_seek_gain <= 0.0 && t->embassy_price_gain <= 0.0) {
+  if (t->peace_seek_gain <= 0.0 && t->embassy_price_gain <= 0.0
+      && t->gift_border_value <= 0.0) {
     return;
   }
 
@@ -633,6 +804,10 @@ void deep_diplomacy_prepass(struct ai_type *ait, struct player *pplayer)
     }
     if (t->peace_seek_gain > 0.0) {
       deep_peace_seek(ait, pplayer, aplayer);
+    }
+    if (t->gift_border_value > 0.0 && is_ai(aplayer)
+        && !pplayers_allied(pplayer, aplayer)) {
+      deep_gift_probe(ait, pplayer, aplayer);
     }
     if (t->embassy_price_gain > 0.0) {
       deep_embassy_offer(ait, pplayer, aplayer);
