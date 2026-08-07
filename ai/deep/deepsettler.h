@@ -37,6 +37,8 @@ bool deep_settler_overnight_veto(struct unit *punit,
 
 adv_want deep_worker_task_value(const struct player *pplayer,
                                 const struct unit *punit,
+                                enum unit_activity act,
+                                const struct extra_type *target,
                                 struct tile *ptile, adv_want value);
 
 #endif /* FC__DEEPSETTLER_H */

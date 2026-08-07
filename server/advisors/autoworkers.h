@@ -71,12 +71,16 @@ bool auto_workers_speculate_can_act_at(const struct unit *punit,
 
 /* Extension point: optional per-candidate task-value adjustment.
  * Inert (NULL, default) unless a consumer registers; the callback
- * receives the evaluating player, the worker, the candidate tile and
- * the computed value, and returns the value to use. Registered by AI
- * modules that want e.g. danger-aware task selection; MUST return the
- * value unchanged for players it does not manage. */
+ * receives the evaluating player, the worker, the candidate ACTIVITY
+ * and its target extra (NULL where the activity has none), the
+ * candidate tile and the computed value, and returns the value to
+ * use. Registered by AI modules that want e.g. danger-aware task
+ * selection, or a want for an extra whose worth is not tile output;
+ * MUST return the value unchanged for players it does not manage. */
 typedef adv_want (*aw_task_value_fn)(const struct player *pplayer,
                                      const struct unit *punit,
+                                     enum unit_activity act,
+                                     const struct extra_type *target,
                                      struct tile *ptile,
                                      adv_want value);
 void aw_set_task_value_hook(aw_task_value_fn fn);

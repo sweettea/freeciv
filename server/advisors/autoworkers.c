@@ -351,8 +351,14 @@ static void consider_worker_action(const struct player *pplayer,
   bool improves;
 
   if (aw_task_value_hook != NULL) {
-    new_tile_value = aw_task_value_hook(pplayer, punit, ptile,
-                                        new_tile_value);
+    /* The candidate activity and its target extra travel with the
+     * value, because the worth of some extras is not tile output at
+     * all -- adv_calc_extra() sums food/shield/trade only, so a base
+     * changes nothing it can see and its want is structurally zero.
+     * A consumer that wants to say otherwise has to know WHICH extra
+     * is on the table. Still inert with no hook registered. */
+    new_tile_value = aw_task_value_hook(pplayer, punit, act, target,
+                                        ptile, new_tile_value);
   }
   adv_want total_value = 0;
   adv_want base_value = 0;

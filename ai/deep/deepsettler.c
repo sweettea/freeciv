@@ -1841,6 +1841,8 @@ CLEANUP:
 **************************************************************************/
 adv_want deep_worker_task_value(const struct player *pplayer,
                                 const struct unit *punit,
+                                enum unit_activity act,
+                                const struct extra_type *target,
                                 struct tile *ptile, adv_want value)
 {
   const struct deep_tuning *tune = deep_tuning_get();
