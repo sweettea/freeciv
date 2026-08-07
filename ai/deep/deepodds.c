@@ -132,6 +132,33 @@ double deep_stack_survival_losses(int n_att, const int *att_hp,
                                   const struct deep_duel *pair,
                                   double *att_death)
 {
+  return deep_stack_survival_full(n_att, att_hp, n_def, def_hp, pair,
+                                  att_death, NULL);
+}
+
+/**********************************************************************//**
+  The same walk again, now also reporting the DEFENDER's side of the
+  ledger: def_death is the expected number of defenders killed.
+
+  It costs nothing to compute and it was always in the state vector.
+  The DP's state index `i` is the front defender, which is to say that
+  defenders 0..i-1 are already dead -- so at the end of the walk the
+  expected number killed is the mass-weighted mean of `i`, plus n_def
+  for the mass that reached `dead` (the whole stack annihilated).
+
+  Why anyone wants it: in freeciv a defender dies exactly when an
+  attack on it SUCCEEDS, so E[defenders killed] is E[successful enemy
+  attacks on this stack] -- and a successful attack on a city stack is
+  what costs the city a citizen under `killcitizen` +
+  `UCF_KILLCITIZEN` (server/unithand.c:4601). That is the quantity
+  `EFT_UNIT_NO_LOSE_POP` insures against, and stock prices it as
+  units x 2 (daieffects.c:456).
+**************************************************************************/
+double deep_stack_survival_full(int n_att, const int *att_hp,
+                                int n_def, const int *def_hp,
+                                const struct deep_duel *pair,
+                                double *att_death, double *def_death)
+{
   int max_hp = 0, i, j, h, hh, width;
   size_t cells, c;
   double *base, *state, *next, *duel_dist, *swap;
@@ -141,6 +168,9 @@ double deep_stack_survival_losses(int n_att, const int *att_hp,
     for (j = 0; j < n_att; j++) {
       att_death[j] = 0.0;
     }
+  }
+  if (def_death != NULL) {
+    *def_death = 0.0;
   }
   if (n_def <= 0) {
     return 0.0;
@@ -155,6 +185,9 @@ double deep_stack_survival_losses(int n_att, const int *att_hp,
     }
   }
   if (max_hp <= 0) {
+    if (def_death != NULL) {
+      *def_death = n_def;
+    }
     return 0.0;
   }
 
@@ -206,6 +239,17 @@ double deep_stack_survival_losses(int n_att, const int *att_hp,
     swap = state;
     state = next;
     next = swap;
+  }
+
+  if (def_death != NULL) {
+    double killed = (double) n_def * dead;
+
+    for (i = 0; i < n_def; i++) {
+      for (h = 1; h < width; h++) {
+        killed += (double) i * state[i * width + h];
+      }
+    }
+    *def_death = killed;
   }
 
   free(base);

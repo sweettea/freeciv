@@ -191,9 +191,135 @@ static void test_attacker_losses(void)
   }
 }
 
+/**********************************************************************//**
+  The DEFENDER's side of the same ledger (M4b): the expected number of
+  defenders killed, which is the expected number of SUCCESSFUL enemy
+  attacks and therefore the citizen bill under killcitizen.
+
+  Same closed forms as above, read from the other end.
+**************************************************************************/
+static void test_defender_losses(void)
+{
+  /* One defender, coin-flip duels. It dies unless it wins all four
+   * flips, so E[defenders killed] = P(it dies) = 1 - 0.5^4 = 0.9375,
+   * and with one defender that is also 1 - survival exactly. */
+  {
+    struct deep_duel d = { 8, 10, 8, 10 };
+    struct deep_duel pair[4];
+    int att_hp[4] = { 10, 10, 10, 10 };
+    int def_hp[1] = { 10 };
+    double srv, killed = -1.0;
+    int n;
+
+    for (n = 0; n < 4; n++) {
+      pair[n] = d;
+    }
+    srv = deep_stack_survival_full(4, att_hp, 1, def_hp, pair, NULL,
+                                   &killed);
+    CHECK(fabs(killed - 0.9375) < EPS,
+          "expected defenders killed %f != 0.9375", killed);
+    CHECK(fabs(killed - (1.0 - srv)) < EPS,
+          "with one defender, killed %f must equal 1 - survival %f",
+          killed, 1.0 - srv);
+  }
+
+  /* THE ACCOUNTING IDENTITY, which is what makes the new output
+   * checkable rather than merely plausible: every duel kills exactly
+   * one unit and every attacker fights at most once, so
+   *
+   *     E[attackers dead] + E[defenders dead] = E[duels fought]
+   *
+   * and a duel is fought by attacker j exactly when the stack is still
+   * alive at its turn. With p(defender survives a duel) = 0.4 and one
+   * defender: duels = 1 + 0.4 + 0.16 = 1.56, attacker deaths = 0.624,
+   * so defender deaths must be 0.936. */
+  {
+    struct deep_duel d = { 6, 10, 4, 10 };
+    struct deep_duel pair[3];
+    int att_hp[3] = { 10, 10, 10 };
+    int def_hp[1] = { 10 };
+    double death[3] = { 0 }, sum = 0.0, killed = -1.0;
+    int j;
+
+    for (j = 0; j < 3; j++) {
+      pair[j] = d;
+    }
+    (void) deep_stack_survival_full(3, att_hp, 1, def_hp, pair, death,
+                                    &killed);
+    for (j = 0; j < 3; j++) {
+      sum += death[j];
+    }
+    CHECK(fabs(killed - 0.936) < EPS,
+          "defenders killed %f != 0.936", killed);
+    CHECK(fabs((sum + killed) - 1.56) < EPS,
+          "attacker deaths %f + defender deaths %f != duels 1.56",
+          sum, killed);
+  }
+
+  /* A stack of two against a stream that cannot lose: both defenders
+   * die, and the count is the stack size rather than a probability. */
+  {
+    struct deep_duel d = { 12, 10, 0, 10 };   /* p(def survives) = 0 */
+    struct deep_duel pair[4 * 2];
+    int att_hp[4] = { 10, 10, 10, 10 };
+    int def_hp[2] = { 10, 10 };
+    double killed = -1.0;
+    int n;
+
+    for (n = 0; n < 4 * 2; n++) {
+      pair[n] = d;
+    }
+    CHECK(deep_stack_survival_full(4, att_hp, 2, def_hp, pair, NULL,
+                                   &killed) < EPS,
+          "certain kill should leave no survivor");
+    CHECK(fabs(killed - 2.0) < EPS,
+          "both defenders should be counted dead, got %f", killed);
+  }
+
+  /* Degenerate cases write the output rather than leaving it stale,
+   * and an empty stream kills nobody. */
+  {
+    struct deep_duel d = { 4, 1, 4, 1 };
+    int hp10[2] = { 10, 10 };
+    double killed = 9.0;
+
+    CHECK(deep_stack_survival_full(0, NULL, 2, hp10, &d, NULL, &killed)
+          == 1.0, "empty stream should survive");
+    CHECK(killed == 0.0, "empty stream should kill nobody, got %f",
+          killed);
+    killed = 9.0;
+    CHECK(deep_stack_survival_full(2, hp10, 0, NULL, &d, NULL, &killed)
+          == 0.0, "empty stack should fall");
+    CHECK(killed == 0.0,
+          "an empty stack has nobody to lose, got %f", killed);
+  }
+
+  /* Bounds on the mixed stack: never more than the stack, never less
+   * than P(the stack is annihilated) times the stack. */
+  {
+    int att_hp[3] = { 20, 10, 8 };
+    int def_hp[2] = { 20, 12 };
+    struct deep_duel pair[3 * 2] = {
+      { 12, 2, 6, 1 }, { 12, 2, 8, 2 },
+      { 6, 1, 6, 1 },  { 6, 1, 8, 2 },
+      { 4, 1, 6, 1 },  { 4, 1, 8, 2 },
+    };
+    double killed = -1.0;
+    double srv = deep_stack_survival_full(3, att_hp, 2, def_hp, pair,
+                                          NULL, &killed);
+
+    CHECK(killed >= 2.0 * (1.0 - srv) - EPS,
+          "killed %f below the annihilation floor %f", killed,
+          2.0 * (1.0 - srv));
+    CHECK(killed <= 2.0 + EPS, "killed %f exceeds the stack", killed);
+    CHECK(killed > 0.0, "a contested assault kills somebody");
+  }
+}
+
 int main(void)
 {
   test_attacker_losses();
+  test_defender_losses();
 
   if (failures > 0) {
     fprintf(stderr, "%d failure(s)\n", failures);

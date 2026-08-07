@@ -58,4 +58,15 @@ double deep_stack_survival_losses(int n_att, const int *att_hp,
                                   const struct deep_duel *pair,
                                   double *att_death /* [n_att] or NULL */);
 
+/* Both sides of the ledger from one walk. def_death is the expected
+ * number of DEFENDERS killed -- which, because a freeciv defender dies
+ * exactly when an attack on it succeeds, is the expected number of
+ * SUCCESSFUL enemy attacks. That is the quantity a city pays a citizen
+ * for under killcitizen, and the one EFT_UNIT_NO_LOSE_POP insures. */
+double deep_stack_survival_full(int n_att, const int *att_hp,
+                                int n_def, const int *def_hp,
+                                const struct deep_duel *pair,
+                                double *att_death /* [n_att] or NULL */,
+                                double *def_death /* or NULL */);
+
 #endif /* FC__DEEPODDS_H */

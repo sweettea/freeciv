@@ -19,6 +19,22 @@
 struct ai_type;
 struct civ_map;
 
+/* Both sides of the defensive ledger from one run of the chained-duel
+ * model: what the wave is expected to cost US (hits, in successful
+ * attacks, which is citizens under killcitizen) and what the garrison
+ * is expected to cost THEM (att_loss, in shields). */
+struct deep_defence_read {
+  double surv;          /* P(the garrison holds). */
+  int wave;             /* Attackers that qualified; 0 means no threat. */
+  int n_def;            /* Defenders counted, including any `extra`. */
+  double att_loss;      /* E[attacker shields destroyed]. */
+  double hits;          /* E[successful enemy attacks on the stack]. */
+};
+
+void deep_city_defence_read(const struct civ_map *nmap, struct city *pcity,
+                            int horizon, struct unit *const *extra,
+                            int n_extra, struct deep_defence_read *out);
+
 double deep_city_stack_survival(const struct civ_map *nmap,
                                 struct city *pcity, int horizon,
                                 int *wave_out);

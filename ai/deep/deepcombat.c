@@ -139,10 +139,13 @@ static int deep_collect_defenders(struct city *pcity,
   survival against an enemy wave, and (as 1 minus) our assault's
   chance against an enemy garrison.
 **************************************************************************/
-static double deep_garrison_vs_stream(const struct civ_map *nmap,
-                                      struct deep_combatant *att, int n_att,
-                                      struct deep_combatant *def, int n_def,
-                                      double *att_death)
+static double deep_garrison_vs_stream_full(const struct civ_map *nmap,
+                                           struct deep_combatant *att,
+                                           int n_att,
+                                           struct deep_combatant *def,
+                                           int n_def,
+                                           double *att_death,
+                                           double *def_death)
 {
   int att_hp[DEEP_WAVE_MAX], def_hp[DEEP_STACK_MAX];
   struct deep_duel pair[DEEP_WAVE_MAX * DEEP_STACK_MAX];
@@ -152,6 +155,9 @@ static double deep_garrison_vs_stream(const struct civ_map *nmap,
     for (j = 0; j < n_att; j++) {
       att_death[j] = 0.0;
     }
+  }
+  if (def_death != NULL) {
+    *def_death = 0.0;
   }
   if (n_att == 0) {
     return 1.0;
@@ -177,8 +183,21 @@ static double deep_garrison_vs_stream(const struct civ_map *nmap,
     }
   }
 
-  return deep_stack_survival_losses(n_att, att_hp, n_def, def_hp, pair,
-                                    att_death);
+  return deep_stack_survival_full(n_att, att_hp, n_def, def_hp, pair,
+                                  att_death, def_death);
+}
+
+/**********************************************************************//**
+  The attacker-losses-only form, which is what every existing caller
+  asks for.
+**************************************************************************/
+static double deep_garrison_vs_stream(const struct civ_map *nmap,
+                                      struct deep_combatant *att, int n_att,
+                                      struct deep_combatant *def, int n_def,
+                                      double *att_death)
+{
+  return deep_garrison_vs_stream_full(nmap, att, n_att, def, n_def,
+                                      att_death, NULL);
 }
 
 /**********************************************************************//**
@@ -294,7 +313,8 @@ static double deep_city_survival_core(const struct civ_map *nmap,
                                       struct city *pcity, int horizon,
                                       const struct unit *except,
                                       struct unit *const *extra, int n_extra,
-                                      int *wave_out)
+                                      int *wave_out,
+                                      struct deep_defence_read *out)
 {
   struct deep_combatant att[DEEP_WAVE_MAX], def[DEEP_STACK_MAX];
   int n_att = 0, n_def;
@@ -306,6 +326,13 @@ static double deep_city_survival_core(const struct civ_map *nmap,
 
   if (wave_out != NULL) {
     *wave_out = 0;
+  }
+  if (out != NULL) {
+    out->surv = 1.0;
+    out->wave = 0;
+    out->n_def = 0;
+    out->att_loss = 0.0;
+    out->hits = 0.0;
   }
 
   players_iterate_alive(aplayer) {
@@ -398,7 +425,27 @@ static double deep_city_survival_core(const struct civ_map *nmap,
   }
   qsort(att, n_att, sizeof(att[0]), deep_combatant_cmp);
 
-  return deep_garrison_vs_stream(nmap, att, n_att, def, n_def, NULL);
+  if (out == NULL) {
+    return deep_garrison_vs_stream(nmap, att, n_att, def, n_def, NULL);
+  }
+
+  {
+    double death[DEEP_WAVE_MAX];
+    double surv, shields = 0.0;
+    int j;
+
+    surv = deep_garrison_vs_stream_full(nmap, att, n_att, def, n_def,
+                                        death, &(out->hits));
+    for (j = 0; j < n_att; j++) {
+      shields += death[j] * unit_build_shield_cost_base(att[j].punit);
+    }
+    out->surv = surv;
+    out->wave = n_att;
+    out->n_def = n_def;
+    out->att_loss = shields;
+
+    return surv;
+  }
 }
 
 /**********************************************************************//**
@@ -412,7 +459,7 @@ double deep_city_stack_survival_without(const struct civ_map *nmap,
                                         int *wave_out)
 {
   return deep_city_survival_core(nmap, pcity, horizon, except, NULL, 0,
-                                 wave_out);
+                                 wave_out, NULL);
 }
 
 /**********************************************************************//**
@@ -428,7 +475,42 @@ double deep_city_stack_survival_with(const struct civ_map *nmap,
                                      int *wave_out)
 {
   return deep_city_survival_core(nmap, pcity, horizon, NULL, extra, n_extra,
-                                 wave_out);
+                                 wave_out, NULL);
+}
+
+/**********************************************************************//**
+  THE DEFENSIVE LEDGER: the same wave, the same chained duels, and both
+  sides of what they cost.
+
+  Everything in this module until now reported only P(hold). That is
+  half the answer, and it is the half that prices the CITY. The other
+  half prices the GARRISON: a defender's worth is not only whether it
+  survives the wave, it is the attacker shields it destroys on the way
+  down and the attacks it makes the enemy spend. A musket behind walls
+  that loses is still worth what it killed (human, 2026-08-06).
+
+  - att_loss: E[attacker shields destroyed], summed over the wave as
+    P(this attacker dies) x its build cost. Same currency as
+    deep_take_odds_cost()'s loss_shields, from the other side of the
+    line.
+  - hits: E[successful enemy attacks] == E[defenders killed], the
+    citizen bill under killcitizen.
+  - surv, wave, n_def as usual.
+
+  `extra` lets a caller ask the counterfactual "what if THIS unit were
+  also standing here" -- which is how the marginal value of one more
+  defender is priced rather than guessed.
+
+  Inherits every assumption the substrate ships with (one wave, no
+  healing, no promotion, no reinforcement between duels, ground truth
+  rather than observation) and adds none.
+**************************************************************************/
+void deep_city_defence_read(const struct civ_map *nmap, struct city *pcity,
+                            int horizon, struct unit *const *extra,
+                            int n_extra, struct deep_defence_read *out)
+{
+  (void) deep_city_survival_core(nmap, pcity, horizon, NULL, extra,
+                                 n_extra, NULL, out);
 }
 
 /**********************************************************************//**
