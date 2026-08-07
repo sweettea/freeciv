@@ -484,6 +484,35 @@ struct deep_tuning {
    * mission and one was not invented. */
   double attacker_hold_damper;
   double diplomat_pump_damper;
+
+  /* WONDER RACE (WRACE, 2026-08-07). All PLACEHOLDERs.
+   *
+   * wrace_margin_turns is the SCALE of the P(win) ramp, not a
+   * threshold: P = 0.5 + 0.5 x (rival ETA - our ETA) / margin,
+   * clipped, so a dead heat is 0.5 and losing by the whole margin is
+   * 0 -- which IS the go/no-go bar. It is an int in turns because
+   * both inputs are turn counts.
+   *
+   * The three composition gains each move the want from "unchanged"
+   * to "fully the factor": want x (1 - gain x (1 - factor)). At 0 the
+   * factor is computed, logged and not applied, which is what makes
+   * the census arm and the acting arm the same binary.
+   * - wrace_pwin_gain      the race term: a contested wonder we would
+   *                        lose ranks below an uncontested lesser one.
+   * - wrace_eta_gain       the completion-ETA discount: a 40-turn
+   *                        build must not be paid from today's budget
+   *                        at face value.
+   * - wrace_obsolete_gain  the obsolescence truncation: a wonder five
+   *                        turns from the advance that voids it is
+   *                        currently priced as eternal.
+   * wrace_urgency_gain multiplies the help-wonder caravan want as a
+   * race we LEAD gets close (R2b is the delivery arm). 1.0 + gain at
+   * a dead heat, 1.0 once we lead by the whole margin or trail. */
+  int wrace_margin_turns;
+  double wrace_pwin_gain;
+  double wrace_eta_gain;
+  double wrace_obsolete_gain;
+  double wrace_urgency_gain;
   /* Land-race coupling: fresh founder wants scale by
    * (1 + weight * map crowding); crowded maps race, empty ones
    * don't. 0 disables. */

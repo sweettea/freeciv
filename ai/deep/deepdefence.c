@@ -92,6 +92,7 @@
 #include "deeptrade.h"
 #include "deeptuning.h"
 #include "deepwant.h"
+#include "deepwonder.h"
 
 #include "deepdefence.h"
 
@@ -6053,6 +6054,9 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
   TIMING_LOG(AIT_BUILDINGS, TIMER_START);
   building_advisor(pplayer);
   deep_adjust_building_wants(ait, pplayer);
+  /* AFTER dai_build_adv_adjust() has zeroed wonder wants outside the
+   * wonder city, so the population is exactly that city's candidates. */
+  deep_wonder_race(ait, pplayer);
   TIMING_LOG(AIT_BUILDINGS, TIMER_STOP);
   /* AFTER dai_clear_tech_wants(), like every other tech_want writer:
    * the array is wiped at the top of this phase and refilled here. */
