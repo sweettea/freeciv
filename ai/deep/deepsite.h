@@ -27,4 +27,12 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
 void deep_contemplate_new_city(struct ai_type *ait, struct city *pcity);
 void deep_site_free(void);
 
+/* Local isthmus test, pure map geometry: among the tile's eight
+ * neighbours the land forms two or more separate arcs and the land
+ * share is narrow, so the tile is a GATE through the landmass. Site
+ * scoring pays a bonus for founding in one; exported because a
+ * fortress in a gate closes it for the same reason a city does, and
+ * two definitions of "chokepoint" would be two laws about one fact. */
+bool deep_site_is_choke(const struct civ_map *nmap, struct tile *ptile);
+
 #endif /* FC__DEEPSITE_H */

@@ -124,8 +124,8 @@ static int deep_claims_turn = -1;
   around the ring) with the land share narrow -- the tile is a gate.
   A city in a gate closes a continent (human design 2026-07-30).
 **************************************************************************/
-static bool deep_site_is_choke(const struct civ_map *nmap,
-                               struct tile *ptile)
+bool deep_site_is_choke(const struct civ_map *nmap,
+                        struct tile *ptile)
 {
   static const enum direction8 ring[8] = {
     DIR8_NORTH, DIR8_NORTHEAST, DIR8_EAST, DIR8_SOUTHEAST,
