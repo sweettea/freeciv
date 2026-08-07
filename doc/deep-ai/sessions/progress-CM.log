@@ -20,3 +20,11 @@ factors from solvency.
    capped at 10 min and a killed block loses every in-flight game.
 10. doc: record the CM completion round's facts (findings/cm-completion-2026-08-07.md)
 11. doc: STATUS -- the CM completion round
+12. rebase onto epic/w03-horizon-content tip 4110b0eedd; three append conflicts
+    in benchmark/tuning-blocks.ini (ALL, G, ECON) resolved keeping BOTH sides
+    (upstream order, my four keys appended). meson test 4/4, tune-audit CLEAN
+    195/195/195/195.
+13. post-rebase identity re-proved against the parent tip alone, 10/10
+    byte-identical at all-zeros -- and the ten hashes are the SAME ten the
+    pre-epic run published, a third independent check that neither session
+    moved the no-tuning path.

@@ -10336,8 +10336,17 @@ mechanism. Twenty seeds are direction; three untuned placeholders at
   effect" reading would then be a non-execution reading. Fifth time
   this note has earned its place.
 
+**Rebased onto `epic/w03-horizon-content` tip `4110b0eedd`.** Three
+append conflicts in `benchmark/tuning-blocks.ini` (ALL, G, ECON),
+resolved keeping both sides. Identity re-proved after the rebase
+against the parent tip alone: **10/10 byte-identical** at all-zeros --
+and those are the SAME ten hashes the pre-epic run published, a third
+independent check that neither session moved the no-tuning path.
+
 `meson test -C build` **4/4 OK** and `python3 benchmark/tune-audit.py`
-**CLEAN 181/181/181/181** (was 177), before and after.
+**CLEAN 196/196/196/196** post-rebase onto `74f85b4082` (181 on the
+branch alone, from 177), before and after.
+
 ## CONSEQ: the write-off is an alarm, and the birth guard was paying 100 for nothing (2026-08-07)
 
 Eight code commits plus the shared doc pair, paired in one session with
