@@ -23,6 +23,7 @@
 
 /* common */
 #include "city.h"
+#include "research.h"
 #include "unit.h"
 #include "unitlist.h"
 #include "unittype.h"
@@ -43,6 +44,7 @@
 
 /* ai/default */
 #include "daicity.h"
+#include "daitools.h"
 #include "daimilitary.h"
 #include "daidata.h"
 #include "daiplayer.h"
@@ -78,6 +80,76 @@ enum deep_cm_posture {
 };
 
 /**********************************************************************//**
+  Let empire solvency, not lattice order, decide between a taxman and a
+  scientist (DARKFX 2026-08-06 item 4, deferred with its design).
+
+  cm.c:1029-1051 searches per specialist type, but every AI in the tree
+  pins factor[O_GOLD] == factor[O_SCIENCE] == 2, so a taxman and a
+  scientist are INDISTINGUISHABLE to the solver and the choice falls out
+  of the order the lattice happens to enumerate. That is not a decision
+  anybody made.
+
+  The two signals are the ones deep already reads elsewhere, so no new
+  price enters the empire:
+
+    gold      dai_gold_reserve() against the treasury -- the buy float
+              the whole build side budgets against. Short of the guard
+              by a fraction f means a gold is worth f more than it is
+              when the coffers are full.
+    science   the ruleset's tech-upkeep bill against what the empire
+              actually researched last turn, which is the same
+              feasibility test deeprates.c already applies so that a
+              merit comparison cannot trade a tech away. An empire
+              losing techs to upkeep needs bulbs the way a broke one
+              needs gold.
+
+  Both are fractions in [0, 1] and both scale a gain that ships at 0, so
+  the compiled default is exactly the pinned 2/2 this replaces.
+
+  Stated honestly rather than sold: these are the CM's OUTPUT factors,
+  so they weight the gold and science coming off trade tiles as well as
+  the specialists. That is the seam the design named ("multiplying the
+  two factors deep already sets"), and it is defensible -- a broke
+  empire does want its trade taken as gold -- but it is broader than
+  the name "specialist" suggests and the tuner should know it.
+**************************************************************************/
+static void deep_cm_solvency_factors(struct cm_parameter *cmp,
+                                     struct city *pcity)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct player *pplayer = city_owner(pcity);
+
+  if (tune->cm_specialist_gold_gain > 0.0) {
+    double reserve = dai_gold_reserve(pplayer);
+
+    if (reserve > 0.0) {
+      double shortfall = CLIP(0.0, (reserve - pplayer->economic.gold)
+                                   / reserve, 1.0);
+
+      cmp->factor[O_GOLD] =
+        MAX(0, (int) (cmp->factor[O_GOLD]
+                      * (1.0 + tune->cm_specialist_gold_gain * shortfall)
+                      + 0.5));
+    }
+  }
+
+  if (tune->cm_specialist_sci_gain > 0.0
+      && game.info.tech_upkeep_style != TECH_UPKEEP_NONE) {
+    double upkeep = player_tech_upkeep(pplayer);
+
+    if (upkeep > 0.0) {
+      double shortfall =
+        CLIP(0.0, (upkeep - pplayer->server.bulbs_last_turn) / upkeep, 1.0);
+
+      cmp->factor[O_SCIENCE] =
+        MAX(0, (int) (cmp->factor[O_SCIENCE]
+                      * (1.0 + tune->cm_specialist_sci_gain * shortfall)
+                      + 0.5));
+    }
+  }
+}
+
+/**********************************************************************//**
   Fill the stock default booleans and minimal surpluses; only the
   factors differ between deep's rules (keeping the safety rails while
   the factors go through W25 tuning).
@@ -107,6 +179,8 @@ static void deep_cm_base(struct cm_parameter *cmp, struct city *pcity)
   cmp->factor[O_GOLD] = 2;
   cmp->factor[O_LUXURY] = 0;
   cmp->factor[O_SCIENCE] = 2;
+
+  deep_cm_solvency_factors(cmp, pcity);
 }
 
 /**********************************************************************//**
@@ -641,6 +715,27 @@ void deep_set_city_manager_params(struct ai_type *ait,
       auto_arrange_workers(pcity);
     }
   } city_list_iterate_end;
+
+  if ((tune->cm_specialist_gold_gain > 0.0
+       || tune->cm_specialist_sci_gain > 0.0)
+      && city_list_size(pplayer->cities) > 0) {
+    /* Both signals are empire-scope, so one line per player-turn says
+     * everything: whether the solvency read moved the factors off the
+     * pinned 2/2 at all, and by how much. Sampled off the first city
+     * because the factors do not vary between them. */
+    struct cm_parameter probe;
+
+    deep_cm_base(&probe, city_list_get(pplayer->cities, 0));
+    log_base(deep_metric_log_level(),
+             "deep-cmspec turn=%d player=\"%s\" gold=%d sci=%d"
+             " treasury=%d reserve=%d bulbs=%d upkeep=%d",
+             game.info.turn, player_name(pplayer),
+             probe.factor[O_GOLD], probe.factor[O_SCIENCE],
+             pplayer->economic.gold, dai_gold_reserve(pplayer),
+             pplayer->server.bulbs_last_turn,
+             (game.info.tech_upkeep_style != TECH_UPKEEP_NONE
+              ? player_tech_upkeep(pplayer) : 0));
+  }
 
   if (tune->cm_war_growth_charge > 0.0) {
     /* The bill, in public: the counterfactual doubles a CM evaluate for

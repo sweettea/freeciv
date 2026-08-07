@@ -160,6 +160,8 @@ static const struct deep_tuning deep_tuning_defaults = {
   .cm_grow_trade = 4,                   /* PLACEHOLDER, untuned */
   .cm_trade_quality_slope = 0.5,        /* PLACEHOLDER, untuned */
   .cm_grow_price_blend = 0.0,           /* PLACEHOLDER, 0 = off */
+  .cm_specialist_gold_gain = 0.0,       /* PLACEHOLDER, 0 = off */
+  .cm_specialist_sci_gain = 0.0,        /* PLACEHOLDER, 0 = off */
   .survival_target = 0.5,               /* PLACEHOLDER, untuned */
   .survival_fear_value = 20.0,          /* PLACEHOLDER, untuned */
   .survival_horizon = 3,                /* PLACEHOLDER, untuned */
@@ -281,6 +283,8 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_INT(cm_grow_trade) \
   TUNE_DOUBLE(cm_trade_quality_slope) \
   TUNE_DOUBLE(cm_grow_price_blend) \
+  TUNE_DOUBLE(cm_specialist_gold_gain) \
+  TUNE_DOUBLE(cm_specialist_sci_gain) \
   TUNE_DOUBLE(diplomat_defence_value) \
   TUNE_DOUBLE(site_stream_weight) \
   TUNE_INT(land_pressure_tiles) \

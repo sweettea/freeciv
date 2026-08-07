@@ -824,6 +824,19 @@ struct deep_tuning {
    * either way, so this can only add cities to grow-hard, never remove
    * one, and the garrison-coverage conjunct still applies to both. */
   double cm_grow_price_blend;
+  /* Gains that let empire solvency choose between a taxman and a
+   * scientist (DARKFX item 4). cm.c searches per specialist type but
+   * every AI pins factor[O_GOLD] == factor[O_SCIENCE] == 2, so the two
+   * are indistinguishable to the solver and the pick falls out of
+   * lattice order. The gains scale a shortfall fraction in [0, 1]:
+   * gold, the treasury against dai_gold_reserve()'s buy float;
+   * science, the ruleset tech-upkeep bill against last turn's actual
+   * bulbs (deeprates.c's own feasibility test). Both 0 = off = the
+   * pinned 2/2. NOTE these are the CM's output factors, so they weight
+   * trade-derived gold and science as well as the specialists -- which
+   * is what the design asked for, and is broader than the name. */
+  double cm_specialist_gold_gain;
+  double cm_specialist_sci_gain;
 
   /* Sequential-attrition survival model (combat workstream): a city's
    * garrison must survive the observed attacker wave with probability
