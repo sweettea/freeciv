@@ -24,6 +24,25 @@ each rule cites its receipt.
   discovering it in the fold.
 - **Values are provisional until folded under §8's rules.** No mid-run
   folds, no quoting un-confirmed numbers.
+- **When to tune at all (human worry 2026-08-06: "maybe we don't tune
+  till fully done with knobs?").** "Fully done" is a mirage — the knob
+  count grew 121→168 in one week and the post-v4 backlog adds more; a
+  completeness gate would defer the campaign forever. The freeze line is
+  drawn by BLOCKS instead: v4 launches when the pre-v4 wave's gates are
+  green, sweeps the blocks that exist, and later epochs (combat ladder,
+  M2/M4, EXPANSION) re-tune ONLY the blocks they touch in mini-campaigns
+  on the same infrastructure — the separability design, the sha-keyed
+  cache, and the arena tier exist precisely so a later block costs a
+  block, not a campaign. Two corollaries, both receipts-backed:
+  (1) delaying has a hidden cost — session A/B verdicts are taken at
+  untuned defaults, so a mechanism can measure negative purely because
+  its default is wrong (the culture credit's short-venue −19 is the
+  live example); the campaign explicitly revisits measured-negative-at-
+  defaults mechanisms rather than treating retirement as final.
+  (2) tuning early on a moving binary is the OTHER waste (the Z2/v3b
+  receipt above) — which is why nothing tunes until the wave lands and
+  the binary freezes. Between those two failure modes, the block
+  freeze is the narrow path, and it is the standing plan.
 
 ## 2. Launch gates (all must be green)
 
