@@ -86,6 +86,7 @@
 #include "deepcm.h"
 #include "deepops.h"
 #include "deeprates.h"
+#include "deepsettler.h"
 #include "deepstance.h"
 #include "deeptrade.h"
 #include "deeptuning.h"
@@ -5632,6 +5633,7 @@ void deep_do_last_activities(struct ai_type *ait, struct player *pplayer)
    * anything that was going to re-task a held unit has already had its
    * chance (deepops.c, deep_hold_census). */
   deep_hold_census(ait, pplayer);
+  deep_fort_census(pplayer);
   /* Before the wipe: tech_want[] is cleared here and refilled by the
    * city loop BELOW the rates, so the only honest read of what
    * research is worth to this empire is last turn's array, taken now

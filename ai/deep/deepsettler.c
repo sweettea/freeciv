@@ -60,6 +60,7 @@
 #include "daiunit.h"
 
 #include "deepdefence.h"
+#include "deepodds.h"
 #include "deepsite.h"
 #include "deeptuning.h"
 
@@ -1828,6 +1829,314 @@ CLEANUP:
   }
 }
 
+/* --- The base want (W03/S-GROUND item 1) --------------------------
+ *
+ * A fortress's want in the shipped advisor is EXACTLY ZERO and it is
+ * zero by construction, not by accident: the only valuation a worker
+ * candidate gets is adv_calc_extra() -> city_tile_value(), which sums
+ * food, shield and trade. A base changes none of the three. The
+ * mechanism has always been wired (ACTRES_BASE is in the extra action
+ * array, autoworkers.c:121-122) and the measured result is 0
+ * fortresses, 0 airbases and 0 buoys in a 175-city game at T162
+ * (findings/deep-dive-2026-08-05/action-surface.md, upstream bug #36).
+ *
+ * Deep prices a base as what it actually buys: the SURVIVAL of a
+ * defender standing on that tile, times how much that tile matters.
+ * Both halves come from machinery this project already has -- the
+ * sequential-attrition substrate (deepodds.h) and the chokepoint test
+ * exported from site scoring -- so nothing here is a new theory of
+ * combat or of terrain.
+ *
+ * Bounded scope, stated: the advisor only ever offers candidate tiles
+ * inside some city's work radius, so this can never want a fortress on
+ * open ground between empires. That is the advisor's loop, not this
+ * want, and moving it is a separate change with its own A/B.
+ */
+
+/* Per-player, per-turn reference duel and its memoised survival
+ * curve. The duel is fixed for the turn (our best defender against
+ * the strongest attacker anyone we have met is fielding), so the
+ * defender's survival depends only on its post-multiplier strength
+ * and can be memoised on that integer -- otherwise this runs inside
+ * the candidate loop, several thousand times a player-turn. */
+#define DEEP_FORT_STR_MAX 1024
+static int deep_fort_turn = -1;
+static int deep_fort_plr = -1;
+static const struct unit_type *deep_fort_def = NULL;
+static const struct unit_type *deep_fort_att = NULL;
+static double deep_fort_surv[DEEP_FORT_STR_MAX];
+static bool deep_fort_have[DEEP_FORT_STR_MAX];
+
+/* Per-player census accumulators for the base want, reset per turn. */
+static int deep_fort_evals[MAX_NUM_PLAYER_SLOTS];
+static int deep_fort_wants[MAX_NUM_PLAYER_SLOTS];
+static double deep_fort_maxwant[MAX_NUM_PLAYER_SLOTS];
+
+/**********************************************************************//**
+  Pick this turn's reference duel: our strongest defender against the
+  strongest attacker fielded by anyone we have met and are not allied
+  to, barbarians INCLUDED -- they are half the reason a fortress is
+  worth anything. Omniscient (RC6), like every other input this module
+  reads. Returns FALSE when either side of the duel does not exist,
+  which is the correct answer for a player nobody can reach yet.
+**************************************************************************/
+static bool deep_fort_reference(const struct player *pplayer)
+{
+  int best_def = 0, best_att = 0;
+
+  if (deep_fort_turn == game.info.turn
+      && deep_fort_plr == player_number(pplayer)) {
+    return (deep_fort_def != NULL && deep_fort_att != NULL);
+  }
+  deep_fort_turn = game.info.turn;
+  deep_fort_plr = player_number(pplayer);
+  deep_fort_def = NULL;
+  deep_fort_att = NULL;
+  memset(deep_fort_have, 0, sizeof(deep_fort_have));
+
+  unit_list_iterate(pplayer->units, u) {
+    const struct unit_type *ut = unit_type_get(u);
+
+    if (ut->defense_strength > best_def) {
+      best_def = ut->defense_strength;
+      deep_fort_def = ut;
+    }
+  } unit_list_iterate_end;
+
+  players_iterate_alive(aplayer) {
+    if (aplayer == pplayer
+        || pplayers_allied(pplayer, aplayer)
+        || player_diplstate_get(pplayer, aplayer)->type == DS_NO_CONTACT) {
+      continue;
+    }
+    unit_list_iterate(aplayer->units, u) {
+      const struct unit_type *ut = unit_type_get(u);
+
+      if (ut->attack_strength > best_att) {
+        best_att = ut->attack_strength;
+        deep_fort_att = ut;
+      }
+    } unit_list_iterate_end;
+  } players_iterate_alive_end;
+
+  return (deep_fort_def != NULL && deep_fort_att != NULL);
+}
+
+/**********************************************************************//**
+  P(the reference defender survives one duel) at this defence
+  strength, through the sequential-attrition substrate. Memoised for
+  the turn.
+**************************************************************************/
+static double deep_fort_survival(int def_str)
+{
+  struct deep_duel duel;
+  int att_hp, def_hp;
+
+  def_str = CLIP(0, def_str, DEEP_FORT_STR_MAX - 1);
+  if (deep_fort_have[def_str]) {
+    return deep_fort_surv[def_str];
+  }
+
+  duel.att_str = deep_fort_att->attack_strength * POWER_FACTOR;
+  duel.att_fp = deep_fort_att->firepower;
+  duel.def_str = def_str;
+  duel.def_fp = deep_fort_def->firepower;
+  att_hp = deep_fort_att->hp;
+  def_hp = deep_fort_def->hp;
+
+  deep_fort_surv[def_str]
+    = deep_stack_survival(1, &att_hp, 1, &def_hp, &duel);
+  deep_fort_have[def_str] = TRUE;
+
+  return deep_fort_surv[def_str];
+}
+
+/**********************************************************************//**
+  The tile's extra defence bonus for this unit class, WITH one more
+  extra present. The two-sum shape (natural extras multiply the
+  fortification extras) is common/tile.c's
+  tile_extras_class_defense_bonus(); it is re-derived here rather than
+  called because the question is counterfactual -- what the tile would
+  be worth if the candidate extra existed -- and the common function
+  can only answer for extras already on the ground.
+**************************************************************************/
+static int deep_tile_def_bonus_with(const struct tile *ptile,
+                                    const struct unit_class *pclass,
+                                    const struct extra_type *added)
+{
+  int natural = 0, fortification = 0;
+
+  extra_type_by_cause_iterate(EC_NATURAL_DEFENSIVE, pextra) {
+    if ((tile_has_extra(ptile, pextra) || pextra == added)
+        && is_native_extra_to_uclass(pextra, pclass)) {
+      natural += pextra->defense_bonus;
+    }
+  } extra_type_by_cause_iterate_end;
+
+  extra_type_by_cause_iterate(EC_DEFENSIVE, pextra) {
+    if ((tile_has_extra(ptile, pextra) || pextra == added)
+        && is_native_extra_to_uclass(pextra, pclass)) {
+      fortification += pextra->defense_bonus;
+    }
+  } extra_type_by_cause_iterate_end;
+
+  return (100 + natural) * (100 + fortification) / 100 - 100;
+}
+
+/**********************************************************************//**
+  How much this tile matters, 0..1. A chokepoint is worth the full
+  weight -- a gate through the landmass is the one piece of ground
+  whose holder decides where a war happens -- and otherwise the tile
+  is worth G1's border shape, R / (R + d) to the nearest met
+  non-allied city on the tile's own landmass, with R the same
+  density_fear_radius the fear lattice uses. MAX, not sum: a choke on
+  a border does not buy two fortresses.
+**************************************************************************/
+static double deep_ground_weight(const struct civ_map *nmap,
+                                 const struct player *pplayer,
+                                 struct tile *ptile)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  Continent_id home = tile_continent(ptile);
+  int r = tune->density_fear_radius;
+  int nearest = -1;
+  double border = 0.0;
+
+  if (deep_site_is_choke(nmap, ptile)) {
+    return 1.0;
+  }
+  if (r <= 0) {
+    return 0.0;
+  }
+
+  players_iterate_alive(aplayer) {
+    if (aplayer == pplayer
+        || pplayers_allied((struct player *) pplayer, aplayer)
+        || player_diplstate_get(pplayer, aplayer)->type == DS_NO_CONTACT) {
+      continue;
+    }
+    city_list_iterate(aplayer->cities, acity) {
+      int d;
+
+      if (tile_continent(city_tile(acity)) != home) {
+        continue;
+      }
+      d = real_map_distance(city_tile(acity), ptile);
+      if (nearest < 0 || d < nearest) {
+        nearest = d;
+      }
+    } city_list_iterate_end;
+  } players_iterate_alive_end;
+
+  if (nearest >= 0) {
+    border = (double) r / (r + nearest);
+  }
+
+  return border;
+}
+
+/**********************************************************************//**
+  What a base on this tile is worth, in the same currency the advisor
+  values a tile's output in: base_fort_gain x the survival the base
+  buys a defender standing there x how much the ground matters.
+
+  Zero unless the candidate really is a defensive base for the class
+  our defender belongs to, so a Buoy or a plain airstrip -- which buy
+  no survival -- get nothing and the era-dead capability surface does
+  not have to be special-cased.
+**************************************************************************/
+static adv_want deep_base_want(const struct player *pplayer,
+                               const struct extra_type *target,
+                               struct tile *ptile)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  const struct unit_class *pclass;
+  int base_str, b_now, b_with;
+  double p_now, p_with, ground;
+  adv_want want;
+
+  if (tune->base_fort_gain <= 0.0
+      || target == NULL
+      || target->defense_bonus <= 0
+      || !deep_fort_reference(pplayer)) {
+    return 0.0;
+  }
+
+  pclass = utype_class(deep_fort_def);
+  if (!is_native_extra_to_uclass(target, pclass)
+      || tile_has_extra(ptile, target)) {
+    return 0.0;
+  }
+
+  deep_fort_evals[player_number(pplayer)]++;
+
+  ground = deep_ground_weight(nmap, pplayer, ptile);
+  if (ground <= 0.0) {
+    return 0.0;
+  }
+
+  /* Terrain first, then extras -- the order get_defense_power() uses
+   * (common/combat.c:601, :695). */
+  base_str = deep_fort_def->defense_strength * POWER_FACTOR
+             * (100 + tile_terrain(ptile)->defense_bonus) / 100;
+  b_now = tile_extras_class_defense_bonus(ptile, pclass);
+  b_with = deep_tile_def_bonus_with(ptile, pclass, target);
+  if (b_with <= b_now) {
+    return 0.0;
+  }
+
+  p_now = deep_fort_survival(base_str * (100 + b_now) / 100);
+  p_with = deep_fort_survival(base_str * (100 + b_with) / 100);
+  if (p_with <= p_now) {
+    return 0.0;
+  }
+
+  want = tune->base_fort_gain * (p_with - p_now) * ground;
+  if (want > 0.0) {
+    int pn = player_number(pplayer);
+
+    deep_fort_wants[pn]++;
+    if (want > deep_fort_maxwant[pn]) {
+      deep_fort_maxwant[pn] = want;
+    }
+  }
+
+  return want;
+}
+
+/**********************************************************************//**
+  One line per player per turn: how many base candidates were priced,
+  how many came out positive, the largest want, and -- the behaviour
+  metric, not the want metric -- how many of our workers are actually
+  standing on a tile building a base right now.
+**************************************************************************/
+void deep_fort_census(struct player *pplayer)
+{
+  int pn = player_number(pplayer);
+  int building = 0;
+
+  if (log_do_output_for_level(deep_metric_log_level())) {
+    unit_list_iterate(pplayer->units, u) {
+      if (u->activity == ACTIVITY_BASE) {
+        building++;
+      }
+    } unit_list_iterate_end;
+
+    if (deep_fort_evals[pn] > 0 || building > 0) {
+      log_base(deep_metric_log_level(),
+               "deep-fort turn=%d player=\"%s\" evals=%d wants=%d"
+               " maxwant=%.2f building=%d",
+               game.info.turn, player_name(pplayer), deep_fort_evals[pn],
+               deep_fort_wants[pn], deep_fort_maxwant[pn], building);
+    }
+  }
+
+  deep_fort_evals[pn] = 0;
+  deep_fort_wants[pn] = 0;
+  deep_fort_maxwant[pn] = 0.0;
+}
+
 /**********************************************************************//**
   Danger-aware worker task selection (human request 2026-07-30),
   registered on the advisors' inert task-value hook: candidates on
@@ -1838,6 +2147,14 @@ CLEANUP:
   under the bodyguard-request cover). Returns the value unchanged for
   players not managed by deep, which keeps every other module,
   including the frozen baseline, bit-identical.
+
+  Also the seat of the BASE want (deep_base_want() above), because the
+  advisor's own valuation of a base is structurally zero and this is
+  the one place deep is allowed to say otherwise. The base want is
+  added AFTER the danger discount and is deliberately not subject to
+  it: exposed ground is exactly where a fortress is worth building,
+  and discounting the fortress for standing where it is needed would
+  be the danger term arguing with itself.
 **************************************************************************/
 adv_want deep_worker_task_value(const struct player *pplayer,
                                 const struct unit *punit,
@@ -1846,11 +2163,19 @@ adv_want deep_worker_task_value(const struct player *pplayer,
                                 struct tile *ptile, adv_want value)
 {
   const struct deep_tuning *tune = deep_tuning_get();
+  adv_want base = 0.0;
   bool exposed;
 
-  if (pplayer->ai != deep_ai_get_self()
-      || tune->worker_danger_discount <= 0.0 || value <= 0) {
+  if (pplayer->ai != deep_ai_get_self()) {
     return value;
+  }
+
+  if (act == ACTIVITY_BASE) {
+    base = deep_base_want(pplayer, target, ptile);
+  }
+
+  if (tune->worker_danger_discount <= 0.0 || value <= 0) {
+    return value + base;
   }
 
   exposed = (tile_owner(ptile) != pplayer);
@@ -1873,7 +2198,8 @@ adv_want deep_worker_task_value(const struct player *pplayer,
     } players_iterate_alive_end;
   }
   if (!exposed) {
-    return value;
+    return value + base;
   }
-  return value / (1.0 + tune->worker_danger_discount);
+
+  return value / (1.0 + tune->worker_danger_discount) + base;
 }

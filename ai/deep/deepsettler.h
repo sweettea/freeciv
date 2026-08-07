@@ -35,6 +35,10 @@ bool deep_settler_overnight_veto(struct unit *punit,
                                  const struct tile *ptile,
                                  double tolerance);
 
+/* Base-want census: candidates priced, positives, largest want, and
+ * the behaviour metric -- workers actually building a base now. */
+void deep_fort_census(struct player *pplayer);
+
 adv_want deep_worker_task_value(const struct player *pplayer,
                                 const struct unit *punit,
                                 enum unit_activity act,

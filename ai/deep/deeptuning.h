@@ -450,6 +450,18 @@ struct deep_tuning {
    * isthmus tiles -- a city in a gate is worth a garrison army.
    * 0 disables. */
   double site_choke_bonus;
+  /* What a defensive BASE is worth to a worker, in the same currency
+   * the advisor values a tile's output in. The advisor's own answer
+   * is structurally zero -- adv_calc_extra() sums food/shield/trade
+   * and a base changes none of them -- so this gain is the entire
+   * want. Multiplied by the survival a defender standing on the tile
+   * gains from the base (0..1, priced through the sequential-
+   * attrition substrate) and by how much the ground matters (0..1,
+   * chokepoint or G1's border shape). PLACEHOLDER, untuned; the
+   * product lands in the same band as site_choke_bonus at typical
+   * survival deltas, which is where a good tile improvement sits.
+   * 0.0 disables the want entirely and restores byte identity. */
+  double base_fort_gain;
   /* Convoy discipline: a transport with cargo holds in port until it
    * carries convoy_min_load units (<=1 disables) while boarders are
    * inbound within convoy_wait_radius tiles, and any cargo-carrying
