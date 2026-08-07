@@ -205,3 +205,16 @@ signs off per block. Partial folds by block are allowed; no value lands
 3. Do E34.4 / W35 E35.1 land before freeze (adding their knob families)
    or explicitly after (drafted: after — excluded from v4)?
 4. Parallel stages on both boxes vs sequential on one (cost vs calendar).
+5. **Venue portfolio (2026-08-06, `findings/tuning-venues-2026-08-06.md`)**:
+   adopt the proposed additions — two mixed-table head-to-head cells
+   (the statecraft block's only real population; today's suite is 100%
+   homogeneous self-play), a raging-barbarian `storm-150` (MIL block's
+   home; the a6-disarmament antidote), `longhaul-300` (culture/endgame
+   horizon), the per-cell z-floor aggregation rule (no cell below
+   z −0.5), and holdout VENUES (Europe scenario + a `wildcard` cell)
+   alongside holdout seeds? Harness cost ~one morning (team-diff column
+   + 4 configs), rides INSTR.
+6. **Centers**: v4 sweeps start from defaults ⊕
+   `benchmark/tuning/principled-v1.ini` ⊕ R3's corpus scales
+   (`findings/tuning-first-principles-2026-08-06.md`); baseline arm
+   stays pure defaults. Sign-off?

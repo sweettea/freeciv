@@ -1,0 +1,130 @@
+# The venue portfolio — what v4 should tune ON, and why that IS the objective
+
+2026-08-06, orchestrator (Fable), at the human's direction ("deep think
+about what scenarios are right to do tuning on... maybe some are
+head-to-head against classic"). Companion to
+`tuning-first-principles-2026-08-06.md` (centers) and CAMPAIGN-v4 §3
+(blocks/pins). This doc proposes the CELL MATRIX; the human signs it off.
+
+## 1. Venue choice is the objective function — three proofs from our own history
+
+1. **a6 disarmament.** Evolution on peaceful cells zeroed every fear and
+   military knob. Correct for the venue, fatal anywhere with teeth
+   (derby 2: −107 cities to the storm).
+2. **The 35.9 artifact.** `site_rival_pressure` inflated freely because
+   two of three cells were islands where the term never fires — the
+   optimizer parked garbage in a knob the venue couldn't see.
+3. **Culture inversion.** The culture credit measures −19 at T150 and is
+   the plurality of score at T600. Short venues actively PUNISH the
+   long-game mechanisms the project just spent a week building.
+
+A knob's tuned value inherits its venue. The portfolio must make every
+block's failure VISIBLE somewhere, or the optimizer will hide it there.
+
+## 2. The finding: our training suite has zero head-to-head games
+
+Every cell runs ONE aitype per game (an arm = a homogeneous world;
+"beating stock" = higher self-play score on paired maps). Consequences:
+
+- Deep's anti-STOCK statecraft has no training population at all.
+  BALANCE's gifts and proxy arming are priced against stock's own
+  goldequiv acceptance code; PEACE/TRADE tune their love mechanics
+  against deep's own mirror instead of the opponent that matters;
+  `leader_check_gain` biases toward a runaway leader that is always
+  deep itself.
+- Homogeneous self-play also can't see exploitation-resistance: a
+  candidate that farms its own mirror's courtesies would farm stock's
+  too — or be farmed — and we never observe either.
+- The derbies (mixed 7v7 Europe) are exactly this regime, and they
+  produced findings (fratricide, storm, war-target quality) that no
+  homogeneous cell has ever shown. They are currently INFORMAL — one
+  map, one seed, no pairing.
+
+**Proposal: formalize mixed-table cells.** Mechanically cheap: a config
+whose EXTRA_SERV issues derby-style `create <name> deep|classic` for a
+half/half table on a generated map; ONE arm per game; the metric is the
+in-game team score difference (extract.py already parses per-player
+score; it needs a team-diff column). Seeds pair as always. Two cells:
+
+- `mixed-8p-150` — 4 deep vs 4 stock, contested-like 40x40, civ2civ3,
+  T150. The statecraft block's HOME venue (gifts, proxy, peace, trade
+  with stock all fire).
+- `mixed-8p-classic` — same table, classic, for the caravan/trade
+  family and as the derby's laboratory twin.
+
+Head-to-head is NOT a replacement for paired self-play — a mixed game's
+score diff confounds "deep played well" with "stock collapsed" — it is
+the complement: self-play cells isolate quality, mixed cells measure
+competition. Both, always.
+
+## 3. The axes the portfolio must span (and where it currently doesn't)
+
+| axis | covered today | gap |
+|---|---|---|
+| map: island/continental/crowded/roomy | isolated, contested, cramped, primary, garden2b | good |
+| ruleset | most cells ruleset-split | good |
+| horizon | 80/120/150/250/300 | nothing past 300; culture/endgame/wonder mechanisms peak later. Cloud harness has no 10-min limit — add ONE long cell |
+| opponents | self-play only | §2: mixed cells |
+| barbarians | onsetbarbs 500 (garden2b = OFF), default elsewhere | **no raging cell anywhere** — the storm regime that destroyed derby-2 deep is untested |
+| player count | 2-8 (+scale-20p probes) | good |
+| start symmetry | generated fair starts | scenario asymmetry (Europe) — keep as EVAL, never train (§5) |
+
+New cells proposed:
+
+- `storm-150`: classic, 8p, 40x40 continental, `barbarianrate` raging,
+  `onsetbarbs 30`, T150. Exercises: G1 floors, GROUND's terror reshape,
+  reconquest of empty barb cities, consolidation-vs-sprawl. The MIL
+  block sweeps HERE or its optimum is a6's disarmament again (recorded
+  rule: never sweep MIL on a peaceful cell).
+- `longhaul-300`: civ2civ3, 6p, fractal, T300. The culture credit,
+  endgame window, wonder race, and trade compounding get a venue whose
+  horizon matches their payoff. (Cloud only; the local 10-minute
+  foreground block is a local-harness constraint, not a game one.)
+
+## 4. Aggregation: how 10+ cells become one verdict without averaging away a failure
+
+- Per cell: paired score diff (self-play cells) or team diff (mixed
+  cells), z-normalized by that cell's baseline spread, so a 40x40 T150
+  cell and a 2p island don't trade at absurd exchange rates.
+- Objective = mean z **subject to a floor**: no cell below z = −0.5 vs
+  current defaults. A candidate that buys +3 somewhere by selling one
+  venue's viability is REJECTED, not averaged. (This is the a6 lesson
+  as arithmetic.)
+- Report per-cell always; "campaign best" without the per-cell table is
+  not a result (rule 6's spirit at portfolio scale).
+
+## 5. Holdout VENUES, not just holdout seeds
+
+The project holds out seeds; generalization needs held-out *worlds*:
+
+- **Europe scenario 7v7** (both cohort layouts) — the standing eval
+  derby, never tuned on. Asymmetric starts make it noisy training but
+  honest evaluation: it answers "does this transfer to a real map".
+- **`wildcard`**: per-seed randomized generator/landmass/players/
+  barbarian rate drawn from a fixed distribution — 20 seeds of "worlds
+  nobody optimized for". Reported, never swept.
+
+Final campaign numbers quote: training cells (tuned), then holdout
+seeds, then holdout venues — three concentric claims of generality.
+
+## 6. What this does NOT propose
+
+- Candidate-vs-incumbent head-to-head (two tuning files in one game) is
+  IMPOSSIBLE today: the tuning struct is process-global. That plumbing
+  is the difficulty epic's per-player jitter work; if it lands early,
+  incumbent-vs-candidate mixed cells become the strongest selection
+  signal available and this doc should be revisited.
+- Difficulty-level venues (vs easy/novice stock) belong to the
+  difficulty epic, not the quality campaign.
+- No tournament/Elo machinery: two mixed cells + the floor rule buy most
+  of the value at a fraction of the complexity.
+
+## 7. Cost sketch (cloud, per full sweep pass)
+
+Core self-play: lategame-80, isolated-150, primary-120, contested,
+garden2b (+ classic twins where the block needs them) — the current
+regime, unchanged. Adds: 2 mixed + storm-150 + longhaul-300 ≈ +40% game
+volume, with longhaul the dominant wall-clock (T300 ≈ 2× a T150 game).
+The floor rule costs nothing extra — it reuses the same runs. Harness
+work before freeze: team-diff column in extract.py, mixed-cell configs,
+storm/longhaul configs (~1 session-morning, can ride INSTR).
