@@ -819,6 +819,306 @@ static void deep_love_gift(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
+  The best attack, and the best defence, a player could put in the
+  field today: the maximum over the unit types they can currently
+  build. Two numbers, one scan.
+
+  Deliberately the RULESET's raw strengths rather than deep's combat
+  model. The question here is "can this player's army threaten that
+  player's cities at all", which is a capability question about unit
+  types, and running the odds model over two foreign empires every
+  turn would cost far more than the answer is worth.
+**************************************************************************/
+static void deep_best_strengths(const struct player *pplayer,
+                                int *att, int *def)
+{
+  *att = 0;
+  *def = 0;
+  unit_type_iterate(ut) {
+    if (!can_player_build_unit_now(pplayer, ut, RPT_CERTAIN)) {
+      continue;
+    }
+    *att = MAX(*att, ut->attack_strength);
+    *def = MAX(*def, ut->defense_strength);
+  } unit_type_iterate_end;
+}
+
+/**********************************************************************//**
+  The attack strength `tech` would unlock for `aplayer`: the strongest
+  attacker that needs this advance and that they could otherwise
+  build.
+
+  This is CONSEQ's defender/attacker unlock scan pointed at somebody
+  else's position -- the same shape, run on a third party. It reads
+  is_tech_req_for_utype() plus can_player_build_unit_later(), so a
+  unit gated on a second tech they do not have is correctly not
+  counted as unlocked by this one.
+**************************************************************************/
+static int deep_tech_unlocks_attack(const struct player *aplayer,
+                                    Tech_type_id tech)
+{
+  struct advance *padv = advance_by_number(tech);
+  int best = 0;
+
+  if (padv == nullptr) {
+    return 0;
+  }
+  unit_type_iterate(ut) {
+    if (can_player_build_unit_now(aplayer, ut, RPT_CERTAIN)
+        || !can_player_build_unit_later(aplayer, ut)
+        || !is_tech_req_for_utype(ut, padv)) {
+      continue;
+    }
+    best = MAX(best, ut->attack_strength);
+  } unit_type_iterate_end;
+
+  return best;
+}
+
+/**********************************************************************//**
+  Who presses hardest on us among the players we are actually at war
+  with, and how hard.
+
+  The ranking is the density lattice's, not a new one: border pressure
+  is what deep already believes a neighbour costs it, and the player
+  at the top of that list is the one a second front would relieve.
+  Returns nullptr when nobody is at war with us -- in which case there
+  is nothing for a proxy to be a proxy against, and the whole lever
+  has no population that turn.
+**************************************************************************/
+static struct player *deep_top_menacer(const struct player *pplayer,
+                                       double *pressure)
+{
+  struct player *worst = nullptr;
+  double best = 0.0;
+
+  *pressure = 0.0;
+  players_iterate_alive(aplayer) {
+    double p;
+
+    if (aplayer == pplayer || is_barbarian(aplayer)
+        || player_diplstate_get(pplayer, aplayer)->type != DS_WAR) {
+      continue;
+    }
+    p = deep_border_pressure_from(pplayer, aplayer);
+    if (p > best) {
+      best = p;
+      worst = aplayer;
+    }
+  } players_iterate_alive_end;
+
+  *pressure = best;
+
+  return worst;
+}
+
+/**********************************************************************//**
+  Could arming `aplayer` come back at US?
+
+  The reachability law the fear lattice already applies to threats,
+  applied to a gift: a player whose cities share no landmass with any
+  of ours and who floats no sea transport cannot bring a stronger army
+  to us, so making them stronger does not raise our own density fear.
+  The moment either half stops being true they are a neighbour, not a
+  distant power, and the lever refuses them.
+**************************************************************************/
+static bool deep_is_distant(const struct player *pplayer,
+                            const struct player *aplayer)
+{
+  city_list_iterate(aplayer->cities, acity) {
+    Continent_id c = tile_continent(city_tile(acity));
+
+    city_list_iterate(pplayer->cities, pcity) {
+      if (tile_continent(city_tile(pcity)) == c) {
+        return FALSE;
+      }
+    } city_list_iterate_end;
+  } city_list_iterate_end;
+
+  unit_list_iterate(aplayer->units, aunit) {
+    const struct unit_type *at = unit_type_get(aunit);
+
+    if (at->transport_capacity > 0 && utype_move_type(at) == UMT_SEA) {
+      return FALSE;
+    }
+  } unit_list_iterate_end;
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Lever 2. Arm a distant power that is already in the way of the
+  player menacing us.
+
+  The whole selection is readable state and every criterion is a
+  criterion the code already had, pointed somewhere new:
+
+  - THE MENACER is the top of deep's own border-pressure ranking among
+    players at war with us.
+  - THE PROXY is at war with, or bordering, that menacer. Both from
+    diplstate and from the same lattice.
+  - THE PROXY IS DISTANT from us by the fear lattice's own
+    reachability law, so what we hand over cannot be brought back
+    against us.
+  - THE GIFT IS LEAK-SAFE by ai/default's tech-leak veto INVERTED into
+    a targeting test: no alliance and, under civ2civ3's Embassies
+    leakage, no embassy that would carry the advance to the menacer.
+  - THE TECH is the one that most shifts THEIR balance: the strongest
+    attacker it unlocks for them, and the arming stops entirely once
+    their best attacker already beats the menacer's best defender.
+    That stopping rule is why this cannot empty the tech tree into a
+    third party -- it is satisfied, not budgeted.
+
+  A tech clause is refused outright while ds_after is DS_WAR, so a
+  proxy we have never made terms with is offered a cease-fire in the
+  same treaty. That is not a concession: a cease-fire with a player on
+  the far side of the world costs nothing and is exactly the state in
+  which the gift becomes legal.
+
+  ETHICS OF PLAY, said plainly because a human opponent deserves to
+  read it in the changelog: with this switched on, deep will arm your
+  rivals to keep you busy. It never arms someone who can reach you
+  through an alliance or an embassy with the player it is trying to
+  distract, and it never arms someone who could then reach deep -- but
+  the intent is exactly what it looks like.
+**************************************************************************/
+static void deep_proxy_arm(struct ai_type *ait, struct player *pplayer,
+                           struct player *menacer, double pressure)
+{
+  const struct deep_tuning *t = deep_tuning_get();
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  const struct research *mine = research_get(pplayer);
+  double budget = pressure * t->gift_border_value * t->proxy_arm_gain;
+  int mena_att, mena_def;
+
+  deep_best_strengths(menacer, &mena_att, &mena_def);
+
+  players_iterate_alive(cand) {
+    Tech_type_id best_tech = A_NONE;
+    int best_att = 0, best_worth = 0;
+    int cand_att, cand_def, love, need;
+    /* The best offer that EXISTS ignoring the cease-fire's price, so a
+     * candidate deep declines is reported with the size of the gap
+     * rather than as a silent continue. Four levers in this project
+     * have measured as "no effect" while never executing; a lever
+     * that structurally cannot execute must say so in its own log. */
+    int reach_worth = 0, reach_att = 0;
+
+    if (cand == pplayer || cand == menacer || is_barbarian(cand)
+        || !is_ai(cand)
+        || pplayers_allied(cand, menacer)
+        || pplayers_allied(pplayer, cand)
+        || !could_meet_with_player(pplayer, cand)) {
+      continue;
+    }
+    /* In the menacer's way already, by war or by geography. */
+    if (player_diplstate_get(cand, menacer)->type != DS_WAR
+        && deep_border_pressure_from(menacer, cand) <= 0.0) {
+      continue;
+    }
+    if (!deep_is_distant(pplayer, cand)) {
+      continue;
+    }
+    deep_best_strengths(cand, &cand_att, &cand_def);
+    if (cand_att >= mena_def) {
+      /* Already able to crack them. Arming further buys nothing this
+       * lever can claim, and the stopping rule is the reason the
+       * lever cannot drain the tech tree. */
+      continue;
+    }
+
+    /* WHAT THE CEASE-FIRE COSTS THEM, and therefore what the tech has
+     * to be worth before the treaty adds up at all. MEASURED, not
+     * assumed: the first probe of this lever offered 47 cease-fire-
+     * plus-tech treaties over two games and had 47 of them refused,
+     * because a cease-fire clause is priced at greed(their love for
+     * us) -- minus the square of the shortfall over ten
+     * (daidiplomacy.c:125-134, :437-450) -- and an early advance is
+     * worth a few hundred gold against a four-figure grudge.
+     *
+     * The square is used at FULL strength even though ai/default
+     * charges nothing at all while the pair has been in contact for
+     * under fifteen turns: deep does not need to know which side of
+     * that line a pair is on, because requiring the larger number can
+     * only decline an offer that would have been accepted, never
+     * force through one that would not. */
+    love = cand->ai_common.love[player_index(pplayer)];
+    need = (player_diplstate_get(pplayer, cand)->type == DS_WAR
+            && love < 0) ? love * love / 10 : 0;
+    if (need > budget) {
+      continue;
+    }
+
+    advance_index_iterate(A_FIRST, idx) {
+      int unlocked, worth;
+
+      if (research_invention_state(mine, idx) != TECH_KNOWN) {
+        continue;
+      }
+      unlocked = deep_tech_unlocks_attack(cand, idx);
+      if (unlocked <= cand_att) {
+        continue;
+      }
+      worth = deep_tech_worth_to(cand, idx);
+      if (worth <= 0 || worth > budget) {
+        continue;
+      }
+      if (!deep_tech_safe_to_give(pplayer, cand, idx)) {
+        continue;
+      }
+      /* Recorded AFTER the safety veto, so `reach` means "the best
+       * offer that actually exists" and the only thing separating it
+       * from an offer made is the cease-fire's price. A census that
+       * counted techs the veto refuses would answer a question nobody
+       * asked. */
+      if (worth > reach_worth) {
+        reach_worth = worth;
+        reach_att = unlocked;
+      }
+      if (worth < need) {
+        continue;               /* Would not clear the cease-fire. */
+      }
+      /* The strongest unlock wins; among equals, the cheapest
+       * concession does. A gift is a concession and the one that buys
+       * the same front for less is the better one. */
+      if (best_tech != A_NONE
+          && (unlocked < best_att
+              || (unlocked == best_att && worth >= best_worth))) {
+        continue;
+      }
+      best_att = unlocked;
+      best_tech = idx;
+      best_worth = worth;
+    } advance_index_iterate_end;
+
+    {
+      enum diplstate_type ds = player_diplstate_get(pplayer, cand)->type;
+      bool took = best_tech != A_NONE
+                  && deep_gift_send(ait, pplayer, cand, best_tech,
+                                    ds == DS_WAR ? CLAUSE_CEASEFIRE
+                                                 : CLAUSE_LAST);
+
+      if (took) {
+        dp->proxies_armed++;
+      }
+      log_base(deep_metric_log_level(),
+               "deep-proxy turn=%d plr=\"%s\" menacer=\"%s\" press=%.1f"
+               " proxy=\"%s\" ds=%d tech=\"%s\" price=%d budget=%.0f"
+               " candatt=%d menadef=%d unlock=%d need=%d love=%d"
+               " reach=%d reachatt=%d took=%d armed=%d",
+               game.info.turn, player_name(pplayer), player_name(menacer),
+               pressure, player_name(cand), (int) ds,
+               best_tech == A_NONE
+                 ? "none"
+                 : advance_rule_name(advance_by_number(best_tech)),
+               best_worth, budget, cand_att, mena_def, best_att, need,
+               love, reach_worth, reach_att, took ? 1 : 0,
+               dp->proxies_armed);
+    }
+  } players_iterate_alive_end;
+}
+
+/**********************************************************************//**
   Lever 2, proposal side. At peace or better, ask for the embassy the
   ruleset gives away free -- and offer ours back when they lack it, so
   the counterparty has a balance to weigh rather than a demand.
@@ -1098,7 +1398,8 @@ void deep_diplomacy_prepass(struct ai_type *ait, struct player *pplayer)
     return;
   }
   if (t->peace_seek_gain <= 0.0 && t->embassy_price_gain <= 0.0
-      && t->gift_border_value <= 0.0) {
+      && t->gift_border_value <= 0.0 && t->gift_love_gain <= 0.0
+      && t->proxy_arm_gain <= 0.0) {
     return;
   }
 
@@ -1121,4 +1422,16 @@ void deep_diplomacy_prepass(struct ai_type *ait, struct player *pplayer)
       deep_embassy_offer(ait, pplayer, aplayer);
     }
   } players_iterate_alive_end;
+
+  /* Lever 2 is a per-PLAYER decision, not a per-pair one: it names one
+   * menacer first and only then looks for somebody already standing in
+   * that player's way. */
+  if (t->proxy_arm_gain > 0.0) {
+    double pressure = 0.0;
+    struct player *menacer = deep_top_menacer(pplayer, &pressure);
+
+    if (menacer != nullptr && pressure > 0.0) {
+      deep_proxy_arm(ait, pplayer, menacer, pressure);
+    }
+  }
 }

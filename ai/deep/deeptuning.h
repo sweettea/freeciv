@@ -1257,6 +1257,45 @@ struct deep_tuning {
    * PLACEHOLDER. */
   double gift_love_gain;
 
+  /* BALANCE lever 2 -- proxy arming (human design call, 2026-08-05).
+   *
+   * Hand a military advance to a DISTANT power that is already in the
+   * way of whoever is menacing us, so that the menacer has a second
+   * front to think about. Every part of the selection is state deep
+   * already reads: the menacer is the top of deep's own border-
+   * pressure ranking among players at war with us; the proxy is at
+   * war with, or bordering, that menacer; the proxy is distant by the
+   * fear lattice's own reachability law, so arming them cannot raise
+   * OUR density fear; and the gift is leak-safe by ai/default's tech
+   * leak veto (daidiplomacy.c:239-258) INVERTED from a price
+   * adjustment into a targeting criterion, with the embassy channel
+   * civ2civ3's leakage rule adds and stock has no term for.
+   *
+   * The tech is the one that most shifts THEIR balance -- the
+   * strongest attacker the advance unlocks for them -- and the whole
+   * lever SWITCHES OFF for a proxy whose best attacker already beats
+   * the menacer's best defender. That satisfaction rule, not a
+   * budget, is what stops this emptying the tech tree into a third
+   * party.
+   *
+   * proxy_arm_gain is the willingness bound, and it is denominated
+   * exactly like the love gift's: deep will hand over an advance
+   * whose price to the receiver is at most this multiple of what the
+   * menacer's pressure is costing us, at gift_border_value's rate. So
+   * the more a player is pressing on our borders, the more deep will
+   * spend arming somebody else against them, and at zero pressure it
+   * spends nothing.
+   *
+   * ETHICS OF PLAY, and it belongs in the changelog rather than in a
+   * footnote: switched on, this AI arms your rivals to keep you busy.
+   * It will not arm anyone who could pass the tech back to you
+   * through an alliance or an embassy, and it will not arm anyone who
+   * could then reach deep -- but the intent is what it looks like.
+   *
+   * 0.0 = off = no proxy is ever offered anything = byte-identical.
+   * PLACEHOLDER. */
+  double proxy_arm_gain;
+
   /* PEACE -- the embassy clause, which is arithmetically impossible
    * in the one ruleset where embassies matter most.
    *
