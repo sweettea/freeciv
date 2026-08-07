@@ -57,6 +57,45 @@ score diff confounds "deep played well" with "stock collapsed" — it is
 the complement: self-play cells isolate quality, mixed cells measure
 competition. Both, always.
 
+### 2a. Is stock even strong enough to train against? (human, 2026-08-06)
+
+The worry, stated exactly: stock may be so weak that head-to-head
+training teaches deep to rush it — a stock-exploiting all-in that is
+degenerate against any other opponent. The worry is FOUNDED: stock
+fields zero military for the first ~15 turns (derby 3, measured), its
+danger assessment is blind to boat invasions, its diplomacy accepts any
+goldequiv-positive clause, and a T150 bell never punishes an early war
+that succeeds. A mixed-cell-dominated objective would find the rush.
+
+Why the designed portfolio survives it anyway — the roles are split:
+
+- **Stock is the YARDSTICK, not the sparring partner.** Mixed cells are
+  2 of 10 and their team-diff feeds the same mean-z as everyone else,
+  under the same floor. A rush-tuned candidate must ALSO clear
+  garden2b, primary-120, longhaul — homogeneous deep worlds where
+  aggression is symmetric: your victims are your cohort, every war is
+  deep-vs-deep at full strength, and world score collapses under
+  all-in postures. Self-play is the structural anti-rush regularizer,
+  and the z-floor makes it binding.
+- **The strongest available opponent is deep itself**, and self-play
+  cells already train against it. Stock cannot punish coastal
+  negligence (it never lands); deep's own ops layer can and does. The
+  pressure comes from mirrors, barbarians (storm's sea raiders DO
+  invade — separate code from the stock AI), and the environment
+  (migration drains badly-run cities); stock provides the comparison,
+  not the curriculum.
+- **One new guard, cheap:** a rush-detector column on mixed cells,
+  report-only — turn of first deep-on-stock war, and share of final
+  team diff attributable to conquest vs development. If stage winners
+  drift toward T<30 wars on mixed tables, that is a stop-and-diagnose
+  trigger (§ CAMPAIGN-v4 §7 family), reviewed by the human, not
+  silently accepted. The metric costs a scorelog read; the counters
+  exist.
+
+If post-v4 deep outgrows stock decisively, the successor question is a
+candidate-vs-incumbent league — per-player-tuning territory (§6a),
+deliberately deferred.
+
 ## 3. The axes the portfolio must span (and where it currently doesn't)
 
 | axis | covered today | gap |
