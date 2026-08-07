@@ -453,6 +453,17 @@ struct deep_tuning {
    * urgency > 0 branch keeps the emergency tier at every setting: a
    * warband two tiles out is a real emergency. */
   double birth_guard_gain;
+  /* PLACEHOLDER, untuned. The DEFENSIVE tech wall, sibling of H9's
+   * capacity routing: a city whose survival is below target and whose
+   * best BUILDABLE land defender is beaten by one the ruleset offers
+   * at reachable tech routes survival_fear_value x deficit x weight
+   * into tech_want[] for the gating advance (deepdefence.c,
+   * deep_defensive_techwall()). A pure ratio -- how many turns of the
+   * fear a turn of research is worth -- not a magnitude in a new unit.
+   * 0 = off, and no tech_want[] entry is written. Deliberately not
+   * stance-gated: tech DIRECTION is W34 A.3's gate, and two gates on
+   * one quantity is the failure A.3 names. */
+  double defensive_techwall_weight;
   /* Land-race coupling: fresh founder wants scale by
    * (1 + weight * map crowding); crowded maps race, empty ones
    * don't. 0 disables. */

@@ -29,6 +29,7 @@
 #include "map.h"
 #include "movement.h"
 #include "player.h"
+#include "research.h"
 #include "specialist.h"
 #include "traits.h"
 #include "unit.h"
@@ -1905,6 +1906,122 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
     deep_apply_garrison_floor(&(wld.map), pcity, city_data, updisc,
                               menace, TRUE);
   } city_list_iterate_end;
+}
+
+/**********************************************************************//**
+  The DEFENSIVE tech wall: sibling of deephorizon.c's H9.
+
+  H9 found that a city whose growth is capped by a missing advance
+  contributed ZERO pressure toward exactly the advance that would solve
+  its problem -- the horizon stopped at the tech wall -- and routed the
+  capacity credit into tech_want[] for the gating advance instead. The
+  military side has the identical hole and it is worse, because losing
+  a city is not recoverable by waiting: a city that cannot hold prices
+  its DEFICIT as fear, the fear buys the best defender it can build,
+  and if the best defender it can BUILD loses to the wave while a
+  defender it could RESEARCH would not, nothing in deep or in stock
+  ever notices the difference. Deep's tech want is otherwise assembled
+  from building effects and stock's per-unit-type want, neither of
+  which knows a city is losing.
+
+  The scan is the eta-reinforcement model's, run twice: the best
+  defence strength buildable HERE NOW, and the best buildable LATER
+  (can_city_build_unit_later -- the ruleset's reachable set, not the
+  world's). A strictly better later defender means the wall is real,
+  and the gating advance is the unknown VUT_ADVANCE requirement of that
+  unit type. Ties and equalities route nothing: the want exists only
+  where research would change the outcome.
+
+  The credit is the same quantity the fear is: survival_fear_value x
+  the normalised deficit, times defensive_techwall_weight. That makes
+  the knob a pure ratio -- "a turn of research is worth this many
+  turns of the fear it would retire" -- rather than a magnitude in a
+  new unit.
+
+  Deliberately NOT stance-gated, and for H9's own stated reason: what
+  leaves the build queue and lands in tech_want[] is tech DIRECTION,
+  which is W34 A.3's gate to build, and scaling it here would put two
+  gates on one quantity.
+**************************************************************************/
+static int deep_techwall_routed = 0;
+static double deep_techwall_paid = 0.0;
+
+static void deep_defensive_techwall(struct ai_type *ait,
+                                    struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  const struct research *presearch = research_get(pplayer);
+
+  if (tune->defensive_techwall_weight <= 0.0
+      || tune->survival_target <= 0.0) {
+    return;
+  }
+
+  city_list_iterate(pplayer->cities, pcity) {
+    const struct unit_type *want_type = NULL;
+    double surv, deficit, credit;
+    int wave = 0, best_now = 0, best_later = 0;
+
+    surv = deep_city_survival_verdict(nmap, pcity, tune->survival_horizon,
+                                      &wave);
+    if (wave == 0 || surv >= tune->survival_target) {
+      continue;
+    }
+
+    unit_type_iterate(ut) {
+      if (ut->defense_strength <= 0
+          || utype_move_type(ut) != UMT_LAND) {
+        continue;
+      }
+      if (can_city_build_unit_now(nmap, pcity, ut, RPT_CERTAIN)) {
+        best_now = MAX(best_now, ut->defense_strength);
+      } else if (can_city_build_unit_later(nmap, pcity, ut)
+                 && ut->defense_strength > best_later) {
+        best_later = ut->defense_strength;
+        want_type = ut;
+      }
+    } unit_type_iterate_end;
+
+    if (want_type == NULL || best_later <= best_now) {
+      continue;               /* No wall, or nothing behind it. */
+    }
+
+    deficit = (tune->survival_target - surv) / tune->survival_target;
+    credit = tune->survival_fear_value * deficit
+             * tune->defensive_techwall_weight;
+    if (credit <= 0.0) {
+      continue;
+    }
+
+    requirement_vector_iterate(&want_type->build_reqs, preq) {
+      if (VUT_ADVANCE == preq->source.kind && preq->present
+          && research_invention_state(presearch,
+               advance_number(preq->source.value.advance))
+             != TECH_KNOWN) {
+        def_ai_player_data(pplayer, ait)->tech_want[
+            advance_index(preq->source.value.advance)] += credit;
+        deep_techwall_routed++;
+        deep_techwall_paid += credit;
+        log_base(deep_metric_log_level(),
+                 "deep-defwall turn=%d player=\"%s\" city=%d p=%.3f"
+                 " wave=%d now=%d later=%d unit=\"%s\" tech=\"%s\""
+                 " credit=%.1f",
+                 game.info.turn, player_name(pplayer), pcity->id, surv,
+                 wave, best_now, best_later, utype_rule_name(want_type),
+                 advance_rule_name(preq->source.value.advance), credit);
+      }
+    } requirement_vector_iterate_end;
+  } city_list_iterate_end;
+
+  if (deep_techwall_routed > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-defwall-sum turn=%d player=\"%s\" routed=%d paid=%.1f",
+             game.info.turn, player_name(pplayer), deep_techwall_routed,
+             deep_techwall_paid);
+  }
+  deep_techwall_routed = 0;
+  deep_techwall_paid = 0.0;
 }
 
 /**********************************************************************//**
@@ -5860,6 +5977,9 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
   building_advisor(pplayer);
   deep_adjust_building_wants(ait, pplayer);
   TIMING_LOG(AIT_BUILDINGS, TIMER_STOP);
+  /* AFTER dai_clear_tech_wants(), like every other tech_want writer:
+   * the array is wiped at the top of this phase and refilled here. */
+  deep_defensive_techwall(ait, pplayer);
 
   /* Initialize the infrastructure cache, which is used shortly. */
   initialize_infrastructure_cache(pplayer);
