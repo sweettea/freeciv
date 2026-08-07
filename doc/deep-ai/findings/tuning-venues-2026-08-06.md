@@ -175,6 +175,41 @@ pinning is what keeps that product sane, and it already does.
   "kill stock" a target invites the degenerate all-in rush that a
   T150 bell would never punish.
 
+## 6d. Seeds: the anti-overfit protocol (human worry 2026-08-06, sized from our own data)
+
+The failure has two faces: optimizing ONE seed's quirks (pure noise
+chasing) and optimizing a FIXED PANEL's quirks (the subtler one — CRN
+pairing makes comparisons sharp, and then the lineage learns those ten
+maps). Both are handled structurally, not by hoping n is big enough:
+
+1. **Per-cell n, from measured σ.** The paired-diff spread is not one
+   number: contested measures σ_d ≈ 8 score (D3: se 1.87 at 20 seeds);
+   isolated-150 measures σ_d ≈ 16-36 depending on arm (DARKFX: se 3.5
+   and 8.0 at 20). Detecting an effect E at 2se wants n ≈ (2σ_d/E)².
+   So +3 score on contested needs ~30 seeds — and the SAME +3 on
+   isolated needs 100+. Inner-loop n is set per cell from the archived
+   σ_d table, not globally; a cell too noisy to afford is a cell that
+   only sees large effects, and the protocol says so out loud.
+2. **Racing, not flat n.** Triage every candidate at n=10 (only effects
+   ≳ 2σ_d/√10 survive — coarse but cheap); escalate survivors to 20;
+   claims and stage winners at 40+. Most of the seed budget lands on
+   the few candidates where it changes the answer.
+3. **Panel rotation per generation.** Each generation draws its panel
+   fresh from the ~100-seed training pool: within a generation,
+   candidates compare CRN-paired on identical maps; across generations
+   the panel moves, so panel-quirk fitness is not heritable. Elites
+   carried forward are RE-evaluated on the new panel — persistent luck
+   dies in two generations, real quality survives rotation.
+4. **The winner's curse is priced.** The selected best is best partly
+   by luck, so its training-panel number is biased upward. The claimed
+   improvement is the HOLDOUT number (seeds never in the training
+   pool), full n, quoted with its CI — and the holdout VENUES (§5) sit
+   above even that.
+5. **One-seed diagnostics stay one-seed.** Derbies and forensics
+   generate hypotheses; nothing tuned moves on their evidence alone
+   (rule 6 already says this; restated here because a storm this vivid
+   tempts).
+
 ## 7. Cost sketch (cloud, per full sweep pass)
 
 Core self-play: lategame-80, isolated-150, primary-120, contested,
