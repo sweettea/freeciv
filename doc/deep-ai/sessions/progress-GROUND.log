@@ -9,3 +9,4 @@ One line per commit or major step.
 6. ai/deep: price the base through the ruleset's own defence power (civ2civ3 asymmetry found by the offers counter)
 7. ai/deep: fortify on ground worth holding (item 4)
 8. ai/deep: pillage the enemy yield a blade is standing on (item 2) + raid-population census
+9. doc: record the ground-value round's facts (channel asymmetry, capture census, pillage sizing, barb derivation)
