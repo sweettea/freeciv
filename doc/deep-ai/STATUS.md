@@ -10949,10 +10949,12 @@ Sanitation; that band is where mechanism work pays.
 
 ### Identity and hygiene
 
-- **Byte-identity 10/10** on smoke, `--arms deep`, tuning=none, epic tip
-  `7c019ac9de` against this session's final binary, both pinned with
-  their own `libfreeciv.so`. Both new mechanisms default OFF
-  (`stance_source = 0`, `spy_enabled = 0`).
+- **Byte-identity 10/10, twice.** Smoke, `--arms deep`, tuning=none,
+  binaries pinned with their own `libfreeciv.so`, `--server`: first
+  against the base this branch was cut from (`7c019ac9de`), then again
+  after rebasing onto the moved epic tip (`03620395b4`) so the proof is
+  taken where the branch will actually merge. Both new mechanisms
+  default OFF (`stance_source = 0`, `spy_enabled = 0`).
 - `meson test -C build` **4/4**, `python3 benchmark/tune-audit.py`
   **CLEAN 197/197/197/197** (was 194 mid-session, 191 at the epic tip).
 - New tunables, all PLACEHOLDER, all for the pile: `stance_position_gain`

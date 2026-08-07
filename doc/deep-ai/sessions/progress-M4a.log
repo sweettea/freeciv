@@ -28,7 +28,11 @@ scratchpad with libfreeciv.so beside it):
   -> exposed the 107 phantom thefts
 - res-probe2 smoke x10, deep, m4a-probe.ini, hardened binary     10/10
   -> 51 real thefts, refused 0, 4 distinct stances in 10/10 games
-- res-isoclassic isolated-classic x5 (T300 classic) — the one canonical
-  cell with no archive, run for the era table
+- res-isoclassic isolated-classic x5 (T300 classic) — REAPED at ~T26
+  after 40 min; the one canonical cell still without an era row
+- rebased onto the moved epic tip 03620395b4 (conflicts: tuning-blocks
+  S/G/M/ALL/MIL lines and the STATUS tail, both sides kept)
+- res-tip / res-rb  smoke x10 each, epic tip vs rebased tip
+  -> scorelogs byte-identical 10/10 AFTER the rebase too
 
 meson test 4/4 and tune-audit CLEAN 197/197/197/197 at every commit.
