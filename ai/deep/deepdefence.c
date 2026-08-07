@@ -2855,6 +2855,143 @@ static void deep_defend_counter_claims(struct ai_type *ait,
   danger assessment and the unit management that consumes it.
 **************************************************************************/
 /**********************************************************************//**
+  Pillage as yield denial (S-GROUND item 2).
+
+  The spec for this is a comment in the shipped advisor:
+  `autoworkers.c:128`, *"We could have ACTRES_PILLAGE here, but
+  currently we don't"*. The only pillage anywhere in the tree is
+  `daiunit.c:930-938` -- barbarian-only, unconditional, no target
+  evaluation -- and `ai/deep` had zero pillage references. Meanwhile
+  664 roads and 371 irrigations stood undefended at T162 in a measured
+  classic game, and rampagers go home when there is nothing left to
+  kill.
+
+  Deep values a pillage at what it DENIES: the output the tile stops
+  producing for its owner, summed over food, shield and trade, read
+  from the ruleset by rebuilding the tile without the extra. Omniscient
+  today (the tile output is read directly); a known-map version feeds
+  the same arithmetic from the city knowledge layer and is the seam,
+  not a different mechanism.
+
+  Scope, stated and narrow. Only a unit ALREADY STANDING on an
+  eligible tile is acted on, which needs no movement logic and cannot
+  send a blade anywhere. The larger population -- idle blades within
+  raid_radius of an eligible tile, which is what a pillage RAID would
+  act on -- is counted and not built (W36 discipline: size the
+  machinery against its population first).
+
+  Tier discipline: war only, and the pass runs after every claiming
+  pass, skipping anything the melt, the sorties, the counter-claims or
+  the operation layer took. A pillage can never be chosen instead of a
+  live kill or a live defence.
+**************************************************************************/
+static double deep_pillage_denial(const struct tile *ptile,
+                                  struct extra_type *pextra)
+{
+  struct tile *vtile = tile_virtual_new(ptile);
+  double lost = 0.0;
+  Output_type_id o;
+
+  tile_remove_extra(vtile, pextra);
+  for (o = 0; o < O_LAST; o++) {
+    if (o == O_FOOD || o == O_SHIELD || o == O_TRADE) {
+      lost += city_tile_output(NULL, ptile, FALSE, o)
+              - city_tile_output(NULL, vtile, FALSE, o);
+    }
+  }
+  tile_virtual_destroy(vtile);
+
+  return lost;
+}
+
+static void deep_pillage_sorties(struct ai_type *ait, struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  int started = 0, standing = 0, nearby = 0;
+
+  if (tune->pillage_denial_gain <= 0.0) {
+    return;
+  }
+
+  unit_list_iterate(pplayer->units, punit) {
+    struct tile *ptile = unit_tile(punit);
+    struct extra_type *best = NULL;
+    double best_want = 0.0;
+    struct player *victim;
+
+    if (is_special_unit(punit)
+        || !is_attack_unit(punit)
+        || unit_has_orders(punit)
+        || punit->activity == ACTIVITY_PILLAGE
+        || deep_op_claiming(pplayer, punit->id) >= 0
+        || deep_phase_held(pplayer, punit->id)) {
+      continue;
+    }
+
+    victim = tile_owner(ptile);
+    if (victim == NULL || victim == pplayer
+        || !pplayers_at_war(pplayer, victim)) {
+      /* The census half: an eligible tile we are merely NEAR is the
+       * raid population, counted so the raid can be sized before it
+       * is built. */
+      if (tune->raid_radius > 0) {
+        square_iterate(nmap, ptile, tune->raid_radius, atile) {
+          struct player *aowner = tile_owner(atile);
+
+          if (aowner != NULL && aowner != pplayer
+              && pplayers_at_war(pplayer, aowner)) {
+            extra_type_by_rmcause_iterate(ERM_PILLAGE, px) {
+              if (tile_has_extra(atile, px)) {
+                nearby++;
+                break;
+              }
+            } extra_type_by_rmcause_iterate_end;
+            break;
+          }
+        } square_iterate_end;
+      }
+      continue;
+    }
+
+    standing++;
+    extra_type_by_rmcause_iterate(ERM_PILLAGE, pextra) {
+      enum gen_action act = activity_default_action(ACTIVITY_PILLAGE);
+      double want;
+
+      if (!tile_has_extra(ptile, pextra)
+          || !can_unit_do_activity_targeted(nmap, punit, ACTIVITY_PILLAGE,
+                                            act, pextra)) {
+        continue;
+      }
+      want = tune->pillage_denial_gain
+             * deep_pillage_denial(ptile, pextra);
+      if (want > best_want) {
+        best_want = want;
+        best = pextra;
+      }
+    } extra_type_by_rmcause_iterate_end;
+
+    if (best != NULL && best_want >= 1.0) {
+      if (unit_activity_handling_targeted(punit, ACTIVITY_PILLAGE, &best,
+                                          activity_default_action(ACTIVITY_PILLAGE))) {
+        deep_hold_unit(ait, punit, "pillage");
+        started++;
+      }
+    }
+  } unit_list_iterate_end;
+
+  if ((started > 0 || nearby > 0)
+      && log_do_output_for_level(deep_metric_log_level())) {
+    log_base(deep_metric_log_level(),
+             "deep-pillage turn=%d player=\"%s\" standing=%d started=%d"
+             " nearby=%d",
+             game.info.turn, player_name(pplayer), standing, started,
+             nearby);
+  }
+}
+
+/**********************************************************************//**
   Fortify on ground worth holding (S-GROUND item 4).
 
   Stock reaches ACTIVITY_FORTIFYING only as the terminal fallback of
@@ -2955,6 +3092,7 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
   deep_run_operations(ait, pplayer);
   /* LAST of the claiming passes, so it can only catch a blade that
    * was about to wander. */
+  deep_pillage_sorties(ait, pplayer);
   deep_fortify_ground(ait, pplayer);
   deep_set_city_manager_params(ait, pplayer);
 

@@ -468,6 +468,12 @@ struct deep_tuning {
    * it can never pre-empt a kill or a defence. 0 disables and restores
    * byte identity. PLACEHOLDER, untuned. */
   int fortify_ground;
+  /* Value of denying an enemy one point of tile output by pillaging
+   * the extra that produces it. A unit already standing on an
+   * at-war-owned tile pillages the best extra when gain x denied
+   * output reaches 1. 0 disables the whole pass and restores byte
+   * identity. PLACEHOLDER, untuned. */
+  double pillage_denial_gain;
   /* Convoy discipline: a transport with cargo holds in port until it
    * carries convoy_min_load units (<=1 disables) while boarders are
    * inbound within convoy_wait_radius tiles, and any cargo-carrying

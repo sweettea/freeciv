@@ -8,3 +8,4 @@ One line per commit or major step.
 5. ai/deep: want a fortress for the survival it buys on ground worth holding (item 1)
 6. ai/deep: price the base through the ruleset's own defence power (civ2civ3 asymmetry found by the offers counter)
 7. ai/deep: fortify on ground worth holding (item 4)
+8. ai/deep: pillage the enemy yield a blade is standing on (item 2) + raid-population census
