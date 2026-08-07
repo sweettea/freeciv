@@ -838,6 +838,23 @@ static int deep_waste_pct_at(const struct city *pcity, Output_type_id o,
 }
 
 /**********************************************************************//**
+  Whether `gcity` stops being a government centre the moment `pimprove`
+  is built somewhere else.
+
+  This is the difference between adding a centre and MOVING one. The
+  Palace and civ2civ3's Ecclesiastical Palace are both one per player,
+  so building either in a new city destroys the existing one and its
+  city reverts to being a distant province like any other. A city that
+  holds this same improvement therefore does not count among the
+  centres that survive the decision.
+**************************************************************************/
+static bool deep_center_lost_to(const struct city *gcity,
+                                const struct impr_type *pimprove)
+{
+  return city_has_building(gcity, pimprove);
+}
+
+/**********************************************************************//**
   Credit a government centre with the distance waste it saves the REST
   of the empire. Returns the credit for pimprove in pcity, or 0.
 
@@ -881,6 +898,20 @@ static adv_want deep_gov_center_credit(struct city *pcity,
     return 0;
   }
 
+  /* THE COUNTERFACTUAL HAS TO MODEL THE MOVE, NOT A SECOND COPY. A
+   * Palace and an Ecclesiastical Palace are one per player, so
+   * building either HERE destroys the one over there and its city
+   * reverts to being a distant province. Pricing the addition while
+   * leaving the old copy standing made every city in the empire a
+   * permanent Palace candidate: 3454 firings a game on isolated-150 at
+   * a mean credit of 2827 against a whole-ladder mean of 85, and the
+   * arm lost 49.4 score with 2.8 fewer cities (0/20 seeds).
+   *
+   * So there are two states, and the difference between them is the
+   * whole term: TODAY, every centre that exists; AFTER, the centres
+   * that survive the move plus this candidate. The city that loses the
+   * improvement is charged the waste it starts paying, which is what
+   * makes a relocation that helps nobody correctly worthless. */
   city_list_iterate(pplayer->cities, gcity) {
     if (is_gov_center(gcity)) {
       have_center = TRUE;
@@ -900,23 +931,32 @@ static adv_want deep_gov_center_credit(struct city *pcity,
     int now = FC_INFINITY, then;
     adv_want saved = 0;
 
-    if (ocity == pcity || is_gov_center(ocity)) {
-      /* Its own centre is at distance zero and cannot be improved. */
+    if (ocity == pcity) {
       continue;
     }
+    if (is_gov_center(ocity) && !deep_center_lost_to(ocity, pimprove)) {
+      /* Stays a centre either way: distance zero before and after. */
+      continue;
+    }
+    if (is_gov_center(ocity)) {
+      now = 0;
+    } else {
+      city_list_iterate(pplayer->cities, gcity) {
+        if (is_gov_center(gcity)) {
+          now = MIN(now, real_map_distance(city_tile(ocity),
+                                           city_tile(gcity)));
+        }
+      } city_list_iterate_end;
+    }
+    then = real_map_distance(city_tile(ocity), ctile);
     city_list_iterate(pplayer->cities, gcity) {
-      if (is_gov_center(gcity)) {
-        now = MIN(now, real_map_distance(city_tile(ocity),
-                                         city_tile(gcity)));
+      if (is_gov_center(gcity) && !deep_center_lost_to(gcity, pimprove)) {
+        then = MIN(then, real_map_distance(city_tile(ocity),
+                                           city_tile(gcity)));
       }
     } city_list_iterate_end;
-    then = real_map_distance(city_tile(ocity), ctile);
-    if (have_center) {
-      if (then >= now) {
-        continue;
-      }
-    } else {
-      now = 0; /* Unused: deep_waste_pct_at() ignores it. */
+    if (have_center && then == now) {
+      continue;
     }
 
     output_type_iterate(o) {
@@ -934,9 +974,12 @@ static adv_want deep_gov_center_credit(struct city *pcity,
       if (total <= 0) {
         continue;
       }
+      /* Signed on purpose: `then` can be FURTHER than `now` for the
+       * city the improvement is being moved out of, and that debit is
+       * the price of the move. */
       dpct = deep_waste_pct_at(ocity, o, now, have_center)
              - deep_waste_pct_at(ocity, o, then, TRUE);
-      if (dpct <= 0) {
+      if (dpct == 0) {
         continue;
       }
       saved = (adv_want) total * dpct / 100.0;
