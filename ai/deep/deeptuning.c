@@ -103,6 +103,9 @@ static const struct deep_tuning deep_tuning_defaults = {
   .wrace_eta_gain = 0.0,                /* PLACEHOLDER, 0 = off */
   .wrace_obsolete_gain = 0.0,           /* PLACEHOLDER, 0 = off */
   .wrace_urgency_gain = 0.0,            /* PLACEHOLDER, 0 = off */
+  .expiry_building_gain = 0.0,          /* PLACEHOLDER, 0 = off */
+  .expiry_unit_gain = 0.0,              /* PLACEHOLDER, 0 = off */
+  .expiry_unit_gap = 2,                 /* PLACEHOLDER, the hysteresis */
   .settler_rush_weight = 1.0,           /* PLACEHOLDER, untuned */
   .site_choke_bonus = 12.0,             /* PLACEHOLDER, untuned */
   .base_fort_gain = 40.0,               /* PLACEHOLDER, untuned */
@@ -329,6 +332,9 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(wrace_eta_gain) \
   TUNE_DOUBLE(wrace_obsolete_gain) \
   TUNE_DOUBLE(wrace_urgency_gain) \
+  TUNE_DOUBLE(expiry_building_gain) \
+  TUNE_DOUBLE(expiry_unit_gain) \
+  TUNE_INT(expiry_unit_gap) \
   TUNE_DOUBLE(settler_rush_weight) \
   TUNE_DOUBLE(site_choke_bonus) \
   TUNE_DOUBLE(base_fort_gain) \

@@ -58,6 +58,15 @@ double deep_wonder_p_win(struct city *pcity,
                          int *ours_out, int *theirs_out,
                          const struct player **who_out);
 
+/* Turns of our own research until the unit type that OBSOLETES `ut`
+ * becomes buildable, or -1 when it has no successor, the successor is
+ * already available, or no estimate is possible. The MAXIMUM over the
+ * successor's unknown advance requirements, because a unit needs all
+ * of them. */
+int deep_utype_successor_eta(const struct player *pplayer,
+                             const struct unit_type *ut,
+                             const struct unit_type **next_out);
+
 /* The per-player race pass: adjudicate finished races, price every
  * great wonder the wonder city could build, and (with the gains open)
  * apply P(win), the completion-ETA discount and the obsolescence

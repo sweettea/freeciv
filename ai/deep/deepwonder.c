@@ -22,6 +22,7 @@
 #include "game.h"
 #include "improvement.h"
 #include "player.h"
+#include "unittype.h"
 #include "requirements.h"
 #include "research.h"
 
@@ -266,6 +267,56 @@ double deep_wonder_p_win(struct city *pcity,
   p = 0.5 + 0.5 * (theirs - ours) / scale;
 
   return CLIP(0.0, p, 1.0);
+}
+
+/**********************************************************************//**
+  When our own research makes this unit type's successor buildable.
+
+  The unit-side twin of deep_impr_obsolete_eta(), and the shapes differ
+  because the ruleset states them differently: an improvement carries a
+  requirement VECTOR that obsoletes it (a disjunction, so MINIMUM),
+  while a unit carries a single `obsoleted_by` pointer and the
+  question becomes when that successor's OWN build requirements are
+  met (a conjunction, so MAXIMUM).
+
+  -1 for "no successor imminent": no obsoleted_by, a successor already
+  buildable, or any requirement we cannot put a number on -- in which
+  case the consumer must not defer. Silence is not evidence.
+**************************************************************************/
+int deep_utype_successor_eta(const struct player *pplayer,
+                             const struct unit_type *ut,
+                             const struct unit_type **next_out)
+{
+  const struct unit_type *next = ut->obsoleted_by;
+  int worst = 0;
+
+  if (next_out != NULL) {
+    *next_out = next;
+  }
+  if (next == U_NOT_OBSOLETED) {
+    return -1;
+  }
+  if (can_player_build_unit_direct(pplayer, next, RPT_CERTAIN, TRUE)) {
+    return -1;                  /* Already here: nothing to wait for. */
+  }
+
+  requirement_vector_iterate(&next->build_reqs, preq) {
+    if (VUT_ADVANCE == preq->source.kind && preq->present) {
+      Tech_type_id goal = advance_number(preq->source.value.advance);
+
+      if (research_invention_state(research_get(pplayer), goal)
+          != TECH_KNOWN) {
+        int eta = deep_tech_eta(pplayer, goal);
+
+        if (eta < 0) {
+          return -1;            /* Unreachable or unestimable. */
+        }
+        worst = MAX(worst, eta);
+      }
+    }
+  } requirement_vector_iterate_end;
+
+  return worst > 0 ? worst : -1;
 }
 
 /* THE RACE LEDGER. One entry per (player, wonder) we have priced,

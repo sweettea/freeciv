@@ -4533,6 +4533,52 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     }
   }
 
+  /* SUCCESSOR-IMMINENT DEFERRAL (CONSEQ item 4, human 2026-08-05:
+   * "some units and buildings expire too"). If the unit type that
+   * OBSOLETES this choice becomes buildable, on our own research, well
+   * inside the time it would take to build this one, the shields are
+   * better spent on anything else for those turns -- the interim goes
+   * to the normal auction, where HEDGE's liquid caravan is the natural
+   * winner once it lands (the coupling is noted, not depended on).
+   *
+   * TIER DISCIPLINE, and it is the whole guard: never on an emergency
+   * want and never in a city carrying danger or urgency. A threatened
+   * city buys the body it can have TONIGHT, and a deferral that can
+   * cost a city is not an optimisation. Hysteresis via
+   * expiry_unit_gap so a wobble in the bulb rate cannot churn the
+   * queue between the two answers turn after turn. */
+  if (deep_tuning_get()->expiry_unit_gain > 0.0
+      && choice->want > 0
+      && (choice->type == CT_ATTACKER || choice->type == CT_DEFENDER)
+      && choice->value.utype != NULL
+      && deep_want_from_choice(choice).tier == DWT_NORMAL
+      && city_data->danger == 0 && city_data->urgency == 0) {
+    const struct unit_type *next = NULL;
+    int eta = deep_utype_successor_eta(pplayer, choice->value.utype,
+                                       &next);
+
+    if (eta >= 0 && next != NULL) {
+      struct universal tgt = { .kind = VUT_UTYPE,
+                               .value.utype = choice->value.utype };
+      int build = city_turns_to_build(pcity, &tgt, TRUE);
+
+      if (build > 0 && build < FC_INFINITY
+          && eta + deep_tuning_get()->expiry_unit_gap <= build) {
+        struct deep_want w = deep_want_from_choice(choice);
+
+        log_base(deep_metric_log_level(),
+                 "deep-expiry turn=%d player=\"%s\" city=%d unit=\"%s\""
+                 " next=\"%s\" eta=%d build=%d gap=%d want=%.1f",
+                 game.info.turn, player_name(pplayer), pcity->id,
+                 utype_rule_name(choice->value.utype),
+                 utype_rule_name(next), eta, build,
+                 deep_tuning_get()->expiry_unit_gap, (double) w.value);
+        w.value *= 1.0 - deep_tuning_get()->expiry_unit_gain;
+        deep_want_apply(choice, w);
+      }
+    }
+  }
+
   if (choice->want <= 0) {
     CITY_LOG(LOGLEVEL_BUILD, pcity, "deep military advisor has no advice");
   } else {

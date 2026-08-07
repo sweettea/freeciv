@@ -513,6 +513,29 @@ struct deep_tuning {
   double wrace_eta_gain;
   double wrace_obsolete_gain;
   double wrace_urgency_gain;
+
+  /* EXPIRY-AWARE AMORTIZATION (CONSEQ item 4, human 2026-08-05: "some
+   * units and buildings expire too"). All PLACEHOLDERs, all 0 = off.
+   *
+   * expiry_building_gain truncates a building credit's horizon at the
+   * expected arrival of the advance that voids it, when OUR OWN queue
+   * is the one bringing it (deephorizon.c). The credit sums a
+   * per-turn value over MORT turns and assumes the building lives for
+   * all of them; the server auto-sells an obsolete improvement and
+   * its effects lapse before that. want x (1 - gain x (1 - surviving
+   * share)).
+   *
+   * expiry_unit_gain defers a unit build whose SUCCESSOR arrives
+   * inside its own build time (deepdefence.c). Never applied to an
+   * emergency-tier want or a city carrying danger or urgency: tier
+   * discipline, and a threatened city buys the body it can have now.
+   * expiry_unit_gap is the hysteresis in turns -- the successor must
+   * beat the build by this margin before the queue churns, the M3
+   * pattern -- and it is a gap and not a ratio because both sides are
+   * turn counts. */
+  double expiry_building_gain;
+  double expiry_unit_gain;
+  int expiry_unit_gap;
   /* Land-race coupling: fresh founder wants scale by
    * (1 + weight * map crowding); crowded maps race, empty ones
    * don't. 0 disables. */

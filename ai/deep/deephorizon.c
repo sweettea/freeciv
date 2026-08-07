@@ -47,6 +47,8 @@
 #include "deepstance.h"
 #include "deeptuning.h"
 
+#include "deepwonder.h"
+
 #include "deephorizon.h"
 
 /* Horizon-aware improvement value (W03). Stock base_want() measures an
@@ -1710,6 +1712,42 @@ void deep_adjust_building_wants(struct ai_type *ait,
                * deep_horizon_turns()
                * deep_tuning_get()->upkeep_gold_weight;
         add = MAX(add, 0);
+      }
+      if (add > 0 && deep_tuning_get()->expiry_building_gain > 0.0) {
+        /* EXPIRY-AWARE AMORTIZATION (CONSEQ item 4, human 2026-08-05:
+         * "some units and buildings expire too").
+         *
+         * Every credit above sums a per-turn value over a MORT-turn
+         * horizon and assumes the building is there for all of it.
+         * It is not, when OUR OWN research queue is about to void it:
+         * the server auto-sells an obsolete improvement
+         * (remove_obsolete_buildings_city()) and its effects lapse
+         * before that anyway, so the shields buy a fraction of the
+         * horizon and the AI currently pays for all of it. The
+         * Barracks-under-Gunpowder case.
+         *
+         * The truncation is the share of the horizon that survives,
+         * and the ETA is our own research only -- deep_tech_eta()'s
+         * whole contract. -1 ("not on the way") leaves the credit
+         * alone, so a building nobody is researching past keeps its
+         * full window. */
+        int ob = deep_impr_obsolete_eta(pplayer, pimprove);
+
+        if (ob >= 0) {
+          double horizon = MAX(1.0, deep_horizon_turns());
+          double share = MIN(1.0, ob / horizon);
+          double keep = 1.0 - deep_tuning_get()->expiry_building_gain
+                              * (1.0 - share);
+
+          log_base(deep_metric_log_level(),
+                   "deep-expiry turn=%d player=\"%s\" city=%d"
+                   " impr=\"%s\" eta=%d horizon=%.1f share=%.3f"
+                   " credit=%.1f keep=%.3f",
+                   game.info.turn, player_name(pplayer), pcity->id,
+                   improvement_rule_name(pimprove), ob, horizon, share,
+                   (double) add, keep);
+          add = (adv_want) (add * MAX(keep, 0.0));
+        }
       }
       if (add > 0) {
         adv_want pre = pcity->server.adv->building_want[id];
