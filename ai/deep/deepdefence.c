@@ -2854,6 +2854,88 @@ static void deep_defend_counter_claims(struct ai_type *ait,
   dai_do_first_activities() with defence bookkeeping added between the
   danger assessment and the unit management that consumes it.
 **************************************************************************/
+/**********************************************************************//**
+  Fortify on ground worth holding (S-GROUND item 4).
+
+  Stock reaches ACTIVITY_FORTIFYING only as the terminal fallback of
+  `dai_manage_military()` (`daiunit.c:2694-2713`), keyed on
+  AIUNIT_DEFEND_HOME -- never for terrain, never for a chokepoint. A
+  unit standing in a fortress or in a gate through the landmass is
+  therefore as likely to wander off it as to dig in, which makes the
+  fortresses the previous commits taught deep to BUILD worth less than
+  they cost.
+
+  The consumer half, and deliberately small: a military unit already
+  standing on ground this session made wantable -- a defensive base,
+  or a chokepoint -- fortifies and takes a phase hold so the manage
+  loop leaves it there.
+
+  TIER DISCIPLINE, and it is the whole safety argument: this runs
+  AFTER every pass that can claim a blade for something live (the melt,
+  the sorties, the counter-claims and the operation layer), and it
+  skips any unit those passes claimed or held. So it can only ever
+  move a unit that was about to wander, never one with a kill or a
+  defence to make. It also skips city tiles, which are the garrison
+  ladder's business, and units with a live goto.
+**************************************************************************/
+static void deep_fortify_ground(struct ai_type *ait, struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  int held = 0, seen = 0;
+
+  if (tune->fortify_ground <= 0) {
+    return;
+  }
+
+  unit_list_iterate(pplayer->units, punit) {
+    struct tile *ptile = unit_tile(punit);
+    bool worth;
+
+    if (is_special_unit(punit)
+        || !is_attack_unit(punit)
+        || tile_city(ptile) != NULL
+        || punit->activity == ACTIVITY_FORTIFIED
+        || unit_has_orders(punit)
+        || deep_op_claiming(pplayer, punit->id) >= 0
+        || deep_phase_held(pplayer, punit->id)) {
+      continue;
+    }
+
+    /* Ground this session taught deep to value: a base that actually
+     * defends the unit standing on it, or a gate through the land. */
+    worth = FALSE;
+    extra_type_by_cause_iterate(EC_BASE, pextra) {
+      if (tile_has_extra(ptile, pextra)
+          && is_native_extra_to_uclass(pextra, unit_class_get(punit))) {
+        worth = TRUE;
+        break;
+      }
+    } extra_type_by_cause_iterate_end;
+    if (!worth) {
+      worth = deep_site_is_choke(nmap, ptile);
+    }
+    if (!worth) {
+      continue;
+    }
+
+    seen++;
+    if (punit->activity == ACTIVITY_IDLE
+        || punit->activity == ACTIVITY_SENTRY) {
+      unit_activity_handling(punit, ACTIVITY_FORTIFYING,
+                             activity_default_action(ACTIVITY_FORTIFYING));
+    }
+    deep_hold_unit(ait, punit, "ground");
+    held++;
+  } unit_list_iterate_end;
+
+  if (held > 0 && log_do_output_for_level(deep_metric_log_level())) {
+    log_base(deep_metric_log_level(),
+             "deep-ground turn=%d player=\"%s\" eligible=%d held=%d",
+             game.info.turn, player_name(pplayer), seen, held);
+  }
+}
+
 void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
 {
   TIMING_LOG(AIT_ALL, TIMER_START);
@@ -2871,6 +2953,9 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
   deep_cover_sorties(ait, pplayer);
   deep_defend_counter_claims(ait, pplayer);
   deep_run_operations(ait, pplayer);
+  /* LAST of the claiming passes, so it can only catch a blade that
+   * was about to wander. */
+  deep_fortify_ground(ait, pplayer);
   deep_set_city_manager_params(ait, pplayer);
 
   TIMING_LOG(AIT_UNITS, TIMER_START);

@@ -462,6 +462,12 @@ struct deep_tuning {
    * survival deltas, which is where a good tile improvement sits.
    * 0.0 disables the want entirely and restores byte identity. */
   double base_fort_gain;
+  /* Fortify a military unit already standing on ground the base want
+   * values -- a defensive base, or a chokepoint -- instead of letting
+   * the manage loop wander it off. Runs after every claiming pass, so
+   * it can never pre-empt a kill or a defence. 0 disables and restores
+   * byte identity. PLACEHOLDER, untuned. */
+  int fortify_ground;
   /* Convoy discipline: a transport with cargo holds in port until it
    * carries convoy_min_load units (<=1 disables) while boarders are
    * inbound within convoy_wait_radius tiles, and any cargo-carrying

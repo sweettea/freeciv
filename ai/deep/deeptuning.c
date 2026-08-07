@@ -97,6 +97,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .settler_rush_weight = 1.0,           /* PLACEHOLDER, untuned */
   .site_choke_bonus = 12.0,             /* PLACEHOLDER, untuned */
   .base_fort_gain = 40.0,               /* PLACEHOLDER, untuned */
+  .fortify_ground = 1,                  /* PLACEHOLDER, untuned */
   .convoy_min_load = 2,                 /* PLACEHOLDER, untuned */
   .convoy_wait_radius = 6,              /* PLACEHOLDER, untuned */
   .lift_form_radius = 8,                /* PLACEHOLDER, untuned */
@@ -312,6 +313,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(settler_rush_weight) \
   TUNE_DOUBLE(site_choke_bonus) \
   TUNE_DOUBLE(base_fort_gain) \
+  TUNE_INT(fortify_ground) \
   TUNE_INT(convoy_min_load) \
   TUNE_INT(convoy_wait_radius) \
   TUNE_INT(lift_form_radius) \
