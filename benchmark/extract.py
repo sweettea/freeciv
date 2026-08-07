@@ -48,8 +48,17 @@ def parse_scorelog(path):
             elif cmd == "addplayer":
                 players[int(parts[2])] = " ".join(parts[3:])
             elif cmd == "data":
-                turn, tag, plr = int(parts[1]), int(parts[2]), int(parts[3])
-                data.setdefault(plr, {}).setdefault(turn, {})[tag] = parts[4]
+                # A full disk can tear a line mid-write and the server
+                # keeps appending afterwards; one torn line must not
+                # discard the game's other thousands (2026-08-07).
+                try:
+                    turn, tag, plr = int(parts[1]), int(parts[2]), int(parts[3])
+                    val = parts[4]
+                except (ValueError, IndexError):
+                    print(f"warning: skipping malformed scorelog line: "
+                          f"{' '.join(parts)[:60]!r}", file=sys.stderr)
+                    continue
+                data.setdefault(plr, {}).setdefault(turn, {})[tag] = val
     return tags, players, data, final_turn
 
 
