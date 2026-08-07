@@ -214,7 +214,35 @@ pinning is what keeps that product sane, and it already does.
   "kill stock" a target invites the degenerate all-in rush that a
   T150 bell would never punish.
 
-## 6d. Seeds: the anti-overfit protocol (human worry 2026-08-06, sized from our own data)
+## 6d. Personalities in training? (human, 2026-08-06)
+
+More interesting, and measurably harder — and the two split cleanly:
+
+- **Harder, concretely.** Trait-seeded stances add per-player variance
+  inside every game (more seeds for the same power, per §6e's
+  arithmetic) and smear attribution: a knob's measured effect becomes
+  its average over the personality distribution, so "helped the hawks,
+  hurt the doves" reads as zero. Worse, it is UNNECESSARY for the one
+  thing that seems to need it: the six stance gains have zero gradient
+  at identity (1^gain = 1) and are tuned under PINNED corners — the
+  campaign's existing separability design — not under rolled traits.
+- **Interesting, concretely.** Under identity self-play, deep only ever
+  meets its own average self; a rolled hawk stresses defenses the
+  average opponent never fires at. Diversity is a real evaluation
+  asset — the derby-3 cast is demonstrating it live.
+
+**Resolution — personalities are an evaluation stressor, not a training
+surface** (the standing no-fold call, now with its reason attached):
+training cells stay identity + EVEN-traits-off; gate gains tune pinned;
+and a **menagerie arm** runs report-only at stage boundaries — the
+candidate tuning with `stance_source=1` on one self-play cell — to
+verify no personality corner is catastrophic under the tuned values.
+That check matters because the personality machinery is meant to ship
+in real games eventually: a tuning that only works at identity is
+fragile in exactly the dimension players will actually see. Derbies and
+the wildcard holdout keep rolling traits, as they already do.
+
+## 6e. Seeds: the anti-overfit protocol (human worry 2026-08-06, sized from our own data)
 
 The failure has two faces: optimizing ONE seed's quirks (pure noise
 chasing) and optimizing a FIXED PANEL's quirks (the subtler one — CRN
