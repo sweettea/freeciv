@@ -119,6 +119,62 @@ seeds, then holdout venues — three concentric claims of generality.
 - No tournament/Elo machinery: two mixed cells + the floor rule buy most
   of the value at a fraction of the complexity.
 
+## 6a. Per-player tuning: not for v4 (human question 2026-08-06, answered)
+
+Asked directly: build per-deep ini values first? **No — complication
+without a v4 win.** The struct is process-global behind
+`deep_tuning_get()` at hundreds of call sites; per-player needs either a
+threaded parameter or a phase-scoped active-pointer switch at every
+vtable entry, whose failure mode (a silent wrong-player read) is exactly
+the kind of bug that corrupts a campaign invisibly. And v4 never needs
+it: mixed cells run the whole deep cohort on ONE candidate file against
+stock — the yardstick the project's goal names. The two things
+per-player tuning genuinely buys — candidate-vs-incumbent selection at
+one table, and per-seat difficulty jitter — are both post-v4 by design
+(and incumbent-selection brings its own pathologies: intransitivity,
+exploiting the incumbent instead of being good). Build it once, in the
+difficulty epic, when it is the point rather than a prerequisite.
+
+## 6b. Cost of more venues (same question)
+
+Portfolio cost does NOT multiply the inner loop. Blocks sweep only their
+2-3 home cells (§3 pins; the campaign's existing rule): ECON's inner
+loop is unchanged, MIL adds storm to contested, statecraft adds the two
+mixed cells it currently lacks entirely. The full 10-cell matrix runs at
+STAGE BOUNDARIES (the z-floor check) and at claim time — a handful of
+full evaluations per campaign, not per candidate. Net inner-loop growth
+~30-50% on the two military-ish blocks, zero on ECON; longhaul-300 is
+wall-clock-heavy but sweeps only the culture/endgame family. The
+expensive thing was never venues — it is candidates × games; venue
+pinning is what keeps that product sane, and it already does.
+
+## 6c. The objective (human question 2026-08-06: "optimize score, or ???")
+
+**Optimize paired score diff; CLAIM on a dashboard.** Reasoning:
+
+- Score is the right GRADIENT: dense (every game yields signal), smooth
+  under small knob moves, the game's own composite of everything we
+  care about, and comparable across cells once z-normalized. Every
+  alternative examined is sparse or gameable as a target: win rate is
+  ~0/150-turn-cell (199/199 games end on the bell — nothing to
+  optimize); area-under-curve score rewards rushes and punishes exactly
+  the long-game mechanisms this week built; kill counts invite farming.
+- But score alone is a bad PROOF: endturn score cannot see "was about
+  to win", sprawl inflates it until a storm calls the loan (derby 2),
+  and a single number hides venue sacrifice. So the success claim is
+  four lines, all already cheap to produce:
+  1. mean z of paired score diff across canonical cells (the number);
+  2. the z-floor: no cell below −0.5 (no venue sold);
+  3. decisive events where venues permit them — eliminations, cities
+     lost to barbarians (storm), team wipeouts (mixed) — REPORTED with
+     signs, not optimized;
+  4. holdout seeds and holdout venues (Europe, wildcard) quoted
+     separately.
+- One deliberate asymmetry: on mixed cells the optimizer sees team
+  score diff only; eliminations stay report-only, because making
+  "kill stock" a target invites the degenerate all-in rush that a
+  T150 bell would never punish.
+
 ## 7. Cost sketch (cloud, per full sweep pass)
 
 Core self-play: lategame-80, isolated-150, primary-120, contested,
