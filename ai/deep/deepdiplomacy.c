@@ -763,6 +763,26 @@ static bool deep_gift_send(struct ai_type *ait, struct player *pplayer,
   would arm anyone we are fighting (deep_tech_safe_to_give), that it
   stops the moment love clears the bar, and that gift_love_gain tunes
   the whole thing to zero.
+
+  THE ALLIANCE CLAMP, structural, exactly deep_trade_route_love()'s
+  (deeptrade.c). Bought love may carry a pair to PEACE and must never,
+  on its own, carry it into an ALLIANCE: the ceiling is the
+  counterparty's own req_love_for_alliance minus one, which varies by
+  difficulty and is theirs, not ours. Love raised past that bar by
+  anything else is left alone -- this only declines to push.
+
+  Where trade love clamps the ADDITION (add = MIN(add, headroom)), a
+  gift is ATOMIC: one advance, one indivisible love step, take it or
+  leave it. So the analogue for an atomic action is to DECLINE when it
+  would overshoot, and the prediction it declines on is exact --
+  dai_treaty_accepted() computes total_balance / (cities * 10 + 1),
+  clamps at love_incr * 150 and multiplies by ten
+  (daidiplomacy.c:777-783), and on this path the treaty is the single
+  tech clause, so `gain` below is that arithmetic and not an estimate.
+  BALANCE measured a median gift of +300 expected love on lategame-80
+  against a 250 bar, so the clamp is load-bearing and not decorative:
+  every one of that cell's gifts had the headroom to jump the pair
+  straight into alliance range.
 **************************************************************************/
 static void deep_love_gift(struct ai_type *ait, struct player *pplayer,
                            struct player *aplayer)
@@ -771,9 +791,10 @@ static void deep_love_gift(struct ai_type *ait, struct player *pplayer,
   const struct player_diplstate *ds
     = player_diplstate_get(pplayer, aplayer);
   struct ai_plr *theirs;
-  bool close_here;
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  bool close_here, capped;
   double worth;
-  int love, bar, step, tech_worth = 0, gain;
+  int love, bar, cap, step, tech_worth = 0, gain;
   Tech_type_id tech;
 
   if (ds->type != DS_PEACE && ds->type != DS_ARMISTICE
@@ -787,11 +808,15 @@ static void deep_love_gift(struct ai_type *ait, struct player *pplayer,
   love = aplayer->ai_common.love[player_index(pplayer)];
   theirs = dai_plr_data_get(ait, aplayer, &close_here);
   bar = theirs->diplomacy.req_love_for_peace;
+  cap = theirs->diplomacy.req_love_for_alliance - 1;
   if (close_here) {
     dai_data_phase_finished(ait, aplayer);
   }
   if (love >= bar) {
     return;                     /* Nothing to buy. */
+  }
+  if (love >= cap) {
+    return;                     /* Already at the ceiling. */
   }
 
   /* One step of love is the smallest gift that moves anything: the
@@ -808,14 +833,25 @@ static void deep_love_gift(struct ai_type *ait, struct player *pplayer,
   }
 
   gain = MIN(tech_worth / step, theirs->diplomacy.love_incr * 150) * 10;
+
+  /* The clamp. Logged either way, and with the ceiling beside the
+   * prediction, because a decline nobody can count is indistinguishable
+   * from a mechanism that never fired. */
+  capped = love + gain > cap;
+  if (capped) {
+    dp->gifts_capped++;
+  }
   log_base(deep_metric_log_level(),
            "deep-lovegift turn=%d plr=\"%s\" to=\"%s\" ds=%d love=%d"
-           " bar=%d tech=\"%s\" price=%d worth=%.1f expect=%d took=%d",
+           " bar=%d cap=%d tech=\"%s\" price=%d worth=%.1f expect=%d"
+           " capped=%d took=%d",
            game.info.turn, player_name(pplayer), player_name(aplayer),
-           (int) ds->type, love, bar,
+           (int) ds->type, love, bar, cap,
            advance_rule_name(advance_by_number(tech)), tech_worth, worth,
-           gain,
-           deep_gift_send(ait, pplayer, aplayer, tech, CLAUSE_LAST) ? 1 : 0);
+           gain, capped ? 1 : 0,
+           capped ? 0
+           : (deep_gift_send(ait, pplayer, aplayer, tech, CLAUSE_LAST)
+              ? 1 : 0));
 }
 
 /**********************************************************************//**

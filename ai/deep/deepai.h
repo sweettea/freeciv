@@ -194,6 +194,7 @@ struct deep_plr {
   int gift_tech;                /* advance in that offer, or A_NONE */
   int gifts_offered;            /* tech gifts proposed */
   int gifts_taken;              /* ... that the counterparty signed */
+  int gifts_capped;             /* declined: would jump the alliance bar */
   int proxies_armed;            /* of those, gifts to a proxy */
   /* The diplomatic state at which we last asked this player for an
    * embassy, PLUS ONE, so a zeroed slot means "never asked". Deep's
