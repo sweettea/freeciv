@@ -976,6 +976,32 @@ struct deep_tuning {
    * this prices the ATTRITION, and the two are added, not multiplied.
    * 0 = off. */
   double deterrence_gain;
+  /* UNIT LIFETIME UPKEEP AT THE BUILD SEAM (M4b item 5, amortization
+   * audit 1b). A building's gold upkeep is charged against its horizon
+   * credit over MORT (deephorizon.c, upkeep_gold_weight). A unit's
+   * upkeep over its lifetime is charged NOWHERE at build time -- only
+   * the defence FEAR terms carry a partial discount
+   * (upkeep_unit_weight), which is a different seam and a different
+   * quantity. A Warriors kept 200 turns costs about 20x its build
+   * price, and derby-3's birth guards are the standing demonstration.
+   *
+   * Charged symmetrically with buildings: upkeep per turn x
+   * min(E[lifetime], horizon), where E[lifetime] starts at
+   * deep_horizon_turns() -- the same horizon the building side uses --
+   * and is truncated by CONSEQ's obsolescence ETA where one exists,
+   * because that is when deep's own rotation melts the unit.
+   *
+   * Scales this multiplies, none of them minted here: the shield half
+   * converts at SHIELD_WEIGHTING (the codebase's own shield-to-want
+   * constant) and the gold half at upkeep_gold_weight (the BUILDING
+   * side's own knob, same dimension -- gold per turn against a
+   * horizon). Food upkeep is deliberately NOT charged: this seam has
+   * no food-to-want conversion, and under-charging is the safe
+   * direction for a mechanism whose whole effect is to add a cost.
+   *
+   * 0 = off. Moves every unit want in the auction, so it is A/B'd
+   * alone and not only in the bundle. */
+  double unit_upkeep_charge;
   /* Assault operations (E6): form when the free-attacker pool's take
    * odds against the best met target clear op_take_target (<= 0
    * disables); muster at the staging city up to op_muster_wait turns

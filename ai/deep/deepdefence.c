@@ -3936,6 +3936,10 @@ static double deep_birth_paid = 0.0, deep_birth_odds = 0.0;
 static int deep_deter_priced = 0;
 static double deep_deter_paid = 0.0;
 
+/* The lifetime-upkeep charge's counters, likewise. */
+static int deep_upcharge_n = 0;
+static double deep_upcharge_paid = 0.0;
+
 /**********************************************************************//**
   What a first defender in an EMPTY city is actually worth.
 
@@ -4066,6 +4070,18 @@ static void deep_birth_census(struct player *pplayer)
   }
   deep_deter_priced = 0;
   deep_deter_paid = 0.0;
+
+  /* The lifetime-upkeep charge's line, same schedule. `n` is the
+   * population the mechanism acts on -- the number the audit's claim
+   * that it "moves EVERY unit want" is checked against. */
+  if (deep_upcharge_n > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-upcharge-sum turn=%d player=\"%s\" n=%d paid=%.1f",
+             game.info.turn, player_name(pplayer), deep_upcharge_n,
+             deep_upcharge_paid);
+  }
+  deep_upcharge_n = 0;
+  deep_upcharge_paid = 0.0;
 }
 
 /**********************************************************************//**
@@ -6058,6 +6074,108 @@ static adv_want deep_endgame_unit_deflate(struct player *pplayer,
 }
 
 /**********************************************************************//**
+  CHARGE A UNIT FOR THE LIFE IT IS GOING TO LIVE (M4b item 5,
+  amortization audit 1b).
+
+  A building's gold upkeep is charged against its horizon credit over
+  MORT (deephorizon.c, `upkeep_gold_weight`). A unit's upkeep over its
+  lifetime is charged NOWHERE at build time. Only the defence FEAR
+  terms carry a partial discount (`upkeep_unit_weight`), which is a
+  different seam pricing a different question -- how much fear a
+  garrison is worth -- and it never reaches the settler, the worker,
+  the ferry or the attacker. So a Warriors kept 200 turns costs about
+  twenty times its build price and the auction is told it costs the
+  build price, which is the asymmetry that makes a cheap unit look
+  free forever. Derby-3's birth guards are the standing demonstration.
+
+  Charged here, at the seam where every candidate of every class
+  exists and nothing has consumed the bid yet -- the same seam the
+  endgame deflator and the switch debit already use, for the same
+  reason.
+
+  E[lifetime] is deep_horizon_turns(), the same horizon the building
+  side charges over, truncated by CONSEQ's obsolescence ETA where the
+  ruleset has a successor on the way: that is the turn deep's own
+  rotation melts the unit, so paying upkeep past it would be pricing a
+  unit the AI has already decided to replace.
+
+  Two conversions, neither minted here: shield upkeep at
+  SHIELD_WEIGHTING (the codebase's own shield-to-want constant, the
+  switch debit's too) and gold upkeep at `upkeep_gold_weight` (the
+  BUILDING side's own knob, whose dimension is already "gold per turn
+  against a horizon"). Food upkeep is NOT charged -- there is no
+  food-to-want conversion at this seam and inventing one is rule 7 --
+  so the charge is an under-count, which is the safe direction for a
+  mechanism that only ever subtracts.
+
+  Emergency tier exempt, as every deep gate exempts it: a city that
+  needs a defender this turn is not shopping on running costs. Note
+  the interaction -- with `birth_guard_gain` open, CONSEQ re-prices the
+  first-defender want to DWT_NORMAL, which is what brings the derby's
+  own birth-guard population INTO this charge's reach.
+
+  Returns the debit, or 0.
+**************************************************************************/
+static adv_want deep_unit_upkeep_charge(struct player *pplayer,
+                                        struct city *pcity,
+                                        struct adv_choice *choice,
+                                        const char *who)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct universal target;
+  const struct unit_type *ut;
+  int life, eta, up_shield, up_gold;
+  double charge;
+  adv_want debit;
+
+  if (tune->unit_upkeep_charge <= 0.0
+      || choice->want <= 0
+      || deep_want_from_choice(choice).tier == DWT_EMERGENCY
+      || !deep_choice_target(choice, &target)
+      || target.kind != VUT_UTYPE) {
+    return 0;
+  }
+  ut = target.value.utype;
+
+  up_shield = utype_upkeep_cost(ut, NULL, pplayer, O_SHIELD);
+  up_gold = utype_upkeep_cost(ut, NULL, pplayer, O_GOLD);
+  if (up_shield <= 0 && up_gold <= 0) {
+    return 0;                   /* Free to keep: nothing owed. */
+  }
+
+  life = deep_horizon_turns();
+  eta = deep_utype_successor_eta(pplayer, ut, NULL);
+  if (eta >= 0 && eta < life) {
+    life = eta;
+  }
+  if (life <= 0) {
+    return 0;
+  }
+
+  charge = (double) up_shield * life * SHIELD_WEIGHTING
+           + (double) up_gold * life * tune->upkeep_gold_weight;
+  debit = (adv_want) (charge * tune->unit_upkeep_charge);
+  if (debit <= 0) {
+    return 0;
+  }
+
+  deep_upcharge_n++;
+  deep_upcharge_paid += debit;
+  log_base(deep_metric_log_level(),
+           "deep-upcharge turn=%d player=\"%s\" city=%d who=\"%s\""
+           " pick=\"%s\" life=%d eta=%d ups=%d upg=%d"
+           " debit=" ADV_WANT_PRINTF " want=" ADV_WANT_PRINTF
+           " left=" ADV_WANT_PRINTF,
+           game.info.turn, player_name(pplayer), pcity->id, who,
+           adv_choice_rule_name(choice), life, eta, up_shield, up_gold,
+           debit, choice->want, MAX(choice->want - debit, 0));
+
+  choice->want = MAX(choice->want - debit, 0);
+
+  return debit;
+}
+
+/**********************************************************************//**
   Debit one candidate by the shields its own production change would
   really forfeit, and return the debit in want.
 
@@ -6437,6 +6555,14 @@ static void deep_city_choose_build(struct ai_type *ait,
         deep_endgame_unit_deflate(pplayer, pcity, &(city_data->choice),
                                   "mil");
         deep_endgame_unit_deflate(pplayer, pcity, newchoice, "dom");
+
+        /* And the running cost of keeping what is about to be built,
+         * on both sides, before the debit and before the comparison:
+         * a unit's lifetime upkeep is the one price in this auction
+         * that buildings pay and units did not (audit 1b). */
+        deep_unit_upkeep_charge(pplayer, pcity, &(city_data->choice),
+                                "mil");
+        deep_unit_upkeep_charge(pplayer, pcity, newchoice, "dom");
 
         deep_switch_cost_apply(pplayer, pcity, &(city_data->choice), "mil");
         deep_switch_cost_apply(pplayer, pcity, newchoice, "dom");
