@@ -10928,7 +10928,16 @@ tech COUNT and never a name.
     lategame-80   81     120   53.0   57  Espionage           1/20
     garden2b     301      51   53.3   83  Space Flight        2/24
 
-**Flight exists in ONE cell: garden2b, 11/24 games** — two players,
+Classic-ruleset attic cells separate ruleset from horizon:
+`primary-120-classic` (T121) 28.8 techs mean, Flight 0/20;
+`cramped-classic` (T301) Flight 3/30; `garden2-classic` (T301) Flight
+6/30. **Every cell that reaches Flight is T300, in either ruleset, and
+no cell below T300 reaches it at all** -- the gate is the HORIZON.
+`isolated-classic` (canonical, T300 classic, no archive) is still owed a
+row: a fresh 5-game run was still in the T20s after 40 minutes and the
+background batch was reaped.
+
+**Flight exists in ONE canonical cell: garden2b, 11/24 games** — two players,
 separate islands, barbarians off, i.e. the cell with the least combat
 in the portfolio. **W32 (air doctrine) has no venue and is parked with
 evidence**; a cell built for it is the prerequisite, not the doctrine.

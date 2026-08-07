@@ -28,8 +28,31 @@ GAMES in which any player knew the advance.
 | `lategame-80` | 81 | 120 | 53.0 | 57 | Espionage | 1/20 |
 | `garden2b` | 301 | 51 | 53.3 | 83 | **Space Flight** | 2/24 |
 
-`isolated-classic` is canonical but had no archive; measured fresh (see
-below).
+`isolated-classic` is canonical and has NO archive. It is T300 classic,
+and a fresh 5-game run of it did not finish inside this session's
+harness window (games were still in the T20s after 40 minutes; the
+background batch was then reaped, which is NEXT-SESSION §5's rule
+earning its place again). Its row is owed. The three ATTIC classic
+cells below cover the ruleset question in the meantime.
+
+## The horizon is the variable, not the ruleset
+
+Same script over the archived classic-ruleset cells (attic tier, quoted
+here only to separate ruleset from endturn):
+
+| cell | T | games | techs mean | max | Flight | Espionage |
+|---|---|---|---|---|---|---|
+| `primary-120-classic` | 121 | 121 | 28.8 | 39 | 0/20 | 0/20 |
+| `cramped-classic` | 301 | 95 | 46.7 | 63 | 3/30 | 1/30 |
+| `garden2-classic` | 301 | 61 | 48.5 | 77 | 6/30 | 7/30 |
+
+**Every cell that reaches Flight is T300, and no cell below T300 reaches
+it in any ruleset.** classic techs faster than civ2civ3 at equal turns
+(primary-120-classic 28.8 mean vs primary-120's 17.3) and it still tops
+out at Sanitation by T121. So the gate on air is the HORIZON: 150 turns
+of civ2civ3 is a medieval game and 300 turns is where the top half of
+the tree starts existing at all -- and even there Flight is a minority
+of games (3/30, 6/30, 11/24).
 
 Full ladder where it matters:
 
