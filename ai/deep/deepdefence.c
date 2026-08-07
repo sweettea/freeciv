@@ -2878,8 +2878,52 @@ struct deep_writeoff_memo {
   int turn;                     /* when it was written off */
   int due;                      /* turn the verdict is taken */
   double p;
+  double relief;                /* best survival the WHOLE pool reaches */
   int wave;
+  int pool;                     /* reachable blades considered */
+  int adjacent;                 /* at-war units on an adjacent tile */
+  bool buyable;                 /* the treasury could buy this queue now */
 };
+
+/**********************************************************************//**
+  At-war units standing on a tile adjacent to this city: the "final
+  window" test, and the only one of the compound conditions that is
+  about the enemy rather than about us.
+**************************************************************************/
+static int deep_enemy_adjacent(const struct city *pcity)
+{
+  const struct civ_map *nmap = &(wld.map);
+  const struct player *pplayer = city_owner(pcity);
+  int n = 0;
+
+  adjc_iterate(nmap, city_tile(pcity), atile) {
+    unit_list_iterate(atile->units, aunit) {
+      if (pplayers_at_war(pplayer, unit_owner(aunit))
+          && !unit_has_type_flag(aunit, UTYF_CIVILIAN)) {
+        n++;
+      }
+    } unit_list_iterate_end;
+  } adjc_iterate_end;
+
+  return n;
+}
+
+/**********************************************************************//**
+  Could the treasury rush this city's current production THIS turn?
+
+  The predictive half of "the defence response has already been
+  attempted". The write-off is taken in the first-activities pass and
+  deep_spend_gold() runs at the END of the turn, so at write-off time
+  the buy has not happened yet -- what can honestly be recorded is
+  whether it COULD. A city whose queue is unbuyable, or whose price the
+  treasury cannot meet, is a city the emergency buy will not save.
+**************************************************************************/
+static bool deep_city_buyable_now(const struct city *pcity)
+{
+  int cost = city_production_buy_gold_cost(pcity);
+
+  return cost > 0 && cost <= city_owner(pcity)->economic.gold;
+}
 
 static struct deep_writeoff_memo *deep_writeoffs = NULL;
 static int deep_writeoff_n = 0, deep_writeoff_cap = 0;
@@ -2888,8 +2932,9 @@ static int deep_writeoff_n = 0, deep_writeoff_cap = 0;
   Record one write-off for later adjudication.
 **************************************************************************/
 static void deep_writeoff_record(const struct player *pplayer,
-                                 const struct city *pcity, double p,
-                                 int wave, int horizon)
+                                 struct city *pcity, double p,
+                                 double relief, int wave, int pool,
+                                 int horizon)
 {
   struct deep_writeoff_memo *e;
   int i;
@@ -2915,7 +2960,41 @@ static void deep_writeoff_record(const struct player *pplayer,
   e->turn = game.info.turn;
   e->due = game.info.turn + MAX(1, horizon);
   e->p = p;
+  e->relief = relief;
   e->wave = wave;
+  e->pool = pool;
+  /* The compound condition is recorded AT THE CALL, not at the
+   * verdict: what the consumer would have to act on is what was true
+   * when the write-off was taken. */
+  e->adjacent = deep_enemy_adjacent(pcity);
+  e->buyable = deep_city_buyable_now(pcity);
+}
+
+/**********************************************************************//**
+  THE EXHAUSTED SLICE (human call, 2026-08-07).
+
+  The raw write-off signal fires BEFORE the defence machinery answers,
+  and most flagged cities survive precisely BECAUSE the answer works --
+  a blade arrives, a defender is bought, the wave turns aside. So the
+  raw precision measured here is the precision of an ALARM and it is
+  the wrong number to size an irreversible act against. The number that
+  matters is the CONDITIONAL precision of the slice where every
+  response has already been tried and the city is still doomed:
+
+  - survival is still essentially zero;
+  - the whole reachable relief pool, poach included, moves it by
+    nothing (relief <= p) -- no reinforcement inside survival_horizon;
+  - the treasury cannot rush this city's queue this turn;
+  - and the enemy is ADJACENT, which is what makes it the final window
+    rather than a forecast.
+
+  Reported for every adjudication, so the conditional table can be
+  computed from the same ledger that produces the raw one.
+**************************************************************************/
+static bool deep_writeoff_exhausted(const struct deep_writeoff_memo *e)
+{
+  return e->p < 0.01 && e->relief <= e->p + 0.001
+         && e->adjacent > 0 && !e->buyable;
 }
 
 /**********************************************************************//**
@@ -2944,9 +3023,12 @@ static void deep_writeoff_adjudicate(struct player *pplayer)
     }
     log_base(deep_metric_log_level(),
              "deep-writeoff turn=%d player=\"%s\" city=%d called=%d"
-             " p=%.3f wave=%d lost=%d",
+             " p=%.3f relief=%.3f wave=%d pool=%d adj=%d buy=%d"
+             " exhausted=%d lost=%d",
              game.info.turn, player_name(pplayer), e->city_id, e->turn,
-             e->p, e->wave,
+             e->p, e->relief, e->wave, e->pool, e->adjacent,
+             e->buyable ? 1 : 0,
+             deep_writeoff_exhausted(e) ? 1 : 0,
              player_city_by_number(pplayer, e->city_id) == NULL ? 1 : 0);
     deep_writeoffs[i] = deep_writeoffs[--deep_writeoff_n];
   }
@@ -3083,7 +3165,8 @@ static void deep_defend_counter_claims(struct ai_type *ait,
                " p=%.3f wave=%d pool=%d best=%.3f",
                game.info.turn, player_name(pplayer), pcity->id, p, wave,
                n_cand, relieved);
-      deep_writeoff_record(pplayer, pcity, p, wave, tune->survival_horizon);
+      deep_writeoff_record(pplayer, pcity, p, relieved, wave, n_cand,
+                           tune->survival_horizon);
       continue;   /* Cannot be held tonight: do not feed it blades. */
     }
 
