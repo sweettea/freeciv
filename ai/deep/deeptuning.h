@@ -813,14 +813,13 @@ struct deep_tuning {
    * is a pure SIZE threshold (cm_grow_below), so a big city with a rich
    * unworked catchment and nothing worth building cannot enter it. This
    * blend admits a city whose marginal CITIZEN
-   * (deep_unworked_tile_value) beats its marginal BUILD
-   * (the auction's top want at that city), scaled by the blend.
+   * (deep_unworked_tile_value) beats its marginal BUILD (the top of
+   * this city's building_want[]), scaled by the blend.
    *
-   * The blend IS the currency conversion between stock's want and the
-   * advisor's weighted tile output -- W01's `want_t`, declared and
-   * never implemented -- so it is a PLACEHOLDER in the strictest sense
-   * and not a magnitude anyone should reason about before it is tuned.
-   * 0 = off = the size threshold alone. The threshold stays as a floor
+   * Both sides are output x priority (infracache.h), so the blend is a
+   * genuine trade-off weight and not a unit conversion -- this test
+   * does NOT depend on W01's unbuilt `want_t`. PLACEHOLDER all the
+   * same; 0 = off = the size threshold alone. The threshold stays as a floor
    * either way, so this can only add cities to grow-hard, never remove
    * one, and the garrison-coverage conjunct still applies to both. */
   double cm_grow_price_blend;

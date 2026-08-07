@@ -41,6 +41,7 @@
 /* server/advisors */
 #include "advdata.h"
 #include "advgoto.h"
+#include "infracache.h"
 
 /* ai/default */
 #include "daicity.h"
@@ -268,18 +269,31 @@ static bool deep_cm_survival_ok(struct city *pcity)
     the citizen   deep_unworked_tile_value(), the same catchment walk
                   and the same adv->*_priority weights the capacity and
                   content credits use;
-    the build     city_data->choice.want, the auction's own top want at
-                  this city -- last pass's, since the build choice runs
-                  after the arrangement.
+    the build     the top of this city's building_want[] -- the standing
+                  building auction, which D2 made honest (deep applies
+                  and reverts its credit around the build pass, so
+                  between passes the array holds stock's own want).
 
-  The blend is not decoration and not a fudge: the two numbers live in
-  DIFFERENT currencies. choice.want is stock's want; the tile value is
-  the advisor's weighted tile output. The conversion between them is
-  W01's `want_t`, which STATUS records as declared and never
-  implemented, and which the economy audit names as the blocker on
-  every tech-vs-building-vs-gold comparison in this project. Guessing
-  the ratio here would be rule 7. So the ratio IS the knob, it ships at
-  0, and until it is tuned the threshold is the only thing deciding.
+  It is the BUILDING auction and not city_data->choice, and that is a
+  measured correction rather than a preference. choice.want is set to
+  -1 by the buy pass at the END of the turn for every city it reaches,
+  and this test runs in first_activities at the TOP of the next one:
+  the first census of this mechanism read build=-1.0 on 554 of 554
+  evaluations and fired on every one. The auction's chosen want does
+  not exist at this seam. building_want[] does, and it is what the
+  build decision actually reads.
+
+  The two are in the SAME currency by construction -- infracache.h:
+  "the units of building_want are output multiplied by a priority" --
+  which is exactly what deep_unworked_tile_value() returns. So the
+  blend is a genuine trade-off weight and not a unit conversion, and
+  this comparison does not need W01's unbuilt `want_t`.
+
+  The gap to state: building_want[] covers buildings only. A city whose
+  best build is a UNIT (settlers, a defender) has that want in
+  city_data->choice, which is gone by now, so this test sees a smaller
+  build side there and leans toward growth. Bounded by the size floor
+  and by the garrison-coverage conjunct, but real.
 
   It can only ADD cities to grow-hard, never remove them: the size test
   stays as a floor, so nothing that grows today stops.
@@ -287,9 +301,8 @@ static bool deep_cm_survival_ok(struct city *pcity)
 static bool deep_cm_grow_priced(struct ai_type *ait, struct city *pcity)
 {
   const struct deep_tuning *tune = deep_tuning_get();
-  struct ai_city *city_data = def_ai_city_data(pcity, ait);
   struct adv_data *adv;
-  double citizen, build;
+  double citizen, build = 0.0;
   bool fires;
 
   if (tune->cm_grow_price_blend <= 0.0) {
@@ -297,17 +310,30 @@ static bool deep_cm_grow_priced(struct ai_type *ait, struct city *pcity)
   }
   adv = adv_data_get(city_owner(pcity), NULL);
   citizen = (double) deep_unworked_tile_value(pcity, adv, 1, NULL);
-  build = (double) city_data->choice.want;
+
+  if (pcity->server.adv != NULL) {
+    improvement_iterate(pimprove) {
+      adv_want w = pcity->server.adv->building_want[improvement_index(pimprove)];
+
+      if ((double) w > build) {
+        build = (double) w;
+      }
+    } improvement_iterate_end;
+  }
   fires = tune->cm_grow_price_blend * citizen >= build;
 
   /* Reached only when the size threshold has already said no (the ||
    * short-circuits), so every line here is a city the threshold alone
-   * would leave out and fires=1 is exactly the marginal admission. */
+   * would leave out and fires=1 is exactly the marginal admission.
+   * `choice` is logged beside it as the standing evidence that the
+   * auction's own want is not available here. */
   log_base(deep_metric_log_level(),
            "deep-cmgrow turn=%d player=\"%s\" city=%d size=%d"
-           " citizen=%.1f build=%.1f fires=%d",
+           " citizen=%.1f build=%.1f choice=%.1f fires=%d",
            game.info.turn, player_name(city_owner(pcity)), pcity->id,
-           city_size_get(pcity), citizen, build, fires ? 1 : 0);
+           city_size_get(pcity), citizen, build,
+           (double) def_ai_city_data(pcity, ait)->choice.want,
+           fires ? 1 : 0);
 
   return fires;
 }
