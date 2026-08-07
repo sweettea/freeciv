@@ -12,3 +12,4 @@ ab     lategame-80 20 seeds: OFF 169.47; CULT +0.15 (t +0.31, 4/20, 1368 lines);
 ab     HEAD-TO-HEAD contested mixed_dc 20 seeds: deep +1.93 (t +0.72), CLASSIC +5.26 (t +2.15), GAP deep-classic -3.34 (t -0.86). The all-deep gain is positive-sum and the counterparty banks MORE of it.
 proof  off-switch: pre-session d1e99bdd547c96 (6eff59f822) vs session 20294f6a010ad8, smoke 10 seeds, same ini -- 10/10 scorelogs byte-identical, and the ten hashes are DARKFX's published ten.
 c5 382518defc  benchmark: archive the BALANCE arms
+c6 f3503da3b4  doc: report BALANCE -- STATUS dated section + findings/balance-statecraft-2026-08-06.md; progress log included
