@@ -1024,6 +1024,28 @@ struct deep_tuning {
    * odds the tile-aware defence read computes -- so no double count.
    * 0 = off. */
   double pop_insurance_gain;
+  /* THE BARRACKS' TWO STREAMS (M4b item 4, amortization audit 1c).
+   * Stock prices EFT_HP_REGEN at 5c + num (daieffects.c:459) and
+   * EFT_VETERAN_BUILD at amount x (3c + num) (:479) -- two headcount
+   * WAGs for two things that are streams.
+   *
+   * heal_stream_gain prices HP THROUGHPUT: the ruleset's own healing
+   * arithmetic (hp_gain_coord(), common/unit.c:2216 -- base HP x
+   * regen% per turn) says how many turns of the line each damaged
+   * unit in this city gets back, and each returned unit-turn is worth
+   * that unit's shields at SHIELD_WEIGHTING. Counted over the units
+   * actually standing here damaged, so a city with no casualties is
+   * owed nothing.
+   *
+   * veteran_stream_gain prices the VETERAN MARGIN, which is the
+   * stream stock most obviously prices as a point: +power_fact for
+   * the unit's WHOLE LIFE. Value per unit = (power ratio - 1) x its
+   * shields; units over the horizon = horizon / turns to build one.
+   * Both factors are the ruleset's own numbers.
+   *
+   * Both 0 = off. */
+  double heal_stream_gain;
+  double veteran_stream_gain;
   /* Assault operations (E6): form when the free-attacker pool's take
    * odds against the best met target clear op_take_target (<= 0
    * disables); muster at the staging city up to op_muster_wait turns

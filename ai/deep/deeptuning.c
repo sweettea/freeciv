@@ -177,6 +177,8 @@ static const struct deep_tuning deep_tuning_defaults = {
   .deterrence_gain = 0.0,               /* PLACEHOLDER, 0 = off */
   .unit_upkeep_charge = 0.0,            /* PLACEHOLDER, 0 = off */
   .pop_insurance_gain = 0.0,            /* PLACEHOLDER, 0 = off */
+  .heal_stream_gain = 0.0,              /* PLACEHOLDER, 0 = off */
+  .veteran_stream_gain = 0.0,           /* PLACEHOLDER, 0 = off */
   .op_take_target = 0.7,                /* PLACEHOLDER, untuned */
   .op_muster_wait = 10,                 /* PLACEHOLDER, untuned */
   .op_launch_odds = 1,                  /* the bar, not a magnitude */
@@ -395,6 +397,8 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(deterrence_gain) \
   TUNE_DOUBLE(unit_upkeep_charge) \
   TUNE_DOUBLE(pop_insurance_gain) \
+  TUNE_DOUBLE(heal_stream_gain) \
+  TUNE_DOUBLE(veteran_stream_gain) \
   TUNE_DOUBLE(op_take_target) \
   TUNE_INT(op_muster_wait) \
   TUNE_INT(op_launch_odds) \

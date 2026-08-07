@@ -33,6 +33,7 @@
 #include "tile.h"
 
 /* server/advisors */
+#include "advbuilding.h"
 #include "advdata.h"
 #include "advtools.h"
 #include "infracache.h"
@@ -1200,6 +1201,198 @@ static adv_want deep_culture_paid = 0;
 /* Item 3's execution counters, per player pass. */
 static int deep_popins_cands = 0;
 static double deep_popins_paid = 0.0;
+/* Item 4's, kept apart because the two streams are measured apart. */
+static int deep_heal_cands = 0, deep_vet_cands = 0;
+static double deep_heal_paid = 0.0, deep_vet_paid = 0.0;
+
+/**********************************************************************//**
+  THE BARRACKS' FIRST STREAM: HP THROUGHPUT (M4b item 4, audit 1c).
+
+  Stock prices EFT_HP_REGEN at 5c + num (daieffects.c:459) -- a
+  headcount WAG for a rate. The ruleset states the rate exactly:
+  hp_gain_coord() (common/unit.c:2216) heals base_hp x regen% per turn,
+  so what the building buys is TURNS OF THE LINE, and the population
+  it buys them for is the damaged units standing in this city right
+  now.
+
+  For each of them: the turns it needs to reach full at today's regen,
+  minus the turns it would need with the building's regen added. Each
+  turn saved is one more unit-turn of that unit's shields on the line,
+  valued at SHIELD_WEIGHTING -- the codebase's own shield-to-want
+  constant, so no new scale is minted here either.
+
+  A city with no casualties is owed nothing, which is the whole point:
+  stock pays for a Barracks in a city that has never seen a fight.
+**************************************************************************/
+static adv_want deep_heal_stream_credit(struct city *pcity,
+                                        const struct impr_type *pimprove)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct player *pplayer = city_owner(pcity);
+  int add_regen;
+  double saved = 0.0;
+  adv_want credit;
+
+  if (tune->heal_stream_gain <= 0.0) {
+    return 0;
+  }
+  add_regen = get_potential_improvement_bonus(pimprove, pcity,
+                                              EFT_HP_REGEN,
+                                              RPT_CERTAIN, FALSE);
+  if (add_regen <= 0) {
+    return 0;
+  }
+  {
+    int have = get_city_bonus(pcity, EFT_HP_REGEN);
+
+    if (have >= add_regen) {
+      return 0;               /* Already healing at least this fast. */
+    }
+    unit_list_iterate(city_tile(pcity)->units, punit) {
+      const struct unit_type *ut = unit_type_get(punit);
+      int missing = ut->hp - punit->hp;
+      int now, with, t_now, t_with;
+
+      if (unit_owner(punit) != pplayer
+          || unit_has_type_flag(punit, UTYF_CIVILIAN)
+          || missing <= 0) {
+        continue;
+      }
+      /* The ruleset's own arithmetic, both ways. */
+      now = ut->hp * have / 100;
+      with = ut->hp * add_regen / 100;
+      if (with <= now) {
+        continue;
+      }
+      /* Capped at the horizon rather than called infinite: a unit that
+       * cannot heal at all here is not worth an unbounded credit. */
+      t_now = (now > 0
+               ? (missing + now - 1) / now
+               : deep_horizon_turns());
+      t_with = (missing + with - 1) / with;
+      t_now = MIN(t_now, deep_horizon_turns());
+      if (t_now <= t_with) {
+        continue;
+      }
+      saved += (double) (t_now - t_with)
+               * unit_build_shield_cost_base(punit);
+    } unit_list_iterate_end;
+  }
+
+  if (saved <= 0.0) {
+    return 0;
+  }
+  credit = (adv_want) (saved * SHIELD_WEIGHTING * tune->heal_stream_gain);
+  if (credit <= 0) {
+    return 0;
+  }
+  deep_heal_cands++;
+  deep_heal_paid += credit;
+
+  return credit;
+}
+
+/**********************************************************************//**
+  THE BARRACKS' SECOND STREAM: THE VETERAN MARGIN (audit 1c).
+
+  This is the stream stock most plainly prices as a point. A veteran
+  level is a power multiplier for the unit's WHOLE LIFE and every
+  combat in it; daieffects.c:479 pays amount x (3c + num) for it, a
+  headcount again.
+
+  Both factors here are the ruleset's own numbers and neither is
+  invented:
+
+  - the MARGIN is power_fact at the level the city would build at,
+    over power_fact at the level it builds at today
+    (utype_veteran_level()), minus one -- a fraction. A unit that is
+    that fraction stronger is worth that fraction more shields, which
+    is the same identity the attack and defence ratings already use.
+  - the COUNT is how many units this city gets out over the planning
+    horizon: deep_horizon_turns() divided by the turns the best
+    defender it can build takes to build.
+
+  Priced on the best defender because that is the unit a city with a
+  Barracks in the queue is going to be making; an attacker-heavy city
+  is under-credited, which is the safe direction.
+**************************************************************************/
+static adv_want deep_veteran_stream_credit(struct city *pcity,
+                                           const struct impr_type *pimprove)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  const struct unit_type *best = NULL;
+  const struct veteran_level *vl_now, *vl_new;
+  struct universal tgt;
+  int add_lv, have_lv, lv_now, lv_new, levels, ttb;
+  double margin, per_horizon;
+  adv_want credit;
+
+  if (tune->veteran_stream_gain <= 0.0) {
+    return 0;
+  }
+  add_lv = get_potential_improvement_bonus(pimprove, pcity,
+                                           EFT_VETERAN_BUILD,
+                                           RPT_CERTAIN, FALSE);
+  if (add_lv <= 0) {
+    return 0;
+  }
+  have_lv = get_city_bonus(pcity, EFT_VETERAN_BUILD);
+  if (add_lv <= have_lv) {
+    return 0;                   /* No margin over what we already get. */
+  }
+
+  unit_type_iterate(ut) {
+    if (ut->defense_strength > 0
+        && can_city_build_unit_now(nmap, pcity, ut, RPT_CERTAIN)
+        && (best == NULL
+            || ut->defense_strength > best->defense_strength)) {
+      best = ut;
+    }
+  } unit_type_iterate_end;
+  if (best == NULL) {
+    return 0;
+  }
+
+  levels = utype_veteran_levels(best);
+  lv_now = MIN(have_lv, levels - 1);
+  lv_new = MIN(add_lv, levels - 1);
+  if (lv_new <= lv_now) {
+    return 0;                   /* Ruleset caps it out. */
+  }
+  vl_now = utype_veteran_level(best, lv_now);
+  vl_new = utype_veteran_level(best, lv_new);
+  if (vl_now == NULL || vl_new == NULL || vl_now->power_fact <= 0) {
+    return 0;
+  }
+  margin = (double) vl_new->power_fact / vl_now->power_fact - 1.0;
+  if (margin <= 0.0) {
+    return 0;
+  }
+
+  tgt.kind = VUT_UTYPE;
+  tgt.value.utype = (struct unit_type *) best;
+  ttb = city_turns_to_build(pcity, &tgt, TRUE);
+  if (ttb <= 0 || ttb >= FC_INFINITY) {
+    return 0;
+  }
+  per_horizon = (double) deep_horizon_turns() / ttb;
+  if (per_horizon <= 0.0) {
+    return 0;
+  }
+
+  credit = (adv_want) (per_horizon * margin
+                       * utype_build_shield_cost_base(best)
+                       * SHIELD_WEIGHTING
+                       * tune->veteran_stream_gain);
+  if (credit <= 0) {
+    return 0;
+  }
+  deep_vet_cands++;
+  deep_vet_paid += credit;
+
+  return credit;
+}
 
 /**********************************************************************//**
   WALLS AS POP-LOSS INSURANCE (M4b item 3).
@@ -1556,6 +1749,10 @@ void deep_adjust_building_wants(struct ai_type *ait,
   deep_culture_paid = 0;
   deep_popins_cands = 0;
   deep_popins_paid = 0.0;
+  deep_heal_cands = 0;
+  deep_heal_paid = 0.0;
+  deep_vet_cands = 0;
+  deep_vet_paid = 0.0;
 
   city_list_iterate(pplayer->cities, pcity) {
     adv_want cap_credit;
@@ -1632,7 +1829,11 @@ void deep_adjust_building_wants(struct ai_type *ait,
          * city is the only city that has any expected successful
          * attacks at all, so gating the insurance on peace would gate
          * it on having no population. */
-        && !(tune->pop_insurance_gain > 0.0 && pop_hits > 0.0)) {
+        && !(tune->pop_insurance_gain > 0.0 && pop_hits > 0.0)
+        /* Item 4 the same: a Barracks is worth most to a city that is
+         * taking casualties and building replacements. */
+        && tune->heal_stream_gain <= 0.0
+        && tune->veteran_stream_gain <= 0.0) {
       /* Growth is a peace-time investment: no horizon credits while
        * the city is under threat (the contested ablation showed the
        * credits, not the site terms, carried the war-map score cost:
@@ -1737,6 +1938,13 @@ void deep_adjust_building_wants(struct ai_type *ait,
        * culture is not: a wall's insurance value is zero in a city
        * nobody is attacking and maximal in one that is. */
       add += deep_pop_insurance_credit(pcity, pimprove, adv, pop_hits);
+
+      /* M4b item 4: the Barracks' two real streams, likewise not
+       * gated on !threatened -- healing and veterancy are war goods,
+       * and stock's own two WAGs for them are headcounts that do not
+       * know whether there is a war on. */
+      add += deep_heal_stream_credit(pcity, pimprove);
+      add += deep_veteran_stream_credit(pcity, pimprove);
 
       if (!threatened && game.info.illness_on
           && city_size_get(pcity) + 1 >= game.info.illness_min_size) {
@@ -1937,6 +2145,17 @@ void deep_adjust_building_wants(struct ai_type *ait,
              "deep-popins turn=%d player=\"%s\" cands=%d credit=%.1f",
              game.info.turn, player_name(pplayer), deep_popins_cands,
              deep_popins_paid);
+  }
+
+  /* Item 4's two streams counted APART, because they are priced
+   * apart and a session that cannot tell which one moved has learnt
+   * nothing. */
+  if (deep_heal_cands > 0 || deep_vet_cands > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-barracks turn=%d player=\"%s\" heal=%d healcr=%.1f"
+             " vet=%d vetcr=%.1f",
+             game.info.turn, player_name(pplayer), deep_heal_cands,
+             deep_heal_paid, deep_vet_cands, deep_vet_paid);
   }
 
   if (deep_upkeepfree_cands > 0) {
