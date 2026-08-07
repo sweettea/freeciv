@@ -158,21 +158,46 @@ seeds, then holdout venues — three concentric claims of generality.
 - No tournament/Elo machinery: two mixed cells + the floor rule buy most
   of the value at a fraction of the complexity.
 
-## 6a. Per-player tuning: not for v4 (human question 2026-08-06, answered)
+## 6a. Per-player tuning — REVISED 2026-08-06: pulled forward as the arena tier
 
-Asked directly: build per-deep ini values first? **No — complication
-without a v4 win.** The struct is process-global behind
-`deep_tuning_get()` at hundreds of call sites; per-player needs either a
-threaded parameter or a phase-scoped active-pointer switch at every
-vtable entry, whose failure mode (a silent wrong-player read) is exactly
-the kind of bug that corrupts a campaign invisibly. And v4 never needs
-it: mixed cells run the whole deep cohort on ONE candidate file against
-stock — the yardstick the project's goal names. The two things
-per-player tuning genuinely buys — candidate-vs-incumbent selection at
-one table, and per-seat difficulty jitter — are both post-v4 by design
-(and incumbent-selection brings its own pathologies: intransitivity,
-exploiting the incumbent instead of being good). Build it once, in the
-difficulty epic, when it is the point rather than a prerequisite.
+First verdict was "not for v4 — complication without a win." The human
+overturned the value half of that ledger, and the revision stands on
+their argument: **eight candidates at one table is within-game
+selection** — the game itself punishes a bad tuning at 8× the
+throughput of one-candidate-per-world, and punishes it SHARPLY (a weak
+defense gets eaten by a table-mate instead of surfacing as a diffuse
+self-play score dip). That makes per-player tuning a v4 accelerator,
+not just difficulty-epic plumbing:
+
+- **Arena tier (new stage 0 of the racing ladder, §6e):** populations
+  of 8 candidate files per game, shuffled seats across many tables,
+  rank-based fitness. Candidates that lose arenas badly never buy
+  paired seeds at all; survivors enter the existing n=10/20/40 ladder.
+  Arena fitness is population-dependent and can cycle — so it TRIAGES,
+  it never claims. Claims stay with the paired self-play + mixed
+  protocol and the z-floor, which also anchors against rush-meta drift
+  (§2a's regularizer argument applies within the arena population
+  too).
+- **The balance experiment (human, 2026-08-06):** after tuning,
+  round-robin the personality corners within the shipped
+  `stance_trait_span` at one table and require **no perpetual
+  winner** — if hawk-max (or any corner) dominates within the range,
+  either the span is too wide or a price is wrong, and that is a
+  finding with a file. This upgrades §6d's report-only menagerie into
+  a designed experiment with a pass/fail criterion.
+- **The risk half of the first verdict stands and gates the pull:**
+  the failure mode is a silent wrong-player read. The plumbing ships
+  only behind (a) byte-identity proof — N players on IDENTICAL files
+  must equal the process-global binary bit-for-bit, (b) per-player
+  counter attribution spot-checked against logs, (c) the no-threading
+  exclusion doing real work here: AI phases are strictly sequential
+  per player, so a phase-scoped active pointer has no concurrent
+  reader by construction. A PERPLAYER session owns this; if the
+  identity gate cannot be proven, the pull is off and the original
+  deferral stands.
+- Free riders once it lands: candidate-vs-incumbent tables when stock
+  goes stale as a yardstick (§2a), and the difficulty jitter's
+  mechanism, early.
 
 ## 6b. Cost of more venues (same question)
 
