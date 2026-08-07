@@ -1,0 +1,34 @@
+# M4a progress log (2026-08-07)
+
+Branch epic/m4a, based on epic/w03-horizon-content @ 7c019ac9de.
+Worktree .worktrees/bench, ports 6500+, own out dirs under the session
+scratchpad. Main tree never touched (CONSEQ owns it).
+
+- read CLAUDE.md, NEXT-SESSION §5, W34 A.3/A.4/E34.4, W35, sessions/
+  README standing calls, E34.3 STATUS tail, deepstance.c, deepops.c's
+  hold mechanism, ai/default's diplomat chain
+- HOST RESTART mid-session; resumed from the transcript with deepstance.c
+  edits intact and nothing yet committed
+- 3fefa2bf8f ai/deep: modulate the stance by what the position offers
+- 5f76d416df ai/deep: read a player's research lean into its stance
+- 633bcca985 ai/deep: price a spy's actions in the want currency
+- 53bae3ca7d ai/deep: commit a spy only to an action the server will run
+  (the first probe's 107 "thefts" were all refused by the server)
+- benchmark/era-check.py + findings/era-reachability-2026-08-07.md
+- STATUS section + this log
+
+Runs (all foreground, DONE-marker checked, worktree binary pinned to the
+scratchpad with libfreeciv.so beside it):
+
+- res-base   smoke x10, deep, tuning=none, epic tip binary       10/10
+- res-head   smoke x10, deep, tuning=none, mid-session binary    10/10
+- res-head2  smoke x10, deep, tuning=none, FINAL binary          10/10
+  -> scorelogs byte-identical to res-base, 10/10 (defaults off)
+- res-probe  smoke x10, deep, m4a-probe.ini (source 2 + spy on)  10/10
+  -> exposed the 107 phantom thefts
+- res-probe2 smoke x10, deep, m4a-probe.ini, hardened binary     10/10
+  -> 51 real thefts, refused 0, 4 distinct stances in 10/10 games
+- res-isoclassic isolated-classic x5 (T300 classic) — the one canonical
+  cell with no archive, run for the era table
+
+meson test 4/4 and tune-audit CLEAN 197/197/197/197 at every commit.

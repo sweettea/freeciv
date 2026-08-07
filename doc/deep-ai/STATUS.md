@@ -10797,3 +10797,172 @@ off arm.
   the growth, health and content credits for any flag-gated effect.
 - **`/tmp` does not survive.** The M4b result directories are gone;
   every table above is analysis output, not a re-derivable artefact.
+---
+
+## M4a: the stance reads the map, spies get prices, and only one cell reaches Flight (2026-08-07)
+
+Three items, no shared files with the other in-flight sessions. Five
+commits on `epic/m4a`.
+
+### W34 E34.4 — source 2: traits + position + research lean
+
+`stance_source = 2` keeps E34.3's trait prior and adds, on the same
+INDEX scale and inside the same span clamp:
+
+    land    deep_free_land_share()      -> econ
+    war     rivals at war / rivals      -> mil
+    threat  deep_border_pressure_from() summed over rivals, PER CITY WE
+            HOLD, saturated p / (p + stance_pressure_ref) -> mil
+    lean    (mil_unlocking - econ_unlocking) / sum over KNOWN advances,
+            classified from the ruleset (attack_strength > 0 in a unit's
+            build_reqs vs an improvement's reqs) -> +mil / -econ
+
+Adding on the index rather than on the weight is what keeps a pinned
+corner exactly the extreme a free player can reach. With both gains at
+zero, source 2 is EXACTLY source 1 (x + 0.0*y == x, and a trait index is
+already inside the clamp), which is the per-term off-switch.
+
+**Compiled default stays `stance_source = 0`.** The 2026-08-05 standing
+call holds: not folded into any cell or default.
+
+**Recency was NOT built, deliberately.** A.4 asks for the share of
+RECENT bulbs. `struct research` records counts, a target and a goal --
+no history -- so recency needs saved per-turn state plus a decay
+constant to weight it. The known-advance stock is the same signal
+integrated; `tech_mil` and `tech_econ` are raw on the stance line so the
+question "does it discriminate" is measured rather than assumed.
+
+**Measured**, smoke, 10 games, 40 deep seats, `stance_source = 2`
+(`benchmark/tuning/m4a-probe.ini`), turn-100 lines:
+
+    signal      min      mean      max
+    econ      0.645     0.733    0.812
+    mil       0.503     0.704    0.867
+    mil/econ  0.654     0.963    1.273
+    land      0.080     0.165    0.274
+    war       0.000     0.467    1.000
+    threat    0.047     0.284    0.664
+    press     0.200     1.929    7.890   (raw, per city we hold)
+    lean     -0.385    -0.267   -0.067
+    tech_mil      3       5.4        8
+    tech_econ     6       9.4       13
+    pos_moved    96      99.3      100   (of 100 turns)
+
+- **4 distinct stances in 10/10 games** on a `traitdistribution FIXED`
+  cell. Source 1 could not do that: E34.3 measured 1 distinct stance per
+  game there, because every player draws 50/50/50/50. **Source 2 is the
+  first source that differentiates seats on the cells we actually run.**
+- The tech lean **does** discriminate (range 0.32 across seats) but is
+  **uniformly economic** (-0.39..-0.07): early civ2civ3 unlocks more
+  buildings than attackers, so the term is a small consistent econ tilt
+  plus a seat-level spread, not a two-sided signal. Honest, and on the
+  line.
+- **`stance_pressure_ref = 4.0` is too high for the observed
+  distribution** (mean raw pressure 1.93, median well under 4), so
+  `threat` sits under 0.33 most of the time. Flagged for the tuning pile
+  rather than adjusted here (rule 7).
+
+### W35 E35.1 — spy actions priced in the want currency
+
+`ai/deep/deepspy.c`. Stock's ladder (embassy 10000, steal 9000, incite
+7000, sabotage 6000 — its own FIXME calls it arbitrary) is replaced, for
+the units deep claims, by prices in deep's currency:
+
+    embassy   embassy_science_value, the want deep ALREADY pays per
+              missing embassy on the BUILD side
+    steal     bulbs x 3 (stock's own dai_goldequiv_tech rate) x
+              spy_gold_value; targeted variants price the named tech,
+              untargeted ones our own next research step
+    incite    deep_conquest_worth() - incite cost x spy_gold_value
+    sabotage  shields destroyed x spy_sabotage_gain
+    net of    the actor's shield cost when the action consumes it
+
+Where deep has no price (steal gold, maps, poison, plague, nuke) it
+ABSTAINS and stock's ladder answers.
+
+**The seam, and the number that judges the design.** Stock's
+`dai_manage_diplomat()` bribes, defends, targets, walks and acts in ONE
+call, so the action choice can only be intercepted upstream of it. Deep
+runs before `deep_do_first_activities()`, takes the action for a
+diplomat already standing where an action is legal, holds it, and leaves
+every other diplomat-turn to stock. **No `ai/default` change was needed:
+everything required was already public.**
+
+Census, smoke, 10 games, 40 deep seats, `spy_enabled = 1`:
+
+    seen 4304   at_seam 76   abstained 25   refused 0
+    acted: steal 51, embassy 0, incite 0, sabotage 0
+
+- **The seam is 1.8% of diplomat-turns.** Deep prices the action for a
+  diplomat that starts its phase adjacent to a target; the rest are
+  approaching, bribing or garrisoning. Owning more would mean owning the
+  target choice and the walk, which is W35's next slice, not this one.
+- **The first probe reported 107 thefts, and none of them happened.**
+  `action_prob_possible()` answers "might be possible"; the server's
+  handler applies `is_action_enabled_unit_on_city()`. Adding the strict
+  test plus stock's already-robbed guard, and counting what the server
+  DID (a real diplomat action charges movement or eats the unit), took
+  it to 51 real thefts and refused 0. A refused action is no longer
+  held, so stock still gets its turn with the unit.
+- **embassy 0 is a finding, not a bug.** `embassy_science_value` (8.0)
+  and a steal (15..735 in currency) are placeholders on scales that have
+  never been calibrated against each other, so steal wins every contest
+  and deep never establishes an embassy under civ2civ3 tech leakage. The
+  two placeholders owe the tuning pass a joint pass, and that is the
+  first question W35's next slice must answer.
+- incite 0 and sabotage 0 on smoke: 100 turns is too short to afford an
+  incite, and sabotage needs a war and an adjacent diplomat.
+
+### Era reachability — only garden2b reaches Flight
+
+`benchmark/era-check.py` + `findings/era-reachability-2026-08-07.md`.
+Reads archived final savegames, parses the per-research bitstring, maps
+it through the ruleset's advance order. `metrics.csv` has always had a
+tech COUNT and never a name.
+
+    cell           T   games  techs  max  highest landmark   games
+    smoke        101      40   15.1   24  Gunpowder           2/10
+    primary-120  121       6   17.3   22  Gunpowder           1/1
+    contested    151     160   17.9   29  Sanitation          1/20
+    isolated-150 151      82   29.2   43  Sanitation         16/20
+    lategame-80   81     120   53.0   57  Espionage           1/20
+    garden2b     301      51   53.3   83  Space Flight        2/24
+
+**Flight exists in ONE cell: garden2b, 11/24 games** — two players,
+separate islands, barbarians off, i.e. the cell with the least combat
+in the portfolio. **W32 (air doctrine) has no venue and is parked with
+evidence**; a cell built for it is the prerequisite, not the doctrine.
+**Espionage (Diplomat -> Spy) is 7/24 garden2b and 1/20 lategame-80**,
+so every W35 slice that assumes a Spy is priced for a unit the cells
+almost never field — E35.1's Diplomat-era scope is the only scope the
+portfolio can measure. Four of six cells end between Gunpowder and
+Sanitation; that band is where mechanism work pays.
+
+### Identity and hygiene
+
+- **Byte-identity 10/10** on smoke, `--arms deep`, tuning=none, epic tip
+  `7c019ac9de` against this session's final binary, both pinned with
+  their own `libfreeciv.so`. Both new mechanisms default OFF
+  (`stance_source = 0`, `spy_enabled = 0`).
+- `meson test -C build` **4/4**, `python3 benchmark/tune-audit.py`
+  **CLEAN 197/197/197/197** (was 194 mid-session, 191 at the epic tip).
+- New tunables, all PLACEHOLDER, all for the pile: `stance_position_gain`
+  0.5, `stance_techlean_gain` 0.5, `stance_pressure_ref` 4.0 (measured
+  too high, see above), `spy_enabled` 0, `spy_gold_value` 0.5,
+  `spy_sabotage_gain` 0.5.
+- New census lines: `deep-spy`, `deep-spy-act`, and eight new fields on
+  `deep-stance`.
+- `benchmark/tuning/m4a-probe.ini` is a probe, not a cell and not a
+  candidate default.
+
+### What the next session should know
+
+- **Source 2 is the first stance source that does anything on our
+  cells.** If the stance layer is ever to be measured free rather than
+  pinned, it is source 2 that must be A/B'd — source 1 is provably inert
+  under `traitdistribution FIXED`.
+- **The spy seam is small by construction.** Growing it means deep
+  taking the diplomat TARGET choice (and with it incite-vs-assault as
+  competing plans for one city, which is where W35's value actually is).
+- **The embassy/steal placeholder mismatch is the live defect** in the
+  gated pricer: deep will never make an embassy while a theft is legal.
