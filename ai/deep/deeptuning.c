@@ -62,6 +62,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .caravan_discount = 0.95,             /* = stock, untuned */
   .caravan_foreign_trade = 3,           /* PLACEHOLDER, untuned */
   .cm_war_survival = 0.9,               /* PLACEHOLDER, untuned */
+  .cm_war_growth_charge = 0.0,          /* PLACEHOLDER, 0 = off */
   .horizon_tech_weight = 1.0,           /* PLACEHOLDER, untuned */
   .site_claim_bonus = 8.0,              /* PLACEHOLDER, untuned */
   .site_pressure_factor = 0.3,          /* PLACEHOLDER, untuned */
@@ -303,6 +304,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(caravan_discount) \
   TUNE_INT(caravan_foreign_trade) \
   TUNE_DOUBLE(cm_war_survival) \
+  TUNE_DOUBLE(cm_war_growth_charge) \
   TUNE_DOUBLE(horizon_tech_weight) \
   TUNE_DOUBLE(overseas_fear) \
   TUNE_DOUBLE(overseas_decay) \

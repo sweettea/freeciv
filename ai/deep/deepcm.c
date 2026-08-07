@@ -19,6 +19,7 @@
 
 /* utility */
 #include "mem.h"
+#include "timing.h"
 
 /* common */
 #include "city.h"
@@ -289,6 +290,182 @@ static bool deep_cm_apply_posture(struct cm_parameter *cmp,
   return TRUE;
 }
 
+/* One remembered posture counterfactual per city per turn.
+ *
+ * Keyed on the TURN and not cleared from the phase hook, because the
+ * question this answers ("what do these two arrangements yield") is a
+ * property of the map and the city, and every consumer of it runs
+ * inside the same turn. A new game in the same server process starts
+ * at a turn number below the one the last game ended on, so the
+ * turn stamp also fences games apart. */
+struct deep_cm_memo {
+  int city_id;
+  bool valid;                   /* Both solves found an arrangement */
+  enum deep_cm_posture alt;     /* What the city would do instead */
+  int war[O_LAST];              /* Surplus on war footing */
+  int peace[O_LAST];            /* Surplus under alt */
+  double cost;                  /* Growth forgone by the footing, [0,1] */
+};
+
+static struct deep_cm_memo *deep_cm_cache = NULL;
+static int deep_cm_n = 0;
+static int deep_cm_cap = 0;
+static int deep_cm_turn = -1;
+
+/* The solver-time bill, reported per player-turn so the counterfactual
+ * pays for itself in public. Counted for the WHOLE turn (all deep
+ * players), reset with the cache. */
+static int deep_cm_solves = 0;
+static double deep_cm_seconds = 0.0;
+
+/**********************************************************************//**
+  The surplus DELTA between the posture this city took and the one it
+  would have taken instead: war minus alternative, per output.
+
+  Returns FALSE when no counterfactual was taken for this city this
+  turn, which is the common case: the pair of solves is run only for
+  cities the war gate was about to flip, because that is the only
+  decision that currently pays for it. A reader outside deepcm.c
+  (the fear machinery's satisfied-city discount is the intended one)
+  must therefore treat FALSE as "no opinion" and not as "costs
+  nothing".
+**************************************************************************/
+bool deep_cm_posture_delta(const struct city *pcity, int *food,
+                           int *shield, int *trade)
+{
+  int i;
+
+  if (deep_cm_turn != game.info.turn) {
+    return FALSE;
+  }
+  for (i = 0; i < deep_cm_n; i++) {
+    const struct deep_cm_memo *e = &deep_cm_cache[i];
+
+    if (e->city_id == pcity->id) {
+      if (!e->valid) {
+        return FALSE;
+      }
+      if (food != NULL) {
+        *food = e->war[O_FOOD] - e->peace[O_FOOD];
+      }
+      if (shield != NULL) {
+        *shield = e->war[O_SHIELD] - e->peace[O_SHIELD];
+      }
+      if (trade != NULL) {
+        *trade = e->war[O_TRADE] - e->peace[O_TRADE];
+      }
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+/**********************************************************************//**
+  Run the city manager under BOTH candidate postures and remember what
+  each yields.
+
+  A posture change has never been priced anywhere in this codebase: the
+  decision to put a city on war footing swaps one factor set for
+  another and the food and growth it gives up appear in no want, no
+  danger and no counter. The solver that answers the question is
+  already here -- cm_query_result() does not touch the city -- so the
+  honest price is one extra pair of evaluates.
+
+  The alternative posture is deep_cm_peace_posture(), or stock's own
+  default when that returns none: a mature city outside grow-hard has
+  no deep posture at all, and comparing war footing against deep's
+  BASE parameter rather than against what the city would really run
+  would price the change against an arrangement that never happens.
+**************************************************************************/
+static const struct deep_cm_memo *
+deep_cm_counterfactual(struct ai_type *ait, struct city *pcity)
+{
+  struct deep_cm_memo *e;
+  struct cm_parameter war, peace;
+  struct cm_result *res;
+  struct timer *clock;
+  int i;
+
+  if (deep_cm_turn != game.info.turn) {
+    deep_cm_turn = game.info.turn;
+    deep_cm_n = 0;
+    deep_cm_solves = 0;
+    deep_cm_seconds = 0.0;
+  }
+  for (i = 0; i < deep_cm_n; i++) {
+    if (deep_cm_cache[i].city_id == pcity->id) {
+      return &deep_cm_cache[i];
+    }
+  }
+
+  if (deep_cm_n >= deep_cm_cap) {
+    deep_cm_cap = MAX(64, deep_cm_cap * 2);
+    deep_cm_cache = fc_realloc(deep_cm_cache,
+                               deep_cm_cap * sizeof(*deep_cm_cache));
+  }
+  e = &deep_cm_cache[deep_cm_n++];
+  e->city_id = pcity->id;
+  e->valid = FALSE;
+  e->cost = 0.0;
+  e->alt = deep_cm_peace_posture(ait, pcity);
+  output_type_iterate(o) {
+    e->war[o] = 0;
+    e->peace[o] = 0;
+  } output_type_iterate_end;
+
+  deep_cm_base(&war, pcity);
+  deep_cm_apply_posture(&war, pcity, DEEP_CM_WAR);
+
+  cm_init_parameter(&peace);
+  if (e->alt == DEEP_CM_NO_POSTURE) {
+    /* No deep posture: the city would run the stock default, and that
+     * is what the footing must be priced against. */
+    set_default_city_manager(&peace, pcity);
+  } else {
+    deep_cm_base(&peace, pcity);
+    deep_cm_apply_posture(&peace, pcity, e->alt);
+  }
+
+  clock = timer_new(TIMER_CPU, TIMER_ACTIVE, "deep-cm");
+  timer_start(clock);
+  cm_clear_cache(pcity);
+  res = cm_result_new(pcity);
+  cm_query_result(pcity, &war, res, FALSE);
+  if (res->found_a_valid) {
+    output_type_iterate(o) {
+      e->war[o] = res->surplus[o];
+    } output_type_iterate_end;
+    cm_query_result(pcity, &peace, res, FALSE);
+    if (res->found_a_valid) {
+      output_type_iterate(o) {
+        e->peace[o] = res->surplus[o];
+      } output_type_iterate_end;
+      e->valid = TRUE;
+    }
+  }
+  cm_result_destroy(res);
+  timer_stop(clock);
+  deep_cm_seconds += timer_read_seconds(clock);
+  timer_destroy(clock);
+  deep_cm_solves += 2;
+
+  if (e->valid && e->peace[O_FOOD] > 0) {
+    /* The charge is the fraction of the growth RATE the footing gives
+     * up, not an absolute food count: a city banking 8 food that drops
+     * to 6 has given up a quarter of its growth, and so has a city
+     * banking 4 that drops to 3. Clipped to [0, 1] -- a footing that
+     * gains food charges nothing, and one that stops growth entirely
+     * charges the whole knob. A city not growing under the
+     * alternative either forgoes nothing (surplus <= 0). */
+    double lost = (double) (e->peace[O_FOOD] - e->war[O_FOOD])
+                  / (double) e->peace[O_FOOD];
+
+    e->cost = CLIP(0.0, lost, 1.0);
+  }
+
+  return e;
+}
+
 /**********************************************************************//**
   Derive and set (or clear) cm_parameter for every owned city.
 **************************************************************************/
@@ -343,6 +520,41 @@ void deep_set_city_manager_params(struct ai_type *ait,
                                                &wave);
 
       threatened = wave > 0 && surv < tune->cm_war_survival;
+
+      if (threatened && tune->cm_war_growth_charge > 0.0) {
+        /* The footing is no longer free. Solve both arrangements, find
+         * what the shields actually cost in growth, and lower the bar
+         * the danger has to clear by that much: a city that gives up
+         * its whole food surplus to arm has to be in real trouble
+         * before it does, while a city that loses nothing flips on the
+         * unchanged threshold.
+         *
+         * Deliberately evaluated INSIDE the free-flip test rather than
+         * before it, for two reasons. The charge can only ever revoke
+         * a flip -- it is a cost, and a cost does not create demand --
+         * so a city the gate was not going to flip needs no price. And
+         * the pair of solves then runs on the flip candidates alone,
+         * which is what keeps the solver bill proportional to the
+         * decisions it informs instead of to the empire. */
+        const struct deep_cm_memo *m = deep_cm_counterfactual(ait, pcity);
+        double bar = tune->cm_war_survival
+                     - tune->cm_war_growth_charge * m->cost;
+
+        if (m->valid && surv >= bar) {
+          threatened = FALSE;
+        }
+        log_base(deep_metric_log_level(),
+                 "deep-cmpost turn=%d player=\"%s\" city=%d size=%d"
+                 " surv=%.3f bar=%.3f cost=%.3f alt=%d valid=%d"
+                 " warf=%d wars=%d wart=%d altf=%d alts=%d altt=%d"
+                 " kept=%d",
+                 game.info.turn, player_name(pplayer), pcity->id,
+                 city_size_get(pcity), surv, bar, m->cost, (int) m->alt,
+                 m->valid ? 1 : 0,
+                 m->war[O_FOOD], m->war[O_SHIELD], m->war[O_TRADE],
+                 m->peace[O_FOOD], m->peace[O_SHIELD], m->peace[O_TRADE],
+                 threatened ? 1 : 0);
+      }
     } else {
       threatened = city_data->urgency > 0 || city_data->grave_danger > 0;
     }
@@ -370,4 +582,16 @@ void deep_set_city_manager_params(struct ai_type *ait,
       auto_arrange_workers(pcity);
     }
   } city_list_iterate_end;
+
+  if (tune->cm_war_growth_charge > 0.0) {
+    /* The bill, in public: the counterfactual doubles a CM evaluate for
+     * every city it prices, and a claim that the cost is acceptable is
+     * worth nothing without the number beside it. Cumulative for the
+     * turn across every deep player, so the LAST player's line is the
+     * turn's total. */
+    log_base(deep_metric_log_level(),
+             "deep-cmsolve turn=%d player=\"%s\" solves=%d cpu=%.6f",
+             game.info.turn, player_name(pplayer), deep_cm_solves,
+             deep_cm_seconds);
+  }
 }

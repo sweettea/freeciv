@@ -13,10 +13,20 @@
 #ifndef FC__DEEPCM_H
 #define FC__DEEPCM_H
 
+/* utility */
+#include "support.h"            /* bool type */
+
 /* common */
 #include "fc_types.h"
 
 void deep_set_city_manager_params(struct ai_type *ait,
                                   struct player *pplayer);
+
+/* War-footing surplus minus the surplus the city would have had under
+ * the posture it would otherwise run, per output, for THIS turn.
+ * FALSE means no counterfactual was taken for this city -- which is
+ * "no opinion", not "costs nothing". */
+bool deep_cm_posture_delta(const struct city *pcity, int *food,
+                           int *shield, int *trade);
 
 #endif /* FC__DEEPCM_H */

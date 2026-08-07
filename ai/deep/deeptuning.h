@@ -273,6 +273,17 @@ struct deep_tuning {
    * over it. 0 falls the gate back to stock's urgency/grave_danger
    * presence counts. */
   double cm_war_survival;
+  /* What the war footing is CHARGED for the growth it forgoes. The
+   * city manager is run under both candidate postures (war, and
+   * whatever the city would otherwise run -- including stock's own
+   * default), and the fraction of the food surplus the footing gives
+   * up is subtracted from cm_war_survival before the gate compares.
+   * A city that arms for free flips on the unchanged threshold; a city
+   * that stops growing to arm has to be in proportionally more danger.
+   * 0 = off: no counterfactual is solved and the gate flips free, as
+   * it did from W09-lite until now. Bounded by cm_war_survival itself,
+   * since a bar below 0 can never be cleared. */
+  double cm_war_growth_charge;
   /* Share of a tech-gated cap-lifter's capacity credit routed into
    * the gating advance's tech want (the credit cannot buy the
    * building, but it can buy the research). */
