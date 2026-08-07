@@ -38,6 +38,7 @@
 #include "cityturn.h"
 
 /* server/advisors */
+#include "advdata.h"
 #include "advgoto.h"
 
 /* ai/default */
@@ -47,6 +48,7 @@
 #include "daiplayer.h"
 
 #include "deepcombat.h"
+#include "deephorizon.h"
 #include "deeptuning.h"
 
 #include "deepcm.h"
@@ -181,6 +183,62 @@ static bool deep_cm_survival_ok(struct city *pcity)
 }
 
 /**********************************************************************//**
+  Does the marginal CITIZEN beat the marginal BUILD at this city?
+
+  cm_grow_below is a threshold on size and nothing else, so a size-7
+  city with a rich unworked catchment and nothing worth building falls
+  out of grow-hard for no reason it can state, and a size-3 city with a
+  Settlers order it desperately needs stays in. Both sides of that
+  comparison are already priced somewhere:
+
+    the citizen   deep_unworked_tile_value(), the same catchment walk
+                  and the same adv->*_priority weights the capacity and
+                  content credits use;
+    the build     city_data->choice.want, the auction's own top want at
+                  this city -- last pass's, since the build choice runs
+                  after the arrangement.
+
+  The blend is not decoration and not a fudge: the two numbers live in
+  DIFFERENT currencies. choice.want is stock's want; the tile value is
+  the advisor's weighted tile output. The conversion between them is
+  W01's `want_t`, which STATUS records as declared and never
+  implemented, and which the economy audit names as the blocker on
+  every tech-vs-building-vs-gold comparison in this project. Guessing
+  the ratio here would be rule 7. So the ratio IS the knob, it ships at
+  0, and until it is tuned the threshold is the only thing deciding.
+
+  It can only ADD cities to grow-hard, never remove them: the size test
+  stays as a floor, so nothing that grows today stops.
+**************************************************************************/
+static bool deep_cm_grow_priced(struct ai_type *ait, struct city *pcity)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct ai_city *city_data = def_ai_city_data(pcity, ait);
+  struct adv_data *adv;
+  double citizen, build;
+  bool fires;
+
+  if (tune->cm_grow_price_blend <= 0.0) {
+    return FALSE;
+  }
+  adv = adv_data_get(city_owner(pcity), NULL);
+  citizen = (double) deep_unworked_tile_value(pcity, adv, 1, NULL);
+  build = (double) city_data->choice.want;
+  fires = tune->cm_grow_price_blend * citizen >= build;
+
+  /* Reached only when the size threshold has already said no (the ||
+   * short-circuits), so every line here is a city the threshold alone
+   * would leave out and fires=1 is exactly the marginal admission. */
+  log_base(deep_metric_log_level(),
+           "deep-cmgrow turn=%d player=\"%s\" city=%d size=%d"
+           " citizen=%.1f build=%.1f fires=%d",
+           game.info.turn, player_name(city_owner(pcity)), pcity->id,
+           city_size_get(pcity), citizen, build, fires ? 1 : 0);
+
+  return fires;
+}
+
+/**********************************************************************//**
   The posture a city takes when it is NOT on war footing: the second,
   third and fourth arms of the state machine, in their original order.
   Split out from the chain so that the war branch's counterfactual has
@@ -204,7 +262,8 @@ static enum deep_cm_posture deep_cm_peace_posture(struct ai_type *ait,
      * fund completion. */
     return DEEP_CM_WONDER;
   }
-  if (city_size_get(pcity) < tune->cm_grow_below
+  if ((city_size_get(pcity) < tune->cm_grow_below
+       || deep_cm_grow_priced(ait, pcity))
       && (city_data->danger == 0
           || (assess_defense(ait, pcity)
               + deep_cm_sortie_value(pcity)

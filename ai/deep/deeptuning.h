@@ -809,6 +809,21 @@ struct deep_tuning {
    * shields) scaling every CM state's trade factor: the map sets the
    * trade appetite. 0 restores plain constants; 1 is proportional. */
   double cm_trade_quality_slope;
+  /* Production-vs-growth arbitration on the grow-hard entry. Grow-hard
+   * is a pure SIZE threshold (cm_grow_below), so a big city with a rich
+   * unworked catchment and nothing worth building cannot enter it. This
+   * blend admits a city whose marginal CITIZEN
+   * (deep_unworked_tile_value) beats its marginal BUILD
+   * (the auction's top want at that city), scaled by the blend.
+   *
+   * The blend IS the currency conversion between stock's want and the
+   * advisor's weighted tile output -- W01's `want_t`, declared and
+   * never implemented -- so it is a PLACEHOLDER in the strictest sense
+   * and not a magnitude anyone should reason about before it is tuned.
+   * 0 = off = the size threshold alone. The threshold stays as a floor
+   * either way, so this can only add cities to grow-hard, never remove
+   * one, and the garrison-coverage conjunct still applies to both. */
+  double cm_grow_price_blend;
 
   /* Sequential-attrition survival model (combat workstream): a city's
    * garrison must survive the observed attacker wave with probability
