@@ -82,6 +82,11 @@ static const struct deep_tuning deep_tuning_defaults = {
   .floor_interior_weight = 0.25,        /* PLACEHOLDER, untuned */
   .floor_marines_mult = 1.5,            /* PLACEHOLDER, untuned */
   .barbarian_fear = 30,                 /* PLACEHOLDER, untuned */
+  .barb_anticipation_turns = 10,        /* PLACEHOLDER, untuned */
+  /* PLACEHOLDER, untuned. Normalisation only: at this many
+   * cities under BARBS_NORMAL the shared scaling is 1.0, so the
+   * two bases above keep the level they shipped with. */
+  .barb_size_ref_cities = 10,
   .boat_shadow_fear = 25,               /* PLACEHOLDER, untuned */
   .density_fear_value = 6,              /* PLACEHOLDER, untuned */
   .density_fear_radius = 8,             /* PLACEHOLDER, untuned */
@@ -294,6 +299,8 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(floor_interior_weight) \
   TUNE_DOUBLE(floor_marines_mult) \
   TUNE_INT(barbarian_fear) \
+  TUNE_INT(barb_anticipation_turns) \
+  TUNE_INT(barb_size_ref_cities) \
   TUNE_INT(boat_shadow_fear) \
   TUNE_INT(density_fear_value) \
   TUNE_INT(density_fear_radius) \

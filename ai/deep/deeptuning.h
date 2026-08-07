@@ -401,10 +401,28 @@ struct deep_tuning {
    * ungated floor did. */
   double floor_interior_weight;
   double floor_marines_mult;
-  /* Flat danger added to every city from the turn the server can
-   * first spawn barbarians (barbarianrate/onsetbarbarian gate);
-   * zero before that turn. */
+  /* Base danger for the barbarian era, multiplied by the SHARED
+   * barbarian scaling (deepdefence.c, deep_barb_empire_scale()) that
+   * mirrors the server's own uprising formula: the pre-onset ramp,
+   * the (barbarianrate - 1) frequency scale, the willingness
+   * probability MIN(1, cities * (rate - 1) / 30), the government's
+   * civil-war chance and the horde ladder. Was a flat step at
+   * onsetbarbarian, which is what the derby-2 uprising storm walked
+   * through. */
   int barbarian_fear;
+  /* How many turns BEFORE game.server.onsetbarbarian the terror
+   * starts ramping in, linearly, from zero to full. The garrison has
+   * to exist ON the onset turn and a defender takes ~10 turns to
+   * build, so the lead is the knob; the shape is not. 0 restores the
+   * step function that shipped. */
+  int barb_anticipation_turns;
+  /* Empire size (in cities) at which the shared barbarian scaling is
+   * exactly 1.0, under BARBS_NORMAL. Pure normalisation: it exists so
+   * barbarian_fear and floor_barb_weight keep the magnitude they were
+   * set at while the SHAPE changes around them. Raising it makes the
+   * whole class milder, lowering it makes it fiercer, and it must be
+   * tuned together with the two bases it normalises. */
+  int barb_size_ref_cities;
   /* Standing coastal fear while any at-war player owns transport-
    * capable ships: the embarked-cargo term warns ~1 turn ahead, the
    * boat shadow funds the garrison before the boats load. Also

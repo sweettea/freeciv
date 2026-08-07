@@ -41,6 +41,7 @@
 #include "handicaps.h"
 
 /* server */
+#include "barbarian.h"
 #include "cityhand.h"
 #include "maphand.h"
 #include "citytools.h"
@@ -876,22 +877,226 @@ double deep_border_pressure_from(const struct player *pplayer,
 }
 
 /**********************************************************************//**
-  Flat fear of barbarian uprisings, active from the first turn the
-  server can actually spawn them -- the same gate barbarian.c uses --
-  and zero before it, so pre-onset production is not taxed. The
-  garrison floor insures otherwise-empty cities; this term keeps
-  established cities from standing down the moment assessed danger
-  returns to zero inside the barbarian era.
+  The uprising horde ladder, mirrored EXACTLY from
+  `server/barbarian.c:605-611` -- including the integer truncation of
+  `city_max * 1.2`, because the server's `city_max` is an int too and
+  a "cleaner" double version would predict a different ladder.
 **************************************************************************/
-static unsigned int deep_barbarian_fear(void)
+static int deep_barb_uprise(int city_count)
+{
+  int city_max = UPRISE_CIV_SIZE;
+  int uprise = 1;
+
+  while (city_max <= city_count) {
+    uprise++;
+    city_max += (city_max * 1.2) + UPRISE_CIV_SIZE;
+  }
+
+  return uprise;
+}
+
+/**********************************************************************//**
+  Could this city be the victim site of an uprising at all?
+
+  `try_summon_barbarians()` throws a dart at the map, finds the NEAREST
+  city to where it lands, and requires the distance to be in
+  [MIN_UNREST_DIST, MAX_UNREST_DIST], a unit-free tile within one step
+  of the landing spot, and (for land) that the tile is known to the
+  victim. A city with no unrest annulus -- packed in among its
+  neighbours, or with the whole ring occupied -- cannot be picked.
+
+  Approximated readably, and here is exactly what the approximation
+  drops: we do not check that WE are the nearest city to the candidate
+  tile (a neighbour's city may be closer, in which case the neighbour
+  is the victim and we are over-counting), and we ignore the sea-raider
+  branch, which lands on ocean tiles. Both make this test permissive,
+  never restrictive -- it can say "eligible" where the server would
+  pick someone else, and it never says "safe" where the server would
+  strike.
+**************************************************************************/
+static bool deep_barb_unrest_site(struct city *pcity)
+{
+  const struct civ_map *nmap = &(wld.map);
+  struct player *pplayer = city_owner(pcity);
+  struct tile *ctile = city_tile(pcity);
+
+  square_iterate(nmap, ctile, MAX_UNREST_DIST, ptile) {
+    if (real_map_distance(ctile, ptile) < MIN_UNREST_DIST
+        || is_ocean_tile(ptile)
+        || !map_is_known(ptile, pplayer)) {
+      continue;
+    }
+    if (unit_list_size(ptile->units) == 0) {
+      return TRUE;
+    }
+  } square_iterate_end;
+
+  return FALSE;
+}
+
+/**********************************************************************//**
+  The shared barbarian-terror scaling, empire level. ONE function, two
+  consumers (the fear term below and the garrison floor's barb class),
+  because two step functions disagreeing about the same threat is how
+  the derby-2 storm was missed: deep lost 107 of 207 cities in 70 turns
+  to uprisings that a flat term, switched on exactly AT onset, could
+  not anticipate and did not scale.
+
+  Every factor is the server's own (`server/barbarian.c:533-613`,
+  `:738-760`), mirrored rather than invented:
+
+  1. ANTICIPATION. The server's own gate is a step at
+     `game.server.onsetbarbarian`, but a garrison must EXIST at onset
+     and a defender takes ~10 turns to build, so the terror ramps
+     linearly over the `barb_anticipation_turns` before onset. The
+     knob is the LEAD, not the shape; at 0 this reduces to the step
+     function that shipped.
+
+  2. FREQUENCY. `summon_barbarians()` runs `n * (barbarianrate - 1)`
+     attempts per turn, and refuses outright for BARBS_DISABLED and
+     BARBS_HUTS_ONLY. So the whole class drops out FREE in a no-barb
+     cell, and `(rate - 1)` is the frequency scale -- 1 at
+     BARBS_NORMAL, which is where the shipped flat value was set, so
+     the standing cells see no change from this factor. Hut risk near
+     cities is deepexplore's separate term and is not touched here.
+
+  3. WILLINGNESS. `fc_rand(30) + 1 <= city_count * (rate - 1)`, i.e.
+     probability MIN(1, n * (rate - 1) / 30), gated again on
+     `fc_rand(100) > EFT_CIVIL_WAR_CHANCE`. The civil-war chance is
+     government-dependent and ranges 20 (Federation) to 99 (Anarchy)
+     in civ2civ3, so this is a real free signal and not a constant.
+
+  4. HORDE SIZE. `barb_count = fc_rand(3) + uprise * rate`, expectation
+     `1 + uprise(n) * rate` on the ladder above.
+
+  WHY THERE IS NO PER-CITY DIVISION, though the uprising picks exactly
+  ONE victim site: the dart lands uniformly on the map and the victim
+  is whoever owns the nearest city, so the probability that the victim
+  is US grows with our city count in the same proportion as the number
+  of our cities the exposure would have to be divided among. The two
+  n's cancel, and the honest per-city figure is the willingness
+  probability itself -- rising with empire size and saturating at
+  n = 30/(rate-1), which is the derby's "my Nth city buys barbarian
+  pressure" tax priced exactly once. What survives of the site-finder
+  is its ELIGIBILITY: a city with no unrest annulus cannot be the
+  victim, and pays nothing (deep_barb_unrest_site()).
+
+  Normalised to 1.0 at `barb_size_ref_cities` cities under
+  BARBS_NORMAL, so the two base knobs keep the magnitude they shipped
+  with instead of being silently multiplied by 30. The reference is a
+  PLACEHOLDER and it, `barbarian_fear` and `floor_barb_weight` all go
+  to the tuning pile together -- this commit changes the SHAPE and
+  leaves the level where it was.
+**************************************************************************/
+static double deep_barb_empire_scale(struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int rate = game.server.barbarianrate;
+  int lead = tune->barb_anticipation_turns;
+  int n, ref_n, cwcv;
+  double ramp, will, horde, cwc, ref_will, ref_horde;
+
+  if (rate <= BARBS_HUTS_ONLY) {
+    /* No uprisings at all in this cell: the whole class is free. */
+    return 0.0;
+  }
+
+  if (lead <= 0) {
+    ramp = (game.info.turn >= game.server.onsetbarbarian) ? 1.0 : 0.0;
+  } else if (game.info.turn >= game.server.onsetbarbarian) {
+    ramp = 1.0;
+  } else if (game.info.turn <= game.server.onsetbarbarian - lead) {
+    ramp = 0.0;
+  } else {
+    ramp = (double) (game.info.turn
+                     - (game.server.onsetbarbarian - lead)) / lead;
+  }
+  if (ramp <= 0.0) {
+    return 0.0;
+  }
+
+  n = city_list_size(pplayer->cities);
+  will = MIN(1.0, n * (double) (rate - 1) / 30.0);
+  horde = 1.0 + deep_barb_uprise(n) * (double) rate;
+  cwcv = get_player_bonus(pplayer, EFT_CIVIL_WAR_CHANCE);
+  cwc = MIN(1.0, MAX(0, cwcv) / 100.0);
+
+  ref_n = MAX(1, tune->barb_size_ref_cities);
+  ref_will = MIN(1.0, ref_n * (double) (BARBS_NORMAL - 1) / 30.0);
+  ref_horde = 1.0 + deep_barb_uprise(ref_n) * (double) BARBS_NORMAL;
+
+  return ramp * (rate - 1) * cwc * (will * horde)
+         / (ref_will * ref_horde);
+}
+
+/**********************************************************************//**
+  The same scaling with the site-finder's eligibility applied: a city
+  the server could never pick as a victim site pays nothing.
+**************************************************************************/
+static double deep_barb_city_scale(struct city *pcity)
+{
+  double scale = deep_barb_empire_scale(city_owner(pcity));
+
+  if (scale <= 0.0 || !deep_barb_unrest_site(pcity)) {
+    return 0.0;
+  }
+
+  return scale;
+}
+
+/**********************************************************************//**
+  Fear of barbarian uprisings, shaped by the server's own uprising
+  formula rather than switched on flat at onset. The garrison floor
+  insures otherwise-empty cities; this term keeps established cities
+  from standing down the moment assessed danger returns to zero inside
+  the barbarian era -- and now ramps in BEFORE the era starts, so the
+  defender exists on the turn the first horde can.
+**************************************************************************/
+static unsigned int deep_barbarian_fear(struct city *pcity)
 {
   const struct deep_tuning *tune = deep_tuning_get();
 
-  if (BARBS_DISABLED == game.server.barbarianrate
-      || game.info.turn < game.server.onsetbarbarian) {
-    return 0;
+  return (unsigned int) (tune->barbarian_fear
+                         * deep_barb_city_scale(pcity));
+}
+
+/**********************************************************************//**
+  One line per player per turn: the ramp, the scaling and its factors,
+  and how many of this player's cities the site-finder could pick.
+  This is the counter the acceptance asks for -- pre-onset ramp turns
+  and the scaled-terror magnitude -- and it reports the factors apart
+  so a surprising scale can be attributed rather than argued about.
+**************************************************************************/
+static void deep_barb_census(struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  double scale = deep_barb_empire_scale(pplayer);
+  int n = city_list_size(pplayer->cities);
+  int rate = game.server.barbarianrate;
+  int sites = 0;
+
+  if (!log_do_output_for_level(deep_metric_log_level())
+      || (scale <= 0.0 && rate <= BARBS_HUTS_ONLY)) {
+    return;
   }
-  return tune->barbarian_fear;
+
+  city_list_iterate(pplayer->cities, pcity) {
+    if (deep_barb_unrest_site(pcity)) {
+      sites++;
+    }
+  } city_list_iterate_end;
+
+  log_base(deep_metric_log_level(),
+           "deep-barb turn=%d player=\"%s\" onset=%d lead=%d rate=%d"
+           " cities=%d sites=%d uprise=%d cwc=%d scale=%.4f fear=%u"
+           " pre=%d",
+           game.info.turn, player_name(pplayer),
+           game.server.onsetbarbarian, tune->barb_anticipation_turns,
+           rate, n, sites, deep_barb_uprise(n),
+           get_player_bonus(pplayer, EFT_CIVIL_WAR_CHANCE), scale,
+           (unsigned int) (tune->barbarian_fear * scale),
+           (scale > 0.0 && game.info.turn < game.server.onsetbarbarian)
+             ? 1 : 0);
 }
 
 /**********************************************************************//**
@@ -1183,8 +1388,12 @@ deep_floor_class_facts(struct player *pplayer)
   fc->turn = game.info.turn;
 
   /* The server's own gate, the same one barbarian.c uses. */
-  fc->barb = (BARBS_DISABLED != game.server.barbarianrate
-              && game.info.turn >= game.server.onsetbarbarian);
+  /* Not a step at onset any more: the shared scaling opens the class
+   * during the anticipation ramp and closes it whenever the server
+   * could not raise a horde at all (BARBS_DISABLED, HUTS_ONLY). The
+   * WEIGHT the class then carries is per-city and lives at the
+   * consumer, deep_floor_weigh(). */
+  fc->barb = (deep_barb_empire_scale(pplayer) > 0.0);
 
   city_list_iterate(pplayer->cities, pcity) {
     Continent_id c = tile_continent(city_tile(pcity));
@@ -1347,7 +1556,10 @@ static void deep_floor_weigh(const struct civ_map *nmap, struct city *pcity,
   memset(w, 0, sizeof(*w));
 
   if (fc->barb) {
-    w->barb = tune->floor_barb_weight;
+    /* Base x the shared scaling, the same scaling the fear term
+     * uses, so the floor and the fear cannot disagree about how
+     * frightening this era is for THIS empire at THIS size. */
+    w->barb = tune->floor_barb_weight * deep_barb_city_scale(pcity);
   }
 
   if (fc->sea) {
@@ -1616,7 +1828,7 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
     unsigned int over = deep_overseas_danger(&(wld.map), pcity);
     unsigned int shadow = deep_boat_shadow_fear(&(wld.map), pcity);
     unsigned int density = deep_density_fear(pcity);
-    unsigned int barb = deep_barbarian_fear();
+    unsigned int barb = deep_barbarian_fear(pcity);
     unsigned int credit;
 
     if (sat < 1.0) {
@@ -2648,6 +2860,7 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
 
   deep_log_defence(ait, pplayer);
   deep_capture_census(ait, pplayer);
+  deep_barb_census(pplayer);
   deep_credit_incoming_defence(ait, pplayer);
   deep_melt_surplus_defenders(ait, pplayer);
   deep_manage_convoys(ait, pplayer);
@@ -3014,7 +3227,7 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     unsigned int shadow = deep_boat_shadow_fear(nmap, pcity);
     unsigned int density = deep_density_fear(pcity);
     unsigned int prior = deep_density_prior(pplayer);
-    unsigned int barb = deep_barbarian_fear();
+    unsigned int barb = deep_barbarian_fear(pcity);
     unsigned int credit;
 
     if (fmult != 1.0 && over + shadow + density + prior + barb > 0) {
