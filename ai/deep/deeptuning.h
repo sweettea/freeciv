@@ -557,6 +557,17 @@ struct deep_tuning {
    * ladder. */
   double sell_defend_gain;
   int late_buy_gate;
+
+  /* Rung 2a, CIVILIAN EVACUATION (human, 2026-08-07). 0/1 off-switch,
+   * PLACEHOLDER. Split from the defensive write-off because the two
+   * have different bars: a civilian contributes exactly zero to the
+   * defence (deep_collect_defenders() skips UTYF_CIVILIAN) and dies
+   * with the city, so being wrong costs a few unit-turns of walking
+   * and this half keeps the LOOSE compound gate. The DENIAL SALE
+   * (rung 2b) does not, and the census is why -- see
+   * findings/conseq-wrace-2026-08-07.md: even the exhausted slice
+   * holds two times in three. */
+  int evacuate_gate;
   /* Land-race coupling: fresh founder wants scale by
    * (1 + weight * map crowding); crowded maps race, empty ones
    * don't. 0 disables. */

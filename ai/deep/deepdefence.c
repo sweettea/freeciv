@@ -3034,6 +3034,106 @@ static void deep_writeoff_adjudicate(struct player *pplayer)
   }
 }
 
+/* Rung 2a's census. */
+static int deep_evac_cands = 0, deep_evac_moved = 0;
+
+/**********************************************************************//**
+  RUNG 2a: GET THE CIVILIANS OUT (human refinement, 2026-08-07).
+
+  Evacuation is split from the defensive write-off because the two have
+  completely different bars, and the census is why. Conditioning the
+  write-off on "no reinforcement can reach it AND the enemy is
+  adjacent" lifts its precision from 0.027 to 0.202 (contested, 40
+  games) -- a 7x lift, and still TWO IN THREE of those cities hold.
+  Any irreversible act at that precision loots two survivors per
+  casualty, which is why the denial sale (2b) has to beat
+  stand-and-fight in a priced comparison instead of firing on a gate.
+
+  A civilian walking out is not that act. It contributes exactly zero
+  to the defence -- deep_collect_defenders() skips UTYF_CIVILIAN, so
+  the survival probability this pass just computed is unchanged by its
+  leaving -- and it dies with the city if it stays. The cost of being
+  wrong is a few unit-turns of walking, so this half keeps the LOOSE
+  compound gate: written off, survival essentially zero, and no
+  reinforcement inside the horizon that moves it.
+
+  The move is the flee machinery's own recipe, unchanged: cancel the
+  activity, dai_unit_goto(), hold. The refuge is the nearest own city
+  on this continent that is not itself being written off this turn --
+  walking a worker from one doomed city into another is not an
+  evacuation.
+
+  evacuate_gate 0 = off, and the pass returns before reading a unit.
+**************************************************************************/
+static void deep_evacuate_civilians(struct ai_type *ait,
+                                    struct player *pplayer,
+                                    struct city *pcity, double p,
+                                    double relieved, int wave)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  struct tile *ctile = city_tile(pcity);
+  int moved = 0;
+
+  if (tune->evacuate_gate <= 0
+      || p >= 0.01 || relieved > p + 0.001) {
+    return;                     /* Not the loose compound gate. */
+  }
+
+  unit_list_iterate_safe(ctile->units, u) {
+    struct city *refuge = NULL;
+    int bestd = -1;
+
+    if (unit_owner(u) != pplayer
+        || !unit_has_type_flag(u, UTYF_CIVILIAN)
+        || unit_transported(u)
+        || deep_phase_held(pplayer, u->id)) {
+      continue;
+    }
+    deep_evac_cands++;
+
+    city_list_iterate(pplayer->cities, ocity) {
+      int d;
+
+      if (ocity == pcity
+          || tile_continent(city_tile(ocity)) != tile_continent(ctile)) {
+        continue;
+      }
+      /* Not into another city that is falling tonight. */
+      if (deep_city_survival_verdict(nmap, ocity, tune->survival_horizon,
+                                     NULL) < tune->survival_target) {
+        continue;
+      }
+      d = real_map_distance(ctile, city_tile(ocity));
+      if (bestd < 0 || d < bestd) {
+        bestd = d;
+        refuge = ocity;
+      }
+    } city_list_iterate_end;
+
+    if (refuge == NULL) {
+      continue;                 /* Nowhere better to be. */
+    }
+    unit_activity_handling(u, ACTIVITY_IDLE, ACTION_NONE);
+    if (dai_unit_goto(ait, u, city_tile(refuge))) {
+      deep_hold_unit(ait, u, "evac");
+      moved++;
+      deep_evac_moved++;
+      log_base(deep_metric_log_level(),
+               "deep-evac turn=%d player=\"%s\" city=%d unit=\"%s\""
+               " to=%d dist=%d p=%.3f wave=%d",
+               game.info.turn, player_name(pplayer), pcity->id,
+               unit_rule_name(u), refuge->id, bestd, p, wave);
+    }
+  } unit_list_iterate_safe_end;
+
+  if (moved > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-evac-city turn=%d player=\"%s\" city=%d moved=%d",
+             game.info.turn, player_name(pplayer), pcity->id, moved);
+  }
+}
+
 static void deep_defend_counter_claims(struct ai_type *ait,
                                        struct player *pplayer)
 {
@@ -3043,6 +3143,14 @@ static void deep_defend_counter_claims(struct ai_type *ait,
   /* Before this turn's verdicts, so an entry is never adjudicated on
    * the turn it is written. */
   deep_writeoff_adjudicate(pplayer);
+  if (deep_evac_cands > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-evac-sum turn=%d player=\"%s\" cands=%d moved=%d",
+             game.info.turn, player_name(pplayer), deep_evac_cands,
+             deep_evac_moved);
+  }
+  deep_evac_cands = 0;
+  deep_evac_moved = 0;
 
   if (tune->survival_target <= 0.0) {
     return;
@@ -3167,6 +3275,7 @@ static void deep_defend_counter_claims(struct ai_type *ait,
                n_cand, relieved);
       deep_writeoff_record(pplayer, pcity, p, relieved, wave, n_cand,
                            tune->survival_horizon);
+      deep_evacuate_civilians(ait, pplayer, pcity, p, relieved, wave);
       continue;   /* Cannot be held tonight: do not feed it blades. */
     }
 

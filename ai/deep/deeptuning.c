@@ -108,6 +108,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .expiry_unit_gap = 2,                 /* PLACEHOLDER, the hysteresis */
   .sell_defend_gain = 0.0,              /* PLACEHOLDER, 0 = off */
   .late_buy_gate = 0,                   /* PLACEHOLDER, 0/1 off-switch */
+  .evacuate_gate = 0,                   /* PLACEHOLDER, 0/1 off-switch */
   .settler_rush_weight = 1.0,           /* PLACEHOLDER, untuned */
   .site_choke_bonus = 12.0,             /* PLACEHOLDER, untuned */
   .base_fort_gain = 40.0,               /* PLACEHOLDER, untuned */
@@ -339,6 +340,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_INT(expiry_unit_gap) \
   TUNE_DOUBLE(sell_defend_gain) \
   TUNE_INT(late_buy_gate) \
+  TUNE_INT(evacuate_gate) \
   TUNE_DOUBLE(settler_rush_weight) \
   TUNE_DOUBLE(site_choke_bonus) \
   TUNE_DOUBLE(base_fort_gain) \
