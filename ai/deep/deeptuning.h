@@ -1195,13 +1195,18 @@ struct deep_tuning {
    * benchmark baseline is a uniform floor; a pinned or trait-seeded
    * stance turns it into an early-war / early-peace personality. */
   double stance_floor_gain;
-  /* SOURCE 2 (W34 E34.4, A.4 step 3): how far the POSITION -- free
-   * land, war, border pressure -- may move an axis off the trait prior,
-   * in index units, the same units stance_trait_span then scales, so
-   * the clamp that keeps a free player inside the pinned corner still
-   * binds. PLACEHOLDER. Zero is exactly source 1, which is the
-   * per-term off-switch an A/B needs. */
+  /* SOURCE 2 (W34 E34.4, A.4 step 3): how far the POSITION and the
+   * RESEARCH LEAN may move an axis off the trait prior, in index units
+   * -- the same units stance_trait_span then scales, so the clamp that
+   * keeps a free player inside the pinned corner still binds. Both
+   * PLACEHOLDER. Zero on both is exactly source 1, which is the
+   * per-term off-switch an A/B needs.
+   *
+   * stance_position_gain weights (free land, war, border pressure);
+   * stance_techlean_gain weights the military-vs-economic mix of the
+   * advances this player's bulbs have actually bought. */
   double stance_position_gain;
+  double stance_techlean_gain;
   /* The border pressure PER CITY WE HOLD at which source 2 reads the
    * threat term as half its maximum: threat = p / (p + ref), the
    * saturating shape deep_land_pressure() uses. In density-lattice

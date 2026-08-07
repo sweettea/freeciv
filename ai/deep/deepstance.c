@@ -22,9 +22,12 @@
 
 /* common */
 #include "game.h"
+#include "improvement.h"
 #include "nation.h"
 #include "player.h"
+#include "research.h"
 #include "traits.h"
+#include "unittype.h"
 
 /* ai */
 #include "aitraits.h"
@@ -48,6 +51,9 @@ struct deep_stance_read {
   double warfrac;               /* Rivals we are at war with, 0..1 */
   double threat;                /* Saturated border pressure, 0..1 */
   double pressure;              /* ... its raw input, per city we hold */
+  double lean;                  /* Research lean, -1 econ .. +1 mil */
+  int tech_mil;                 /* Known advances that unlock an attacker */
+  int tech_econ;                /* ... that unlock a building or civilian */
   int rivals;
   int at_war;
 };
@@ -246,6 +252,100 @@ static void deep_stance_seed_from_traits(struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Source 2's RESEARCH LEAN: has this player spent its bulbs on advances
+  that unlock ATTACKERS, or on advances that unlock buildings and
+  civilians? Returned on [-1, +1], +1 purely military, 0 balanced or
+  unreadable.
+
+  The classifier is deliberately the simplest thing that reads the
+  ruleset rather than a table we wrote:
+
+    military  -- some unit type with attack_strength > 0 lists this
+                 advance in its build_reqs
+    economic  -- some improvement lists it, or some unit type with no
+                 attack lists it (founders, workers, caravans, hulls)
+
+  An advance can be both (Bronze Working unlocks a Phalanx and the
+  Colossus in civ2civ3) and then it says nothing about direction, which
+  is exactly right and is why the index is a DIFFERENCE over a SUM
+  rather than a ratio of two disjoint counts.
+
+  What this is NOT: "the share of RECENT bulbs", which is what W34 A.4
+  describes. Nothing in the research state records WHEN an advance was
+  learned -- `struct research` carries counts, a current target and a
+  goal, no history -- so recency would need a per-turn accumulator in
+  saved player state plus a decay constant, i.e. new state and a new
+  invented number to weight it. The stock of known advances is the same
+  signal integrated, it needs neither, and the counts are on the stance
+  line so a measurement can say whether it discriminates between seats
+  at all. If it does not, that is a finding about the tech tree, not a
+  reason to have guessed a decay.
+
+  Cost is one pass over unit types and improvements per player per
+  turn (~170 objects in civ2civ3) and no cache, which is deliberate:
+  a ruleset-lifetime cache would need an invalidation hook, and the
+  pass is cheaper than the bug.
+**************************************************************************/
+static double deep_stance_tech_lean(const struct player *pplayer,
+                                    int *milc, int *econc)
+{
+  const struct research *presearch = research_get(pplayer);
+  bv_techs mil_unlock, econ_unlock;
+  int mil = 0, econ = 0;
+
+  *milc = 0;
+  *econc = 0;
+  if (presearch == NULL) {
+    return 0.0;
+  }
+
+  BV_CLR_ALL(mil_unlock);
+  BV_CLR_ALL(econ_unlock);
+
+  unit_type_iterate(ut) {
+    bool attacker = (ut->attack_strength > 0);
+
+    unit_tech_reqs_iterate(ut, padv) {
+      int idx = advance_index(padv);
+
+      if (attacker) {
+        BV_SET(mil_unlock, idx);
+      } else {
+        BV_SET(econ_unlock, idx);
+      }
+    } unit_tech_reqs_iterate_end;
+  } unit_type_iterate_end;
+
+  improvement_iterate(pimprove) {
+    requirement_vector_iterate(&pimprove->reqs, preq) {
+      if (preq->source.kind == VUT_ADVANCE && preq->present) {
+        BV_SET(econ_unlock, advance_index(preq->source.value.advance));
+      }
+    } requirement_vector_iterate_end;
+  } improvement_iterate_end;
+
+  advance_index_iterate(A_FIRST, i) {
+    if (research_invention_state(presearch, i) != TECH_KNOWN) {
+      continue;
+    }
+    if (BV_ISSET(mil_unlock, i)) {
+      mil++;
+    }
+    if (BV_ISSET(econ_unlock, i)) {
+      econ++;
+    }
+  } advance_index_iterate_end;
+
+  *milc = mil;
+  *econc = econ;
+  if (mil + econ <= 0) {
+    return 0.0;
+  }
+
+  return (double)(mil - econ) / (double)(mil + econ);
+}
+
+/**********************************************************************//**
   Source 2's POSITION: what the map is offering this player and what it
   is threatening it with, read from signals deep already computes for
   other consumers rather than from a new survey.
@@ -299,8 +399,8 @@ static void deep_stance_read_position(struct player *pplayer,
 }
 
 /**********************************************************************//**
-  Source 2 (W34 A.4 step 3): the trait prior MODULATED by POSITION. It
-  does not replace the prior -- a trait says who
+  Source 2 (W34 A.4 step 3): the trait prior MODULATED by position and
+  by research lean. It does not replace the prior -- a trait says who
   this player is, position says what the map is offering it -- so the
   position and tech terms are added to the trait INDEX, before the span
   turns an index into a weight.
@@ -311,15 +411,15 @@ static void deep_stance_read_position(struct player *pplayer,
   which is the property E34.1 chose the span for and the one that makes
   a constant tuned pinned mean the same thing free.
 
-  Direction of each term, both of them the same claim as the gate that
+  Direction of each term, all of them the same claim as the gate that
   will read them:
-    econ  <- land offered
-    mil   <- war and border pressure
+    econ  <- land offered, and an economic research lean
+    mil   <- war and border pressure, and a military research lean
 
-  With the gain at zero this is EXACTLY source 1: x + 0.0 * y == x
+  With both gains at zero this is EXACTLY source 1: x + 0.0 * y == x
   for every finite x, and a trait index is already inside the clamp, so
   the clip is a no-op. That is the per-source off-switch an A/B needs,
-  and it is why the gain rather than the source is what a tuning run
+  and it is why the gains rather than the source are what a tuning run
   should move first.
 **************************************************************************/
 static void deep_stance_seed_from_position(struct player *pplayer,
@@ -329,6 +429,7 @@ static void deep_stance_seed_from_position(struct player *pplayer,
 {
   const struct deep_tuning *tune = deep_tuning_get();
   double pgain = tune->stance_position_gain;
+  double tgain = tune->stance_techlean_gain;
   double e_trait = (deep_stance_trait_index(pplayer, TRAIT_EXPANSIONIST)
                     + deep_stance_trait_index(pplayer, TRAIT_BUILDER)
                     + deep_stance_trait_index(pplayer, TRAIT_TRADER)) / 3.0;
@@ -336,6 +437,7 @@ static void deep_stance_seed_from_position(struct player *pplayer,
   double e_pos, m_pos, e_idx, m_idx;
 
   deep_stance_read_position(pplayer, rd);
+  rd->lean = deep_stance_tech_lean(pplayer, &rd->tech_mil, &rd->tech_econ);
 
   /* Both position terms are means of sub-signals on [0, 1] mapped to
    * [-1, +1], so "nothing on offer and nobody at war" is -1 on both
@@ -343,8 +445,8 @@ static void deep_stance_seed_from_position(struct player *pplayer,
   e_pos = 2.0 * rd->land - 1.0;
   m_pos = rd->threat + rd->warfrac - 1.0;
 
-  e_idx = e_trait + pgain * e_pos;
-  m_idx = m_trait + pgain * m_pos;
+  e_idx = e_trait + pgain * e_pos + tgain * (-rd->lean);
+  m_idx = m_trait + pgain * m_pos + tgain * rd->lean;
 
   st->econ = 1.0 + span * MIN(MAX(e_idx, -1.0), 1.0);
   st->mil = 1.0 + span * MIN(MAX(m_idx, -1.0), 1.0);
@@ -445,8 +547,9 @@ void deep_stance_log(struct player *pplayer)
   bool pinned = deep_stance_pinned();
   /* Source 2's inputs, or a row of zeroes when no source read them:
    * the four ways this source can fail to differentiate seats are a
-   * flat map, a peaceful map and a gain of zero, and only the raw
-   * signals tell them apart. pressure is on the line UNSATURATED because
+   * flat map, a peaceful map, a tech tree that classifies everything
+   * both ways, and a gain of zero, and only the raw signals tell them
+   * apart. pressure is on the line UNSATURATED because
    * stance_pressure_ref is a placeholder and the tuning pass needs to
    * see the distribution it is meant to sit in the middle of. */
   bool read = (last_read.plrno == player_number(pplayer));
@@ -454,6 +557,9 @@ void deep_stance_log(struct player *pplayer)
   double warfrac = read ? last_read.warfrac : 0.0;
   double threat = read ? last_read.threat : 0.0;
   double pressure = read ? last_read.pressure : 0.0;
+  double lean = read ? last_read.lean : 0.0;
+  int tech_mil = read ? last_read.tech_mil : 0;
+  int tech_econ = read ? last_read.tech_econ : 0;
 
   log_base(deep_metric_log_level(),
            "deep-stance turn=%d player=\"%s\" econ=%.3f mil=%.3f"
@@ -461,7 +567,8 @@ void deep_stance_log(struct player *pplayer)
            " trait_exp=%d trait_bld=%d trait_trd=%d trait_agg=%d"
            " fear_gate=%d op_gate=%d growth_gate=%d expand_gate=%d"
            " assault_gate=%d floor_gate=%d"
-           " land=%.3f war=%.3f threat=%.3f press=%.2f pos_moved=%d",
+           " land=%.3f war=%.3f threat=%.3f press=%.2f lean=%+.3f"
+           " tech_mil=%d tech_econ=%d pos_moved=%d",
            game.info.turn, player_name(pplayer),
            plr_data->stance.econ, plr_data->stance.mil,
            plr_data->stance.cult,
@@ -493,7 +600,7 @@ void deep_stance_log(struct player *pplayer)
             * actually moved an axis off the trait prior. Zero on every
             * line at sources 0 and 1 -- the same contract the six gate
             * counters keep. */
-           land, warfrac, threat, pressure,
+           land, warfrac, threat, pressure, lean, tech_mil, tech_econ,
            plr_data->stance_pos_moved);
 }
 

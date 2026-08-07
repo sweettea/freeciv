@@ -203,6 +203,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .stance_assault_gain = 1.0,           /* PLACEHOLDER, untuned */
   .stance_floor_gain = 1.0,             /* PLACEHOLDER, untuned */
   .stance_position_gain = 0.5,          /* PLACEHOLDER, untuned */
+  .stance_techlean_gain = 0.5,          /* PLACEHOLDER, untuned */
   .stance_pressure_ref = 4.0,           /* PLACEHOLDER, untuned */
   .rates_enabled = 0,                   /* PLACEHOLDER, 0 = stock's ladder */
   .rates_science_gain = 1.0,            /* PLACEHOLDER, untuned */
@@ -425,6 +426,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(stance_assault_gain) \
   TUNE_DOUBLE(stance_floor_gain) \
   TUNE_DOUBLE(stance_position_gain) \
+  TUNE_DOUBLE(stance_techlean_gain) \
   TUNE_DOUBLE(stance_pressure_ref) \
   TUNE_INT(rates_enabled) \
   TUNE_DOUBLE(rates_science_gain) \
