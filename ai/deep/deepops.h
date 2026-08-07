@@ -144,6 +144,11 @@ void deep_hold_unit(struct ai_type *ait, struct unit *punit,
 bool deep_phase_held(const struct player *pplayer, int unit_id);
 void deep_phase_holds_clear(const struct player *pplayer);
 void deep_hold_census(struct ai_type *ait, struct player *pplayer);
+/* Capturable-adjacency census, both directions: how much of our own
+ * stack surface an enemy capturer could take this instant, and how
+ * much of theirs we could. Zero lines in a ruleset without the
+ * action. */
+void deep_capture_census(struct ai_type *ait, struct player *pplayer);
 void deep_manage_units(struct ai_type *ait, struct player *pplayer);
 void deep_hull_order_choice(struct ai_type *ait, struct player *pplayer,
                             struct city *pcity,

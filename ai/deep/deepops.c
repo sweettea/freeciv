@@ -409,6 +409,127 @@ void deep_hold_census(struct ai_type *ait, struct player *pplayer)
 }
 
 /**********************************************************************//**
+  Capturable-adjacency census, both directions, once per player per
+  turn (S-GROUND item 3, instrument-before-mechanism).
+
+  "Capture Units" is performed by stock only as the first branch of a
+  fixed else-if chain reached AFTER the decision to attack
+  (`daitools.c:835-839`); no code seeks a capturable target and nothing
+  protects our own capturables. Before either half is built, the
+  population is measured: how often does an enemy capturer stand
+  adjacent to a stack of ours it could take THIS INSTANT, and how often
+  do we stand adjacent to one of theirs.
+
+  Tiles, not units, are the unit of count on both sides, because the
+  action takes a whole stack and the hard requirement is that EVERY
+  unit on the target tile is capturable -- `is_action_enabled_unit_on_
+  stack()` answers exactly that question, so a defended stack is
+  correctly not counted. Shields are the stack's summed build cost:
+  the thing actually at stake.
+
+  The ruleset gate is `action_is_in_use()`: Capture Units is
+  civ2civ3-only, so a classic cell emits ZERO lines and the venue
+  split is visible in the census itself rather than assumed.
+
+  Omniscient (RC6), like the rest of this module's censuses -- it reads
+  enemy unit positions directly. A known-map version would filter by
+  `map_is_known_and_seen()`; the census is measuring the ceiling.
+**************************************************************************/
+void deep_capture_census(struct ai_type *ait, struct player *pplayer)
+{
+  const struct civ_map *nmap = &(wld.map);
+  struct action *pact;
+  int exp_tiles = 0, exp_units = 0, exp_shields = 0, exp_threats = 0;
+  int off_tiles = 0, off_units = 0, off_shields = 0, off_actors = 0;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+  pact = action_by_number(ACTION_CAPTURE_UNITS);
+  if (pact == NULL || !action_is_in_use(pact)) {
+    /* Not this ruleset. Silence IS the finding. */
+    return;
+  }
+
+  /* Ours, exposed. */
+  unit_list_iterate(pplayer->units, punit) {
+    struct tile *ptile = unit_tile(punit);
+    int threats = 0;
+
+    if (unit_list_get(ptile->units, 0) != punit) {
+      continue;                 /* Count each tile once. */
+    }
+    adjc_iterate(nmap, ptile, atile) {
+      unit_list_iterate(atile->units, e) {
+        struct player *eowner = unit_owner(e);
+
+        if (eowner == pplayer || pplayers_allied(pplayer, eowner)) {
+          continue;
+        }
+        if (is_action_enabled_unit_on_stack(nmap, ACTION_CAPTURE_UNITS,
+                                            e, ptile)) {
+          threats++;
+        }
+      } unit_list_iterate_end;
+    } adjc_iterate_end;
+
+    if (threats > 0) {
+      exp_tiles++;
+      exp_threats += threats;
+      unit_list_iterate(ptile->units, victim) {
+        exp_units++;
+        exp_shields += unit_build_shield_cost_base(victim);
+      } unit_list_iterate_end;
+    }
+  } unit_list_iterate_end;
+
+  /* Theirs, on offer. */
+  players_iterate_alive(aplayer) {
+    if (aplayer == pplayer || pplayers_allied(pplayer, aplayer)) {
+      continue;
+    }
+    unit_list_iterate(aplayer->units, e) {
+      struct tile *etile = unit_tile(e);
+      int actors = 0;
+
+      if (unit_list_get(etile->units, 0) != e) {
+        continue;
+      }
+      adjc_iterate(nmap, etile, atile) {
+        unit_list_iterate(atile->units, mine) {
+          if (unit_owner(mine) != pplayer) {
+            continue;
+          }
+          if (is_action_enabled_unit_on_stack(nmap, ACTION_CAPTURE_UNITS,
+                                              mine, etile)) {
+            actors++;
+          }
+        } unit_list_iterate_end;
+      } adjc_iterate_end;
+
+      if (actors > 0) {
+        off_tiles++;
+        off_actors += actors;
+        unit_list_iterate(etile->units, prize) {
+          off_units++;
+          off_shields += unit_build_shield_cost_base(prize);
+        } unit_list_iterate_end;
+      }
+    } unit_list_iterate_end;
+  } players_iterate_alive_end;
+
+  if (exp_tiles > 0 || off_tiles > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-capture turn=%d player=\"%s\" exptiles=%d expunits=%d"
+             " expshields=%d expthreats=%d offtiles=%d offunits=%d"
+             " offshields=%d offactors=%d units=%d",
+             game.info.turn, player_name(pplayer), exp_tiles, exp_units,
+             exp_shields, exp_threats, off_tiles, off_units, off_shields,
+             off_actors, unit_list_size(pplayer->units));
+  }
+}
+
+/**********************************************************************//**
   Size the trip-sharing gap, once per player per turn.
 
   The 1:1 ferry cap (`passengers >= boats`) refuses 50.6% of the

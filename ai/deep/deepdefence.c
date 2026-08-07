@@ -2647,6 +2647,7 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
   dai_assess_danger_player(ait, &(wld.map), pplayer);
 
   deep_log_defence(ait, pplayer);
+  deep_capture_census(ait, pplayer);
   deep_credit_incoming_defence(ait, pplayer);
   deep_melt_surplus_defenders(ait, pplayer);
   deep_manage_convoys(ait, pplayer);
