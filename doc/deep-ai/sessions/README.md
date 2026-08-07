@@ -90,6 +90,15 @@ items in its reports are owed a doc-hygiene pass.
    sessions wait for the reset. Session model stays Opus (quality
    failures cost more than the premium); Fable stays the orchestrator.
 
+## Standing human calls (2026-08-07)
+
+- **`set_default_city_manager()` non-static is BLESSED** ("it's blessed
+  to make it nonstatic"): CM-completion's server/cityturn.c visibility
+  exposure stands — the visibility exception's spirit extends to
+  server/ when the alternative is copying stock constants into ai/deep
+  (rule 3's last resort). Still visibility-only: no behaviour change in
+  server code, ever.
+
 ## Standing human calls (2026-08-06)
 
 - **M1 valuation forms**: marginal-clamped loss for the build want,
