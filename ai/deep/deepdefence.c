@@ -23,6 +23,7 @@
 
 /* common */
 #include "city.h"
+#include "combat.h"
 #include "effects.h"
 #include "game.h"
 #include "improvement.h"
@@ -2334,6 +2335,22 @@ static void deep_manage_convoys(struct ai_type *ait,
   from every future wave). Tired blades stay home -- a sortie at
   scaled-down power is the exact mistake the tired-attack pass
   exists to stop. One sortie per city per turn.
+
+  THE PRIZE (M4b item 1). Both of those gates price the RISK. Neither
+  prices the TARGET, which is the asymmetry the operations layer does
+  not have: an op values the conquest it buys, and the sortie valued
+  nothing at all, so a lone Warriors and a nine-unit siege stack were
+  the same decision at the same odds. Under killstack a won duel on an
+  open tile annihilates the whole stack -- is_stack_vulnerable() is
+  FALSE only inside a city and on EF_NO_STACK_DEATH terrain -- so the
+  prize is the summed shield value of everything standing there.
+
+  With sortie_prize_gain positive, selection is by
+
+      p x prize x gain - (1 - p) x our own build cost
+
+  rather than by p alone, and that score must be positive as well as
+  clearing both gates. At 0 the pass is exactly what it was.
 **************************************************************************/
 static void deep_kill_sorties(struct ai_type *ait, struct player *pplayer)
 {
@@ -2348,6 +2365,8 @@ static void deep_kill_sorties(struct ai_type *ait, struct player *pplayer)
     struct unit *blade = NULL;
     const struct unit *victim = NULL;
     double best = 0.0;
+    double best_prize = 0.0, best_score = 0.0;
+    bool priced = (tune->sortie_prize_gain > 0.0);
 
     unit_list_iterate(city_tile(pcity)->units, u) {
       if (unit_owner(u) != pplayer
@@ -2386,15 +2405,57 @@ static void deep_kill_sorties(struct ai_type *ait, struct player *pplayer)
           continue;
         }
         chance = unit_win_chance(nmap, u, pdef, NULL);
-        if (chance > best) {
-          best = chance;
-          blade = u;
-          victim = pdef;
+        if (!priced) {
+          if (chance > best) {
+            best = chance;
+            blade = u;
+            victim = pdef;
+          }
+        } else {
+          double prize = 0.0, score;
+
+          if (is_stack_vulnerable(atile)) {
+            /* Killstack: the duel is for the whole tile. Everything
+             * standing on it dies, ours included if any -- but a tile
+             * with our own units on it is not one we are sortieing
+             * against, and the at-war test above already picked the
+             * defender out of an enemy stack. */
+            unit_list_iterate(atile->units, tu) {
+              prize += unit_build_shield_cost_base(tu);
+            } unit_list_iterate_end;
+          } else {
+            prize = unit_build_shield_cost_base(pdef);
+          }
+          score = chance * prize * tune->sortie_prize_gain
+                  - (1.0 - chance) * unit_build_shield_cost_base(u);
+          if (blade == NULL || score > best_score) {
+            best = chance;
+            best_prize = prize;
+            best_score = score;
+            blade = u;
+            victim = pdef;
+          }
         }
       } adjc_iterate_end;
     } unit_list_iterate_end;
 
-    if (blade == NULL || best < tune->sortie_win_floor) {
+    if (blade == NULL) {
+      continue;
+    }
+    if (best < tune->sortie_win_floor
+        || (priced && best_score <= 0.0)) {
+      /* Declined, WITH the prize it declined -- the counter the item
+       * owes: a pass that turns down big stacks at 0.84 is a
+       * different finding from one that never sees a big stack. */
+      if (priced) {
+        log_base(deep_metric_log_level(),
+                 "deep-sortie-no turn=%d player=\"%s\" city=%d"
+                 " kill=\"%s\" victim=\"%s\" p=%.3f prize=%.1f"
+                 " score=%.1f",
+                 game.info.turn, player_name(pplayer), pcity->id,
+                 unit_rule_name(blade), unit_rule_name(victim), best,
+                 best_prize, best_score);
+      }
       continue;
     }
     if (deep_city_stack_survival_without(nmap, pcity,
@@ -2405,9 +2466,10 @@ static void deep_kill_sorties(struct ai_type *ait, struct player *pplayer)
     }
     log_base(deep_metric_log_level(),
              "deep-sortie turn=%d player=\"%s\" city=%d kill=\"%s\""
-             " victim=\"%s\" p=%.3f",
+             " victim=\"%s\" p=%.3f prize=%.1f score=%.1f",
              game.info.turn, player_name(pplayer), pcity->id,
-             unit_rule_name(blade), unit_rule_name(victim), best);
+             unit_rule_name(blade), unit_rule_name(victim), best,
+             best_prize, best_score);
     /* Rampage executes the attack(s) with all the action legality
      * handling; the pair of gates above is what stock never had. */
     (void) dai_military_rampage(blade, RAMPAGE_ANYTHING,

@@ -940,6 +940,23 @@ struct deep_tuning {
    * when the duel odds clear this floor AND the city still clears
    * survival_target without it. <= 0 disables. */
   double sortie_win_floor;
+  /* THE KILLSTACK PRIZE (M4b item 1). The sortie gate above prices the
+   * RISK of the sortie twice over and the TARGET not at all, which is
+   * the one asymmetry op pricing does not have -- an operation values
+   * the conquest it buys. Under killstack a won duel outside a city
+   * annihilates the whole tile (is_stack_vulnerable(),
+   * common/combat.c:996, which is FALSE inside a city and on
+   * EF_NO_STACK_DEATH terrain), so the prize is the SUMMED shield
+   * value of the stack and not one kill. With the gain positive the
+   * pass selects on
+   *
+   *     p x prize x sortie_prize_gain - (1 - p) x our own build cost
+   *
+   * instead of on p alone, and requires that score to be positive on
+   * top of the two probability gates -- which stay exactly as they
+   * are. 0 = off, restoring best-chance selection with no value term
+   * at all. */
+  double sortie_prize_gain;
   /* Assault operations (E6): form when the free-attacker pool's take
    * odds against the best met target clear op_take_target (<= 0
    * disables); muster at the staging city up to op_muster_wait turns
