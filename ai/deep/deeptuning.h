@@ -442,6 +442,17 @@ struct deep_tuning {
   /* Injected fears also fund WALLS (the upkeep-free defence):
    * building_want[walls] += weight * danger. 0 disables. */
   double wall_fear_weight;
+  /* PLACEHOLDER, untuned. The FIRST defender in an empty city, priced
+   * instead of pinned: want = P(walk-in) x ai_city.worth x gain, at
+   * NORMAL tier and through the stance fear gate, where P(walk-in) is
+   * the union of the survival model's reachability verdict and the
+   * barbarian uprising odds (deepdefence.c, deep_birth_guard_want()).
+   * 0 restores the inherited rule exactly -- a flat danger of 100 at
+   * DWT_EMERGENCY whenever urgency is 0, which is threat-blind,
+   * stance-proof and unpriced against the settler it displaces. The
+   * urgency > 0 branch keeps the emergency tier at every setting: a
+   * warband two tiles out is a real emergency. */
+  double birth_guard_gain;
   /* Land-race coupling: fresh founder wants scale by
    * (1 + weight * map crowding); crowded maps race, empty ones
    * don't. 0 disables. */

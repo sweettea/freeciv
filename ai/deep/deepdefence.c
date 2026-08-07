@@ -989,11 +989,29 @@ static bool deep_barb_unrest_site(struct city *pcity)
   to the tuning pile together -- this commit changes the SHAPE and
   leaves the level where it was.
 **************************************************************************/
+static double deep_barb_ramp(void)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int lead = tune->barb_anticipation_turns;
+
+  if (lead <= 0) {
+    return (game.info.turn >= game.server.onsetbarbarian) ? 1.0 : 0.0;
+  }
+  if (game.info.turn >= game.server.onsetbarbarian) {
+    return 1.0;
+  }
+  if (game.info.turn <= game.server.onsetbarbarian - lead) {
+    return 0.0;
+  }
+
+  return (double) (game.info.turn
+                   - (game.server.onsetbarbarian - lead)) / lead;
+}
+
 static double deep_barb_empire_scale(struct player *pplayer)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   int rate = game.server.barbarianrate;
-  int lead = tune->barb_anticipation_turns;
   int n, ref_n, cwcv;
   double ramp, will, horde, cwc, ref_will, ref_horde;
 
@@ -1002,16 +1020,7 @@ static double deep_barb_empire_scale(struct player *pplayer)
     return 0.0;
   }
 
-  if (lead <= 0) {
-    ramp = (game.info.turn >= game.server.onsetbarbarian) ? 1.0 : 0.0;
-  } else if (game.info.turn >= game.server.onsetbarbarian) {
-    ramp = 1.0;
-  } else if (game.info.turn <= game.server.onsetbarbarian - lead) {
-    ramp = 0.0;
-  } else {
-    ramp = (double) (game.info.turn
-                     - (game.server.onsetbarbarian - lead)) / lead;
-  }
+  ramp = deep_barb_ramp();
   if (ramp <= 0.0) {
     return 0.0;
   }
@@ -1028,6 +1037,48 @@ static double deep_barb_empire_scale(struct player *pplayer)
 
   return ramp * (rate - 1) * cwc * (will * horde)
          / (ref_will * ref_horde);
+}
+
+/**********************************************************************//**
+  The PROBABILITY that a barbarian uprising happens this turn and that
+  this city is a legal victim site for it -- a probability, not the
+  terror scaling above, which folds in horde SIZE and a normalisation
+  and is therefore a severity.
+
+  Three of the four factors §3 documents, and only the three that are
+  odds: the anticipation ramp, the willingness roll
+  `fc_rand(30) + 1 <= n * (rate - 1)` -> MIN(1, n * (rate - 1) / 30),
+  and the civil-war gate `fc_rand(100) > EFT_CIVIL_WAR_CHANCE`. Horde
+  size is deliberately absent: how MANY barbarians arrive changes what
+  a walk-in costs, not whether one happens, and the birth guard is
+  buying the body that makes the difference between "the city changes
+  hands to one warband" and "it does not".
+
+  Permissive by construction, exactly as deep_barb_unrest_site() is:
+  the per-city divisor cancels (see §"WHY THERE IS NO PER-CITY
+  DIVISION" above), so this is the empire's odds attributed to an
+  eligible city, which is the honest per-city figure that note names.
+**************************************************************************/
+static double deep_barb_walkin_odds(struct city *pcity)
+{
+  struct player *pplayer = city_owner(pcity);
+  int rate = game.server.barbarianrate;
+  double ramp;
+  int n, cwcv;
+
+  if (rate <= BARBS_HUTS_ONLY) {
+    return 0.0;
+  }
+  ramp = deep_barb_ramp();
+  if (ramp <= 0.0 || !deep_barb_unrest_site(pcity)) {
+    return 0.0;
+  }
+
+  n = city_list_size(pplayer->cities);
+  cwcv = get_player_bonus(pplayer, EFT_CIVIL_WAR_CHANCE);
+
+  return ramp * MIN(1.0, n * (double) (rate - 1) / 30.0)
+         * MIN(1.0, MAX(0, cwcv) / 100.0);
 }
 
 /**********************************************************************//**
@@ -3403,6 +3454,134 @@ static bool deep_expansion_blocked(struct ai_type *ait,
   return wave > 0 && surv < tune->expansion_war_survival;
 }
 
+/* Birth-guard census, per player per turn: how often the inherited
+ * rule would have fired, how often it was PRICED instead, what the
+ * price came to, and how often the emergency escalation was left
+ * alone because the threat was real. */
+static int deep_birth_cands = 0, deep_birth_priced = 0;
+static int deep_birth_urgent = 0;
+static double deep_birth_paid = 0.0, deep_birth_odds = 0.0;
+
+/**********************************************************************//**
+  What a first defender in an EMPTY city is actually worth.
+
+  THE RULE IT REPLACES (inherited from military_advisor_choose_build()):
+  with `our_def == 0` and any danger at all, stock pins danger to a flat
+  100 when `urgency == 0` and hands the choice DWT_EMERGENCY. Three
+  faults, and the human named the first on 2026-08-06 ("that tier 1
+  thing is dumb"):
+
+  - THREAT-BLIND. The 100 is a constant. It does not read who is
+    coming, from how far, or whether anyone can arrive at all. And
+    deep's own fear lattice guarantees the trigger: the density prior,
+    the boat shadow and the barbarian ramp all put standing danger on a
+    city that has met nobody, so `danger > 0` is true of every newborn
+    city and the rule fires cohort-wide. Derby 3 measured what that
+    looks like -- one Warriors per city at turn 2 across the whole
+    cohort, 39 units by T16 against stock's 0.
+  - STANCE-PROOF. DWT_EMERGENCY outranks every NORMAL want by tier, so
+    W34's gates cannot touch it; an early-peace personality and an
+    early-war one build the identical turn-2 Warriors.
+  - UNPRICED. It is charged against the settler tempo it displaces and
+    never compared to it.
+
+  THE REPLACEMENT: want = P(walk-in) x city worth x birth_guard_gain,
+  at DWT_NORMAL, through the stance fear gate.
+
+  P(walk-in) is the union of two independent events, both read from
+  machinery that already exists and neither invented here:
+
+  - THE REACHABILITY LAW. `1 - deep_city_stack_survival()`. For a city
+    with an empty garrison that function is exactly 0.0 against any
+    wave and exactly 1.0 against none (deepcombat.c), and its wave is
+    built from at-war, CONTACT-MADE units that can arrive inside
+    survival_horizon. So a city nobody has met and nobody can reach
+    prices at zero and the settler wins the auction, while a warband
+    two tiles out puts the term at one -- and by then `urgency > 0`
+    anyway and the emergency tier fires on the branch below, which is
+    left exactly as it was.
+  - THE BARB GATE. `deep_barb_walkin_odds()`: barbarians never make
+    contact, so they are absent from the wave by construction, and an
+    uprising is the one walk-in that arrives from nowhere. The odds are
+    the server's own three probability factors.
+
+  City worth is stock's `ai_city.worth` -- the same number
+  deep_conquest_worth() prices a CAPTURE at, so what we pay to keep a
+  city and what an attacker pays to take it are quoted in one currency
+  for the first time.
+
+  birth_guard_gain = 0 (the compiled default) restores the inherited
+  rule byte for byte, including its flat 100 and its tier.
+**************************************************************************/
+static bool deep_birth_guard_want(struct ai_type *ait,
+                                  const struct civ_map *nmap,
+                                  struct city *pcity, unsigned int urgency,
+                                  double *want_out)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct player *pplayer = city_owner(pcity);
+  double surv, p_mil, p_barb, p, worth;
+  int wave = 0;
+
+  deep_birth_cands++;
+  if (urgency > 0) {
+    /* A visible, urgent attacker. The emergency tier is the right
+     * answer here and this pass does not touch it. */
+    deep_birth_urgent++;
+    return FALSE;
+  }
+  if (tune->birth_guard_gain <= 0.0) {
+    return FALSE;
+  }
+
+  surv = deep_city_survival_verdict(nmap, pcity, tune->survival_horizon,
+                                    &wave);
+  p_mil = wave > 0 ? 1.0 - surv : 0.0;
+  p_barb = deep_barb_walkin_odds(pcity);
+  p = 1.0 - (1.0 - p_mil) * (1.0 - p_barb);
+  worth = def_ai_city_data(pcity, ait)->worth;
+
+  *want_out = p * worth * tune->birth_guard_gain
+              * deep_stance_fear_mult(pplayer);
+
+  deep_birth_priced++;
+  deep_birth_odds += p;
+  deep_birth_paid += *want_out;
+
+  log_base(deep_metric_log_level(),
+           "deep-birth turn=%d player=\"%s\" city=%d wave=%d surv=%.3f"
+           " pmil=%.3f pbarb=%.3f p=%.3f worth=%.1f want=%.1f",
+           game.info.turn, player_name(pplayer), pcity->id, wave, surv,
+           p_mil, p_barb, p, worth, *want_out);
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  The birth guard's execution counter, one line per player per turn.
+  Priced against escalated is the A/B lens the brief asks for: a cell
+  where `urgent` is most of `cands` is a cell where the inherited rule
+  was mostly right.
+**************************************************************************/
+static void deep_birth_census(struct player *pplayer)
+{
+  if (deep_birth_cands > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-birthguard turn=%d player=\"%s\" cands=%d priced=%d"
+             " urgent=%d meanp=%.3f paid=%.1f",
+             game.info.turn, player_name(pplayer), deep_birth_cands,
+             deep_birth_priced, deep_birth_urgent,
+             deep_birth_priced > 0
+             ? deep_birth_odds / deep_birth_priced : 0.0,
+             deep_birth_paid);
+  }
+  deep_birth_cands = 0;
+  deep_birth_priced = 0;
+  deep_birth_urgent = 0;
+  deep_birth_odds = 0.0;
+  deep_birth_paid = 0.0;
+}
+
 /**********************************************************************//**
   Military build choice for one city. Derived from
   military_advisor_choose_build() in daimilitary.c (every helper is
@@ -3594,8 +3773,17 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
        * nobody behind them. */
       if (dai_process_defender_want(ait, nmap, pplayer, pcity, danger,
                                     choice, martial_value)) {
-        deep_want_apply(choice, (struct deep_want) {
-          .tier = DWT_EMERGENCY, .value = danger });
+        double priced = 0.0;
+
+        if (deep_birth_guard_want(ait, nmap, pcity, urgency, &priced)) {
+          /* Threat-blind flat 100 replaced by its price. NORMAL tier,
+           * so the auction and W34's gates can both see it. */
+          deep_want_apply(choice, (struct deep_want) {
+            .tier = DWT_NORMAL, .value = priced });
+        } else {
+          deep_want_apply(choice, (struct deep_want) {
+            .tier = DWT_EMERGENCY, .value = danger });
+        }
         adv_choice_set_use(choice, "first defender");
         build_walls = FALSE;
         def_unit_selected = TRUE;
@@ -5872,6 +6060,8 @@ void deep_do_last_activities(struct ai_type *ait, struct player *pplayer)
   TIMING_LOG(AIT_CITIES, TIMER_START);
   deep_manage_cities(ait, pplayer);
   TIMING_LOG(AIT_CITIES, TIMER_STOP);
+  /* Immediately after the build choices that accumulate it. */
+  deep_birth_census(pplayer);
   /* After taxes and production are settled: if the treasury still
    * cannot cover the coming turn, choose our own sacrifice before
    * the server chooses one for us. */
