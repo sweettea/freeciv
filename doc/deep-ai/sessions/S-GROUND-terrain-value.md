@@ -39,6 +39,41 @@ the survival machinery you price with).
 4. **Fortify as a chokepoint decision**: when a unit garrisons a
    fortress/choke tile this session made wantable, prefer fortify over
    wander — small consumer of (1), uses D1's hold API.
+5. **Barbarian terror re-shape (human, 2026-08-06; derby-2 storm: deep
+   lost 107 of 207 cities in 70 turns to uprisings the flat terms never
+   saw coming).** Deep's two barbarian terms are step functions:
+   `fc->barb` flips exactly AT onset (`deepdefence.c:1125`) and
+   `deep_barbarian_fear()` returns a flat `tune->barbarian_fear`
+   (`deepdefence.c:825`). The server's uprising code has the real shape
+   — mirror it, do not invent (`server/barbarian.c:581-613`):
+   willingness is `fc_rand(30) + 1 <= city_count * (barbarianrate - 1)`
+   (also gated on EFT_CIVIL_WAR_CHANCE), and horde size grows with an
+   empire-size ladder (`UPRISE_CIV_SIZE`). Three changes, one scaling
+   function shared by both consumers:
+   - **Anticipation**: the terror ramps up `barb_anticipation_turns`
+     (PLACEHOLDER) BEFORE `game.server.onsetbarbarian`, because the
+     garrison must EXIST at onset and defenders take ~10 turns to
+     build. Linear ramp is fine; the knob is the lead, not the shape.
+   - **Frequency scaling**: scale by `(barbarianrate - 1)` exactly as
+     the server does; BARBS_DISABLED and (for the uprising component)
+     HUTS_ONLY zero it — in no-barb cells the whole class drops out
+     free. Hut risk near cities stays deepexplore's separate term.
+   - **Empire-size scaling**: scale per-empire exposure by own city
+     count per the server's willingness formula (the derby's "my Nth
+     city buys barbarian pressure" tax, priced on the defence side).
+     Note the per-CITY floor should NOT each carry the full empire
+     term — the uprising picks one victim site; divide the empire
+     exposure across coastal/frontier cities by the same eligibility
+     the server's site-finder uses (MIN/MAX_UNREST_DIST, empty-tile-
+     nearby), approximated readably and stated.
+   Both `barbarian_fear` and `floor_barb_weight` become
+   base × the shared scaling (bases stay PLACEHOLDER for the pile).
+   Counters: pre-onset ramp turns, scaled-terror magnitude histogram.
+   A/B: a raging-barbarian venue (set barbarians high) 20 paired seeds,
+   cities-lost-to-barbarians before/after; plus byte-identity check in
+   a no-barb cell (term must vanish). The demand-side twin (expansion
+   want debit for uprising pressure) stays #39/#43 — do not build it
+   here, note the seam.
 
 ## Acceptance
 
@@ -52,7 +87,7 @@ the survival machinery you price with).
 
 ## Scope fences
 
-6-9 commits. `ai/deep` + the already-registered advisor hook only (rule
+7-10 commits (item 5 added 2026-08-06). `ai/deep` + the already-registered advisor hook only (rule
 4 — the hook is deep-gated, keep it so). No airbase/airlift work (era-
 dead), no ZOC/screening (post-v4 combat ladder). The Marketplace/
 Conquer-Extras dead-branch audit rides along only as a STATUS note if

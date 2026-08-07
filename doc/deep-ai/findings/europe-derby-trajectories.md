@@ -553,3 +553,51 @@ one economic entry is a happiness building.
 - 14 players, one map, one seed. Every number here is a hypothesis
   generator, not a result. Per CLAUDE.md rule 6, none of it is an
   acceptance criterion.
+
+---
+
+## Derby 2 (real Europe scenario, classic ruleset) — the barbarian storm, 2026-08-06
+
+Live-monitor digest trail, deep vs stock cohort totals (7v7, endturn 600):
+
+| Turn | deep cities | stock cities | deep mil | stock mil | deep gold | stock gold | notes |
+|---|---|---|---|---|---|---|---|
+| 60 | crossover | — | | | | | deep passes stock on cities |
+| 110 | **207** (peak) | ~145 | ~320 | | | | deep +43% cities; score 1.07× at T138 |
+| 130 | 192 | 144 | 263 | 229 | 1418 | 5759 | storm underway (l'Ollonais empire) |
+| 140 | 175 | 144 | 235 | 204 | 350 | 5973 | Rus 52→44; Carthago Africa −5 |
+| 150 | 153 | 145 | 221 | 174 | 558 | 5786 | |
+| 160 | 133 | 150 | 195 | 178 | 575 | 5606 | Rus 35→23 |
+| 170 | 124 | 155 | 179 | 184 | 411 | 5914 | mil lead lost |
+| 180 | **100** | 152 | 153 | 189 | 331 | 5928 | Rus gone from top-3 (Hellas 14 is 2nd-best deep); Carthago 43 alone intact |
+
+Deep lost **107 of 207 cities in 70 turns** — essentially all to barbarian
+uprisings/pirates and the successor states they spawned, not to stock.
+Stock's cohort sat stable (144→152) behind compact, developed, garrisoned
+cores. Carthago (all-African, sea-buffered, contiguous) is the one deep
+empire the storm couldn't touch; Rus (52 cities, sprawling east) was
+annihilated; Gallia had already been bleeding since T110.
+
+**Mechanism, and why this was predictable:** classic's uprising
+probability scales with *own city count*. The diplomacy sweep had already
+flagged this as an unpriced cost ("nobody prices 'my Nth city buys me
+barbarian pressure'"). Derby 2 is the demonstration at scale: the wide
+game generated the storm that consumed it. The hidden tax on expansion is
+roughly proportional to expansion itself, and no want in either AI's
+codebase sees it.
+
+**Queue consequences (hypothesis-generators, per rule 6):**
+1. Uprising-pressure pricing joins culture as a derby-mandated term —
+   a per-city expected-loss debit on colony/expansion wants, scaled by
+   ruleset uprising mechanics and own garrison state. Natural home:
+   EXPANSION-doctrine epoch (#39) demand-side, or a small CONSEQ-shaped
+   consumer if a readable signal exists.
+2. Consolidation doctrine (garrison-before-grow) is now evidenced twice:
+   Gallia's expand-but-can't-absorb collapse and the cohort-wide storm
+   loss. G1's floor exists; magnitudes are untuned (the pile).
+3. Contrast venue: same cohort that lost archipelago derby 1 at 0.89×
+   while fighting itself led real Europe 1.07× at T138 with zero
+   fratricide — the peace/love/war-target mechanisms work; the losses
+   after T140 are storm, not statecraft.
+- One seed, one map; the storm's severity has RNG in it. Derby 3
+  (post-DARKFX binary) re-rolls the experiment.
