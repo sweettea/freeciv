@@ -464,6 +464,26 @@ struct deep_tuning {
    * stance-gated: tech DIRECTION is W34 A.3's gate, and two gates on
    * one quantity is the failure A.3 names. */
   double defensive_techwall_weight;
+  /* PLACEHOLDER, untuned. The never-launches dampers (CONSEQ item 5,
+   * derby N3): no loop existed from "the operation never launches"
+   * back to "stop building its passengers", nor from "the mission
+   * never pays" back to "stop building agents". Both take the explorer
+   * divisor's saturation shape, 1/(1 + gain x saturation), and both
+   * are 1.0 exactly at 0.
+   *
+   * attacker_hold_damper's saturation is a RATE -- assault operations
+   * formed that never reached MARCH, over all formed -- because a
+   * cumulative count would grow without bound and turn the damper into
+   * a clock. Exempt on a target that threatens us, gate 5's own test:
+   * starving reconquest of what besieges us is the wrong loop closed.
+   *
+   * diplomat_pump_damper's saturation is a COUNT, of diplomat-class
+   * units walking plus queued, because that is the prize-per-agent
+   * question the explorer fix answers and it needs no success-rate
+   * estimate -- there is no measured outcome signal for a diplomat
+   * mission and one was not invented. */
+  double attacker_hold_damper;
+  double diplomat_pump_damper;
   /* Land-race coupling: fresh founder wants scale by
    * (1 + weight * map crowding); crowded maps race, empty ones
    * don't. 0 disables. */

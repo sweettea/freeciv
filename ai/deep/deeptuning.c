@@ -96,6 +96,8 @@ static const struct deep_tuning deep_tuning_defaults = {
   .wall_fear_weight = 0.3,              /* PLACEHOLDER, untuned */
   .birth_guard_gain = 0.0,              /* PLACEHOLDER, 0 = off */
   .defensive_techwall_weight = 0.0,     /* PLACEHOLDER, 0 = off */
+  .attacker_hold_damper = 0.0,          /* PLACEHOLDER, 0 = off */
+  .diplomat_pump_damper = 0.0,          /* PLACEHOLDER, 0 = off */
   .settler_rush_weight = 1.0,           /* PLACEHOLDER, untuned */
   .site_choke_bonus = 12.0,             /* PLACEHOLDER, untuned */
   .base_fort_gain = 40.0,               /* PLACEHOLDER, untuned */
@@ -315,6 +317,8 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(wall_fear_weight) \
   TUNE_DOUBLE(birth_guard_gain) \
   TUNE_DOUBLE(defensive_techwall_weight) \
+  TUNE_DOUBLE(attacker_hold_damper) \
+  TUNE_DOUBLE(diplomat_pump_damper) \
   TUNE_DOUBLE(settler_rush_weight) \
   TUNE_DOUBLE(site_choke_bonus) \
   TUNE_DOUBLE(base_fort_gain) \

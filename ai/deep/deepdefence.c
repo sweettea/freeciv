@@ -4229,6 +4229,46 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
       } players_iterate_alive_end;
       dip->want += missing * deep_tuning_get()->embassy_science_value;
     }
+    /* The second never-launches pump (CONSEQ item 5, derby N3):
+     * Gallia switched to Diplomat 191 times for +2 embassies. The
+     * reachability gate above already retired the "unsatisfiable want
+     * pumps units forever" half of the disease -- an embassy nobody
+     * can walk to no longer bids. What it does not answer is the
+     * SATURATION half, which is the explorer divisor's own question:
+     * a prize that N agents can collect is not worth an N+1th agent.
+     *
+     * So the diplomat want is divided by the diplomat-class units this
+     * player already has walking, plus the ones already in production
+     * -- the identical (prize)/(1 + holders + queued) shape deepexplore
+     * uses, and no success-rate estimate, which would need an outcome
+     * signal nobody has measured yet. 0 = off = exactly 1.0. */
+    if (dip->want > 0 && deep_tuning_get()->diplomat_pump_damper > 0.0) {
+      int agents = 0;
+
+      unit_list_iterate(pplayer->units, u) {
+        if (unit_has_type_flag(u, UTYF_DIPLOMAT)) {
+          agents++;
+        }
+      } unit_list_iterate_end;
+      city_list_iterate(pplayer->cities, ocity) {
+        if (VUT_UTYPE == ocity->production.kind
+            && utype_has_flag(ocity->production.value.utype,
+                              UTYF_DIPLOMAT)) {
+          agents++;
+        }
+      } city_list_iterate_end;
+      if (agents > 0) {
+        double damp = 1.0
+          / (1.0 + deep_tuning_get()->diplomat_pump_damper * agents);
+
+        log_base(deep_metric_log_level(),
+                 "deep-damper turn=%d player=\"%s\" city=%d pump=diplomat"
+                 " agents=%d damp=%.3f want=" ADV_WANT_PRINTF,
+                 game.info.turn, player_name(pplayer), pcity->id, agents,
+                 damp, dip->want);
+        dip->want = (adv_want) (dip->want * damp);
+      }
+    }
     if (dip->want > choice->want) {
       adv_choice_copy(choice, dip);
     }
@@ -4851,6 +4891,43 @@ static void deep_assault_want(struct ai_type *ait,
     if (amult != 1.0 && !deep_op_target_threatens(pplayer, target)) {
       want = (adv_want) (want * amult);
       deep_plr_data(pplayer)->stance_assault_gated++;
+    }
+  }
+
+  /* THE NEVER-LAUNCHES DAMPER (CONSEQ item 5, derby N3). No loop
+   * existed from "the op never launches" back to "stop building its
+   * passengers": derby 3's Iceland built 57 Marines against 6 launches
+   * in 600 turns. The explorer pump had the same disease and the same
+   * cure -- a saturation divisor keyed to the prize the supply can
+   * actually consume -- so this is that shape on a second pump.
+   *
+   * The quantity is a RATE, not a count: assault operations formed
+   * that never reached MARCH, over all formed. Cumulative counts would
+   * grow without bound over a long game and turn the damper into a
+   * clock. At 0 unlaunched the divisor is exactly 1 and nothing moves;
+   * with every op stuck in muster it is 1/(1 + gain). Both counters are
+   * saved, because these two drive a decision rather than a log line.
+   *
+   * Deliberately NOT applied to a threatening target: the same
+   * exemption gate 5 takes above. A damper that starves reconquest of
+   * what is besieging us is the wrong loop closed. */
+  {
+    const struct deep_plr *dp = deep_plr_data(pplayer);
+
+    if (tune->attacker_hold_damper > 0.0 && dp->ops_formed > 0
+        && dp->ops_launched < dp->ops_formed
+        && !deep_op_target_threatens(pplayer, target)) {
+      double stuck = (double) (dp->ops_formed - dp->ops_launched)
+                     / dp->ops_formed;
+      double damp = 1.0 / (1.0 + tune->attacker_hold_damper * stuck);
+
+      log_base(deep_metric_log_level(),
+               "deep-damper turn=%d player=\"%s\" city=%d pump=attacker"
+               " formed=%d launched=%d stuck=%.3f damp=%.3f"
+               " want=" ADV_WANT_PRINTF,
+               game.info.turn, player_name(pplayer), pcity->id,
+               dp->ops_formed, dp->ops_launched, stuck, damp, want);
+      want = (adv_want) (want * damp);
     }
   }
 

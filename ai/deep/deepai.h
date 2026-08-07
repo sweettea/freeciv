@@ -169,6 +169,15 @@ struct deep_plr {
   int prod_leader_id;
   bool wincap_seen;
   int leader_bias_applied;      /* op targets moved by the leader bias */
+  /* The never-launches damper (CONSEQ item 5, derby N3). Assault
+   * operations FORMED against assault operations that reached MARCH,
+   * cumulative and SAVED -- unlike the rates and diplomacy tallies
+   * these two drive a decision, so a reload that reset them would
+   * change behaviour rather than lose a log line. Derby 3's Iceland
+   * built 57 Marines against 6 launches in 600 turns and nothing
+   * anywhere connected the two. */
+  int ops_formed;
+  int ops_launched;
   /* The trade portfolio's two execution counters (TRADE, 2026-08-06):
    * assault targets whose score was actually discounted for being a
    * trade partner's, and love actually added for active routes. Both

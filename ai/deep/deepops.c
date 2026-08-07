@@ -3265,6 +3265,7 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
 
   op->state = DEEP_OP_MUSTER;
   op->kind = DEEP_OPK_ASSAULT;
+  dp->ops_formed++;
   op->target_city = target->id;
   op->staging_city = staging->id;
   op->required = required;
@@ -4166,6 +4167,7 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
       op->state = DEEP_OP_MARCH;
       op->march_turn = game.info.turn;
       op->march_eta = MAX(deep_op_eta(pplayer, op, target), 1);
+      deep_plr_data(pplayer)->ops_launched++;
       deep_brief_allies(pplayer, target, TRUE, op->march_eta);
       log_base(deep_metric_log_level(),
                "deep-op turn=%d player=\"%s\" op=%d march target=%d"

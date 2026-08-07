@@ -219,6 +219,10 @@ static void dpai_player_save(struct player *pplayer,
 
   /* The operations layer (W33 phase 4). Free slots save only their
    * NONE state, so quiet players cost a handful of keys. */
+  secfile_insert_int(file, plr_data->ops_formed,
+                     "player%d.deep_state.ops_formed", plrno);
+  secfile_insert_int(file, plr_data->ops_launched,
+                     "player%d.deep_state.ops_launched", plrno);
   secfile_insert_int(file, plr_data->last_strike_city,
                      "player%d.deep_state.last_strike_city", plrno);
   secfile_insert_int(file, plr_data->last_strike_turn,
@@ -317,6 +321,12 @@ static void dpai_player_load(struct player *pplayer,
     = secfile_lookup_int_default(file, 0,
                                  "player%d.deep_state.stance_floor_gated",
                                  plrno);
+  plr_data->ops_formed
+    = secfile_lookup_int_default(file, 0,
+                                 "player%d.deep_state.ops_formed", plrno);
+  plr_data->ops_launched
+    = secfile_lookup_int_default(file, 0,
+                                 "player%d.deep_state.ops_launched", plrno);
 
   /* Read back out loud: this hook runs before the next phase
    * re-resolves the axes, so it is the only place the round trip is
