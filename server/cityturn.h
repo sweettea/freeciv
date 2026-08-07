@@ -21,7 +21,17 @@
 #include "fc_types.h"
 
 struct conn_list;
+struct cm_parameter;
 struct cm_result;
+
+/* Visibility only (no behaviour change): the parameter a city runs when
+ * nothing has set pcity->cm_parameter. ai/deep has to be able to solve
+ * the arrangement a city WOULD have taken under the stock default in
+ * order to price a change of city-manager posture against it, and the
+ * alternative -- copying the factors into ai/deep -- would silently
+ * drift the day this function changes. */
+void set_default_city_manager(struct cm_parameter *cmp,
+                              struct city *pcity);
 
 bool city_refresh(struct city *pcity);                /* Call if city has changed */
 void city_refresh_for_player(struct player *pplayer); /* Tax/govt changed */

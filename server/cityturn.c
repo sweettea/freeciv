@@ -311,8 +311,8 @@ void apply_cmresult_to_city(struct city *pcity,
 /**********************************************************************//**
   Set default city manager parameter for the city.
 **************************************************************************/
-static void set_default_city_manager(struct cm_parameter *cmp,
-                                     struct city *pcity)
+void set_default_city_manager(struct cm_parameter *cmp,
+                              struct city *pcity)
 {
   int csize = city_size_get(pcity);
   int gsize = city_granary_size(csize);
