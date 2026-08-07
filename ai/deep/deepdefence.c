@@ -6101,12 +6101,22 @@ static adv_want deep_endgame_unit_deflate(struct player *pplayer,
 
   Two conversions, neither minted here: shield upkeep at
   SHIELD_WEIGHTING (the codebase's own shield-to-want constant, the
-  switch debit's too) and gold upkeep at `upkeep_gold_weight` (the
-  BUILDING side's own knob, whose dimension is already "gold per turn
-  against a horizon"). Food upkeep is NOT charged -- there is no
-  food-to-want conversion at this seam and inventing one is rule 7 --
-  so the charge is an under-count, which is the safe direction for a
-  mechanism that only ever subtracts.
+  switch debit's too), and gold PLUS FOOD upkeep at
+  `upkeep_gold_weight` (the BUILDING side's own knob, whose dimension
+  is already "per turn against a horizon"). The 1:1 gold-food
+  equivalence is the one deep_defender_upkeep_discount() in this file
+  already makes; reusing it is rule 3, minting a second one would be
+  rule 7.
+
+  Food is in the sum because leaving it out made the mechanism empty.
+  Measured on contested, one game, every candidate logged: of 321
+  unit candidates reaching this test, 281 were Settlers with
+  ups=0 upg=0 upf=1, because under the governments deep actually
+  plays early -- Despotism, Tribal, Anarchy -- civ2civ3 charges no
+  gold and no shields for these units and charges FOOD. A gold-and-
+  shield-only charge fired 5 times a game out of 616 evaluations. The
+  cost a settler really imposes is the food that suppresses the city
+  it came from, and that is now what it is charged.
 
   Emergency tier exempt, as every deep gate exempts it: a city that
   needs a defender this turn is not shopping on running costs. Note
@@ -6124,7 +6134,7 @@ static adv_want deep_unit_upkeep_charge(struct player *pplayer,
   const struct deep_tuning *tune = deep_tuning_get();
   struct universal target;
   const struct unit_type *ut;
-  int life, eta, up_shield, up_gold;
+  int life, eta, up_shield, up_gold, up_food;
   double charge;
   adv_want debit;
 
@@ -6139,7 +6149,8 @@ static adv_want deep_unit_upkeep_charge(struct player *pplayer,
 
   up_shield = utype_upkeep_cost(ut, NULL, pplayer, O_SHIELD);
   up_gold = utype_upkeep_cost(ut, NULL, pplayer, O_GOLD);
-  if (up_shield <= 0 && up_gold <= 0) {
+  up_food = utype_upkeep_cost(ut, NULL, pplayer, O_FOOD);
+  if (up_shield <= 0 && up_gold <= 0 && up_food <= 0) {
     return 0;                   /* Free to keep: nothing owed. */
   }
 
@@ -6152,8 +6163,17 @@ static adv_want deep_unit_upkeep_charge(struct player *pplayer,
     return 0;
   }
 
+  /* Gold and FOOD are summed as one recurring bill and charged at
+   * upkeep_gold_weight. That 1:1 gold-food equivalence is not minted
+   * here: deep_defender_upkeep_discount() in this same file already
+   * sums utype_upkeep_cost(O_GOLD) + utype_upkeep_cost(O_FOOD) into a
+   * single "what the marginal defender costs to keep" figure under a
+   * single weight. Reusing the module's existing equivalence is rule
+   * 3; inventing a second one would be rule 7. A tuner should know
+   * the two outputs ride one knob. */
   charge = (double) up_shield * life * SHIELD_WEIGHTING
-           + (double) up_gold * life * tune->upkeep_gold_weight;
+           + (double) (up_gold + up_food) * life
+             * tune->upkeep_gold_weight;
   debit = (adv_want) (charge * tune->unit_upkeep_charge);
   if (debit <= 0) {
     return 0;
@@ -6163,12 +6183,12 @@ static adv_want deep_unit_upkeep_charge(struct player *pplayer,
   deep_upcharge_paid += debit;
   log_base(deep_metric_log_level(),
            "deep-upcharge turn=%d player=\"%s\" city=%d who=\"%s\""
-           " pick=\"%s\" life=%d eta=%d ups=%d upg=%d"
+           " pick=\"%s\" life=%d eta=%d ups=%d upg=%d upf=%d"
            " debit=" ADV_WANT_PRINTF " want=" ADV_WANT_PRINTF
            " left=" ADV_WANT_PRINTF,
            game.info.turn, player_name(pplayer), pcity->id, who,
            adv_choice_rule_name(choice), life, eta, up_shield, up_gold,
-           debit, choice->want, MAX(choice->want - debit, 0));
+           up_food, debit, choice->want, MAX(choice->want - debit, 0));
 
   choice->want = MAX(choice->want - debit, 0);
 
