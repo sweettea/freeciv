@@ -65,6 +65,23 @@ which is why they bundle safely.
    missions chronically fail) -- the explorer divisor's shape, applied
    to two more pumps. Tunable gains, PLACEHOLDERs; counters.
 
+6. **Price the birth guard (human, 2026-08-06: "that tier 1 thing is
+   dumb"; derby-3 evidence: one Warriors per city at turn 2, cohort-wide,
+   39 units by T16 against stock's 0).** The inherited first-defender
+   rule (`deepdefence.c:3129-3160`) pins danger to a flat 100 when
+   `urgency==0` and fires DWT_EMERGENCY — threat-blind (the early fear
+   baseline is never 0, so every newborn city trips it), stance-proof
+   (emergency tier bypasses the gates), and unpriced against the settler
+   tempo it taxes. Replace: first-defender want = P(walk-in) × city
+   worth, where P(walk-in) consumes the reachability law + the barb gate
+   (nobody-can-reach-you → ~0 and the settler wins; warband two tiles
+   out → `urgency>0` and the emergency tier fires legitimately, which
+   stays). Tier normal, stance-gated, tunable gain (PLACEHOLDER).
+   Counters: birth-guard wants priced vs emergency escalations; A/B
+   lens: settlers-by-T20/cities-by-T30 tempo AND cities lost to
+   walk-ins (derby 2's empty-city plague is the loss guard — do not
+   trade real safety for tempo without showing both numbers).
+
 Discipline: each item its own commits + counter + A/B lens; all knobs
 PLACEHOLDERs registered everywhere; `meson test` + `tune-audit.py` CLEAN;
 byte-identity where defaults are off-shaped (items 1-2 gate on new
