@@ -1868,6 +1868,7 @@ static double deep_fort_surv[DEEP_FORT_STR_MAX];
 static bool deep_fort_have[DEEP_FORT_STR_MAX];
 
 /* Per-player census accumulators for the base want, reset per turn. */
+static int deep_fort_offers[MAX_NUM_PLAYER_SLOTS];
 static int deep_fort_evals[MAX_NUM_PLAYER_SLOTS];
 static int deep_fort_wants[MAX_NUM_PLAYER_SLOTS];
 static double deep_fort_maxwant[MAX_NUM_PLAYER_SLOTS];
@@ -1952,35 +1953,49 @@ static double deep_fort_survival(int def_str)
 }
 
 /**********************************************************************//**
-  The tile's extra defence bonus for this unit class, WITH one more
-  extra present. The two-sum shape (natural extras multiply the
-  fortification extras) is common/tile.c's
-  tile_extras_class_defense_bonus(); it is re-derived here rather than
-  called because the question is counterfactual -- what the tile would
-  be worth if the candidate extra existed -- and the common function
-  can only answer for extras already on the ground.
+  The reference defender's defence power on this tile, WITH one more
+  extra present -- the counterfactual the advisor's own valuation
+  cannot form.
+
+  `get_virtual_defense_power()` is the ruleset's own answer and it is
+  used deliberately in place of anything hand-rolled, because the two
+  benchmark rulesets deliver a fortress's defence through DIFFERENT
+  channels and only this call reads both:
+
+    classic    `defense_bonus = 100` on the Fortress extra
+               (terrain.ruleset:1489), read by
+               tile_extras_defense_bonus()
+    civ2civ3   NO defense_bonus field at all; +50% Fort and +50%
+               Fortress arrive as Defend_Bonus EFFECTS
+               (effects.ruleset:273-290)
+
+  A first cut of this want read `extra->defense_bonus` and measured
+  ZERO base evaluations in 2 civ2civ3 games with 625 candidate offers,
+  which is how the asymmetry was found. The virtual tile mirrors
+  adv_calc_extra()'s own construction, conflicting extras removed and
+  all.
 **************************************************************************/
-static int deep_tile_def_bonus_with(const struct tile *ptile,
-                                    const struct unit_class *pclass,
-                                    const struct extra_type *added)
+static int deep_def_power_with(const struct civ_map *nmap,
+                               struct player *pplayer,
+                               struct tile *ptile,
+                               const struct extra_type *added)
 {
-  int natural = 0, fortification = 0;
+  struct tile *vtile = tile_virtual_new(ptile);
+  int power;
 
-  extra_type_by_cause_iterate(EC_NATURAL_DEFENSIVE, pextra) {
-    if ((tile_has_extra(ptile, pextra) || pextra == added)
-        && is_native_extra_to_uclass(pextra, pclass)) {
-      natural += pextra->defense_bonus;
+  tile_add_extra(vtile, added);
+  extra_type_iterate(cextra) {
+    if (tile_has_extra(vtile, cextra)
+        && !can_extras_coexist(added, cextra)) {
+      tile_remove_extra(vtile, cextra);
     }
-  } extra_type_by_cause_iterate_end;
+  } extra_type_iterate_end;
 
-  extra_type_by_cause_iterate(EC_DEFENSIVE, pextra) {
-    if ((tile_has_extra(ptile, pextra) || pextra == added)
-        && is_native_extra_to_uclass(pextra, pclass)) {
-      fortification += pextra->defense_bonus;
-    }
-  } extra_type_by_cause_iterate_end;
+  power = get_virtual_defense_power(nmap, deep_fort_att, deep_fort_def,
+                                    pplayer, vtile, TRUE, 0);
+  tile_virtual_destroy(vtile);
 
-  return (100 + natural) * (100 + fortification) / 100 - 100;
+  return power;
 }
 
 /**********************************************************************//**
@@ -2051,20 +2066,18 @@ static adv_want deep_base_want(const struct player *pplayer,
 {
   const struct deep_tuning *tune = deep_tuning_get();
   const struct civ_map *nmap = &(wld.map);
-  const struct unit_class *pclass;
-  int base_str, b_now, b_with;
+  struct player *owner = (struct player *) pplayer;
+  int d_now, d_with;
   double p_now, p_with, ground;
   adv_want want;
 
   if (tune->base_fort_gain <= 0.0
       || target == NULL
-      || target->defense_bonus <= 0
       || !deep_fort_reference(pplayer)) {
     return 0.0;
   }
 
-  pclass = utype_class(deep_fort_def);
-  if (!is_native_extra_to_uclass(target, pclass)
+  if (!is_native_extra_to_uclass(target, utype_class(deep_fort_def))
       || tile_has_extra(ptile, target)) {
     return 0.0;
   }
@@ -2076,18 +2089,17 @@ static adv_want deep_base_want(const struct player *pplayer,
     return 0.0;
   }
 
-  /* Terrain first, then extras -- the order get_defense_power() uses
-   * (common/combat.c:601, :695). */
-  base_str = deep_fort_def->defense_strength * POWER_FACTOR
-             * (100 + tile_terrain(ptile)->defense_bonus) / 100;
-  b_now = tile_extras_class_defense_bonus(ptile, pclass);
-  b_with = deep_tile_def_bonus_with(ptile, pclass, target);
-  if (b_with <= b_now) {
+  d_now = get_virtual_defense_power(nmap, deep_fort_att, deep_fort_def,
+                                    owner, ptile, TRUE, 0);
+  d_with = deep_def_power_with(nmap, owner, ptile, target);
+  if (d_with <= d_now) {
+    /* Buys no defence for a land defender: a Buoy, an airstrip, or a
+     * base this ruleset makes purely logistical. Nothing to want. */
     return 0.0;
   }
 
-  p_now = deep_fort_survival(base_str * (100 + b_now) / 100);
-  p_with = deep_fort_survival(base_str * (100 + b_with) / 100);
+  p_now = deep_fort_survival(d_now);
+  p_with = deep_fort_survival(d_with);
   if (p_with <= p_now) {
     return 0.0;
   }
@@ -2123,15 +2135,17 @@ void deep_fort_census(struct player *pplayer)
       }
     } unit_list_iterate_end;
 
-    if (deep_fort_evals[pn] > 0 || building > 0) {
+    if (deep_fort_offers[pn] > 0 || building > 0) {
       log_base(deep_metric_log_level(),
-               "deep-fort turn=%d player=\"%s\" evals=%d wants=%d"
-               " maxwant=%.2f building=%d",
-               game.info.turn, player_name(pplayer), deep_fort_evals[pn],
-               deep_fort_wants[pn], deep_fort_maxwant[pn], building);
+               "deep-fort turn=%d player=\"%s\" offers=%d evals=%d"
+               " wants=%d maxwant=%.2f building=%d",
+               game.info.turn, player_name(pplayer), deep_fort_offers[pn],
+               deep_fort_evals[pn], deep_fort_wants[pn],
+               deep_fort_maxwant[pn], building);
     }
   }
 
+  deep_fort_offers[pn] = 0;
   deep_fort_evals[pn] = 0;
   deep_fort_wants[pn] = 0;
   deep_fort_maxwant[pn] = 0.0;
@@ -2171,6 +2185,10 @@ adv_want deep_worker_task_value(const struct player *pplayer,
   }
 
   if (act == ACTIVITY_BASE) {
+    /* Counted BEFORE any gate: "the advisor offered a base candidate
+     * at all" and "we priced it" are different questions, and the
+     * first one is the one a zero want has to answer first. */
+    deep_fort_offers[player_number(pplayer)]++;
     base = deep_base_want(pplayer, target, ptile);
   }
 

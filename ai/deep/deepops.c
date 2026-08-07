@@ -435,6 +435,8 @@ void deep_hold_census(struct ai_type *ait, struct player *pplayer)
   enemy unit positions directly. A known-map version would filter by
   `map_is_known_and_seen()`; the census is measuring the ceiling.
 **************************************************************************/
+static bool deep_capture_gate_said = FALSE;
+
 void deep_capture_census(struct ai_type *ait, struct player *pplayer)
 {
   const struct civ_map *nmap = &(wld.map);
@@ -447,8 +449,21 @@ void deep_capture_census(struct ai_type *ait, struct player *pplayer)
   }
   pact = action_by_number(ACTION_CAPTURE_UNITS);
   if (pact == NULL || !action_is_in_use(pact)) {
-    /* Not this ruleset. Silence IS the finding. */
+    /* Not this ruleset. Silence IS the finding -- but silence has two
+     * causes and only one of them is interesting, so the gate says
+     * which, once per game. */
+    if (!deep_capture_gate_said) {
+      deep_capture_gate_said = TRUE;
+      log_base(deep_metric_log_level(),
+               "deep-capture-venue turn=%d inuse=0",
+               game.info.turn);
+    }
     return;
+  }
+  if (!deep_capture_gate_said) {
+    deep_capture_gate_said = TRUE;
+    log_base(deep_metric_log_level(),
+             "deep-capture-venue turn=%d inuse=1", game.info.turn);
   }
 
   /* Ours, exposed. */
