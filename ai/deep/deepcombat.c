@@ -305,6 +305,59 @@ double deep_city_survival_verdict(const struct civ_map *nmap,
   return e->surv;
 }
 
+/* Observation only (ERA): how the wave that decided a survival
+ * verdict was assembled. Counted while the reachability test runs, so
+ * every field is a by-product of the qualification the model already
+ * performed.
+ *
+ * The routes are the four disjunct arms of that test, in the order it
+ * evaluates them, and they count QUALIFIED attackers -- which exceeds
+ * n_att once the DEEP_WAVE_MAX cap starts displacing the weakest.
+ * `capped` says when that happened, which today is silent. */
+struct deep_wave_census {
+  int by_land;
+  int by_sea;
+  int by_air;
+  int by_transport;
+  int n_qual;
+  int max_dist;
+  int max_turns;
+};
+
+/**********************************************************************//**
+  Emit the wave census beside the verdict it produced.
+
+  What it discriminates: a low survival probability caused by a couple
+  of strong attackers standing next door (the threshold is mis-set)
+  versus one caused by a reach radius that admits a distant fleet (the
+  horizon, or the sea clause below, is wrong). The 2026-08-11 forensics
+  spot-checked this from the aggregate `wave=` field alone and read it
+  as small waves of local units -- but the UMT_SEA && coastal arm of
+  the reachability test has NO distance bound beyond horizon x
+  move_rate, which for anything moving 6 exceeds the diameter of a
+  32x32 torus. max_dist and by_sea are what settle it.
+**************************************************************************/
+static void deep_wave_log(const struct city *pcity, int horizon,
+                          int n_att, int n_def,
+                          const struct deep_combatant *att,
+                          const struct deep_combatant *def,
+                          const struct deep_wave_census *census,
+                          double surv)
+{
+  log_base(deep_metric_log_level(),
+           "deep-wave turn=%d player=\"%s\" city=%d n_att=%d n_def=%d"
+           " capped=%d by_land=%d by_sea=%d by_air=%d by_transport=%d"
+           " max_att=%d max_dist=%d max_turns=%d horizon=%d"
+           " def_best=%d surv=%.3f",
+           game.info.turn, player_name(city_owner(pcity)), pcity->id,
+           n_att, n_def, census->n_qual > n_att ? 1 : 0,
+           census->by_land, census->by_sea, census->by_air,
+           census->by_transport,
+           n_att > 0 ? att[0].rating : 0,
+           census->max_dist, census->max_turns, horizon,
+           n_def > 0 ? def[0].rating : 0, surv);
+}
+
 /**********************************************************************//**
   As deep_city_stack_survival(), with one garrison unit left out of
   the stack -- what the night costs if that blade sorties or is lent.
@@ -323,6 +376,7 @@ static double deep_city_survival_core(const struct civ_map *nmap,
   Continent_id home = tile_continent(ctile);
   bool coastal = is_terrain_class_near_tile(nmap, ctile, TC_OCEAN);
   int n_air = 0;
+  struct deep_wave_census census = { 0, 0, 0, 0, 0, 0, 0 };
 
   if (wave_out != NULL) {
     *wave_out = 0;
@@ -349,7 +403,7 @@ static double deep_city_survival_core(const struct civ_map *nmap,
     unit_list_iterate(aplayer->units, aunit) {
       const struct unit_type *at = unit_type_get(aunit);
       int rating = adv_unit_att_rating(aunit);
-      int rate, turns;
+      int rate, turns, dist;
       bool flies_in;
 
       if (rating <= 0 || aunit->hp <= 0) {
@@ -385,11 +439,27 @@ static double deep_city_survival_core(const struct civ_map *nmap,
         n_air++;
       }
       rate = MAX(at->move_rate, 1);
-      turns = (real_map_distance(unit_tile(aunit), ctile) * SINGLE_MOVE
-               + rate - 1) / rate;
+      dist = real_map_distance(unit_tile(aunit), ctile);
+      turns = (dist * SINGLE_MOVE + rate - 1) / rate;
       if (turns > horizon) {
         continue;
       }
+      /* Census (ERA), on the same four arms the test above just
+       * evaluated and in its order: flight first, then own landmass,
+       * then a passenger aboard a hull, and whatever is left reached
+       * us as a warship against a shore. */
+      if (flies_in) {
+        census.by_air++;
+      } else if (tile_continent(unit_tile(aunit)) == home) {
+        census.by_land++;
+      } else if (unit_transported(aunit)) {
+        census.by_transport++;
+      } else {
+        census.by_sea++;
+      }
+      census.n_qual++;
+      census.max_dist = MAX(census.max_dist, dist);
+      census.max_turns = MAX(census.max_turns, turns);
       deep_combatant_add(att, &n_att, DEEP_WAVE_MAX, aunit, rating);
     } unit_list_iterate_end;
   } players_iterate_alive_end;
@@ -426,7 +496,12 @@ static double deep_city_survival_core(const struct civ_map *nmap,
   qsort(att, n_att, sizeof(att[0]), deep_combatant_cmp);
 
   if (out == NULL) {
-    return deep_garrison_vs_stream(nmap, att, n_att, def, n_def, NULL);
+    double surv = deep_garrison_vs_stream(nmap, att, n_att, def, n_def,
+                                          NULL);
+
+    deep_wave_log(pcity, horizon, n_att, n_def, att, def, &census, surv);
+
+    return surv;
   }
 
   {
@@ -443,6 +518,7 @@ static double deep_city_survival_core(const struct civ_map *nmap,
     out->wave = n_att;
     out->n_def = n_def;
     out->att_loss = shields;
+    deep_wave_log(pcity, horizon, n_att, n_def, att, def, &census, surv);
 
     return surv;
   }
