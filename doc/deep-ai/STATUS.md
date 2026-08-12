@@ -10795,6 +10795,11 @@ off arm.
 - **`get_potential_improvement_bonus()`'s flag blindness (§2) is a
   project-wide credit bug, not an item-4 detail.** It silently zeroes
   the growth, health and content credits for any flag-gated effect.
+  **FIXED, 2026-08-12, `epic/credit-integrity`** — and the mechanism
+  named in §2 is corrected there: the effect IS returned by the index,
+  and it is the requirement loop that drops it. Item 4 has population
+  now (0 -> 220 `deep-barracks` lines a game) and its first honest A/B
+  costs 7.8 score at face value 1.0. See the CREDIT entry.
 - **`/tmp` does not survive.** The M4b result directories are gone;
   every table above is analysis output, not a re-derivable artefact.
 ---
@@ -11249,3 +11254,141 @@ commit needs revisiting.
   but note the census correction: a remembered `vision_site` carries no
   production and no shield stock, so that seam is category (c) and the
   seam alone will not be enough.
+
+---
+
+## CREDIT: the flag-gated effect was invisible, and the barracks credit it uncovers is far too big (2026-08-12)
+
+Four commits on `epic/credit-integrity`, cut from `046c662b5d`.
+`ai/deep`, `tests/`, `benchmark/` and doc only — zero `ai/default`,
+`ai/baseline`, `server/advisors` or `common/` changes.
+
+    65e3447552  ai/deep: evaluate a candidate building against its own
+                flags                        (ai/deep/deepeffects.[ch],
+                                              tests/deepeffects_test.c)
+    93e5342123  ai/deep: price a candidate's flag-gated effects at the
+                credit seams
+    b64afdbc17  ai/deep: ask the barracks streams what ONE UNIT would
+                gain
+    3c19c8f3af  benchmark: add the barracks population probe
+
+### 1. The defect, and M4b's diagnosis of it corrected
+
+M4b §5a found that deep's credits price every flag-gated effect at
+zero, and it was right. Its explanation of *why* was wrong in a way
+that mattered, so it is corrected in place in
+`findings/m4b-deterrence-2026-08-07.md`:
+
+- The effect **is** in the index. `effect_req_append()`
+  (`common/effects.c:276`, in tree since 2022) files an effect with a
+  `VUT_IMPR_FLAG` requirement under **every improvement carrying that
+  flag**, so the Barracks lookup returns it.
+- What drops it is `get_potential_improvement_bonus()`'s requirement
+  loop. It short-circuits a requirement naming the improvement itself —
+  the city does not have the candidate yet — and evaluates every other
+  requirement live, so `"BuildingFlag", "Barracks", "City"` is asked of
+  a city with no barracks and comes back **definitively FALSE**. That
+  is also why `RPT_POSSIBLE` did not rescue it: the requirement is
+  false, not unknown.
+
+`deep_potential_improvement_bonus()` is that accessor with the
+short-circuit widened to any requirement the candidate itself would
+satisfy — the improvement, or a building flag it carries. Copied rather
+than reused because the seam is four lines inside a shared `common/`
+function with three non-deep callers (`common/improvement.c:614`,
+`rssanity.c:832`, `get_current_construction_bonus()`), and moving them
+is a behaviour change in shared code to fix an ai/deep credit.
+
+### 2. The building flag was only half of it — found by measuring
+
+With the flag fix in, the smoke game still logged **zero**
+`deep-barracks` lines. civ2civ3 gates the pair on the unit as well:
+`"UnitClassFlag", "Barracks", "Local"` (`effects.ruleset:1835`), which
+with no unit in the context is UNKNOWN and `RPT_CERTAIN` discards. Both
+credits already know which unit they mean, so they now say so through
+`deep_potential_improvement_bonus_for()` (same accessor, `utype` in the
+`req_context`), and read today's rate the way the server does:
+`get_unit_bonus()` — the read `hp_gain_coord()` itself makes — and
+`city_production_unit_veteran_level()`. Contributions ADD to today's
+rate rather than replacing it, which is what the effect system does.
+
+### 3. Identity at default, 10/10
+
+    smoke, 10 paired seeds, identity.ini on BOTH binaries
+    base 046c662b5d  vs  final 3c19c8f3af
+    10/10 scorelogs BYTE-IDENTICAL, 0 pairing violations
+
+Not an off-switch — this fix has no knob, as the D2 credit-integrity
+round's fixes had none. It is identical at default because the two
+consumers that a flag-gated effect actually reaches in civ2civ3 are
+`heal_stream_gain` and `veteran_stream_gain`, both compiled off, and
+**no in-tree ruleset gates Growth_Food, Make_Content, Health_Pct,
+History or Output_Bonus on a building flag** (15 `BuildingFlag`
+requirements across 7 rulesets, all of them the Barracks pair). The
+growth/health/content credits are therefore fixed against the rulesets
+that would, and unmoved on ours.
+
+### 4. Item 4 has population now — and at face value it COSTS 7.8 score
+
+    smoke, 10 paired seeds, pin 3c19c8f3af on both arms, jobs 2,
+    portbase 7500, 0 pairing violations
+    OFF = identity.ini
+    ON  = benchmark/tuning/credit-barracks.ini
+          (heal_stream_gain 1.0, veteran_stream_gain 1.0)
+
+    metric                       OFF        ON     delta      se      t   wins
+    score                      80.45     72.65     -7.80    3.31  -2.36   2/10
+    cities                      8.12      7.17     -0.95    0.53  -1.81   2/10
+    unitsbuilt                 39.30     30.15     -9.15    2.52  -3.63   1/10
+    techs                      15.93     15.12     -0.80    0.73  -1.10   4/10
+    pop                        38.12     33.02     -5.10    1.79  -2.85   2/10
+    mean_city_size              4.94      4.74     -0.20    0.15  -1.34   5/10
+    settlers                    0.57      0.75     +0.17    0.31  +0.57   4/10
+    landarea                90375.00  84200.00  -6175.00 4224.44  -1.46   1/10
+    munits                     14.35     12.85     -1.50    1.32  -1.14   3/10
+    wonders                     0.17      0.00     -0.17    0.07  -2.69   0/10
+    unitslost                   3.27      3.58     +0.30    0.91  +0.33   6/10
+    unitskilled                 2.80      2.88     +0.07    0.80  +0.09   7/10
+
+Population, same 10 games: `deep-barracks` **0 lines in 10/10 OFF games
+-> 220.1 lines a game in 10/10 ON games**, 6300 credited veteran
+candidates and 21 credited heal candidates. M4b's literal `0.00` A/B
+row is answered.
+
+Per-line credit: **vet mean 3095.5, median 2452.9, max 16787.5** over
+2201 lines (2.86 candidates a line, so ~850 want per candidate); heal
+n=21, mean 9495.7. Against building credits of tens.
+
+**That is the finding, and it is not a win.** The claim this epic makes
+is credit correctness; what correctness bought is the first honest
+measurement of item 4, and the measurement says the term as written is
+one to two orders of magnitude too large for the auction it enters —
+`unitsbuilt -9.15` (`t -3.63`) and `wonders` to literally zero are a
+city queue that stops doing anything but build barracks. Same shape as
+M4b §6b's RC4 finding with the sign reversed: a stream priced in
+horizon-of-shields is incommensurable with credits priced in citizens.
+
+### 5. What the next session must know
+
+- **Both barracks knobs stay at 0.0.** The default is byte-identical
+  (§3) and the only level ever tried costs 7.8 score. A sweep should
+  start well below 1.0, and it should ask first whether
+  `deep_veteran_stream_credit()`'s `horizon/ttb × margin × shields ×
+  SHIELD_WEIGHTING` is the right dimension at all — `per_horizon` is a
+  unit COUNT and the product is total shield-power over the horizon,
+  while the credits beside it price citizens. That is a W01 question.
+- **The heal stream is real but rare on smoke** (21 credited lines in
+  10 games): it wants damaged units standing in a city that has no
+  barracks yet, so a combat venue (contested, tech50war-200) is where
+  it should be measured, not here.
+- **The accessor is the reusable part.** Any future deep credit that
+  asks "what would this building give me" should call
+  `deep_potential_improvement_bonus[_for]()` rather than the stock
+  accessor; the stock reading is asserted in
+  `tests/deepeffects_test.c`, so the day `common/` fixes this the
+  duplication fails loudly instead of going quietly redundant.
+- **`meson test -C build` is now 5/5** — `deepeffects` joins
+  `baseline-frozen`, `deepodds`, `deepattrition`, `deeptuning`. It
+  fails on the old behaviour (verified by reverting the flag case in
+  place). `python3 benchmark/tune-audit.py` **CLEAN 209/209/209/209**,
+  unchanged: no knob was added.
