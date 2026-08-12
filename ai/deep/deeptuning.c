@@ -166,6 +166,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .survival_target = 0.5,               /* PLACEHOLDER, untuned */
   .survival_fear_value = 20.0,          /* PLACEHOLDER, untuned */
   .survival_horizon = 3,                /* PLACEHOLDER, untuned */
+  .survival_pf_reach = 0,               /* 0 = straight-line reach */
   .tired_attack_floor = 0.9,            /* PLACEHOLDER, untuned */
   .attack_value_weight = 1.0,           /* PLACEHOLDER, untuned */
   .attack_loss_gain = 1.0,              /* PLACEHOLDER, untuned */
@@ -395,6 +396,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(survival_target) \
   TUNE_DOUBLE(survival_fear_value) \
   TUNE_INT(survival_horizon) \
+  TUNE_INT(survival_pf_reach) \
   TUNE_DOUBLE(tired_attack_floor) \
   TUNE_DOUBLE(attack_value_weight) \
   TUNE_DOUBLE(attack_loss_gain) \

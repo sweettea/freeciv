@@ -11628,3 +11628,124 @@ and inert here; it does not need rebuilding there.
   about 32×32 tech50war-200, not about the clause, which has no
   distance bound beyond `horizon × move_rate`. It needs a **naval
   venue** before it can be asked at all. Unassigned.
+## ERA phase 3c — honest land reach landed behind a knob (2026-08-12)
+
+Branch `epic/era-3c-reach` (based on `epic/era-3a-massing`, which
+carries the 3c instrument `0a168de0da`). One code commit:
+`fc533432f8` `ai/deep: confirm the survival wave's land reach with the
+pathfinder`.
+
+### What the instrument measured (the license for the mechanism)
+
+tech50war-200, 4 games, 69 336 wave evaluations, furthest qualifying
+attacker per evaluation, pathfinder (pft_fill_unit_attack_param, the
+same parameter find_something_to_kill uses) vs the straight-line
+`real_map_distance / move_rate` test at deepcombat.c:443:
+
+| phase | rows | pf-unreachable | pf-slower | mean gap | d>=12 unreach |
+|---|---:|---:|---:|---:|---:|
+| all | 69 336 | 19.1% | 25.6% | +0.70 | 16.8% |
+| t<60 | 8 495 | 21.6% | 31.3% | +0.79 | 22.1% |
+| t60-130 | 29 820 | 16.7% | 27.8% | +0.80 | 14.5% |
+| t>130 | 31 021 | 20.6% | 21.9% | +0.57 | 18.3% |
+
+The pathfinder is NEVER faster (0.0%). ~45% of survival verdicts are
+shaped by a furthest attacker that cannot arrive as assumed.
+
+### The mechanism
+
+New tunable `survival_pf_reach` (int 0/1, **default 0 = old behaviour
+exactly**). At 1, a land-arm attacker that passes the straight-line
+test must also be pathfinder-confirmed within the same
+`survival_horizon` bound; unreachable or too-slow attackers are
+dropped from the wave. Land arm only — the sea arm admitted 0 units in
+437 440 probe evaluations (inert), the air arm's reach is the point of
+flight, a passenger's approach belongs to its hull. Because pf was
+never faster on the measured venue, the straight-line test stays as a
+free prefilter and the clause only removes attackers.
+
+Cost design (the central problem — survival_core is deep's hottest
+routine): ONE pf map per attacker per phase, lazily expanded, keyed
+(unit, origin tile), shared across every city and every _without/_with
+counterfactual; redrawn if the attacker moved; freed in
+deep_survival_cache_clear() (same phase lifecycle as the verdict
+memo). No per-evaluation pf_map_new().
+
+### Validation
+
+- `meson test -C build` 4/4; `tune-audit.py` CLEAN (211 fields;
+  registered in deeptuning.h, TUNE_INT, tuning-params.ini, ALL + MIL
+  blocks).
+- **Off-switch proof: 10/10 smoke scorelogs byte-identical** at knob 0
+  vs a `git archive` build of base `3fc1b18e40` (era-probe stage-1
+  pattern, identity.ini both sides, ports 7200/7300).
+- Wall-clock cost at knob 1, tech50war-200, same binary
+  (fc533432f8), same 2 seeds, jobs 2 both arms, full T201 all four
+  games. By kernel-stamped file mtimes (earliest game file -> DONE
+  marker, same clock source both arms): OFF 230 s / 312 s, ON
+  **167 s / 217 s** — the ON arm was ~30% FASTER per game. Mechanism:
+  honest reach empties many waves outright (n_att = 0 early-returns
+  skip the duel chains and the metric instrument's own pf map);
+  nonzero-wave evaluations fell from 45 034 to 31 802 rows across the
+  pair. The lazy one-map-per-attacker-per-phase memo is more than
+  paid for. TWO CAVEATS, stated plainly: (1) the arms play different
+  games once the knob changes decisions, so this is the practical
+  price of turning it on, not a microbenchmark; (2) the measurement
+  box's clock sources disagreed during the session (sandbox
+  sleep/notification time vs filesystem mtimes, an order-of-magnitude
+  apart); the mtime deltas are internally consistent and identically
+  sourced for both arms, but a human-timed `time run.sh` outside the
+  sandbox should confirm the absolute numbers before they are cited
+  as load-bearing. The RELATIVE claim (ON is not slower than OFF on
+  this venue) is supported on the only self-consistent clock
+  available.
+- ON-state execution evidence, from the same 2-seed cost games:
+  deep-wave pf_unreach on the far attacker collapses 50.7%/20.0% ->
+  0.7%/1.1%, pf_past_horizon 15.0%/15.9% -> 0.6%/0.3% (residue =
+  non-land far units, exempt by design); mean n_att falls 5.19 ->
+  3.50 and 2.44 -> 4.43* (*seed-2's ON game fought a bigger war —
+  different trajectory, directional only); scorelogs differ from the
+  OFF arm on the same seed (the knob is live).
+
+### QUEUED — the 3a x 3c factorial (needs an explicit human go)
+
+3a (`op_draft_marginal`) was FALSIFIED standalone on this venue: the
+marginal release test frees FEWER blades than the floor it replaced
+(0.18/attempt vs 0.30), because at pool<=1 the blade's take-probability
+contribution is exactly zero 94.6% of the time — no gradient. But 3a
+and 3c sit on ONE causal chain: the dishonest reach inflates n_att ->
+depresses survival everywhere -> pins blades at AIUNIT_DEFEND_HOME ->
+starves the ops pool 3a drafts from. If 3c-on unpins blades and grows
+the pool past 1, the marginal draft regains the gradient it lacked.
+Two independent arms cannot see that; the design is a **2x2 factorial
+over op_draft_marginal x survival_pf_reach**, era-a-pv1.ini base (file
+copies per cell, the era-a1-draftmarginal.ini convention), mirrored
+mixed seats, >=16 seeds/cell (n=8 gave SEM 81 on a paired contrast;
+the interaction contrast carries ~2x that variance), one pinned
+binary, tech50war-200.
+
+Pre-registered predictions, all readable from landed counters:
+
+| counter | if 3c is the mechanism |
+|---|---|
+| deep-wave mean n_att (t>130) | falls from 6.08 |
+| deep-wave mean surv | rises from 0.477/0.515 |
+| deep-wave pf_turns=-1 on land far units | ~0 in ON cells (execution evidence the knob is live) |
+| survival reads clearing 0.85 | rise from 39.9% |
+| deep-opodds pool=0 share | falls from 44% |
+| deep-opodds mean pool (t>130) | rises from 2.69 |
+| draft adds/attempt | above 0.28 ONLY in the (1,1) cell |
+| deep-op form / strike | rise from 199 / 36 per 16 games |
+
+If the (0,1) cell moves score but (1,1) adds nothing over it, 3a stays
+falsified even with its pool restored — that is the clean second
+falsification and it costs one cell.
+
+### Not addressed, deliberately
+
+- The sea arm's unbounded coastal clause: inert on this venue (0 of
+  437 440), bounding it would change nothing measurable — per the
+  probe's section 6 "do not bound the sea clause".
+- Arrival-time weighting: a pf-slower attacker still inside the
+  horizon keeps full weight; the knob makes admission honest, not the
+  within-horizon schedule.
