@@ -11181,10 +11181,17 @@ identical, base `063a86bdf7` build vs branch build, identity.ini both
 sides. Same morning, the ERA counters passed their own gate 10/10
 (era-probe stage 1) and the tech-50 A/B ran: pv1 **-255.5**/seed over
 8 mirrored seeds (seeds 1-3 replicate calib2 nearly exactly — the
-collapse is worse than the 3-seed estimate), expansion gate OFF
-**-334.4**/seed — un-gating expansion makes it ~80/seed WORSE. The
-placeholder gate is not the lever; forensics mechanism #1 (odds
-thresholds) leads. Both branches merged; pv2 adopted (bec743c69f).
+collapse is worse than the 3-seed estimate), arm B **-334.4**/seed.
+CORRECTION (same day, evidence mine): arm B was NOT "gate off" —
+expansion_war_survival<=0 routes to stock's war-footing gate, which
+measured 3.6x STRICTER (22.6% vs 6.25% of city-turns blocked). Read
+correctly, deep's replacement gate is worth ~+149/seed over stock's
+(t=-1.83, n=8). The forensics' 83-88% firing claim is dead (6.25%),
+and the odds BAR is not the lever either: 84.5% of consulted
+refusals sit at odds exactly 0.000 — deep masses pools of 0.69-2.69
+units against defenses needing 8-15. Phase 3 targets the MASSING
+layer (marginal garrison release, MUSTER state), per
+findings/era-probe-evidence-2026-08-12.md. Both branches merged; pv2 adopted (bec743c69f).
 
 ### The identity gate as originally recorded (now historical)
 
