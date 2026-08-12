@@ -10619,3 +10619,181 @@ the CONSEQ section.
   is a scale rather than a bar, so it moves P(win) everywhere at once.
 - **Item 4's building truncation is the largest new population in the
   pair** (15 398 a game) and has never been scored.
+
+## M4b: the deterrence seat -- five mechanisms live, both cells null (2026-08-07)
+
+Seven code commits on `epic/w03-horizon-content` off `6fdcd6cfd9`,
+final `9275e9bb6d`. `ai/deep`, `tests/`, `benchmark/` and doc only --
+zero `ai/default`, `ai/baseline` or `server/advisors` changes. Full
+tables in `findings/m4b-deterrence-2026-08-07.md`. Progress log:
+`sessions/progress-M4b.log`.
+
+    5a7694ea85  ai/deep: report the defender's side of the chained-duel
+                ledger
+    41055ee314  ai/deep: value the stack the sortie is killing
+    163b7509ed  ai/deep: pay a defender for the losses it imposes, not
+                only for holding
+    228bddb309  ai/deep: charge a unit for the life it is going to live
+    09202e3416  ai/deep: price walls as insurance against the citizens
+                an assault kills
+    03620395b4  ai/deep: price the barracks as the two streams it
+                actually is
+    9275e9bb6d  ai/deep: charge the food half of a unit's upkeep too
+
+**One idea: deep priced a defender by whether it HOLDS and never by
+what it COSTS the attacker.** The chained-duel DP already computed the
+whole attrition distribution; the city read threw the attacker-loss
+half away and never had the defender-loss half at all. Both are now
+one call (`deep_stack_survival_full`, `deep_city_defence_read`), and
+`E[defenders killed] == E[successful enemy attacks]` is the quantity
+`EFT_UNIT_NO_LOSE_POP` insures and that stock prices as `units x 2`.
+
+### 1. The A/B: two arms, one shared OFF arm, both null on score
+
+    contested, 20 paired seeds per arm, pin cff0da39e9dd3d (= final
+    9275e9bb6d) on all three arms, 0 pairing violations.
+    OFF = identity.ini, SHARED by both comparisons.
+
+    ITEM 5 ALONE (unit_upkeep_charge 1.0)
+    metric                  OFF        ON     delta      se      t   wins
+    score                 85.10     83.29     -1.81    2.79  -0.65   6/20
+    pop                   26.82     24.91     -1.91    0.76  -2.51   6/20
+    cities                 4.59      4.37     -0.22    0.18  -1.24   7/20
+    unitsbuilt            46.46     45.17     -1.29    1.57  -0.82   9/20
+      upcharge             0.00   1551.00  +1551.00  103.11 +15.04  20/20
+      upchargesum          0.00    715.75   +715.75   28.98 +24.70  20/20
+
+    BUNDLE (all six gains at 1.0)
+    metric                  OFF        ON     delta      se      t   wins
+    score                 85.10     83.39     -1.71    2.49  -0.68   6/20
+    unitsbuilt            46.46     43.41     -3.06    1.60  -1.91   6/20
+    unitslost             13.24     11.24     -2.00    1.44  -1.39   6/20
+    pop                   26.82     25.71     -1.12    0.85  -1.32   9/20
+      deter                0.00    273.50   +273.50   42.65  +6.41  18/20
+      detersum             0.00    192.30   +192.30   29.96  +6.42  18/20
+      popins               0.00     93.80    +93.80   16.31  +5.75  17/20
+      sortieno             0.00      8.95     +8.95    2.04  +4.40  17/20
+      sortie              36.70     39.10     +2.40    3.99  +0.60  12/20
+      barracks             0.00      0.00     +0.00    0.00   +nan   0/20
+      upcharge             0.00   1583.35  +1583.35  102.07 +15.51  20/20
+
+**Score is null in both cells** and that is the expected reading of six
+untuned gains at face value 1.0. What the cells DO establish is
+population: five of the six mechanisms fire on 17-20 of 20 seeds with
+`t` between 4.4 and 24.7, so the arithmetic is exercised and the
+counters can carry a tuning pass.
+
+Per-line census, bundle arm, 20 games: deterrence dividend n=5461
+(median 7.40, mean 15.81 expected attacker shields, menace 1.000 almost
+everywhere); pop insurance n=1876 (median credit 7.85, mean 44.11);
+sortie 36 kills taken (mean prize 29.72) against 179 DECLINED (mean
+33.85, max 150) -- the pass sees big stacks and its bar turns them
+down, which is a bar question with data under it rather than a guess.
+
+The one flag: `pop -1.91` (`t = -2.51`) in the item-5 arm is the only
+|t| above 2 in either table. One metric of twelve at 20 seeds, so a
+flag and not a finding -- but 281 of ~299 charges a game land on
+Settlers, and a settler tax is a population tax. Watch it first when
+that knob is opened.
+
+### 2. Item 4 ships built, off, and with NO POPULATION in civ2civ3
+
+`deep-barracks` is a literal `0.00` A/B row. Not a probe-length
+artifact: civ2civ3's Barracks has both effects and is buildable from
+turn 1, and the credit functions are reached 363 times a game -- but
+the effects are gated on a building FLAG (`BuildingFlag "Barracks"`),
+and **`get_potential_improvement_bonus()` is blind to every effect a
+ruleset gates on a building flag rather than a building** (it resolves
+through `get_req_source_effects()` on a `VUT_IMPROVEMENT` source;
+`VUT_IMPR_FLAG` is indexed elsewhere and never returned; `RPT_POSSIBLE`
+does not help). Deep uses that accessor in the growth, health and
+content credits too, so **any flag-gated effect in any ruleset is
+priced at zero by all of them** -- very likely why stock WAGs
+`HP_Regen` and `Veteran_Build` at all, and `daieffects.c:479` carries
+the matching FIXME. Not fixed here: it needs the effect evaluated
+against a context that knows the candidate's flags (a virtual city, or
+the `struct req_context` field), which is a slice and not an
+end-of-session patch to shared requirement code.
+
+**`heal_stream_gain` and `veteran_stream_gain` are therefore untuned
+AND untested against live data. Do not tune them until the accessor can
+see a flag-gated effect.**
+
+### 3. Item 5's census forced a seventh commit, and found RC4 again
+
+The first item-5 arm measured nothing -- zero `deep-upcharge` lines.
+Of 616 evaluations reaching the charge, 5 were charged: **under
+Despotism/Tribal/Anarchy, civ2civ3 charges almost every unit no gold
+and no shields; the only nonzero upkeep in the venue is FOOD**, which
+the first commit had deliberately excluded as "the safe direction". It
+was the empty direction. Fixed by summing gold + food under
+`upkeep_gold_weight` -- the equivalence
+`deep_defender_upkeep_discount()` already makes forty lines up, so
+reuse and not an invented constant. After: 299 charges a game, 281 of
+them Settlers.
+
+Second finding, bigger: `debit=3.0` against `want=750.1` is **0.4% of a
+settler bid**, and at the top of the knob's registered range (4.0) it
+is 1.6%. A charge calibrated on the BUILDING side is invisible on the
+UNIT side. That is **RC4 measured with a ratio attached**; it is W01's
+problem, and the range was NOT widened to paper over it.
+
+### 4. Off-switch proof
+
+Smoke, 10 paired seeds, `identity.ini` on both binaries, base
+`6fdcd6cfd9` vs final `9275e9bb6d`: **10/10 scorelogs byte-identical.**
+The same proof passed **10/10** at the intermediate head `03620395b4`
+(all six commits before the food fix), so identity is established twice
+across the session rather than once at the end. Every mechanism is also
+inert by construction at its default and its counter is absent from the
+off arm.
+
+`meson test -C build` **4/4 OK**; `python3 benchmark/tune-audit.py`
+**CLEAN 202/202/202/202** (was 196).
+
+### 5. Items 6 and 7 parked, with evidence rather than "no time"
+
+- **Item 6 (Defend_Bonus sweep).** Defect confirmed, seam named: 13
+  `Defend_Bonus` effects across four carriers answering four threat
+  classes, and both stock and deep collapse them to ONE building via
+  `dai_find_source_building()` under stock's own "HACK" comment
+  (`daimilitary.c:1896`), inherited at `deepdefence.c:4210` where
+  `wall_fear_weight` routes boat/air/barbarian/density fear into
+  whichever building that call returns. Parked because **no combat
+  venue in the portfolio reaches Flight** (M4a's era table), so SAM and
+  SDI could never be measured. Coastal Defense is pre-Flight and is the
+  member a sweep should carry first.
+- **Item 7 (incite resistance).** Parked with a pointer:
+  `epic/m4a:ai/deep/deepspy.c` (`633bcca985`) already prices the
+  attacker half. Consuming it means merging an in-flight epic branch --
+  refused. Whoever picks up `EFT_INCITE_COST_PCT` after M4a merges must
+  reuse that model and must not build a second one.
+
+### 6. What the next session must know
+
+- **No M4b knob may be opened on this evidence.** Both cells are null
+  at face value; the session bought population and dimensional
+  correctness, which is the precondition for tuning, not tuning.
+- **MIL tuning is DEFERRED to the block-freeze finale.** The six new
+  knobs join the MIL block rather than getting a one-off sweep, and the
+  finale must sweep `deterrence_gain` against `defence_worth_mult` and
+  `survival_fear_value` -- three knobs funding the same body from three
+  sides, so sweeping any one alone measures the wrong thing.
+- **The finale CANNOT run only on early-era venues.** Per
+  `findings/tech50-collapse-2026-08-10.md`, deep's head-to-head edge
+  INVERTS at tech 50 (early contested holdout: deep +55.3/seed;
+  tech50war-200 mirrored: deep -115.7/seed, 1-5 in games).
+  tech50war-200 or a sharpened variant must be in the finale blend, or
+  the finale tunes a fighter that collapses at muskets.
+- **An ERA DIAGNOSIS epic now sits AHEAD of NETTHREAT in the queue.**
+  Same finding: the mechanism-level forensics (why deep stops founding
+  after t10; fear terms priced against early-era unit power) must
+  locate which subsystem inverts before more deterrence-family
+  refinement lands on top of it. NETTHREAT
+  (`sessions/S-NETTHREAT-offense-as-defense.md`) stays briefed and
+  queued behind it.
+- **`get_potential_improvement_bonus()`'s flag blindness (§2) is a
+  project-wide credit bug, not an item-4 detail.** It silently zeroes
+  the growth, health and content credits for any flag-gated effect.
+- **`/tmp` does not survive.** The M4b result directories are gone;
+  every table above is analysis output, not a re-derivable artefact.
