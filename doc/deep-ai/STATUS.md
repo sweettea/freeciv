@@ -10977,3 +10977,98 @@ Sanitation; that band is where mechanism work pays.
   competing plans for one city, which is where W35's value actually is).
 - **The embassy/steal placeholder mismatch is the live defect** in the
   gated pricer: deep will never make an embassy while a theft is legal.
+---
+
+## ERA instrumentation: three counters landed, the probe is written and unrun (2026-08-11)
+
+Branch `epic/era-instrumentation`, cut from `063a86bdf7`. Phase 1 of the
+ERA epic: the top three counters of
+`findings/era-tech50-forensics-2026-08-11.md` §4, observation only. **No
+game was run — a tuning batch owned the machine — so nothing here is a
+result.**
+
+### 1. The counters
+
+- **`deep-expgate`** (`deepdefence.c`, `deep_expansion_blocked()`): one
+  line per gate evaluation with `surv`/`thresh`/`wave`/`blocked`, plus
+  `mil` (the call site's second conjunct, so the effective firing rate
+  is derivable) and **`stock_blocked`** — `dai_on_war_footing()` alone,
+  which is exactly the verdict deep's gate replaced. That is the
+  stock-side counterfactual the forensics report calls the only way to
+  learn whether deep's gate is more or less permissive than stock's,
+  and it costs nothing: the value was already computed, `ai/baseline`
+  is untouched, no second run is needed.
+- **`deep-opodds`** (`deepops.c`, formation seat): one line per scored
+  target, `verdict=refused|formed`, with the best take-probability any
+  prefix of the pool reached against the stance-scaled `bar` and the
+  raw `take_target`, plus a target-tile defence census behind the
+  log-level guard. This closes the report's **highest-value unknown**:
+  today "odds sat at 0.60 against a 0.65 bar" and "odds never rose
+  above 0.1" produce identical logs and call for opposite fixes.
+- **`deep-wave`** (`deepcombat.c`, `deep_city_survival_core()`): wave
+  composition by the four qualification routes
+  (`by_land`/`by_sea`/`by_air`/`by_transport`), `max_dist`,
+  `max_turns`, `def_best`, `surv`, and `capped` for the
+  `DEEP_WAVE_MAX` displacement that was silent. Aimed at the report's
+  own open question: the `UMT_SEA && coastal` arm has no distance bound
+  beyond `horizon × move_rate`, which for anything moving 6 exceeds a
+  32×32 torus's diameter.
+
+All three follow the existing metric style, are quieted by
+`FREECIV_DEEP_QUIET`, and log only values the watched decision had
+already computed. `dai_on_war_footing()` was hoisted, not added; the
+wave's distance is the one the turns computation already takes.
+
+### 2. Zero knobs
+
+`python3 benchmark/tune-audit.py` **CLEAN 208/208/208/208**, unchanged —
+counters are not knobs. `meson test -C build` **4/4** (incl.
+`baseline-frozen`) after every commit.
+
+`knobcensus.py`'s map entry for `expansion_war_survival` moves from
+NO-INSTRUMENT (its "Needs:" was literally "a blocked-expansion
+counter") to direct on `deep-expgate wave>=0`. Note the map has been
+out of sync with `tuning-params.ini` since long before this branch —
+**70 knobs are unmapped and the script's key self-check exits non-zero
+on the base commit too**. That is its own pass.
+
+### 3. The probe, written and NOT run
+
+`benchmark/era-probe.sh` (`bash -n` clean, resumable, safe from this
+worktree's root):
+
+- **Stage 1** — the identity proof the counters owe: 10 paired smoke
+  seeds, identity tuning both sides, base `063a86bdf7` binary against
+  this branch's, asserting **byte-identical scorelogs 10/10**. It
+  builds the base binary itself from a `git archive` export into
+  `.era-probe/` (no worktree registered, the shared checkout is never
+  touched) and **aborts stage 2 if identity fails** — a counter that
+  moved the game would make stage 2 measure the counter.
+- **Stage 2** — the decisive A/B: `tech50war-200`, mixed
+  seat-mirrored, 8 seeds, `benchmark/tuning/era-a-pv1.ini`
+  (principled-v1 verbatim, `expansion_war_survival` at its compiled
+  0.9 placeholder) against `era-b-noexpgate.ini` (the same plus
+  `expansion_war_survival = 0.0`, which `deepdefence.c:3657` documents
+  as restoring stock's gate exactly — an off switch, not a tuned
+  value).
+
+Run it with the machine idle:
+
+    nohup ./benchmark/era-probe.sh > era-probe.log 2>&1 &
+
+### 4. What the next session must know
+
+- **The counters are the deliverable; the 8-seed A/B is not a
+  magnitude claim.** The forensics report is explicit that n=3 supports
+  none, and 8 mirrored seeds barely improves on that. Read the
+  `deep-expgate` / `deep-opodds` / `deep-wave` streams the probe leaves
+  in every `game.log` even if the score difference is null.
+- **The first question `deep-opodds` should be asked** is the shape of
+  the refused-odds distribution against `bar`. Clustered just under it
+  means re-derive the threshold; near zero means deep is not building
+  an army that can take a tech-50 city, and no threshold change will
+  help.
+- **`stock_blocked` may embarrass the gate in the other direction.** If
+  deep's survival gate fires *less* often than stock's flag would have,
+  the expansion story in `findings/tech50-collapse-2026-08-10.md`
+  needs revising again, not fixing.
