@@ -298,6 +298,17 @@ MAP = {
         "S1", "mag", "direct", [("deep-rates", "vlux>0")],
         "deep-rates logs vlux (deeprates.c:418). Inert while "
         "rates_enabled = 0."),
+    "gov_anarchy_weight": (
+        "S1", "mag", "direct", [("deep-gov", "ancost>0")],
+        "deep-gov logs ancost, the revolution charge this weight "
+        "scales (deepgov.c). Inert while gov_valuation = 0, and zero "
+        "above skill EASY, where the server charges an AI no anarchy "
+        "(H_REVOLUTION unset)."),
+    "gov_rate_ceiling_gain": (
+        "S1", "mag", "direct", [("deep-gov", "ceil>0")],
+        "deep-gov logs ceil, the rate-ceiling credit this gain scales "
+        "(deepgov.c). Default 0.0 = off: expect ceil=0.0 on every line "
+        "even in a gov_valuation = 1 arm."),
 
     # ---------------- Stage 2: military ------------------------------
     "committed_fear_mult": (
@@ -631,6 +642,11 @@ MAP = {
         "S1", "mode", "direct", [("deep-rates", "")],
         "off-switch for the whole rates model (deeprates.c:463). "
         "Default 0: expect no deep-rates lines at defaults."),
+    "gov_valuation": (
+        "S1", "mode", "direct", [("deep-gov", "")],
+        "off-switch for deep's whole government valuation "
+        "(deepgov.c). Default 0 forwards the gov_value hook to stock: "
+        "expect no deep-gov lines at defaults."),
     "stance_forced": (
         "S1", "mode", "direct", [("deep-stance", "mode=PINNED")],
         "degenerate range -1,-1: the pinned corner selector. A pass "

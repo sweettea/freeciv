@@ -1374,6 +1374,52 @@ struct deep_tuning {
   double rates_science_gain;
   double rates_luxury_gain;
 
+  /* Government valuation (the gov epic, deepgov.c). Stock's
+   * dai_gov_value() sums dai_city_want() over the empire under each
+   * candidate government and adds an effect sum at a 9999-turn
+   * horizon its own comment marks TODO -- a LEVEL, at today's size,
+   * with no cost of getting there. So the decision that reshapes the
+   * whole economy is priced in a currency nothing else in deep uses,
+   * and a revolution is free.
+   *
+   * gov_valuation != 0 replaces that with the grammar every other
+   * deep credit is written in (findings/amortization-audit item 1d):
+   * the per-turn output DELTA against the incumbent, counted over
+   * deep_horizon_turns(), against the one-off cost of the revolution.
+   * 0 = off = the hook forwarded to stock unchanged, which is the
+   * compiled default and byte-identical. Structural off-switch, not
+   * an optimiser knob. */
+  int gov_valuation;
+  /* What the anarchy a revolution passes through is charged at. The
+   * cost itself is MEASURED, not assumed: the turns the server would
+   * actually make this player serve, times the empire output those
+   * turns lose, in the same currency as the gain. 1.0 therefore means
+   * "charge the measured loss at face value" and is an identity
+   * rather than a taste -- but the range is registered because the
+   * measurement values anarchy at TODAY's arrangement while the
+   * empire that emerges is a few turns older, and only a tuning pass
+   * can say whether that biases the charge up or down. Inert at
+   * gov_valuation 0, and inert at any difficulty above EASY, where
+   * the server charges an AI no anarchy at all. */
+  double gov_anarchy_weight;
+  /* What a government's RATE CEILING is worth (darkfx item 5). A
+   * government decides how far the tax/science/luxury split may be
+   * pushed -- Despotism 60, Democracy 90 -- and nothing in the tree
+   * has ever priced that: EFT_MAX_RATES returns 0 from
+   * dai_effect_value(), and both daidata.c:547 and advdata.c:1031 say
+   * in source that re-optimising the rates per candidate is too
+   * expensive. Deep prices it by re-running deeprates.c's own
+   * enumeration over the same empire with only the ceiling changed,
+   * which reads the BINDING constraint for free: an empire whose
+   * split is interior gains exactly zero from a higher cap.
+   *
+   * PLACEHOLDER, 0.0 = off, and off is where it ships -- the term is
+   * the one part of this valuation whose magnitude has no honest
+   * source, because it converts a rates-enumeration total into a
+   * government want and nothing has measured that ratio. Flagged in
+   * STATUS for the tuning pile. */
+  double gov_rate_ceiling_gain;
+
   /* Caravan BUILD want on merit (the trade-merit epic). Deep already
    * chooses long, foreign destinations with one honest transit
    * convention (deeptrade.c), but the want that decides whether to

@@ -404,3 +404,13 @@ exhausted). Not fixed in place per rule 2's spirit for common/.
     move-type-based hull detection misses the ancient era's primary
     transport; terrain-nativity ("can it exist on ocean") is the correct
     test (deep fixed 988f284760).
+48. **`revolentype_length()` divides by zero at `revolen = 1`** —
+    `server/plrhand.c:530` computes `change_speed = (player_count() / 2)
+    / (game.server.revolution_length - 1)` for the QUICKENING and
+    RANDQUICK revolution types, and `revolen`'s own minimum
+    (`GAME_MIN_REVOLUTION_LENGTH`, `common/game.h:745`) is 1. Not an AI
+    bug and not reachable in any benchmark cell (the default `revolen`
+    is 5 and the default type is RANDOM), so it is a server-side
+    courtesy report rather than a project dependency. Deep's
+    `deep_revolen_expected()` (`deepgov.c`, the gov epic) guards it with
+    `MAX(1, len - 1)` and does not reproduce it. Found 2026-08-12.

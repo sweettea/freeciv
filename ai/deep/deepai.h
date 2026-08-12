@@ -20,6 +20,7 @@
 #include "daidata.h"
 
 #include "deepops.h"
+#include "deeprates.h"
 #include "deepstance.h"
 
 struct ai_type;
@@ -159,6 +160,35 @@ struct deep_plr {
   int rates_agreed;
   int rates_celebrate;
   int rates_unpriced;
+  /* Government valuation (deepgov.c). The incumbent's empire output
+   * for this turn's evaluation burst, stamped by turn AND by the
+   * government it was measured under so a stale entry cannot be read
+   * as a baseline; gov_valued is the execution census, candidate
+   * governments deep priced itself. Recomputable and not saved, the
+   * same contract the rates tallies ship under -- the per-candidate
+   * deep-gov line is what the benchmark reads. */
+  int gov_base_turn;
+  int gov_base_gov;
+  double gov_base_out;
+  int gov_valued;
+  /* The revolution's bill: whether anarchy is real for this player at
+   * all (asked under the incumbent, where the answer lives), the
+   * anarchy government's empire output for this burst, and the census
+   * of candidates actually charged for one. gov_anarchy_charged is 0
+   * at every difficulty above EASY, and that is a fact about
+   * H_REVOLUTION rather than a dead term -- see deepgov.c. */
+  bool gov_anarchy_real;
+  int gov_anarchy_turn;
+  double gov_anarchy_out;
+  int gov_anarchy_charged;
+  /* The rate ceiling term's model of the empire, taken under the
+   * incumbent before any candidate re-arranges the cities, plus the
+   * census of candidates whose ceiling actually moved the valuation.
+   * Built only when gov_rate_ceiling_gain is on, which is why the
+   * validity flag is separate from the turn stamp. */
+  bool gov_rate_model_ok;
+  struct deep_rate_model gov_rate_model;
+  int gov_ceiling_paid;
   /* Diplomacy (PEACE, 2026-08-06). The execution census for the
    * cease-fire pre-pass. Cumulative within a run and NOT saved: the
    * per-event log lines are what benchmark/diplcensus.py reads, and a
