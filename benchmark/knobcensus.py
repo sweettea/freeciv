@@ -184,6 +184,21 @@ MAP = {
         "gate logs it only when the knob is 0, and at the shipped "
         "default 1 it never appears, so MODE with an empty live list is "
         "the expected reading at defaults."),
+    "site_wait_discount": (
+        "S3", "mag", "direct", [("deep-sitewait", "")],
+        "W36 expected-wait coupling (deep_settler_map_iterate overseas "
+        "leg + the colony probe by construction): each overseas "
+        "candidate discounted by the tail of its water's live lift "
+        "wait spells. deep-sitewait logs per-search candidate counts "
+        "and wait-turns (liveness: 1.92 turns/candidate mean on "
+        "isolated-150). 0 = off; A/B queued."),
+    "lift_wait_tail_pct": (
+        "S3", "mode", "direct", [("deep-waitspell", "")],
+        "which percentile of the live spell distribution "
+        "deep_wait_expected() reports. 80 = the measured tail boundary "
+        "(spells >=5 turns are 19.8% of spells, 61.4% of waiting; "
+        "commission-sizing.md). Sweep with site_wait_discount, never "
+        "alone."),
     "op_draft_marginal": (
         "S3", "mode", "direct", [("deep-opodds", "drafted")],
         "ERA 3a's marginal garrison release (deepops.c, deep_op_form). "
