@@ -11174,7 +11174,19 @@ the model.
 - `python3 benchmark/tune-audit.py` **CLEAN 209/209/209/209** (was 208).
 - **NO GAMES WERE RUN.** A tuning batch owned the machine.
 
-### PENDING PROOF — the identity gate this session could not take
+### Identity gate: TAKEN AND PASSED (2026-08-12)
+
+`honest_info = 0` proven byte-identical: 10/10 smoke scorelogs
+identical, base `063a86bdf7` build vs branch build, identity.ini both
+sides. Same morning, the ERA counters passed their own gate 10/10
+(era-probe stage 1) and the tech-50 A/B ran: pv1 **-255.5**/seed over
+8 mirrored seeds (seeds 1-3 replicate calib2 nearly exactly — the
+collapse is worse than the 3-seed estimate), expansion gate OFF
+**-334.4**/seed — un-gating expansion makes it ~80/seed WORSE. The
+placeholder gate is not the lever; forensics mechanism #1 (odds
+thresholds) leads. Both branches merged; pv2 adopted (bec743c69f).
+
+### The identity gate as originally recorded (now historical)
 
 `honest_info = 0` must be byte-identical to the pre-change binary. Not
 proven. The next session with the machine runs, from the bench worktree
