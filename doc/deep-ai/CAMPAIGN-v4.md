@@ -253,9 +253,7 @@ signs off per block. Partial folds by block are allowed; no value lands
    t+0.72, counterparty +5.26 t+2.15, deep's margin over `ai/default`
    moves −3.34) — "an all-deep cell cannot tell a positive-sum
    mechanism from a competitive one, and the project's primary metric
-   lives in all-deep cells." Proposed rule: no statecraft-block
-   mechanism folds without a MIXED head-to-head arm confirming the
-   self-play reading. **UNDECIDED. Sign-off?**
+   lives in all-deep cells." **ADOPTED 2026-08-12 — see §11.4.**
 
 ## 11. Adopted doctrines (human sign-off log)
 
@@ -320,3 +318,23 @@ questions. Dated, with the receipt that drove each one.
   rule this is exactly the case where the MIXED read and a naive PAIRED
   delta could be mistaken for disagreeing, and the paired-t check is
   what confirms they don't.
+
+### 11.4 Mixed-arm-mandatory for cross-border mechanisms (2026-08-12)
+
+Human sign-off, with two refinements over the §10.8 proposal:
+
+- **Scope by property, not block name.** The rule covers any mechanism
+  whose primary effect crosses a player boundary — gifts, tech
+  gifting, proxy arming, embassies, cease-fire pricing, trade-route
+  PARTNER selection, future ally-arming — wherever it is filed.
+- **The fold criterion.** A cross-border mechanism folds only with a
+  mixed head-to-head arm showing deep's margin is a wash or better
+  (not significantly negative). Positive-sum is not a defect per se:
+  the human's words — "i don't mind multiple folks getting better,
+  but it _is_ more fun to get a wash as an alliance benefit." Surplus
+  directed INSIDE the alliance is a feature; surplus that subsidizes
+  rivals is the failure mode the love-buying gift demonstrated.
+
+Consequence: the love-buying gift is re-openable as an ALLY-TARGETED
+mechanism — gate the gift want on stance/alliance so the +5.26
+counterparty surplus lands on friends, then re-take the mixed arm.
