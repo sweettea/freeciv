@@ -1331,6 +1331,23 @@ struct deep_tuning {
   double rates_science_gain;
   double rates_luxury_gain;
 
+  /* Government valuation (the gov epic, deepgov.c). Stock's
+   * dai_gov_value() sums dai_city_want() over the empire under each
+   * candidate government and adds an effect sum at a 9999-turn
+   * horizon its own comment marks TODO -- a LEVEL, at today's size,
+   * with no cost of getting there. So the decision that reshapes the
+   * whole economy is priced in a currency nothing else in deep uses,
+   * and a revolution is free.
+   *
+   * gov_valuation != 0 replaces that with the grammar every other
+   * deep credit is written in (findings/amortization-audit item 1d):
+   * the per-turn output DELTA against the incumbent, counted over
+   * deep_horizon_turns(), against the one-off cost of the revolution.
+   * 0 = off = the hook forwarded to stock unchanged, which is the
+   * compiled default and byte-identical. Structural off-switch, not
+   * an optimiser knob. */
+  int gov_valuation;
+
   /* Caravan BUILD want on merit (the trade-merit epic). Deep already
    * chooses long, foreign destinations with one honest transit
    * convention (deeptrade.c), but the want that decides whether to

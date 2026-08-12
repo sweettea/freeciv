@@ -159,6 +159,17 @@ struct deep_plr {
   int rates_agreed;
   int rates_celebrate;
   int rates_unpriced;
+  /* Government valuation (deepgov.c). The incumbent's empire output
+   * for this turn's evaluation burst, stamped by turn AND by the
+   * government it was measured under so a stale entry cannot be read
+   * as a baseline; gov_valued is the execution census, candidate
+   * governments deep priced itself. Recomputable and not saved, the
+   * same contract the rates tallies ship under -- the per-candidate
+   * deep-gov line is what the benchmark reads. */
+  int gov_base_turn;
+  int gov_base_gov;
+  double gov_base_out;
+  int gov_valued;
   /* Diplomacy (PEACE, 2026-08-06). The execution census for the
    * cease-fire pre-pass. Cumulative within a run and NOT saved: the
    * per-event log lines are what benchmark/diplcensus.py reads, and a
