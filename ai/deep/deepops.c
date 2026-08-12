@@ -3023,6 +3023,64 @@ static double deep_op_assault_bar(struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Observation only (ERA): what the formation seat SAW, whichever way
+  it went.
+
+  Today a target that is scored and refused leaves no trace at all --
+  only the 83 formations and 72 odds-aborts of
+  findings/era-tech50-forensics-2026-08-11.md 1.F are visible in six
+  games. That makes the report's highest-value unknown unanswerable:
+  "no target was ever near the bar" and "targets sat at 0.60 against a
+  0.65 bar" produce identical logs, and they call for opposite fixes
+  (a force-composition change versus a threshold re-derivation).
+
+  `odds` is the best take-probability any prefix of the pool reached,
+  taken from the scoring loop's own return values -- the model is
+  never run a second time. `bar` is the stance-scaled bar the loop
+  actually compared against; `take_target` is the unscaled knob beside
+  it, so a refusal caused by the stance gate is distinguishable from
+  one caused by the tuning.
+
+  The defence census is a pure read of the target tile and is gated on
+  the metric log level, the same way deep-anchor's counterfactual pick
+  is: under FREECIV_DEEP_QUIET it does not run.
+**************************************************************************/
+static void deep_opodds_log(struct player *pplayer, int oi,
+                            struct city *target, const char *verdict,
+                            double odds, double bar, int required,
+                            int pool, int drafted, int eta, bool overseas)
+{
+  int def_n = 0, def_best = 0;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+  unit_list_iterate(city_tile(target)->units, punit) {
+    int rating;
+
+    if (unit_owner(punit) != city_owner(target)
+        || unit_has_type_flag(punit, UTYF_CIVILIAN)) {
+      continue;
+    }
+    def_n++;
+    rating = adv_unit_def_rating_basic(punit);
+    if (rating > def_best) {
+      def_best = rating;
+    }
+  } unit_list_iterate_end;
+
+  log_base(deep_metric_log_level(),
+           "deep-opodds turn=%d player=\"%s\" op=%d target=%d"
+           " verdict=\"%s\" odds=%.3f bar=%.3f take_target=%.2f"
+           " required=%d pool=%d drafted=%d eta=%d overseas=%d"
+           " def_n=%d def_best=%d",
+           game.info.turn, player_name(pplayer), oi, target->id,
+           verdict, odds, bar, deep_tuning_get()->op_take_target,
+           required, pool, drafted, eta, overseas ? 1 : 0,
+           def_n, def_best);
+}
+
+/**********************************************************************//**
   Try to form a new operation in slot `oi`: is there a met, unclaimed
   target our free attackers could actually take? required = the
   smallest strongest-first prefix of the unclaimed pool that clears
@@ -3040,6 +3098,9 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
   int n, i, eta;
   bool overseas;
   double bar;
+  /* The best take-probability any prefix of the pool reached. Kept
+   * from the scoring loop's own returns -- never a second call. */
+  double best_odds = 0.0;
 
   /* The anchor everything below is measured from: targets are scored
    * worth/(1 + distance) from here, the members' continent is this
@@ -3195,7 +3256,12 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
                            tile_continent(city_tile(home_city)),
                            pool, DEEP_OP_MEMBERS);
   for (i = 1; i <= n; i++) {
-    if (deep_take_odds_at_arrival(nmap, target, pool, i, eta) >= bar) {
+    double odds = deep_take_odds_at_arrival(nmap, target, pool, i, eta);
+
+    if (odds > best_odds) {
+      best_odds = odds;
+    }
+    if (odds >= bar) {
       required = i;
       break;
     }
@@ -3245,7 +3311,12 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
     } city_list_iterate_end;
     if (drafted > 0) {
       for (i = 1; i <= n; i++) {
-        if (deep_take_odds_at_arrival(nmap, target, pool, i, eta) >= bar) {
+        double odds = deep_take_odds_at_arrival(nmap, target, pool, i, eta);
+
+        if (odds > best_odds) {
+          best_odds = odds;
+        }
+        if (odds >= bar) {
           required = i;
           break;
         }
@@ -3254,6 +3325,8 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
   }
   if (required < 1) {
     /* No force clears the bar. */
+    deep_opodds_log(pplayer, oi, target, "refused", best_odds, bar,
+                    0, n, drafted, eta, overseas);
     return FALSE;
   }
   /* required == 1 forms too (T160 forensics): "one unit needs no
@@ -3284,6 +3357,8 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
            game.info.turn, player_name(pplayer), oi, op->target_city,
            op->staging_city, op->required, op->n_members, drafted,
            dp->last_strike_city == target->id ? 1 : 0);
+  deep_opodds_log(pplayer, oi, target, "formed", best_odds, bar,
+                  required, n, drafted, eta, overseas);
 
   return TRUE;
 }
