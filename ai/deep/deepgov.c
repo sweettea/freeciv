@@ -46,6 +46,7 @@
 
 #include "deepai.h"
 #include "deephorizon.h"
+#include "deeprates.h"
 #include "deeptuning.h"
 
 #include "deepgov.h"
@@ -254,8 +255,8 @@ static double deep_gov_output(struct player *pplayer, struct adv_data *adv,
   overwriting `pplayer->government`. Stamped by turn and by the
   incumbent itself, so a stale entry can never be read as a baseline.
 **************************************************************************/
-static double deep_gov_baseline(struct player *pplayer, struct adv_data *adv,
-                                struct government *now)
+static double deep_gov_baseline(struct ai_type *ait, struct player *pplayer,
+                                struct adv_data *adv, struct government *now)
 {
   struct deep_plr *dp = deep_plr_data(pplayer);
 
@@ -271,6 +272,12 @@ static double deep_gov_baseline(struct player *pplayer, struct adv_data *adv,
     dp->gov_anarchy_real = (get_player_bonus(pplayer, EFT_NO_ANARCHY) <= 0
                             && (!is_ai(pplayer)
                                 || has_handicap(pplayer, H_REVOLUTION)));
+    /* Same window, same reason: the rates model has to be read off
+     * the empire as it stands, under the government it stands under,
+     * before any candidate re-arranges it. */
+    dp->gov_rate_model_ok
+      = (deep_tuning_get()->gov_rate_ceiling_gain > 0.0
+         && deep_rates_model(ait, pplayer, &dp->gov_rate_model));
   }
 
   return dp->gov_base_out;
@@ -366,6 +373,57 @@ static double deep_gov_anarchy_output(struct player *pplayer,
 }
 
 /**********************************************************************//**
+  What `gov`'s rate ceiling is worth, over and above the incumbent's.
+
+  A government DECIDES a ceiling -- Despotism 60, Democracy 90 under
+  the classic rulesets -- and nothing in the tree has ever priced one.
+  `EFT_MAX_RATES` returns 0 from `dai_effect_value()`, and both
+  `daidata.c:547` and `advdata.c:1031` carry in-source admissions that
+  re-optimising the rates per candidate government is too expensive
+  (findings/darkfx-2026-08-06.md item 5).
+
+  Deep does not re-optimise the empire either. It re-runs one thing:
+  the rates enumeration `deeprates.c` already owns, over the SAME
+  model of the SAME empire, with only the ceiling changed. The
+  difference between the two winners is what the ceiling is worth --
+  which is automatically ZERO when the split is interior, i.e. when
+  the empire is not up against its ceiling at all. That is the trap
+  darkfx named: an empire that cannot use a higher cap must not be
+  sold one, and reading the binding constraint rather than the nominal
+  ceiling is how the term avoids it. No extra condition does it; the
+  arithmetic does.
+
+  The model is built ONCE per burst, under the incumbent, before the
+  candidate loop starts re-arranging cities: it reads live outputs
+  (last turn's bulbs, this turn's luxury per city), and rebuilding it
+  under a candidate's arrangement would measure the candidate twice.
+
+  `deep_rates_pick()` values a split over MORT already, so the two
+  winners' difference is a horizon total and commensurable with the
+  stream term by construction.
+**************************************************************************/
+static double deep_gov_ceiling_gain(struct player *pplayer)
+{
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  struct deep_rate_model cand;
+  int ceiling;
+
+  if (!dp->gov_rate_model_ok) {
+    return 0.0;
+  }
+  ceiling = deep_rates_max_rate(pplayer);
+  if (ceiling == dp->gov_rate_model.maxrate) {
+    return 0.0;
+  }
+
+  cand = dp->gov_rate_model;
+  cand.maxrate = ceiling;
+
+  return deep_rates_pick(&cand).value
+         - deep_rates_pick(&dp->gov_rate_model).value;
+}
+
+/**********************************************************************//**
   Techs still missing before this government can be adopted at all.
   Stock's arithmetic, kept: a government behind three advances is
   worth less now than the same government behind none, and amortize()
@@ -402,6 +460,7 @@ void deep_gov_value(struct ai_type *ait, struct player *pplayer,
   struct government *now;
   double base, cand, value;
   double anarchy_turns = 0.0, charge = 0.0, upkeep = 0.0;
+  double ceiling = 0.0;
   int horizon;
 
   if (tune->gov_valuation == 0) {
@@ -419,7 +478,7 @@ void deep_gov_value(struct ai_type *ait, struct player *pplayer,
 
   now = (adv->goal.revolution != NULL
          ? adv->goal.revolution : government_of_player(pplayer));
-  base = deep_gov_baseline(pplayer, adv, now);
+  base = deep_gov_baseline(ait, pplayer, adv, now);
 
   /* The revolution's own bill: the turns the empire spends under the
    * anarchy government instead of the one it has, at the difference
@@ -442,7 +501,16 @@ void deep_gov_value(struct ai_type *ait, struct player *pplayer,
   cand = deep_gov_output(pplayer, adv, gov, &upkeep);
   horizon = deep_horizon_turns();
 
-  value = (cand - base) * horizon - charge;
+  /* The candidate government is the one set right now, which is what
+   * makes this its ceiling and not the incumbent's. */
+  if (tune->gov_rate_ceiling_gain > 0.0) {
+    ceiling = deep_gov_ceiling_gain(pplayer) * tune->gov_rate_ceiling_gain;
+    if (ceiling != 0.0) {
+      deep_plr_data(pplayer)->gov_ceiling_paid++;
+    }
+  }
+
+  value = (cand - base) * horizon - charge + ceiling;
 
   *val = amortize(value, deep_gov_tech_distance(pplayer, gov));
   deep_plr_data(pplayer)->gov_valued++;
@@ -450,10 +518,11 @@ void deep_gov_value(struct ai_type *ait, struct player *pplayer,
   log_base(deep_metric_log_level(),
            "deep-gov turn=%d player=\"%s\" gov=\"%s\" now=\"%s\""
            " base=%.1f out=%.1f upk=%.1f delta=%.1f horizon=%d anturns=%.1f"
-           " ancost=%.1f dist=%d val=%.1f",
+           " ancost=%.1f ceil=%.1f dist=%d val=%.1f",
            game.info.turn, player_name(pplayer),
            government_rule_name(gov), government_rule_name(now),
            base, cand, upkeep, cand - base, horizon, anarchy_turns, charge,
+           ceiling,
            deep_gov_tech_distance(pplayer, gov), (double) *val);
 
   *override = TRUE;

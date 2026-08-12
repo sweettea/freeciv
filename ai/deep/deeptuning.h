@@ -1359,6 +1359,23 @@ struct deep_tuning {
    * gov_valuation 0, and inert at any difficulty above EASY, where
    * the server charges an AI no anarchy at all. */
   double gov_anarchy_weight;
+  /* What a government's RATE CEILING is worth (darkfx item 5). A
+   * government decides how far the tax/science/luxury split may be
+   * pushed -- Despotism 60, Democracy 90 -- and nothing in the tree
+   * has ever priced that: EFT_MAX_RATES returns 0 from
+   * dai_effect_value(), and both daidata.c:547 and advdata.c:1031 say
+   * in source that re-optimising the rates per candidate is too
+   * expensive. Deep prices it by re-running deeprates.c's own
+   * enumeration over the same empire with only the ceiling changed,
+   * which reads the BINDING constraint for free: an empire whose
+   * split is interior gains exactly zero from a higher cap.
+   *
+   * PLACEHOLDER, 0.0 = off, and off is where it ships -- the term is
+   * the one part of this valuation whose magnitude has no honest
+   * source, because it converts a rates-enumeration total into a
+   * government want and nothing has measured that ratio. Flagged in
+   * STATUS for the tuning pile. */
+  double gov_rate_ceiling_gain;
 
   /* Caravan BUILD want on merit (the trade-merit epic). Deep already
    * chooses long, foreign destinations with one honest transit

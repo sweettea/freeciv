@@ -106,6 +106,18 @@ struct deep_rate_pick {
 
 struct deep_rate_pick deep_rates_pick(const struct deep_rate_model *m);
 
+/* The rate ceiling under the government currently set, and the model
+ * builder itself, both exported for the government valuation: a
+ * government DECIDES a ceiling and nothing has ever priced one
+ * (EFT_MAX_RATES returns 0 from dai_effect_value, and both
+ * daidata.c:547 and advdata.c:1031 say in source that re-optimising
+ * the rates per candidate government is too expensive). The model
+ * builder returns FALSE when the empire cannot be measured honestly
+ * yet -- no cities, or no trade to divide by. */
+int deep_rates_max_rate(const struct player *pplayer);
+bool deep_rates_model(struct ai_type *ait, struct player *pplayer,
+                      struct deep_rate_model *m);
+
 void deep_rates_snapshot_tech(struct ai_type *ait, struct player *pplayer);
 void deep_manage_taxes(struct ai_type *ait, struct player *pplayer);
 

@@ -216,6 +216,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .rates_luxury_gain = 1.0,             /* PLACEHOLDER, untuned */
   .gov_valuation = 0,                   /* Off: stock's gov_value forwarded */
   .gov_anarchy_weight = 1.0,            /* Measured loss at face value */
+  .gov_rate_ceiling_gain = 0.0,         /* PLACEHOLDER, 0 = off */
   .trade_merit = 0,                     /* PLACEHOLDER, 0 = stock's bid */
   .trade_merit_gain = 1.0,              /* PLACEHOLDER, untuned */
   .trade_ceasefire_peace_odds = 0.0,    /* PLACEHOLDER, 0 = no optimism */
@@ -448,6 +449,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(rates_luxury_gain) \
   TUNE_INT(gov_valuation) \
   TUNE_DOUBLE(gov_anarchy_weight) \
+  TUNE_DOUBLE(gov_rate_ceiling_gain) \
   TUNE_INT(trade_merit) \
   TUNE_DOUBLE(trade_merit_gain) \
   TUNE_DOUBLE(trade_ceasefire_peace_odds) \

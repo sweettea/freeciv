@@ -20,6 +20,7 @@
 #include "daidata.h"
 
 #include "deepops.h"
+#include "deeprates.h"
 #include "deepstance.h"
 
 struct ai_type;
@@ -180,6 +181,14 @@ struct deep_plr {
   int gov_anarchy_turn;
   double gov_anarchy_out;
   int gov_anarchy_charged;
+  /* The rate ceiling term's model of the empire, taken under the
+   * incumbent before any candidate re-arranges the cities, plus the
+   * census of candidates whose ceiling actually moved the valuation.
+   * Built only when gov_rate_ceiling_gain is on, which is why the
+   * validity flag is separate from the turn stamp. */
+  bool gov_rate_model_ok;
+  struct deep_rate_model gov_rate_model;
+  int gov_ceiling_paid;
   /* Diplomacy (PEACE, 2026-08-06). The execution census for the
    * cease-fire pre-pass. Cumulative within a run and NOT saved: the
    * per-event log lines are what benchmark/diplcensus.py reads, and a

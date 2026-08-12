@@ -306,6 +306,24 @@ void deep_rates_snapshot_tech(struct ai_type *ait, struct player *pplayer)
 }
 
 /**********************************************************************//**
+  The rate ceiling this player is bound by right now: the ruleset's
+  EFT_MAX_RATES under the government currently SET, clipped the way
+  stock clips it. Split out of the model builder so the government
+  valuation can ask the same question of a candidate government and
+  get the same answer -- one ceiling, one definition.
+**************************************************************************/
+int deep_rates_max_rate(const struct player *pplayer)
+{
+  int maxrate = (has_handicap(pplayer, H_RATES)
+                 ? get_player_bonus(pplayer, EFT_MAX_RATES) : 100);
+
+  /* Stock's own clip: no government in any shipped ruleset allows
+   * less than a third, and a maxrate below it makes the enumeration
+   * empty. */
+  return CLIP(34, maxrate, 100);
+}
+
+/**********************************************************************//**
   Gather the live empire into a deep_rate_model.
 
   Returns FALSE when the model cannot be built honestly -- no cities,
@@ -314,8 +332,8 @@ void deep_rates_snapshot_tech(struct ai_type *ait, struct player *pplayer)
   stock's ladder is a perfectly good default and deep has nothing to
   say.
 **************************************************************************/
-static bool deep_rates_model(struct ai_type *ait, struct player *pplayer,
-                             struct deep_rate_model *m)
+bool deep_rates_model(struct ai_type *ait, struct player *pplayer,
+                      struct deep_rate_model *m)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   const struct research *presearch = research_get(pplayer);
@@ -371,12 +389,7 @@ static bool deep_rates_model(struct ai_type *ait, struct player *pplayer,
     }
   } city_list_iterate_end;
 
-  m->maxrate = (has_handicap(pplayer, H_RATES)
-                ? get_player_bonus(pplayer, EFT_MAX_RATES) : 100);
-  /* Stock's own clip: no government in any shipped ruleset allows
-   * less than a third, and a maxrate below it makes the enumeration
-   * empty. */
-  m->maxrate = CLIP(34, m->maxrate, 100);
+  m->maxrate = deep_rates_max_rate(pplayer);
   m->step = 10;
 
   /* Measured yields per rate point: last turn's real output divided by
