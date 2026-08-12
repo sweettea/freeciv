@@ -177,6 +177,8 @@ static const struct deep_tuning deep_tuning_defaults = {
   .sortie_win_floor = 0.85,             /* PLACEHOLDER, untuned */
   .sortie_prize_gain = 0.0,             /* PLACEHOLDER, 0 = off */
   .deterrence_gain = 0.0,               /* PLACEHOLDER, 0 = off */
+  .attacker_garrison_gain = 0.0,        /* PLACEHOLDER, 0 = off */
+  .cover_removal = 0,                   /* 0 = the local hole exactly */
   .unit_upkeep_charge = 0.0,            /* PLACEHOLDER, 0 = off */
   .pop_insurance_gain = 0.0,            /* PLACEHOLDER, 0 = off */
   .heal_stream_gain = 0.0,              /* PLACEHOLDER, 0 = off */
@@ -407,6 +409,8 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(sortie_win_floor) \
   TUNE_DOUBLE(sortie_prize_gain) \
   TUNE_DOUBLE(deterrence_gain) \
+  TUNE_DOUBLE(attacker_garrison_gain) \
+  TUNE_INT(cover_removal) \
   TUNE_DOUBLE(unit_upkeep_charge) \
   TUNE_DOUBLE(pop_insurance_gain) \
   TUNE_DOUBLE(heal_stream_gain) \

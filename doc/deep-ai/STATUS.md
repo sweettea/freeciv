@@ -11893,3 +11893,164 @@ everyone, as designed. The ladder session owns the real numbers.
 `H_PRODCHGPEN` self-imposed, `H_TARGETS` implemented behind `honest_info`,
 and 3 `ai_fuzzy()` sites — the S5 omniscience epic. The stock half of the
 brief is exact; nothing in `ai/difficulty.c` has moved since `0896b34`.
+## NETTHREAT — offense as defense, three seams landed inert (2026-08-12)
+
+Branch `epic/netthreat`, based on `epic/w03-horizon-content` at
+`9ccbf8426e`. Three code commits, brief
+`sessions/S-NETTHREAT-offense-as-defense.md`:
+
+- `f7d8f01f1b` `ai/deep: credit an attacker's build want with its
+  garrison contribution` (item 3, the human's PROMOTED LEAD)
+- `1620a2b4f0` `ai/deep: price a defender's removal after the cheapest
+  covering move` (item 4, the shared cost-side seam)
+- `850f047d1e` `ai/deep: measure the wave mass our own offense is about
+  to engage` (item 1, **as an instrument, not a discount** — see below)
+
+### Item 3 — the attacker's garrison credit (`attacker_garrison_gain`)
+
+The defect, at the one comparison that decides what a city builds: the
+defender want carries survival plus the deterrence dividend, and
+`deep_assault_want()` carried take-odds and nothing else — so a
+home-based attacker's defensive worth was exactly zero at the build
+seam, while `deep_city_survival_core()` counts it and the sortie pass
+spends it.
+
+Credit = the same marginal-attrition term the dividend pays (the
+shared helper `deep_marginal_attrition()`, extracted from
+`deep_deterrence_dividend()` with its behaviour unchanged), times
+`deep_garrison_menace()`, times the **observed** cadence.
+
+The cadence is measured, not assumed: `deep_cadence_sample()` runs once
+per new phase in EVERY arm, one pass over `pplayer->units`, and
+accumulates attack-rated unit-turns spent standing in own cities.
+Saved with the player (it drives a want, not a log line). First
+reading, 10 smoke seeds: **mean share 0.891 over 3 409 player-turns,
+0.821 at T100** — attackers on this venue are home about five nights in
+six, which is why the credit was worth writing.
+
+The no-double-spend rule is stated in full in the code at the credit's
+own site. Summary: the dividend pays the DEFENDER body and this pays
+the ATTACKER body (at most one of two competing bids is built);
+`sortie_prize_gain` never enters a build want at all, and the sortie
+half is deliberately left UNCREDITED; and `home_share < 1` is what
+stops one body being paid for marching and garrisoning at once.
+Applied after gate 5 and the never-launches damper, because both price
+offensive appetite and a stalled op's garrison value is exactly what
+it leaves behind.
+
+### Item 4 — holes get covered (`cover_removal`)
+
+One shared helper, `deep_cover_removal_cost()`, three consumers by
+design. Wired: the kill sortie's survival gate and the ops layer's
+garrison draft (BOTH release tests — the absolute floor and ERA 3a's
+marginal one). Noted in `deepdefence.h` as the third consumer:
+MUSTER's home-defence abandon trigger.
+
+Priced empire-wide, which is the point:
+
+    cost = [surv(A) - surv(A - blade + cover)] + [surv(B) - surv(B - cover)]
+
+minimised over covers. The lender's loss is charged in FULL rather
+than waved through on the `must_stay_safe` gate — "still above the
+floor" is not "free" — so a rearrangement dearer than the hole it
+fills is rejected, `cover` comes back NULL and `cost` is the old local
+hole exactly.
+
+No new optimizer, per the brief: candidates are own cities on the
+continent, the lendable blade is `deep_city_sparable_blade(...,
+must_stay_safe)`, the arrival bound is
+`deep_defend_counter_claims()`'s own eta test on the cover's move
+rate, and the ordered move runs through `deep_relay_execute()` as a
+one-edge brigade, so the priced move and the ordered move are the same
+act. `deep_relay_chain()` is the multi-hop generalisation and is
+deliberately NOT called.
+
+Ordered only where the removal is committed in the same breath (the
+sortie). The draft prices without ordering — its formation can still
+refuse, and opening a march for a hole that never opens is the trickle
+the muster discipline exists to prevent.
+
+Execution evidence, 2 smoke seeds with the knobs on: **175 removals
+priced, 2 covered.** Example, turn 96, P2 city 170: a Warriors leaves,
+a Chariot backfills from city 125, naive cost **0.422** against a
+post-rearrangement cost of **−0.125**, and the city's own survival
+**0.026 → 0.574**. The covering blade was STRONGER than the departing
+one, which is the case the local-hole price could never see. Rare on
+smoke (17 and 9 sorties per game, none of which coincided with an
+available cover), so the ordering path is landed but not yet observed
+firing — that wants a venue with denser cities.
+
+### Item 1 — measured, not implemented, and the measurement is why
+
+`deep-wave` gains `net_pinned` / `net_marching` / `launch`: qualifying
+attackers standing in a city one of OUR live operations points at
+(split by whether that op reached MARCH/STRIKE), and the observed
+`ops_launched / ops_formed` rate. Two accessors in `deepops.c`
+(`deep_op_live_targets()`, `deep_op_launch_rate()`); lifts excluded;
+the per-attacker test is skipped entirely for a player with no live
+op, so the hottest routine pays nothing in the common case.
+
+First reading, 10 smoke seeds, 10 309 wave evaluations, 22 753
+admitted attacker-slots:
+
+| quantity | reading |
+|---|---:|
+| `net_pinned` slots | **489 (2.15% of the wave)** |
+| evaluations with any pinned member | 286 (2.77%) |
+| `net_marching` slots | **17 (0.07%)** |
+| mean observed launch rate | **0.026** |
+
+**No knob was added, deliberately.** The discount item 1 asks for
+would net at most ~2% of the wave, of which 3.5% belongs to an
+operation that is actually moving, weighted by a launch rate of 0.026.
+A mechanism gated on a quantity measured this close to zero is a knob
+with nothing behind it, and the brief's own guard ("weighted by
+OBSERVED launch/engage rates, not by intents") is what rules it out.
+Same precedent as ERA 3c: instrument first, and let the instrument
+decide whether the mechanism is worth writing. **This is smoke, not
+tech50war-200** — the venue where wars conclude is where the number
+must be re-read before item 1 is finally abandoned or built.
+
+### Item 2 — NOT REACHED
+
+The pin discount (rivals' garrisons are unlikely wave members) got
+neither a mechanism nor its cheaper counter-only probe. It is the
+remaining NETTHREAT item.
+
+### Validation
+
+- `meson test -C build` **5/5 OK**; `tune-audit.py` **CLEAN at 214
+  fields** (212 at base + `attacker_garrison_gain` +
+  `cover_removal`), each registered in all four places
+  (`deeptuning.h`, `TUNE_*` macro + compiled default,
+  `tuning-params.ini`, and the ALL / M / MIL blocks).
+- **Off-switch proof: 10/10 smoke scorelogs BYTE-IDENTICAL** at
+  default knobs, `identity.ini` both sides, this build against a
+  `git archive` build of the base `9ccbf8426e`; 0 differ, 0 missing,
+  maphashes equal on all 10. Ports 7100, jobs 2. Results under
+  `benchmark/results/netthreat-identity/` (`smoke-30578cb4de0d` =
+  this build, `smoke-c25f7c802c11` = base).
+- The identity arm confirms the split the design intends: **zero
+  `deep-agc` and zero `deep-cover` lines** (both mechanisms inert at
+  0), while `deep-cadence` (3 409 lines) and the `net_pinned` fields
+  run in every arm and do not perturb play — byte-identity is the
+  proof of that.
+
+### For the next session
+
+- **Both knobs stay 0.** They are unmeasured on a venue that can see
+  them; smoke cannot (2 covers in 2 games, 0 eliminations).
+- **`cover_removal` moves the cost side of the 3a×3c factorial**, as
+  the brief's attribution note warns. It is landed and inert, so the
+  queued 2×2 is unaffected — but if it is ever enabled, it must enter
+  that design as an arm, never concurrently with it.
+- **Item 1's discount is parked on evidence, not on effort.** Re-read
+  `net_pinned` / `net_marching` / `launch` on tech50war-200 before
+  deciding; if the mass is ~2% there too, record item 1 as measured-
+  dead rather than deferred.
+- **Item 2 is untouched** and its cheap probe (do garrisoning units
+  actually attack us within the horizon?) is still the right first
+  move.
+- The A/B for these knobs needs `tech50war-200` — the brief's venue
+  note stands: contested@150 produced 0 eliminations in 16/16 games
+  and cannot see any of this.

@@ -1017,6 +1017,49 @@ struct deep_tuning {
    * this prices the ATTRITION, and the two are added, not multiplied.
    * 0 = off. */
   double deterrence_gain;
+  /* THE ATTACKER'S GARRISON CREDIT (NETTHREAT item 3, promoted to lead
+   * by the human 2026-08-12 alongside the Gunpowder doctrine).
+   *
+   * At the build seam an attacker and a defender compete for one
+   * city's shields as if they were orthogonal goods: the defender want
+   * carries survival plus the deterrence dividend, and the attacker
+   * want (deep_assault_want) carries take-odds and nothing else. But a
+   * home-based attacker PHYSICALLY JOINS the stack whenever it is
+   * standing at home -- deep_city_survival_core() already counts it,
+   * and the sortie pass already spends it -- so its defensive worth is
+   * not zero, it is merely intermittent.
+   *
+   * Priced as exactly the dividend a defender of the same type would
+   * earn in this city (the marginal attacker shields it destroys, from
+   * deep_city_defence_read(), times deep_garrison_menace()), WEIGHTED
+   * by the fraction of unit-turns this player's attack-rated units
+   * have actually spent standing in own cities -- an OBSERVED cadence
+   * (deep_attacker_home_share()), never an assumed one.
+   *
+   * That weight is also the anti-double-spend rule: the offensive half
+   * of the want prices the unit as marching, this half prices it as
+   * home, and home_share < 1 is what stops one body being paid for
+   * being in two places. See the bookkeeping note at the credit's own
+   * site in deepdefence.c. 0 = off. */
+  double attacker_garrison_gain;
+  /* HOLES GET COVERED (NETTHREAT item 4, human 2026-08-12). When a
+   * blade sorties or is drafted, its removal is priced as the LOCAL
+   * hole -- surv(city) minus surv(city without it) -- as if the rest
+   * of the lattice were nailed down. It is not: a neighbour with a
+   * genuinely sparable garrison can backfill, and the true cost is
+   * the post-rearrangement marginal loss, which is smaller.
+   *
+   * At 1 the removal is priced AFTER the cheapest single covering
+   * move: the empire-wide loss (the hole that remains here, plus what
+   * the lender loses) minimised over one-hop neighbours that can
+   * genuinely spare a blade. One step only, and it reuses
+   * deep_city_sparable_blade() and deep_relay_execute() -- the
+   * rotation/rehoming machinery -- rather than adding an optimizer.
+   *
+   * Geometry-with-a-side-effect rather than a magnitude, so 0/1 like
+   * assault_pool_reach and op_draft_marginal. 0 = the local hole
+   * exactly, which is the behaviour every consumer shipped with. */
+  int cover_removal;
   /* UNIT LIFETIME UPKEEP AT THE BUILD SEAM (M4b item 5, amortization
    * audit 1b). A building's gold upkeep is charged against its horizon
    * credit over MORT (deephorizon.c, upkeep_gold_weight). A unit's

@@ -50,6 +50,14 @@ double deep_city_stack_survival_with(const struct civ_map *nmap,
                                      struct city *pcity, int horizon,
                                      struct unit *const *extra, int n_extra,
                                      int *wave_out);
+/* Both counterfactuals at once: this blade leaves AND these arrive.
+ * The core has always supported the pair; the hole-covering price
+ * (NETTHREAT item 4) is the first caller that needs it. */
+double deep_city_stack_survival_swap(const struct civ_map *nmap,
+                                     struct city *pcity, int horizon,
+                                     const struct unit *except,
+                                     struct unit *const *extra, int n_extra,
+                                     int *wave_out);
 double deep_take_odds(const struct civ_map *nmap, struct city *acity,
                       struct unit *const *stream, int n_stream);
 double deep_take_odds_at_arrival(const struct civ_map *nmap,

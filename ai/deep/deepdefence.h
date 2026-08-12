@@ -25,6 +25,34 @@ bool deep_utype_is_airborne(const struct unit_type *ut);
 int deep_utype_air_reach(const struct unit_type *ut);
 void deep_do_last_activities(struct ai_type *ait, struct player *pplayer);
 
+/* HOLES GET COVERED (NETTHREAT item 4): the cost of taking one blade
+ * out of a city, priced AFTER the cheapest single covering move
+ * available from a one-hop neighbour. `cover` is NULL when no
+ * rearrangement beats the local hole, and then `cost` is exactly the
+ * local hole. Three consumers by design: the kill sortie and the
+ * operations layer's garrison draft (both wired), and MUSTER's
+ * home-defence abandon trigger when that epic lands. */
+struct deep_cover_move {
+  struct unit *cover;           /* the blade that would backfill */
+  struct city *from;            /* ... and the city that lends it */
+  double naive_cost;            /* surv(city) - surv(city - blade) */
+  double cost;                  /* ... after the covering move, empire-wide */
+  double surv_after;            /* the city's own survival after both moves */
+};
+
+bool deep_cover_removal_cost(struct ai_type *ait, const struct civ_map *nmap,
+                             struct city *pcity, struct unit *blade,
+                             struct deep_cover_move *out);
+void deep_cover_order(struct ai_type *ait, struct city *pcity,
+                      const struct deep_cover_move *mv);
+
+/* The rotation cadence (NETTHREAT item 3): sample, once per new phase,
+ * the share of this player's attack-rated units that are standing in
+ * its own cities, and read the accumulated share back. Runs in every
+ * arm; consumed only by the attacker's garrison credit. */
+void deep_cadence_sample(struct player *pplayer);
+double deep_attacker_home_share(const struct player *pplayer);
+
 /* Map crowding from lobby settings: min(1, density_prior_tiles /
  * land-per-player). Shared by the density prior, the settler rush
  * and the chokepoint site bonus. */

@@ -1244,6 +1244,78 @@ static double deep_garrison_menace(struct player *pplayer)
 }
 
 /**********************************************************************//**
+  THE ROTATION CADENCE (NETTHREAT item 3's weight). Sample, once per
+  new phase, how many of this player's attack-rated units are standing
+  in one of its own cities, and accumulate it over the game.
+
+  This is the only honest source for "what fraction of its life does an
+  attacker spend at home": it is measured on this player's own units in
+  this player's own game, and it is exactly the quantity a build-time
+  garrison credit needs. Nothing here is a constant -- the ratio starts
+  undefined (no attack-rated units yet), and until it has a population
+  the credit it feeds is zero.
+
+  Deliberately UNIT-TURNS, not units: a fleet that doubles halfway
+  through does not get to rewrite the first half of the record, and a
+  running total over unit-turns is the same estimator the launch-rate
+  guard uses on operations. Sampled at phase begin, before the turn's
+  movement, so a unit that leaves this turn is counted where it slept.
+
+  Cheap by construction: one pass over pplayer->units per player-turn,
+  no combat model, no pathfinder. It runs unconditionally, because a
+  counter that only exists in the arm that consumes it cannot be used
+  to price the arm that does not.
+**************************************************************************/
+void deep_cadence_sample(struct player *pplayer)
+{
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  int home = 0, total = 0;
+
+  unit_list_iterate(pplayer->units, punit) {
+    struct city *at;
+
+    if (punit->hp <= 0
+        || unit_has_type_flag(punit, UTYF_CIVILIAN)
+        || adv_unit_att_rating(punit) <= 0) {
+      continue;
+    }
+    total++;
+    at = tile_city(unit_tile(punit));
+    if (at != NULL && city_owner(at) == pplayer) {
+      home++;
+    }
+  } unit_list_iterate_end;
+
+  if (total <= 0) {
+    return;
+  }
+  dp->cadence_home += home;
+  dp->cadence_unitturns += total;
+
+  log_base(deep_metric_log_level(),
+           "deep-cadence turn=%d player=\"%s\" home=%d n=%d"
+           " cum_home=%d cum_n=%d share=%.3f",
+           game.info.turn, player_name(pplayer), home, total,
+           dp->cadence_home, dp->cadence_unitturns,
+           (double) dp->cadence_home / dp->cadence_unitturns);
+}
+
+/**********************************************************************//**
+  The observed share, 0..1, or 0 while nothing has been observed yet.
+  A credit multiplied by this is zero before the evidence exists,
+  which is the right direction for a term that ADDS want.
+**************************************************************************/
+double deep_attacker_home_share(const struct player *pplayer)
+{
+  const struct deep_plr *dp = deep_plr_data(pplayer);
+
+  if (dp->cadence_unitturns <= 0) {
+    return 0.0;
+  }
+  return (double) dp->cadence_home / dp->cadence_unitturns;
+}
+
+/**********************************************************************//**
   Can units of this class stand on water / on land? Asked of the
   ruleset's own terrain nativity, NOT of utype_move_type().
 
@@ -2373,6 +2445,8 @@ static void deep_kill_sorties(struct ai_type *ait, struct player *pplayer)
     double best = 0.0;
     double best_prize = 0.0, best_score = 0.0;
     bool priced = (tune->sortie_prize_gain > 0.0);
+    struct deep_cover_move cover;
+    bool covered = FALSE;
 
     unit_list_iterate(city_tile(pcity)->units, u) {
       if (unit_owner(u) != pplayer
@@ -2464,9 +2538,19 @@ static void deep_kill_sorties(struct ai_type *ait, struct player *pplayer)
       }
       continue;
     }
-    if (deep_city_stack_survival_without(nmap, pcity,
-                                         tune->survival_horizon,
-                                         blade, NULL)
+    /* THE COST SIDE, priced after rearrangement (NETTHREAT item 4).
+     * The shipped gate asks whether the city holds with a hole in it;
+     * with cover_removal on it asks whether the city holds once the
+     * cheapest neighbour has backfilled, which is the night that
+     * actually happens. The lender is guaranteed to stay above the
+     * floor by deep_city_sparable_blade()'s own must_stay_safe test,
+     * so this cannot rob one city to save another. */
+    covered = deep_cover_removal_cost(ait, nmap, pcity, blade, &cover);
+    if ((covered
+         ? cover.surv_after
+         : deep_city_stack_survival_without(nmap, pcity,
+                                            tune->survival_horizon,
+                                            blade, NULL))
         < tune->survival_target) {
       continue;
     }
@@ -2476,6 +2560,14 @@ static void deep_kill_sorties(struct ai_type *ait, struct player *pplayer)
              game.info.turn, player_name(pplayer), pcity->id,
              unit_rule_name(blade), unit_rule_name(victim), best,
              best_prize, best_score);
+    /* The hole this sortie opens is covered by whoever can cover it
+     * cheapest, and ORDERED rather than merely priced -- the removal
+     * is committed on this line, so the backfill is committed with it
+     * (NETTHREAT item 4). No-op when the gate above was the shipped
+     * one, because `covered` is then FALSE. */
+    if (covered) {
+      deep_cover_order(ait, pcity, &cover);
+    }
     /* Rampage executes the attack(s) with all the action legality
      * handling; the pair of gates above is what stock never had. */
     (void) dai_military_rampage(blade, RAMPAGE_ANYTHING,
@@ -2929,6 +3021,175 @@ static void deep_relay_execute(struct ai_type *ait, struct player *pplayer,
     aiguard_assign_guard_city(ait, to, blade);
     dai_unit_new_task(ait, blade, AIUNIT_ESCORT, city_tile(to));
   }
+}
+
+/* The hole-covering price's census, per player per turn: removals
+ * priced, removals where a cover genuinely existed, and the survival
+ * the covers bought back. Zero lines with cover_removal = 0, because
+ * the pricing function returns before its first read. */
+static int deep_cover_priced = 0, deep_cover_found = 0;
+static double deep_cover_saved = 0.0;
+
+/**********************************************************************//**
+  HOLES GET COVERED (NETTHREAT item 4, human 2026-08-12): price a
+  defender's removal AFTER the cheapest single covering move.
+
+  Every consumer that takes a blade out of a city -- the kill sortie,
+  the operations layer's garrison draft, and MUSTER's home-defence
+  abandon trigger when it lands -- prices the removal as the LOCAL
+  HOLE: surv(city) minus surv(city without this blade), as if the rest
+  of the lattice were nailed to the map. It is not. If a neighbour has
+  a blade it can genuinely spare, the hole closes behind the departure
+  and the honest cost is the post-rearrangement marginal loss, which
+  is smaller -- so the naive price refuses sorties and drafts that the
+  empire could actually afford.
+
+  ONE STEP, and no new optimizer (the brief is explicit). The
+  candidates are own cities on this continent whose sparable blade can
+  ARRIVE within survival_horizon -- deep_defend_counter_claims()'s own
+  admission test, on the cover's own move rate -- and the blade each of
+  them could lend is deep_city_sparable_blade(..., must_stay_safe =
+  TRUE), the same rotation/rehoming selector the counter-claim and the
+  relay already ask. The multi-hop generalisation is
+  deep_relay_chain(); it exists, it is not called here, and that is
+  the approximation.
+
+  THE PRICE IS EMPIRE-WIDE, which is the point of pricing it at all:
+
+      cost = [surv(A) - surv(A without blade, with cover)]   the hole left
+           + [surv(B) - surv(B without cover)]               the lender's
+
+  minimised over covers. The lender's loss is charged in full rather
+  than waved through on the must_stay_safe gate: "still above the
+  floor" is not "free", and a rearrangement that costs more than the
+  hole it fills is one this function must be able to reject. When no
+  candidate beats the naive removal, `cover` comes back NULL and
+  `cost` is exactly the local hole -- so a consumer reading `cost`
+  gets the old number where the lattice really is rigid.
+
+  Returns FALSE and touches nothing when cover_removal = 0, so every
+  consumer keeps its shipped arithmetic in the off arm.
+**************************************************************************/
+bool deep_cover_removal_cost(struct ai_type *ait, const struct civ_map *nmap,
+                             struct city *pcity, struct unit *blade,
+                             struct deep_cover_move *out)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct player *pplayer = city_owner(pcity);
+  double base, naive;
+
+  if (tune->cover_removal <= 0 || blade == NULL || out == NULL) {
+    return FALSE;
+  }
+
+  base = deep_city_stack_survival(nmap, pcity, tune->survival_horizon, NULL);
+  naive = deep_city_stack_survival_without(nmap, pcity,
+                                           tune->survival_horizon, blade,
+                                           NULL);
+  out->cover = NULL;
+  out->from = NULL;
+  out->naive_cost = base - naive;
+  out->cost = out->naive_cost;
+  out->surv_after = naive;
+
+  city_list_iterate(pplayer->cities, other) {
+    struct unit *cover;
+    double swapped, lender, total;
+    int rate, eta;
+
+    if (other == pcity
+        || tile_continent(city_tile(other))
+           != tile_continent(city_tile(pcity))) {
+      continue;
+    }
+    cover = deep_city_sparable_blade(ait, other, TRUE);
+    if (cover == NULL || cover == blade) {
+      continue;
+    }
+    /* Can it be here before the wave? The counter-claim's own
+     * admission test, on the cover's own move rate -- a backfill that
+     * arrives after the night it was meant to cover is not a cover.
+     * (deep_relay_chain() bounds a hop in TILES instead; this is the
+     * per-unit form, and it is the one a single move deserves.) */
+    rate = MAX(unit_type_get(cover)->move_rate, 1);
+    eta = (real_map_distance(city_tile(other), city_tile(pcity))
+           * SINGLE_MOVE + rate - 1) / rate;
+    if (eta > tune->survival_horizon) {
+      continue;
+    }
+    swapped = deep_city_stack_survival_swap(nmap, pcity,
+                                            tune->survival_horizon, blade,
+                                            &cover, 1, NULL);
+    lender = deep_city_stack_survival(nmap, other, tune->survival_horizon,
+                                      NULL)
+             - deep_city_stack_survival_without(nmap, other,
+                                                tune->survival_horizon,
+                                                cover, NULL);
+    total = (base - swapped) + lender;
+    if (total < out->cost) {
+      out->cost = total;
+      out->cover = cover;
+      out->from = other;
+      out->surv_after = swapped;
+    }
+  } city_list_iterate_end;
+
+  deep_cover_priced++;
+  if (out->cover != NULL) {
+    deep_cover_found++;
+    deep_cover_saved += out->naive_cost - out->cost;
+    log_base(deep_metric_log_level(),
+             "deep-cover turn=%d player=\"%s\" city=%d blade=\"%s\""
+             " from=%d cover=\"%s\" naive=%.3f cost=%.3f surv=%.3f"
+             " local=%.3f",
+             game.info.turn, player_name(pplayer), pcity->id,
+             unit_rule_name(blade), out->from->id,
+             unit_rule_name(out->cover), out->naive_cost, out->cost,
+             out->surv_after, naive);
+  }
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Order the covering move this price assumed. A one-edge brigade, run
+  through deep_relay_execute() rather than through a second copy of
+  the assign-guard/new-task pair, so the ordered move and the priced
+  move are the same act by construction.
+
+  Called only where the removal is COMMITTED in the same breath (the
+  sortie). A consumer that may still refuse -- the operations draft --
+  prices without ordering: opening a march for a hole that never opens
+  is the trickle the muster discipline exists to prevent.
+**************************************************************************/
+void deep_cover_order(struct ai_type *ait, struct city *pcity,
+                      const struct deep_cover_move *mv)
+{
+  struct city *path[2];
+
+  if (mv == NULL || mv->cover == NULL || mv->from == NULL) {
+    return;
+  }
+  path[0] = pcity;
+  path[1] = mv->from;
+  deep_relay_execute(ait, city_owner(pcity), path, 2);
+}
+
+/**********************************************************************//**
+  The hole-covering census, on the birth guard's schedule.
+**************************************************************************/
+static void deep_cover_census(struct player *pplayer)
+{
+  if (deep_cover_priced > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-cover-sum turn=%d player=\"%s\" priced=%d covered=%d"
+             " saved=%.3f",
+             game.info.turn, player_name(pplayer), deep_cover_priced,
+             deep_cover_found, deep_cover_saved);
+  }
+  deep_cover_priced = 0;
+  deep_cover_found = 0;
+  deep_cover_saved = 0.0;
 }
 
 /* THE WRITE-OFF LEDGER. One entry per city-turn the counter-claim
@@ -4019,6 +4280,13 @@ static double deep_birth_paid = 0.0, deep_birth_odds = 0.0;
 static int deep_deter_priced = 0;
 static double deep_deter_paid = 0.0;
 
+/* And the attacker's garrison credit (NETTHREAT item 3): attacker
+ * wants that actually received it, what it paid, and -- the counter
+ * that says whether the credit ever CHANGED anything -- the wants it
+ * carried past the defender choice they were competing with. */
+static int deep_agc_priced = 0;
+static double deep_agc_paid = 0.0;
+
 /* The lifetime-upkeep charge's counters, likewise. */
 static int deep_upcharge_n = 0;
 static double deep_upcharge_paid = 0.0;
@@ -4154,6 +4422,19 @@ static void deep_birth_census(struct player *pplayer)
   deep_deter_priced = 0;
   deep_deter_paid = 0.0;
 
+  /* The attacker garrison credit's line, same schedule and the same
+   * contract: zero lines with attacker_garrison_gain at its default,
+   * because the credit's own reads never happen. */
+  if (deep_agc_priced > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-agc-sum turn=%d player=\"%s\" priced=%d paid=%.1f"
+             " home_share=%.3f",
+             game.info.turn, player_name(pplayer), deep_agc_priced,
+             deep_agc_paid, deep_attacker_home_share(pplayer));
+  }
+  deep_agc_priced = 0;
+  deep_agc_paid = 0.0;
+
   /* The lifetime-upkeep charge's line, same schedule. `n` is the
    * population the mechanism acts on -- the number the audit's claim
    * that it "moves EVERY unit want" is checked against. */
@@ -4165,6 +4446,9 @@ static void deep_birth_census(struct player *pplayer)
   }
   deep_upcharge_n = 0;
   deep_upcharge_paid = 0.0;
+
+  /* And the hole-covering price's, same schedule and same contract. */
+  deep_cover_census(pplayer);
 }
 
 /**********************************************************************//**
@@ -4216,29 +4500,25 @@ static void deep_birth_census(struct player *pplayer)
   Returns 0 and costs nothing when the city faces no wave, which is
   every city in peacetime -- the two DP runs never happen.
 **************************************************************************/
-static adv_want deep_deterrence_dividend(const struct civ_map *nmap,
-                                         struct city *pcity,
-                                         const struct unit_type *ut,
-                                         double menace)
+static double deep_marginal_attrition(const struct civ_map *nmap,
+                                      struct city *pcity,
+                                      const struct unit_type *ut,
+                                      struct deep_defence_read *now_out)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   struct deep_defence_read now, plus;
   struct unit *v;
   double marginal;
-  adv_want div;
 
-  if (tune->deterrence_gain <= 0.0 || ut == NULL || menace <= 0.0) {
-    return 0;
-  }
-  /* The verdict this phase already took: no wave, no dividend, and no
-   * DP runs at all. */
+  /* The verdict this phase already took: no wave, no attrition to
+   * price, and no DP runs at all. */
   {
     int wave = 0;
 
     (void) deep_city_survival_verdict(nmap, pcity, tune->survival_horizon,
                                       &wave);
     if (wave <= 0) {
-      return 0;
+      return 0.0;
     }
   }
 
@@ -4255,6 +4535,30 @@ static adv_want deep_deterrence_dividend(const struct civ_map *nmap,
   if (marginal <= 0.0) {
     /* The stack is already deep enough that the wave dies before this
      * body is reached, or the caps truncated it. Nothing owed. */
+    return 0.0;
+  }
+  if (now_out != NULL) {
+    *now_out = now;
+  }
+
+  return marginal;
+}
+
+static adv_want deep_deterrence_dividend(const struct civ_map *nmap,
+                                         struct city *pcity,
+                                         const struct unit_type *ut,
+                                         double menace)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct deep_defence_read now = { 1.0, 0, 0, 0.0, 0.0 };
+  double marginal;
+  adv_want div;
+
+  if (tune->deterrence_gain <= 0.0 || ut == NULL || menace <= 0.0) {
+    return 0;
+  }
+  marginal = deep_marginal_attrition(nmap, pcity, ut, &now);
+  if (marginal <= 0.0) {
     return 0;
   }
   div = (adv_want) (marginal * menace * tune->deterrence_gain);
@@ -4272,6 +4576,104 @@ static adv_want deep_deterrence_dividend(const struct civ_map *nmap,
            (double) div);
 
   return div;
+}
+
+/**********************************************************************//**
+  THE ATTACKER'S GARRISON CREDIT (NETTHREAT item 3, promoted to lead by
+  the human 2026-08-12: "an attack unit's defensive value is the
+  under-credited half, so credit it first").
+
+  A home-based attacker joins the stack the moment it is standing at
+  home -- deep_city_survival_core() counts it, the sortie pass spends
+  it, the garrison floor counts it -- but at the BUILD seam an attacker
+  and a defender were compared as orthogonal goods: the defender want
+  carries survival plus the deterrence dividend, and the attacker want
+  carried take-odds alone. The defensive worth of an attacker was
+  exactly zero in the one comparison where it decides what gets built.
+
+  Same term as the dividend, from the same reads
+  (deep_marginal_attrition(), literally the shared helper), times the
+  same menace -- so the two sides of the auction are finally quoted in
+  one currency -- and then times the OBSERVED share of unit-turns this
+  player's attack-rated units spend in own cities.
+
+  ------------------------------------------------------------------
+  THE BOOKKEEPING RULE, stated where the credit lands (the guard the
+  brief makes load-bearing). Three books touch this quantity and each
+  enemy body, and each of OUR bodies, is charged to exactly one:
+
+  1. vs deterrence_gain. The dividend is paid to the DEFENDER choice,
+     for the defender body. This is paid to the ATTACKER choice, for
+     the attacker body. They are competing bids for one build slot;
+     at most one of the two bodies is ever built, so the attrition is
+     credited once per body that comes to exist. Never both, never
+     twice.
+
+  2. vs the sortie prize (sortie_prize_gain). That gain never enters a
+     build want at all -- it is an execution-time selection score that
+     ranks which duel an ALREADY EXISTING blade should fight. Nothing
+     sums the two. And the sortie half of "garrison/sortie
+     contribution" is deliberately NOT priced here: crediting the
+     build with a kill the sortie pass will also value would be the
+     one double count available, so this credits the GARRISON half
+     only and under-credits on purpose.
+
+  3. vs this want's own offensive half. gross/marginal above prices
+     this unit as MARCHING to a target. This prices it as STANDING AT
+     HOME. They are mutually exclusive uses of one body, which is
+     exactly why the credit is weighted by home_share < 1 and the
+     offensive half is not scaled up to compensate: the sum of the two
+     books is at most one unit's presence, and in practice less.
+  ------------------------------------------------------------------
+
+  Applied AFTER gate 5 and the never-launches damper, on purpose. Both
+  of those price OFFENSIVE appetite -- how much this player wants to
+  buy an assault, and how badly its assaults stall in muster -- and an
+  attacker's garrison value is precisely what an op that never launches
+  still leaves behind. Scaling this by the damper would say a unit that
+  stays home is worth less for staying home.
+
+  0 = off, and off costs nothing: the gain is tested before any read.
+**************************************************************************/
+static adv_want deep_attacker_garrison_credit(const struct civ_map *nmap,
+                                              struct city *pcity,
+                                              const struct unit_type *ut,
+                                              double menace)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct deep_defence_read now = { 1.0, 0, 0, 0.0, 0.0 };
+  struct player *pplayer = city_owner(pcity);
+  double marginal, share;
+  adv_want credit;
+
+  if (tune->attacker_garrison_gain <= 0.0 || ut == NULL || menace <= 0.0) {
+    return 0;
+  }
+  share = deep_attacker_home_share(pplayer);
+  if (share <= 0.0) {
+    /* No cadence observed yet -- no evidence, no credit. */
+    return 0;
+  }
+  marginal = deep_marginal_attrition(nmap, pcity, ut, &now);
+  if (marginal <= 0.0) {
+    return 0;
+  }
+  credit = (adv_want) (marginal * menace * share
+                       * tune->attacker_garrison_gain);
+  if (credit <= 0) {
+    return 0;
+  }
+
+  deep_agc_priced++;
+  deep_agc_paid += credit;
+  log_base(deep_metric_log_level(),
+           "deep-agc turn=%d player=\"%s\" city=%d type=\"%s\" wave=%d"
+           " marg=%.1f menace=%.3f share=%.3f surv=%.3f credit=%.1f",
+           game.info.turn, player_name(pplayer), pcity->id,
+           utype_rule_name(ut), now.wave, marginal, menace, share,
+           now.surv, (double) credit);
+
+  return credit;
 }
 
 static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
@@ -5461,6 +5863,14 @@ static void deep_assault_want(struct ai_type *ait,
       want = (adv_want) (want * damp);
     }
   }
+
+  /* THE GARRISON CREDIT (NETTHREAT item 3). What this same body is
+   * worth to the city that builds it on the nights it is standing
+   * here. The bookkeeping rule that keeps it disjoint from the
+   * deterrence dividend and from the sortie prize is stated in full at
+   * deep_attacker_garrison_credit(). */
+  want += deep_attacker_garrison_credit(nmap, pcity, punittype,
+                                        deep_garrison_menace(pplayer));
 
   log_base(deep_metric_log_level(),
            "deep-kill turn=%d player=\"%s\" city=%d target=%d barb=%d"
