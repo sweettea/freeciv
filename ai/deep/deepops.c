@@ -2995,6 +2995,70 @@ bool deep_op_target_threatens(const struct player *pplayer,
 }
 
 /**********************************************************************//**
+  THE OFFENSE-CONSUMES-THE-WAVE INSTRUMENT (NETTHREAT item 1, evidence
+  before mechanism).
+
+  Item 1 wants the home survival wave discounted by E[enemy losses to
+  our committed offense]: an enemy unit our assault is about to engage
+  is not also besieging us. Before any such discount can be honest,
+  two quantities have to be measured on the venue rather than assumed,
+  and this pair of accessors is what makes them readable from the
+  wave census:
+
+  - WHICH enemy cities our live operations point at, so the wave
+    assembly can count how many of its members are standing in one.
+    `committed_only` splits MARCH/STRIKE (a wave that is moving) from
+    MUSTER (a wave that may never move) -- the distinction the
+    launch-rate guard is about.
+  - the OBSERVED launch rate, ops_launched / ops_formed, the same
+    ratio attacker_hold_damper already prices. CONSEQ N3's Iceland
+    built 57 Marines against 6 launches; a discount weighted by
+    intents rather than by this number licenses disarmament by
+    wishful thinking.
+
+  Lifts are excluded: a lift carries settlers, engages nobody, and
+  consumes no enemy unit.
+**************************************************************************/
+int deep_op_live_targets(const struct player *pplayer, int *out, int max,
+                         bool committed_only)
+{
+  const struct deep_plr *dp = deep_plr_data(pplayer);
+  int oi, n = 0;
+
+  for (oi = 0; oi < DEEP_OPS_MAX && n < max; oi++) {
+    const struct deep_operation *op = &dp->ops[oi];
+
+    if (op->state == DEEP_OP_NONE
+        || op->kind == DEEP_OPK_LIFT
+        || op->target_city <= 0) {
+      continue;
+    }
+    if (committed_only
+        && op->state != DEEP_OP_MARCH && op->state != DEEP_OP_STRIKE) {
+      continue;
+    }
+    out[n++] = op->target_city;
+  }
+
+  return n;
+}
+
+/**********************************************************************//**
+  Operations that reached MARCH over operations formed, 0 when nothing
+  has formed yet. The launch-rate guard's own number.
+**************************************************************************/
+double deep_op_launch_rate(const struct player *pplayer)
+{
+  const struct deep_plr *dp = deep_plr_data(pplayer);
+
+  if (dp->ops_formed <= 0) {
+    return 0.0;
+  }
+
+  return (double) dp->ops_launched / dp->ops_formed;
+}
+
+/**********************************************************************//**
   The odds an assault on this target must clear, gate 2 included
   (W34 A.2): op_take_target scaled by what this player's stance
   charges for an assault, capped at 1.0 because it is a probability,

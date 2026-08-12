@@ -161,6 +161,14 @@ void deep_hull_order_choice(struct ai_type *ait, struct player *pplayer,
 bool deep_op_target_threatens(const struct player *pplayer,
                               const struct city *target);
 
+/* NETTHREAT item 1's instrument: the enemy cities our live operations
+ * point at (MARCH/STRIKE only when `committed_only`, lifts never), and
+ * the observed launch rate the discount would have to be weighted by.
+ * Read by the survival wave census; nothing acts on them yet. */
+int deep_op_live_targets(const struct player *pplayer, int *out, int max,
+                         bool committed_only);
+double deep_op_launch_rate(const struct player *pplayer);
+
 struct unit *deep_op_poach_defender(struct ai_type *ait,
                                     struct player *pplayer,
                                     struct city *pcity,

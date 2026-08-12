@@ -38,6 +38,7 @@
 
 #include "deepdefence.h"
 #include "deepodds.h"
+#include "deepops.h"
 #include "deeptuning.h"
 
 #include "deepcombat.h"
@@ -427,6 +428,14 @@ struct deep_wave_census {
   const struct unit *far_unit;
   int far_dist;
   int far_turns;
+  /* NETTHREAT item 1's instrument: qualifying attackers that are
+   * standing in a city one of OUR operations points at -- the wave
+   * members our own offense is about to engage, and therefore the
+   * mass any "offense consumes the wave" discount could ever net.
+   * `net_pinned` counts every live operation, `net_marching` only the
+   * ones that reached MARCH or STRIKE. Nothing acts on either. */
+  int net_pinned;
+  int net_marching;
 };
 
 /**********************************************************************//**
@@ -502,6 +511,7 @@ static void deep_wave_log(const struct city *pcity, int horizon,
            " capped=%d by_land=%d by_sea=%d by_air=%d by_transport=%d"
            " max_att=%d max_dist=%d max_turns=%d horizon=%d"
            " far_dist=%d far_turns=%d pf_turns=%d"
+           " net_pinned=%d net_marching=%d launch=%.3f"
            " def_best=%d surv=%.3f",
            game.info.turn, player_name(city_owner(pcity)), pcity->id,
            n_att, n_def, census->n_qual > n_att ? 1 : 0,
@@ -510,6 +520,8 @@ static void deep_wave_log(const struct city *pcity, int horizon,
            n_att > 0 ? att[0].rating : 0,
            census->max_dist, census->max_turns, horizon,
            census->far_dist, census->far_turns, pf_turns,
+           census->net_pinned, census->net_marching,
+           deep_op_launch_rate(city_owner(pcity)),
            n_def > 0 ? def[0].rating : 0, surv);
 }
 
@@ -532,7 +544,17 @@ static double deep_city_survival_core(const struct civ_map *nmap,
   bool coastal = is_terrain_class_near_tile(nmap, ctile, TC_OCEAN);
   int n_air = 0;
   const struct deep_tuning *tune = deep_tuning_get();
-  struct deep_wave_census census = { 0, 0, 0, 0, 0, 0, 0, NULL, 0, 0 };
+  struct deep_wave_census census = { 0, 0, 0, 0, 0, 0, 0, NULL, 0, 0,
+                                     0, 0 };
+  /* NETTHREAT item 1's instrument: the enemy cities our own operations
+   * point at, gathered once per evaluation. Empty for a player with no
+   * live operation, which is most of them most of the time, so the
+   * per-attacker test below costs nothing in the common case. */
+  int op_targets[DEEP_OPS_MAX], op_marching[DEEP_OPS_MAX];
+  int n_targets = deep_op_live_targets(pplayer, op_targets,
+                                       DEEP_OPS_MAX, FALSE);
+  int n_marching = deep_op_live_targets(pplayer, op_marching,
+                                        DEEP_OPS_MAX, TRUE);
 
   if (wave_out != NULL) {
     *wave_out = 0;
@@ -633,6 +655,35 @@ static double deep_city_survival_core(const struct civ_map *nmap,
         census.by_sea++;
       }
       census.n_qual++;
+      /* OFFENSE CONSUMES THE WAVE (NETTHREAT item 1), measured only.
+       * Is this qualifying attacker standing in a city one of our own
+       * operations is aimed at? Those are the wave members our
+       * offense is about to engage -- the mass the discount could
+       * ever net -- and the MARCH/STRIKE split is what says how much
+       * of it belongs to a wave that is actually moving. NOTHING is
+       * subtracted: the discount needs this census and the launch
+       * rate first, and a wave discounted by intents is the
+       * disarmament spiral the brief names. */
+      if (n_targets > 0) {
+        const struct city *acity = tile_city(unit_tile(aunit));
+
+        if (acity != NULL) {
+          int t;
+
+          for (t = 0; t < n_targets; t++) {
+            if (op_targets[t] == acity->id) {
+              census.net_pinned++;
+              break;
+            }
+          }
+          for (t = 0; t < n_marching; t++) {
+            if (op_marching[t] == acity->id) {
+              census.net_marching++;
+              break;
+            }
+          }
+        }
+      }
       census.max_dist = MAX(census.max_dist, dist);
       census.max_turns = MAX(census.max_turns, turns);
       /* Keep the furthest qualifying attacker itself, so the ERA 3c
