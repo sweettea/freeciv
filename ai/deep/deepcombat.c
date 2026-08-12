@@ -738,6 +738,25 @@ double deep_city_stack_survival_with(const struct civ_map *nmap,
 }
 
 /**********************************************************************//**
+  Both counterfactuals in one read: this blade is gone AND these
+  reinforcements stand here. What the night looks like after a
+  REARRANGEMENT rather than after a removal -- the question the
+  hole-covering price asks (NETTHREAT item 4).
+
+  The core has taken both arguments since it was written; nothing here
+  is new arithmetic, only a caller that needs the pair.
+**************************************************************************/
+double deep_city_stack_survival_swap(const struct civ_map *nmap,
+                                     struct city *pcity, int horizon,
+                                     const struct unit *except,
+                                     struct unit *const *extra, int n_extra,
+                                     int *wave_out)
+{
+  return deep_city_survival_core(nmap, pcity, horizon, except, extra,
+                                 n_extra, wave_out, NULL);
+}
+
+/**********************************************************************//**
   THE DEFENSIVE LEDGER: the same wave, the same chained duels, and both
   sides of what they cost.
 

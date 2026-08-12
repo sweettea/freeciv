@@ -3309,6 +3309,8 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
 
     city_list_iterate(pplayer->cities, pcity) {
       struct unit *weak = NULL;
+      struct deep_cover_move cover;
+      bool covered;
 
       if (n >= DEEP_OP_MEMBERS) {
         break;
@@ -3335,12 +3337,29 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
       if (weak == NULL) {
         continue;
       }
+      /* THE COST SIDE, priced after rearrangement (NETTHREAT item 4).
+       * Both release tests below ask what the lending city loses, and
+       * both asked it as if the rest of the lattice were nailed down.
+       * With cover_removal on, the question is the post-rearrangement
+       * one: what remains once the cheapest one-hop neighbour has
+       * backfilled, charged the lender's own loss as well.
+       *
+       * Priced, NOT ordered -- unlike the sortie, this formation can
+       * still refuse (`required` may never clear the bar), and
+       * ordering a march for a hole that never opens is exactly the
+       * trickle the muster discipline exists to prevent. The blades
+       * that do get drafted march as claimed members and the
+       * counter-claim pass sees whatever hole is really left. */
+      covered = deep_cover_removal_cost(ait, nmap, pcity, weak, &cover);
       if (marginal_draft) {
-        double cost = deep_city_stack_survival(nmap, pcity,
-                                               tune->survival_horizon, NULL)
-                      - deep_city_stack_survival_without(nmap, pcity,
-                                                         tune->survival_horizon,
-                                                         weak, NULL);
+        double cost
+          = covered
+            ? cover.cost
+            : deep_city_stack_survival(nmap, pcity, tune->survival_horizon,
+                                       NULL)
+              - deep_city_stack_survival_without(nmap, pcity,
+                                                 tune->survival_horizon,
+                                                 weak, NULL);
         double with;
 
         pool[n] = weak;
@@ -3350,9 +3369,11 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
           drafted++;
           held = with;
         }
-      } else if (deep_city_stack_survival_without(nmap, pcity,
-                                                  tune->survival_horizon,
-                                                  weak, NULL)
+      } else if ((covered
+                  ? cover.surv_after
+                  : deep_city_stack_survival_without(nmap, pcity,
+                                                     tune->survival_horizon,
+                                                     weak, NULL))
                  >= tune->survival_target) {
         pool[n++] = weak;
         drafted++;
