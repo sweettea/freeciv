@@ -651,6 +651,402 @@ MAP = {
     "stance_assault_gain": (
         "S2", "mag", "direct", [("deep-stance", "assault_gate>0")],
         "gate-5 counter (deepdefence.c:3242); pin-conditional."),
+    "stance_floor_gain": (
+        "S2", "mag", "direct", [("deep-stance", "floor_gate>0")],
+        "floor_gate= increments in deep_apply_garrison_floor() only "
+        "when the multiplier != 1.0 (deepdefence.c:1750-1751), which "
+        "cannot happen at stance_floor_gain's identity value."),
+    "stance_position_gain": (
+        "S1", "mag", "proxy", [("deep-stance", "pos_moved>0")],
+        "pos_moved counts turns either this gain or "
+        "stance_techlean_gain moved an axis off the trait prior "
+        "(deepstance.c:454-456); not separable between the two, and "
+        "zeroed outright unless stance_source resolves to 2 (source "
+        "1/traits never reads position at all)."),
+    "stance_techlean_gain": (
+        "S1", "mag", "proxy", [("deep-stance", "pos_moved>0")],
+        "as stance_position_gain; the same shared counter."),
+    "stance_pressure_ref": (
+        "S1", "mag", "direct", [("deep-stance", "threat>0")],
+        "threat= is 0.0 unless stance_pressure_ref > 0.0 AND "
+        "pressure > 0.0 (deepstance.c:395-396); source-2-conditional, "
+        "like stance_position_gain."),
+
+    # ---------------- Site placement extensions (S3) ------------------
+    "site_defence_weight": (
+        "S3", "mag", "-", None,
+        "deep_site_defence_bonus() logs deep-sitedef with factor=, "
+        "total= and deep= beside stock's own inverted term "
+        "(deepsite.c:1052), but at LOG_VERBOSE -- invisible at the "
+        "server's default verbosity, where every deep-* metric line in "
+        "the corpus lives. Needs: promote to deep_metric_log_level() "
+        "or an aggregate paid/count field near deep-sitenaval's."),
+    "site_naval_gate": (
+        "S3", "gate", "direct", [("deep-sitenaval", "refused>0")],
+        "the A/B geometry switch for the maritime premium; refused= "
+        "counts candidates the gate zeroed for lacking open water "
+        "(deepsite.c:1085), zero on every line at the compiled gate=0 "
+        "default."),
+    "site_naval_weight": (
+        "S3", "mag", "direct", [("deep-sitenaval", "paid>0")],
+        "paid= counts candidates that kept a nonzero "
+        "deep_site_naval_bonus() term (deepsite.c:1089); requires this "
+        "weight > 0 to ever be nonzero at all."),
+
+    # ---------------- Explorer fleet saturation (S1) -------------------
+    "explore_explorer_claim": (
+        "S1", "mag", "direct", [("deep-explore", "claimed>0")],
+        "claimed= is (explorers+queued) * explore_explorer_claim * "
+        "explore_hut_value, logged on every deep-explore line "
+        "(deepexplore.c:257); nonzero whenever any explorer is fielded "
+        "or queued."),
+    "explore_salvage_gap": (
+        "S1", "mag", "proxy", [("deep-salvage", "")],
+        "one term of deep_explore_surplus()'s clamped surplus "
+        "(deepexplore.c:334), which deep-salvage's surplus= reports "
+        "whole; not separable from explore_retain_floor's term in the "
+        "same expression."),
+    "explore_retain_floor": (
+        "S1", "mag", "proxy", [("deep-salvage", "")],
+        "as explore_salvage_gap; the retention floor and the "
+        "hysteresis gap both feed the one clamped surplus deep-salvage "
+        "reports (deepexplore.c:322/335-336)."),
+
+    # ---------------- CM solvency and growth-price extensions (S1) ----
+    "cm_grow_price_blend": (
+        "S1", "mag", "direct", [("deep-cmgrow", "fires=1")],
+        "fires= is (cm_grow_price_blend * citizen >= build), logged on "
+        "every grow-hard admission test deep_cm_grow_priced() runs "
+        "(deepcm.c:323/330); 0 disables the test outright."),
+    "cm_specialist_gold_gain": (
+        "S1", "mag", "direct", [("deep-cmspec", "gold>2")],
+        "gold= is cm_parameter.factor[O_GOLD] after "
+        "deep_cm_solvency_factors() (deepcm.c:130-133); stock's own "
+        "pinned baseline is 2, so gold>2 is only reachable through "
+        "this gain firing on a real gold shortfall."),
+    "cm_specialist_sci_gain": (
+        "S1", "mag", "direct", [("deep-cmspec", "sci>2")],
+        "as cm_specialist_gold_gain; sci= is factor[O_SCIENCE], "
+        "baseline 2 (deepcm.c:145-148)."),
+    "cm_war_growth_charge": (
+        "S1", "mag", "direct",
+        [("deep-cmpost", ""), ("deep-cmsolve", "")],
+        "both lines are gated on cm_war_growth_charge > 0.0 "
+        "(deepcm.c:683/766); deep-cmpost's bar= is cm_war_survival "
+        "minus this charge times the counterfactual's cost."),
+
+    # ---------------- Garrison-floor per-class weights (S2) -----------
+    "floor_barb_weight": (
+        "S2", "mag", "direct", [("deep-floor", "wbarb>0")],
+        "wbarb= is this weight times deep_barb_city_scale() "
+        "(deepdefence.c:1617), logged on every eligible garrison-floor "
+        "city-turn."),
+    "floor_sea_weight": (
+        "S2", "mag", "direct", [("deep-floor", "wsea>0")],
+        "wsea= is this weight times the exterior/interior/marines "
+        "escalation (deepdefence.c:1636-1641)."),
+    "floor_air_weight": (
+        "S2", "mag", "direct", [("deep-floor", "wair>0")],
+        "wair= is exactly this weight when the air class is live "
+        "(deepdefence.c:1675); no other term multiplies it."),
+    "floor_border_weight": (
+        "S2", "mag", "direct", [("deep-floor", "wborder>0")],
+        "wborder= is this weight times the R/(R+d) proximity shape "
+        "(deepdefence.c:1666-1668)."),
+    "floor_interior_weight": (
+        "S2", "mag", "proxy", [("deep-floor", "wsea>0")],
+        "one factor of wsea= alongside floor_sea_weight and "
+        "floor_marines_mult (deepdefence.c:1636-1641); not separable "
+        "from them on the line."),
+    "floor_marines_mult": (
+        "S2", "mag", "proxy", [("deep-floor", "wsea>0")],
+        "as floor_interior_weight; the escalation divisor folded into "
+        "the same wsea= term."),
+
+    # ---------------- Barbarian ramp shape (S2) ------------------------
+    "barb_anticipation_turns": (
+        "S2", "mag", "direct", [("deep-barb", "pre=1")],
+        "pre=1 marks a line where the ramp is live before onset "
+        "(deepdefence.c:1153), which requires lead = "
+        "barb_anticipation_turns > 0; lead itself is also echoed "
+        "verbatim on every deep-barb line."),
+    "barb_size_ref_cities": (
+        "S2", "mag", "proxy", [("deep-barb", "scale>0")],
+        "the reference-city count normalises deep_barb_empire_scale()'s "
+        "denominator (deepdefence.c:1037-1039); scale= folds it in with "
+        "rate, cwc and the empire's own city count, none separable."),
+
+    # ---------------- Standalone fear/priority terms (S1/S2) ----------
+    "birth_guard_gain": (
+        "S2", "mag", "direct", [("deep-birth", "")],
+        "deep_birth_guard_want() returns before logging when "
+        "birth_guard_gain <= 0.0 (deepdefence.c:4059); want= is this "
+        "gain times p*worth."),
+    "defensive_techwall_weight": (
+        "S2", "mag", "direct", [("deep-defwall", "")],
+        "deep_defensive_techwall() returns before any city is read "
+        "when the weight is <= 0.0 (deepdefence.c:1958); credit= is "
+        "the fear value times the deficit times this weight."),
+    "attacker_hold_damper": (
+        "S2", "mag", "direct", [("deep-damper", "pump=attacker")],
+        "the attacker form of deep-damper is gated on "
+        "attacker_hold_damper > 0.0 (deepdefence.c:5408)."),
+    "diplomat_pump_damper": (
+        "S1", "mag", "direct", [("deep-damper", "pump=diplomat")],
+        "the diplomat form of deep-damper is gated on "
+        "diplomat_pump_damper > 0.0 (deepdefence.c:4690)."),
+
+    # ---------------- Wonder race pricing (S4) -------------------------
+    "wrace_margin_turns": (
+        "S4", "mag", "proxy", [("deep-wrace", "theirs>=0")],
+        "the ramp's scale (deepwonder.c:248); p= on deep-wrace is a "
+        "function of it only when a rival is known (theirs>=0) -- "
+        "uncontested and unraced candidates short-circuit p to "
+        "1.0/0.0 before the scale is read."),
+    "wrace_pwin_gain": (
+        "S4", "mag", "-", None,
+        "deep-wrace's factor= folds wrace_pwin_gain, wrace_eta_gain "
+        "and wrace_obsolete_gain into one product (deepwonder.c:482-"
+        "499); none is separable on the line and the predicate "
+        "language has no less-than operator to test departure from "
+        "1.0. All three ship at 0.0 = off. Needs: per-term factors "
+        "(pwin_factor=, eta_factor=, obs_factor=) on deep-wrace."),
+    "wrace_eta_gain": (
+        "S4", "mag", "-", None,
+        "as wrace_pwin_gain; the same folded factor= term."),
+    "wrace_obsolete_gain": (
+        "S4", "mag", "-", None,
+        "as wrace_pwin_gain; the same folded factor= term."),
+    "wrace_urgency_gain": (
+        "S4", "mag", "direct", [("deep-wrace-feed", "")],
+        "deep-wrace-feed is logged only when urg != 1.0 "
+        "(deeptrade.c:1626), which requires wrace_urgency_gain > 0.0 "
+        "and a live race we are ahead in."),
+
+    # ---------------- Expiry-aware amortization (CONSEQ item 4) -------
+    "expiry_building_gain": (
+        "S1", "mag", "direct", [("deep-expiry", "has:impr")],
+        "the building form of deep-expiry is gated on "
+        "expiry_building_gain > 0.0 (deephorizon.c:2043); keep= is "
+        "1.0 - gain*(1-share)."),
+    "expiry_unit_gain": (
+        "S2", "mag", "direct", [("deep-expiry", "has:unit")],
+        "the unit form of deep-expiry is gated on expiry_unit_gain > "
+        "0.0 (deepdefence.c:4994)."),
+    "expiry_unit_gap": (
+        "S2", "mag", "direct", [("deep-expiry", "has:gap")],
+        "gap= echoes the knob's own value on the same line "
+        "(deepdefence.c:5010/5019); gated behind expiry_unit_gain "
+        "also being > 0 (deepdefence.c:4994), so this knob's own "
+        "branch never runs at expiry_unit_gain = 0."),
+
+    # ---------------- Emergency treasury rungs (S2/S3) ----------------
+    "sell_defend_gain": (
+        "S2", "mag", "direct", [("deep-selldefend", "")],
+        "deep_sell_to_defend() returns before reading anything when "
+        "sell_defend_gain <= 0.0 (deepdefence.c:5544)."),
+    "late_buy_gate": (
+        "S2", "gate", "direct", [("deep-latebuy", "")],
+        "deep_late_defence_buy() returns before reading a city when "
+        "late_buy_gate <= 0 (deepdefence.c:5660)."),
+    "evacuate_gate": (
+        "S3", "gate", "direct", [("deep-evac", "")],
+        "deep_evacuate_civilians() returns before reading a unit when "
+        "evacuate_gate <= 0 (deepdefence.c:3140)."),
+
+    # ---------------- Ground-holding: bases, fortify, pillage (S2/S3) -
+    "base_fort_gain": (
+        "S3", "mag", "direct", [("deep-fort", "wants>0")],
+        "wants= counts deep_base_want() calls that returned positive "
+        "(deepsettler.c:2074/2111), which requires base_fort_gain > "
+        "0.0; offers= counts candidates regardless of the gain and "
+        "does not evidence it."),
+    "fortify_ground": (
+        "S3", "gate", "direct", [("deep-ground", "")],
+        "deep_fortify_ground() returns before reading a unit when "
+        "fortify_ground <= 0 (deepdefence.c:3545)."),
+    "pillage_denial_gain": (
+        "S2", "mag", "direct", [("deep-pillage", "started>0")],
+        "deep_pillage_sorties() returns before reading a unit when "
+        "pillage_denial_gain <= 0.0 (deepdefence.c:3434); started= "
+        "counts pillages the priced want actually cleared. nearby= "
+        "can be nonzero on the same gated line from the raid_radius "
+        "census alone, so started>0 is the tighter proof."),
+
+    # ---------------- Sortie prize and deterrence dividend (S2) -------
+    "sortie_prize_gain": (
+        "S2", "mag", "direct", [("deep-sortie-no", "")],
+        "the decline census only logs when priced = "
+        "(sortie_prize_gain > 0.0) (deepdefence.c:2369/2450); the "
+        "accepted-sortie line (deep-sortie) fires either way and does "
+        "not by itself evidence this gain."),
+    "deterrence_gain": (
+        "S2", "mag", "direct", [("deep-deter", "")],
+        "deep_deterrence_dividend() returns 0 before any DP run when "
+        "deterrence_gain <= 0.0 (deepdefence.c:4190)."),
+
+    # ---------------- Barracks streams and pop insurance (M4b) --------
+    "unit_upkeep_charge": (
+        "S2", "mag", "direct", [("deep-upcharge", "")],
+        "deep_unit_upkeep_charge() returns 0 before pricing anything "
+        "when unit_upkeep_charge <= 0.0 (deepdefence.c:6189)."),
+    "pop_insurance_gain": (
+        "S1", "mag", "direct", [("deep-popins", "")],
+        "deep-popins only logs when deep_popins_cands > 0, which "
+        "requires pop_insurance_gain > 0.0 (deephorizon.c:1445)."),
+    "heal_stream_gain": (
+        "S1", "mag", "direct", [("deep-barracks", "heal>0")],
+        "heal= is deep_heal_cands, incremented only after "
+        "heal_stream_gain > 0.0 passed (deephorizon.c:1236/1289)."),
+    "veteran_stream_gain": (
+        "S1", "mag", "direct", [("deep-barracks", "vet>0")],
+        "vet= is deep_vet_cands, incremented only after "
+        "veteran_stream_gain > 0.0 passed (deephorizon.c:1331/1391)."),
+
+    # ---------------- Spy action valuation (W35 E35.1) -----------------
+    "spy_enabled": (
+        "S2", "mode", "direct", [("deep-spy-act", "")],
+        "off-switch for acting on deep's own spy prices: "
+        "deep_spy_manage() logs deep-spy-act only past the `if (!on) "
+        "continue;` gate (deepspy.c:448); the deep-spy census line "
+        "runs unconditionally and does not evidence this knob."),
+    "spy_gold_value": (
+        "S2", "mag", "direct", [("deep-spy-act", "kind=steal")],
+        "the steal-tech value is exactly "
+        "deep_spy_gold_worth(3*bulbs) (deepspy.c:139), so want= on a "
+        "kind=steal line is linear in this rate; the embassy kind "
+        "prices off embassy_science_value instead."),
+    "spy_sabotage_gain": (
+        "S2", "mag", "direct", [("deep-spy-act", "kind=sabotage")],
+        "want= on a kind=sabotage line is spy_sabotage_gain times the "
+        "target's shield stock or the improvement's build cost "
+        "(deepspy.c:226/235)."),
+
+    # ---------------- Trade route risk, love and partner-sparing (S4) -
+    "trade_ceasefire_peace_odds": (
+        "S4", "mag", "proxy", [("deep-trade-merit", "trunc>0")],
+        "the tail-recovery term deep_route_price() adds only when a "
+        "candidate's life was cease-fire-truncated (deeptrade.c:824-"
+        "826); trunc= counts truncated candidates seen this call, not "
+        "necessarily the one whose npv= is on the line, and the term "
+        "is exactly zero at the compiled odds=0.0 default regardless "
+        "of trunc."),
+    "trade_route_risk_gain": (
+        "S4", "mag", "direct", [("deep-trade-merit", "risk>0")],
+        "risk= is 1 - survival, and survival stays 1.0 (risk=0) unless "
+        "trade_route_risk_gain > 0.0 (deeptrade.c:1167-1173/1215)."),
+    "trade_route_love": (
+        "S4", "mag", "direct", [("deep-trade-love", "")],
+        "deep_trade_route_love() returns before reading a route when "
+        "trade_route_love <= 0.0 (deeptrade.c:413)."),
+    "trade_partner_target_discount": (
+        "S4", "mag", "direct", [("deep-leaders", "spared>0")],
+        "spared= is dp->trade_partner_spared, incremented only when "
+        "the discount actually multiplied a target's score "
+        "(deepops.c:2644-2645), which requires the knob > 0.0 to set "
+        "`spare` at all (deepops.c:2588)."),
+
+    # ---------------- Diplomacy pre-pass: PEACE and BALANCE -----------
+    "peace_seek_gain": (
+        "S1", "mag", "direct",
+        [("deep-peaceseek", ""), ("deep-peacetake", "")],
+        "deep_peace_seek() and the treaty-side accept both run only "
+        "when peace_seek_gain > 0.0 (deepdiplomacy.c:1446/1376); "
+        "bar= on deep-peaceseek is req_love_for_peace * (1 - gain)."),
+    "embassy_price_gain": (
+        "S1", "mag", "direct", [("deep-embassy", "")],
+        "deep_embassy_offer() and the treaty-side clause pricing both "
+        "run only when embassy_price_gain > 0.0 (deepdiplomacy.c:1457/"
+        "1395)."),
+    "embassy_give_gain": (
+        "S1", "mag", "direct", [("deep-embassy", "give=1")],
+        "worth= on a give=1 line is -embassy_price_gain * "
+        "embassy_give_gain * deep_embassy_leak_worth() "
+        "(deepdiplomacy.c:258-259); the give=0 (receiving) line does "
+        "not carry this gain at all."),
+    "leader_check_gain": (
+        "S2", "mag", "direct", [("deep-leaders", "applied>0")],
+        "applied= is dp->leader_bias_applied, incremented only when "
+        "leader_check_gain > 0.0 AND the target is the runaway leader "
+        "(deepops.c:2629-2632)."),
+
+    # ---------------- Endgame score mode and horizon credits (S1) -----
+    "endgame_horizon": (
+        "S1", "gate", "direct",
+        [("deep-endgame", "clamps>0"), ("deep-endgame", "missed>0")],
+        "clamps= (deep_horizon_turns()) and missed= (deep_arrives_in_"
+        "time()) both stay 0 unconditionally when endgame_horizon <= "
+        "0 (deephorizon.c:111/138)."),
+    "endgame_window": (
+        "S1", "mag", "direct",
+        [("deep-endgame", "refused>0"), ("deep-endgame", "paid>0")],
+        "deep_endgame_bias_buildings() returns before reading a city "
+        "unless deep_in_endgame_window() is true, which requires "
+        "endgame_window > 0 (deephorizon.c:162-164/1666)."),
+    "endgame_unfinished_gain": (
+        "S1", "mag", "direct", [("deep-endgame", "refused>0")],
+        "refused= counts the deflator branch (mult = "
+        "endgame_unfinished_gain) taking a want negative "
+        "(deephorizon.c:1690/1706); a no-op at the compiled default "
+        "1.0 (mult==1.0 is skipped, deephorizon.c:1697)."),
+    "endgame_wonder_gain": (
+        "S1", "mag", "direct", [("deep-endgame", "paid>0")],
+        "paid= counts the great-wonder premium branch (mult = "
+        "endgame_wonder_gain) taking a want up (deephorizon.c:1692/"
+        "1708); a no-op at the compiled default 1.0."),
+    "horizon_govcenter_weight": (
+        "S1", "mag", "direct", [("deep-govcenter", "")],
+        "deep-govcenter only logs when deep_govcenter_cities > 0, "
+        "which requires horizon_govcenter_weight > 0.0 "
+        "(deephorizon.c:891/1015)."),
+    "horizon_upkeepfree_weight": (
+        "S1", "mag", "direct", [("deep-upkeepfree", "")],
+        "deep-upkeepfree only logs when deep_upkeepfree_cands > 0, "
+        "which requires horizon_upkeepfree_weight > 0.0 "
+        "(deephorizon.c:1066)."),
+    "horizon_culture_weight": (
+        "S1", "mag", "direct", [("deep-culture", "")],
+        "deep_culture_credit() returns 0 before reading a city when "
+        "horizon_culture_weight <= 0.0 (deephorizon.c:1488)."),
+    "buy_per_gold": (
+        "S2", "gate", "-", None,
+        "switches deep_spend_gold()'s buy-list ranking from raw want "
+        "to want/buycost (deepdefence.c:5819); the resulting buy is "
+        "logged on deep-buy (shields=, the exact metric the ranking "
+        "is meant to move) but that line is emitted 'ungated so the "
+        "two ranking policies are comparable' (deepdefence.c:5956-"
+        "5958) -- no field on it says which comparator picked the "
+        "winner. Needs: a rank= or key= marker on deep-buy."),
+
+    # ---------------- Conquest culture and the gift/proxy levers ------
+    "conquest_culture_gain": (
+        "S2", "mag", "direct", [("deep-conqculture", "")],
+        "deep-conqculture only logs when deep_conq_culture_cands > 0, "
+        "which requires conquest_culture_gain > 0.0 (deepops.c:132/"
+        "145)."),
+    "gift_border_value": (
+        "S1", "mag", "direct", [("deep-gift", "")],
+        "deep_gift_probe() is called only when gift_border_value > "
+        "0.0 (deepdiplomacy.c:1449); border= on the line is pressure "
+        "times this rate."),
+    "gift_love_gain": (
+        "S1", "mag", "direct", [("deep-lovegift", "")],
+        "deep_love_gift() is called only when gift_love_gain > 0.0 "
+        "(deepdiplomacy.c:1453)."),
+    "proxy_arm_gain": (
+        "S1", "mag", "direct", [("deep-proxy", "")],
+        "deep_proxy_arm() is called only when proxy_arm_gain > 0.0 "
+        "(deepdiplomacy.c:1465); budget= on the line is pressure * "
+        "gift_border_value * this gain."),
+
+    # ---------------- S5: honesty (omniscience experiment flag) -------
+    "honest_info": (
+        "S1", "mode", "direct", [("deep-honest", "")],
+        "A STRUCTURAL EXPERIMENT FLAG (see its own comment, "
+        "deeptuning.h:1868), not an optimiser knob. deep-honest only "
+        "logs when imposed > 0, which requires honest_info > 0 "
+        "(deepai.c:559/580); see findings/omniscience-census-2026-08-"
+        "11.md."),
 }
 
 STAGE_NAME = {
