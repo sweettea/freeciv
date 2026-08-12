@@ -11072,3 +11072,161 @@ Run it with the machine idle:
   deep's survival gate fires *less* often than stock's flag would have,
   the expansion story in `findings/tech50-collapse-2026-08-10.md`
   needs revising again, not fixing.
+
+---
+
+## S5: the omniscience flag exists, and the census says it moves 1 read in 8 (2026-08-11)
+
+Two commits on `epic/s5-omniscience-flag`, cut from
+`epic/w03-horizon-content` @ `063a86bdf7`. Flag and census only, per the
+human's standing scope guard: no inference layer, no knowledge structs,
+no recon wants, no staleness projection, nothing fixed.
+
+### The flag
+
+`honest_info` (knob 209). `!= 0` ORs `H_MAP`, `H_FOG` and `H_TARGETS`
+onto a deep seat's own player, every phase, from
+`deep_impose_honest_info()` (`ai/deep/deepai.c:554-589`). Same shape as
+`pay_switch_penalty` with `H_PRODCHGPEN`: deep issues itself the
+handicap in its own hook, so **nothing in `ai/default`, `ai/baseline` or
+the server changes and no exemption is asked for**. Never CLEARS a bit,
+so 0 means "deep adds nothing", not "deep guarantees omniscience".
+
+Imposed BEFORE the forwarded `dai_data_phase_begin()`, because that call
+refreshes advisor data and `adv_data_phase_init()` gates its census on
+`H_TARGETS` and `map_is_known` (`advdata.c:426-446`) — imposing after
+would leave that census omniscient for the phase it was built in.
+
+`deep-honest` is edge-triggered on the phase that first imposes each bit
+on each seat. That is the execution evidence, and it exists because the
+40-game batch this project lost to an unverified switch is the reason
+the rule exists.
+
+**Compiled default 0.** A STRUCTURAL EXPERIMENT FLAG, not a tuning
+target — `1` is expected to make deep worse, and the census says in
+which direction.
+
+### The census — `findings/omniscience-census-2026-08-11.md`
+
+Re-taken at this HEAD. The 2026-08-04 census was read at `36bac91163`
+when `deepdefence.c` was 3.8k lines and is now 7.2k; **every line number
+in it had moved, and its findings had not**. Both recorded (§8) rather
+than bending code to the older document.
+
+    148   distinct UNGATED omniscient reads, 13 of deep's 19 .c files
+     19   information-handicap gates in ai/deep (18 H_MAP, 1 H_FOG, 0 H_TARGETS)
+    ~42   in the forwarded ai/default code (33 H_MAP, 8 H_FOG, 3 H_TARGETS)
+      9   in server/advisors/ (+1 in server/unittools.c)
+      6   visibility gates in deep that fire UNCONDITIONALLY today
+
+**The 70 gates and the 148 reads are disjoint sets. `honest_info` moves
+none of the 148.** That ratio is the headline and the reason the flag is
+an instrument rather than a fix.
+
+**The biggest omniscience surface is not `dai_war_desire`.** It is
+`deep_city_survival_core()` (`deepcombat.c:349-394`), which walks every
+at-war player's entire unit list with no visibility test of any kind and
+has **43 external call sites**. It gates ~14 subsystems on/off rather
+than scaling them. Consequence for the roadmap:
+honest-information §3's "read the fog-of-war model that has been sitting
+there the whole time" **undercounts — that model has no units in it**, so
+`known_force` is new PERSISTED deep state and §7's "save nothing and
+rebuild on load" needs a carve-out.
+
+**Prediction scorecard, statically checked:**
+
+- *"Settling stops"* — **half right, and the real shape is worse.**
+  `deepsite.c:589-598` zeroes an unknown catchment tile to `sum = -1` and
+  DROPS it, so `deep_growth_arrivals()` truncates the site's target size
+  as well as its yield. A monotone deflation strongest at the frontier,
+  feeding back into fewer settlers built. `deepexplore.c:176-178`'s
+  discovery term wakes in the same instant but the coupling is one-way:
+  exploration gets bought, and a partly-explored site still never scores
+  as if the unknown part might be good. **§5.4 priors are the missing
+  half and `deepsite.c` has no place to put them.**
+- *"Danger amnesia"* — **confirmed both ways.** `deepsettler.c:144-148`
+  is a verbatim port of `daiunit.c:3250-3254`: "Cannot see it: assume no
+  danger", with no memory, so the settler walks back into the tile it fled.
+- *"Targeting starvation"* — **falsified.** Deep's menus are already
+  gated on existence (`deepops.c:2612`, `:3475`, `deepdefence.c:5059`).
+  It is the PRICES behind them that are omniscient — the garrison
+  (`deepcombat.c:597`), the enemy's own `->worth` (`deepops.c:2620`), and
+  a per-turn re-read of the target garrison for the whole march
+  (`deepops.c:4258`).
+- *"Active self-harm, not stalls"* (2026-08-04 §0.3) — **confirmed, with
+  line numbers.** An unseen wave is `wave == 0` and 14 subsystems read 0
+  as safety: fear satisfaction discounts everything (`:1856`), the melt
+  disbands on `p_without == 1.0` (`:2198`), the entire counter-claim
+  relief system `continue`s (`:3228`), the deterrence dividend returns 0
+  (`:4150`).
+
+**Six comments claim a read is "observed" or "visible" where no
+visibility test exists** (§5), and `deepdefence.c:1901-1902` is
+load-bearing on a design decision — it cites the "OBSERVED wave" as the
+reason for skipping a stance multiplier. Listed so a future session does
+not believe them. One prior overclaim WAS retired correctly
+(`deepdefence.c:1164-1173` on `score.units` and the historian), which is
+the model.
+
+### Validation
+
+- `meson test -C build` **4/4** (incl. `baseline-frozen`).
+- `python3 benchmark/tune-audit.py` **CLEAN 209/209/209/209** (was 208).
+- **NO GAMES WERE RUN.** A tuning batch owned the machine.
+
+### PENDING PROOF — the identity gate this session could not take
+
+`honest_info = 0` must be byte-identical to the pre-change binary. Not
+proven. The next session with the machine runs, from the bench worktree
+with pinned binaries:
+
+```sh
+./benchmark/run.sh --quick --arms deep --config smoke \
+    --server <build-of-6fd2e6edc5>/freeciv-server
+./benchmark/run.sh --quick --arms deep --config isolated-150 \
+    --server <build-of-6fd2e6edc5>/freeciv-server
+# then the same two against a build of 063a86bdf7, and diff the scorelogs
+```
+
+10 smoke + 10 isolated-150 paired seeds, tuning=none, both arms deep.
+Expect 20/20 identical. The flag touches one `if` on a knob that
+defaults to 0, so a divergence means the phase-hook ordering change
+(imposition now precedes `dai_data_phase_begin`) is not inert and the
+commit needs revisiting.
+
+### QUEUED, and deliberately not started
+
+- **The runtime breakage census** — brief item 3 and its deliverable
+  `findings/omniscience-flag-breakage.md`. Everything in the scorecard
+  above is what the CODE says will happen, not what was observed. The run
+  wants `honest_info = 1` in isolated-150 plus one land cell, 10-20 paired
+  seeds each, `--arms deep` A/B on the tuning file, one pinned binary, and
+  instrumentation for melt events, assault formations vs actual garrisons,
+  foundings, explore fraction and losses. **Prove the ON state by
+  execution evidence: the `deep-honest` line must appear.** A crash is a
+  finding, not a session failure.
+- Everything in honest-information §5 (knowledge layer, staleness,
+  recon, priors, honest `dai_war_desire`). §7 of the census orders it by
+  what the evidence says is load-bearing: `known_force` first and largest,
+  `known_city` cheapest, §5.4 priors before any flag flip in site eval.
+- Stock's Tier-3 layer stays omniscient and stays untouched
+  (`dai_war_desire`, `daitech.c`, `daidata.c` — still 0 handicap checks,
+  re-verified). Already upstream bug candidates 11-14. **This means any
+  breakage the flag run measures is a LOWER BOUND** on what a genuinely
+  honest AI would suffer.
+
+### For the next session
+
+- **The flag's value is diagnostic and its cost is a score drop.** Do not
+  fold `honest_info = 1` into any cell, default or tuning blend. It is in
+  the ALL block only because `tune-audit.py` requires it there.
+- **`deepsite.c` never calls `map_get_player_tile()`** — not once, in
+  1306 lines. Even with the flag ON, every yield, resource and owner it
+  reads is the live value of a possibly-fogged tile. The (b)-category
+  substitutions in census §3.4 are mechanical and independent of
+  everything else in W04.
+- **`deepwonder.c:183-186` already built the seam** for a `known_city`
+  substitution and says so. It is the pattern the other consumers want —
+  but note the census correction: a remembered `vision_site` carries no
+  production and no shield stock, so that seam is category (c) and the
+  seam alone will not be enough.

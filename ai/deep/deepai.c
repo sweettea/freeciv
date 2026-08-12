@@ -524,11 +524,84 @@ static void deep_impose_switch_penalty(struct player *pplayer)
 }
 
 /**********************************************************************//**
+  Hand this seat the information handicaps no difficulty level gives it.
+
+  `H_MAP` and `H_FOG` are set at exactly one level -- `AI_LEVEL_AWAY`,
+  the "I am not playing this civ" mode -- and `H_TARGETS` stops at
+  `normal` (ai/difficulty.c:52-133). So at every level this project
+  benchmarks, deep sees the whole map, through all fog, and may target
+  anything. RC6 in 00-context.md is the consequence: a strategy layer
+  measured under omniscience is not being measured.
+
+  `honest_info != 0` ORs the three bits onto deep's own player, in
+  deep's own hook, exactly as `deep_impose_switch_penalty()` does with
+  H_PRODCHGPEN -- nothing in ai/default, ai/baseline or the server
+  changes, and no exemption is asked for.
+
+  Re-checked every phase rather than once, because `set_ai_level()` can
+  rewrite the whole handicap vector mid-game.
+
+  Never REMOVES a bit: an AWAY seat keeps the handicaps its level gave
+  it when the knob is off, so off means "deep adds nothing", not "deep
+  guarantees omniscience". The counter is therefore edge-triggered --
+  it counts the phase that first imposed each bit on each seat, which
+  is the execution evidence that the switch reached the player.
+
+  This closes the GATED sites only. Everything ungated stays
+  omniscient; the inventory is in
+  findings/omniscience-census-2026-08-11.md.
+**************************************************************************/
+static void deep_impose_honest_info(struct player *pplayer)
+{
+  bv_handicap *handicaps;
+  int imposed = 0;
+
+  if (deep_tuning_get()->honest_info <= 0
+      || is_human(pplayer)
+      || pplayer->ai_common.handicaps == NULL) {
+    return;
+  }
+
+  handicaps = (bv_handicap *) pplayer->ai_common.handicaps;
+
+  if (!has_handicap(pplayer, H_MAP)) {
+    BV_SET(*handicaps, H_MAP);
+    imposed++;
+  }
+  if (!has_handicap(pplayer, H_FOG)) {
+    BV_SET(*handicaps, H_FOG);
+    imposed++;
+  }
+  if (!has_handicap(pplayer, H_TARGETS)) {
+    BV_SET(*handicaps, H_TARGETS);
+    imposed++;
+  }
+
+  if (imposed > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-honest turn=%d player=\"%s\" imposed=%d"
+             " map=%d fog=%d targets=%d",
+             game.info.turn, player_name(pplayer), imposed,
+             has_handicap(pplayer, H_MAP) ? 1 : 0,
+             has_handicap(pplayer, H_FOG) ? 1 : 0,
+             has_handicap(pplayer, H_TARGETS) ? 1 : 0);
+  }
+}
+
+/**********************************************************************//**
   Call default ai with deep ai type as parameter.
 **************************************************************************/
 static void dpai_data_phase_begin(struct player *pplayer, bool is_new_phase)
 {
   struct ai_type *deftype = deep_ai_get_self();
+
+  /* Before the forwarded phase, not after: dai_data_phase_begin()
+   * refreshes the advisor data through adv_data_get(), and
+   * adv_data_phase_init() gates its continent/ocean and threat census
+   * on H_TARGETS and map_is_known (advdata.c:426-446). Imposing
+   * afterwards would leave that census omniscient for the whole phase
+   * it was built in. */
+  deep_impose_honest_info(pplayer);
 
   dai_data_phase_begin(deftype, pplayer, is_new_phase);
 
