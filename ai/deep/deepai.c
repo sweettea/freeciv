@@ -62,6 +62,7 @@
 #include "deepcombat.h"
 #include "deepdefence.h"
 #include "deepdiplomacy.h"
+#include "deepgov.h"
 #include "deepsettler.h"
 #include "deepsite.h"
 #include "deepspy.h"
@@ -798,14 +799,15 @@ static void dpai_build_adv_adjust(struct player *pplayer, struct city *wonder_ci
 }
 
 /**********************************************************************//**
-  Call default ai with deep ai type as parameter.
+  Deep's own government valuation (deepgov.c), which forwards to the
+  default AI's until its knob is moved.
 **************************************************************************/
 static void dpai_gov_value(struct player *pplayer, struct government *gov,
                           adv_want *val, bool *override)
 {
   struct ai_type *deftype = deep_ai_get_self();
 
-  dai_gov_value(deftype, pplayer, gov, val, override);
+  deep_gov_value(deftype, pplayer, gov, val, override);
 }
 
 /**********************************************************************//**
