@@ -3665,6 +3665,12 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
   rather than "does a stale counter exist anywhere in the world".
 
   expansion_war_survival <= 0 restores stock's behaviour exactly.
+  expansion_gate_enabled = 0 removes the gate altogether -- neither
+  deep's survival test nor stock's war-footing test is consulted and no
+  city ever stops expanding for war. That third arm exists because the
+  probe that priced deep's gate against stock's (+149/seed for deep;
+  findings/era-probe-evidence-2026-08-12.md S4) could not ask what a
+  world with no gate scores, there being no code path for it.
 **************************************************************************/
 /**********************************************************************//**
   Hulls that are genuinely SPARE, for damping the colony boat want.
@@ -3926,7 +3932,10 @@ int deep_idle_ferries_on(struct ai_type *ait, struct player *pplayer,
  * `mil` is the gate's second conjunct at the call site, so the
  * EFFECTIVE firing rate (blocked && mil > 0) is derivable from the
  * line rather than inferred. wave=-1 / surv=-1 mean the survival
- * model was never asked on this path.
+ * model was never asked on this path; wave=-2 means it never will be,
+ * because expansion_gate_enabled = 0 has removed the gate. The off
+ * arm still emits a line so that `stock_blocked` and the two wants
+ * keep pricing what the gate WOULD have cost on the same city-turns.
  *
  * Every value here is already computed by the decision it watches;
  * nothing is recomputed (deep_bid_log's rule). */
@@ -3960,6 +3969,11 @@ static bool deep_expansion_blocked(struct ai_type *ait,
   double surv;
   bool blocked;
 
+  if (tune->expansion_gate_enabled == 0) {
+    deep_expgate_log(pplayer, pcity, city_data, footing, -2, -1.0,
+                     tune->expansion_war_survival, FALSE);
+    return FALSE;
+  }
   if (tune->expansion_war_survival <= 0.0) {
     deep_expgate_log(pplayer, pcity, city_data, footing, -1, -1.0,
                      tune->expansion_war_survival, footing);

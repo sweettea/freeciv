@@ -176,6 +176,14 @@ MAP = {
         "knob's own branch -- the gate logs wave=-1 on the two paths "
         "that never reach the survival comparison, which is exactly "
         "where the knob is <= 0 or the empire is at peace."),
+    "expansion_gate_enabled": (
+        "S3", "mode", "direct", [("deep-expgate", "wave=-2")],
+        "the never-block arm of the gate (deepdefence.c, "
+        "deep_expansion_blocked()). Degenerate range: pinned per "
+        "experiment, never optimised. wave=-2 is its own branch -- the "
+        "gate logs it only when the knob is 0, and at the shipped "
+        "default 1 it never appears, so MODE with an empty live list is "
+        "the expected reading at defaults."),
     "worker_flee_radius": (
         "S3", "mag", "direct", [("deep-flee", "")],
         "deep-flee is emitted exactly when a worker flees "

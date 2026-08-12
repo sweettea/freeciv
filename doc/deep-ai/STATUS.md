@@ -11392,3 +11392,70 @@ horizon-of-shields is incommensurable with credits priced in citizens.
   fails on the old behaviour (verified by reverting the flag case in
   place). `python3 benchmark/tune-audit.py` **CLEAN 209/209/209/209**,
   unchanged: no knob was added.
+
+## EXPGATE: the never-block arm becomes askable (2026-08-12)
+
+One commit on `epic/expgate-never-block`, cut from
+`epic/w03-horizon-content` @ `1e201a3ffa`. A knob and its proof — **no
+A/B was run, and nothing here is a result about expansion.**
+
+### What was missing
+
+`deep_expansion_blocked()` (`ai/deep/deepdefence.c`) has had two regimes
+since it landed: `expansion_war_survival > 0` runs deep's survival gate,
+`<= 0` routes to stock's `dai_on_war_footing()`. No value meant *no gate
+at all*, so the question `findings/era-probe-evidence-2026-08-12.md` §4
+closed on — deep's gate is **+149/seed** better than stock's, but what
+does a world with **no** gate score? — had no code path.
+
+### The knob (210)
+
+**`expansion_gate_enabled`**, `int`, compiled default **1**.
+
+- `1` — both existing regimes, byte-for-byte as they were.
+- `0` — the gate is `FALSE` on every city-turn *whatever*
+  `expansion_war_survival` says; war never stops a city planning
+  settlers and workers.
+
+A separate switch rather than a third sentinel on the same `double`,
+because that double's two regimes **are** the meaning of every archived
+tuning file (`era-a-pv1.ini` omits it deliberately; `era-b-noexpgate.ini`
+pins it to `0.0`). None of them mention the new key, so none of them
+change meaning.
+
+Range in `tuning-params.ini` is degenerate (`1,1,1`), the `stance_forced`
+convention: an experiment-arm selector the tuner can never spend a
+sample on. Blocks G/ECON/ALL, where its neighbour
+`expansion_war_survival` already sits. `benchmark/tuning/expgate-off.ini`
+is the arm file.
+
+The off path still logs `deep-expgate`, with **`wave=-2`** extending the
+counter's negative-wave sentinel ("the survival model was not asked") to
+"and never will be". So the off arm keeps `stock_blocked` and both wants
+priced on the same city-turns, and `knobcensus.py` gets a single-field
+probe for the branch.
+
+### Proof
+
+- **Off-switch inert at default: 10/10 scorelogs BYTE-IDENTICAL**, 0
+  differ, 0 missing — 10 paired smoke seeds, identity tuning on both
+  sides, jobs 2, this worktree's binary against a `git archive` build of
+  `1e201a3ffa` (`benchmark/results/expgate-neverblock/{base,head}`).
+- **The branch is live, not dead code:** 2 smoke seeds with
+  `expgate-off.ini` give **1693 `deep-expgate wave=-2` lines/game**
+  against **0** at the default, same 1693 evaluations either way.
+- On smoke the two arms then play the *same game* (scorelogs identical,
+  both seeds) for the reason the ERA probe found: deep's gate fires on
+  ` blocked=1` **0** city-turns there, while `stock_blocked=1` on 24.
+  **The arm can only be priced on a war venue.**
+- `meson test -C build` **5/5 OK**; `python3 benchmark/tune-audit.py`
+  **CLEAN 210/210/210/210** (base 209).
+
+### What it contributes
+
+The third arm of the gate comparison: **deep's gate / stock's gate / no
+gate**. It is deliberately unrun here — per CLAUDE.md's *parallelise
+scheduling, not attribution*, the never-block corner belongs to the
+tech-50 factorial the orchestrator schedules, where it is the
+`expansion_gate_enabled = 0` cell against arm A (deep's gate) and arm B
+(`expansion_war_survival = 0.0`, stock's gate).
