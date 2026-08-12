@@ -637,9 +637,10 @@ double deep_take_odds_at_arrival(const struct civ_map *nmap,
   Both inherit every assumption the substrate ships with, stated in
   findings "Combat workstream epic 1": one wave, no healing, no
   promotion, no reinforcement between duels, military garrison only,
-  observed units only, and the 32/16 computational caps -- a stream
-  longer than 32 is priced on its 32 strongest, and the rest are
-  charged nothing.
+  an omniscient read with no visibility test of any kind (RC6; see
+  findings/omniscience-census-2026-08-11.md S5), and the 32/16
+  computational caps -- a stream longer than 32 is priced on its 32
+  strongest, and the rest are charged nothing.
 **************************************************************************/
 double deep_take_odds_cost(const struct civ_map *nmap, struct city *acity,
                            struct unit *const *stream, int n_stream,

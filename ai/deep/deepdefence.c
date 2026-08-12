@@ -1772,9 +1772,12 @@ static void deep_apply_garrison_floor(const struct civ_map *nmap,
   sum sits at parity when the garrison is rated equal to the wave, but
   surviving the wave means winning every duel in it, and that
   compounds down (deepodds.c). When the computed survival odds fall
-  short of the target, the shortfall funds extra defence -- from
-  observed units only; the anticipatory fear terms keep covering what
-  cannot be seen. log_it is set by the once-per-turn caller so the
+  short of the target, the shortfall funds extra defence against the
+  wave deepcombat.c assembles from aplayer->units with no visibility
+  test (an omniscient read, RC6; findings/omniscience-census-2026-08-
+  11.md S5), not from units actually observed; the anticipatory fear
+  terms keep covering threats that have not yet materialized into
+  that wave. log_it is set by the once-per-turn caller so the
   deep-surv distribution counts each city once.
 **************************************************************************/
 static unsigned int deep_survival_deficit_fear(const struct civ_map *nmap,
@@ -1898,8 +1901,11 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
     city_data->danger += (unsigned int) (shadow * updisc * sat * fmult);
     city_data->danger += (unsigned int) (density * updisc * sat * fmult);
     city_data->danger += (unsigned int) (barb * updisc * sat * fmult);
-    /* NOT scaled: the survival deficit prices an OBSERVED wave, and
-     * the garrison floor below is the floor gate 1 scales toward. */
+    /* NOT scaled: the survival deficit is the floor gate 1 scales
+     * anticipation TOWARD, not below -- same as the garrison floor
+     * below. The wave itself is an omniscient read of aplayer->units
+     * with no visibility test (RC6), not an OBSERVED one; see
+     * findings/omniscience-census-2026-08-11.md S5. */
     city_data->danger
       += deep_survival_deficit_fear(&(wld.map), pcity, updisc, TRUE);
     credit = deep_incoming_defence_credit(ait, pcity)
@@ -2605,8 +2611,12 @@ static void deep_hold_tired_attackers(struct ai_type *ait,
     pdefender = get_defender(nmap, punit, punit->goto_tile, NULL);
     if (pdefender == NULL
         || !pplayers_at_war(pplayer, unit_owner(pdefender))) {
-      /* Nothing (visible) to duel: a walk-in capture needs no rest,
-       * and a stale mission is the manager's to re-decide. */
+      /* Nothing to duel: get_defender() above has no visibility test
+       * at all (an omniscient read, RC6; findings/omniscience-census-
+       * 2026-08-11.md S5), so "nothing" means the tile is genuinely
+       * empty or its occupant is not at war with us, never merely
+       * unseen. A walk-in capture needs no rest, and a stale mission
+       * is the manager's to re-decide. */
       continue;
     }
     chance = unit_win_chance(nmap, punit, pdefender, NULL);
@@ -4156,15 +4166,20 @@ static void deep_birth_census(struct player *pplayer)
   than reimplemented.
 
   The honest price of ONE MORE defender is marginal, so it is priced
-  marginally: run the chained-duel model against the observed wave
-  twice, once with a virtual unit of the candidate type standing in
-  the city and once without, and take the difference in expected
-  attacker shields destroyed. The tile-aware get_total_defense_power()
-  seam (deepcombat.c:174) is inside that read, which is what makes
-  "behind walls" arithmetic rather than rhetoric: the same musket
-  prices higher in a walled city because its duels really are better.
+  marginally: run the chained-duel model against the wave twice (an
+  omniscient read with no visibility test -- RC6, findings/
+  omniscience-census-2026-08-11.md S5), once with a virtual unit of
+  the candidate type standing in the city and once without, and take
+  the difference in expected attacker shields destroyed. The tile-
+  aware get_total_defense_power() seam (deepcombat.c:174) is inside
+  that read, which is what makes "behind walls" arithmetic rather
+  than rhetoric: the same musket prices higher in a walled city
+  because its duels really are better.
 
-  Times the observed attack pressure -- deep_garrison_menace(), the
+  Times the attack pressure deep_garrison_menace() reads from
+  aplayer->score.units -- an omniscient read of the rival's own score
+  field with no visibility test of any kind (RC6; findings/
+  omniscience-census-2026-08-11.md S5), not anything observed -- the
   same 0..1 read the garrison floor is already sized by, so the term
   that insures against a threat and the term that prices killing it
   agree about how much threat there is.
