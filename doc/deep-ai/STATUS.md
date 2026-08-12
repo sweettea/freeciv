@@ -11459,3 +11459,172 @@ scheduling, not attribution*, the never-block corner belongs to the
 tech-50 factorial the orchestrator schedules, where it is the
 `expansion_gate_enabled = 0` cell against arm A (deep's gate) and arm B
 (`expansion_war_survival = 0.0`, stock's gate).
+## ERA phase 3a: the marginal garrison draft is FALSIFIED and score-null (2026-08-12)
+
+Branch `epic/era-3a-massing`, based at `046c662b5d`. Four commits.
+**Verdict: `op_draft_marginal` stays 0.** The mechanism does not do
+what the evidence document predicted, and the score says nothing.
+
+### What landed
+
+- `a4e0854d0d` — **expgate counter varargs fix.** `choice.want` is an
+  `adv_want` (float) and was passed to `%d`, so every conversion after
+  it shifted: `mil=` was carrying `city_size_get()` and `size=` was
+  uninitialised stack. Fields ahead of `mil` were sound, which is why
+  the probe's gate numbers stand; what was lost was the gate's second
+  conjunct. Format-only, no behavioural effect.
+- `0a168de0da` — **the 3c instrument** (evidence doc §6 item 3c, which
+  says instrument before touching). `deep-wave` now carries
+  `far_dist` / `far_turns` / `pf_turns`: the pathfinder's turn estimate
+  for the furthest qualifying attacker, beside that same unit's
+  straight-line verdict. One `pf_map_new()` per survival evaluation,
+  metric-log gated. `pf_turns = -1` means unreachable.
+- `35afc4c2b5` — **the 3a mechanism** behind `op_draft_marginal`
+  (default 0 = the old absolute floor). Registered in all four audit
+  places; `tune-audit.py` CLEAN at 210 fields. Arm A' file is
+  `benchmark/tuning/era-a1-draftmarginal.ini`.
+- `3fc1b18e40` — **CLAUDE.md hard-rules change, authorised by the
+  human this session.** The epic budget is now "at most one epic **per
+  subagent session**", and "never rebuild while a benchmark is in
+  flight" became "**always pin the binary** for a benchmark in
+  flight". The old wording was stricter than the invariant it
+  protected: what taints a run is later games execing a different
+  binary at the pinned path, so a build that cannot reach that path
+  cannot taint anything. This is what makes concurrent epics legal —
+  each worker needs its own worktree, `build/`, `--server` path and
+  port block. Read it before writing the next brief.
+
+### Off-switch proof
+
+10 paired smoke seeds, identity tuning, this build against a
+`git archive` build of `046c662b5d`: **10/10 scorelogs BYTE-IDENTICAL**,
+0 differ, 0 missing. All three code commits are inert at knob 0.
+
+Second, independent confirmation: arm A's seeds 1–8 reproduce the
+2026-08-11 probe's arm A **exactly** (−4, −204, −151, −204, +189,
+−398, −398, −468).
+
+### The A/B — pre-registered, tech50war-200 mixed, 16 seeds each arm
+
+Harness objective (`tune.py` `mixed_sides`: final turn, seats by
+`P<n>` parity, civil-war splinters excluded):
+
+| arm | knob | mean paired diff |
+|---|---|---|
+| A (control) | `op_draft_marginal = 0` | **−293.4**/seed |
+| A′ | `op_draft_marginal = 1` | **−241.1**/seed |
+
+Paired over all 16 common seeds: **A′ − A = +52.3, sd 296, se 74,
+t = +0.71, A′ wins 5/16.** **Score-null.** (An interim read on the 15
+complete seeds gave +56.9, sd 306, se 79, t +0.72, 5/15 — same
+verdict.) Both arms remain far below baseline; nothing here closes the
+tech-50 gap.
+
+### The pre-registered scorecard — 4 of 6 fail, and the proximate output moves BACKWARDS
+
+| counter | prediction | arm A | arm A′ | verdict |
+|---|---|---:|---:|---|
+| `pool = 0` share of refusals | falls from 44% | 44.9% | 43.4% | flat |
+| mean pool, t>130 | rises toward 8 | 2.74 | **2.61** | **FELL** |
+| odds histogram, exactly 0 | mass leaves | 83.5% | **84.7%** | **did not move** |
+| `deep-op form` | rises | 396 | 495 | rose (+25%) |
+| `deep-op strike` | rises | 87 | 128 | rose (+47%) |
+| scorelog `units_killed` | rises toward 5721 | 4338 | 4364 | flat |
+| **mean `drafted`/attempt** | (the thing changed) | **0.30** | **0.22** | **FELL** |
+
+The forms/strikes rise cannot be credited to the draft: `drafted` fell,
+the pool fell, and the odds histogram did not move, so by the time the
+arms' games have diverged those counts are measuring different worlds,
+not a bigger wave. **The evidence doc's own falsification condition —
+"if the pool rises and the odds histogram does not move, 3a is wrong
+and 3b is the whole story" — is met in a sharper form: the pool did not
+even rise.**
+
+### WHY it fails, and why this was derivable before the arm was run
+
+The release test is `gain > cost`, where `gain` is the increment in
+whole-pool take-odds from appending one blade. Arm A, refusals with a
+non-empty pool:
+
+| pool | refusals | P(odds > 0) | mean odds | P(>0 \| def_n ≤ 1) |
+|---:|---:|---:|---:|---:|
+| 1 | 3391 | **5.4%** | 0.003 | 12.5% |
+| 2 | 2813 | 9.3% | 0.010 | 25.9% |
+| 3 | 1549 | 11.6% | 0.012 | 36.0% |
+| 4 | 1275 | 21.5% | 0.020 | 57.1% |
+| 6 | 636 | 30.0% | 0.030 | 91.4% |
+| 8 | 342 | 46.8% | 0.065 | 97.3% |
+
+**At pool = 1 the blade's take-probability contribution is exactly zero
+94.6% of the time.** So `gain = 0`, `cost ≥ 0`, and the marginal test
+refuses — *harder* than the absolute floor it replaced, which is why
+`drafted` fell 0.30 → 0.22. A per-blade marginal criterion cannot
+bootstrap a pool whose first four blades are individually worth
+nothing; the gradient only switches on around pool 6–8, and mean odds
+even at pool 8 is 0.065 against a 0.65 bar.
+
+This is a **threshold nonlinearity, not a mis-set comparison**. Only a
+criterion that evaluates a *set* of blades, or accumulates across
+turns, can cross it. That is `DEEP_OP_MUSTER` — see
+`sessions/S-ERA-3b-muster.md`, which now carries the brief and the
+human's Gunpowder doctrine. **Note its success metrics are exchange
+ratio / cities / score, NOT formation counts** — this epic is the
+reason: forms rose 25% here while nothing real improved.
+
+Nuance worth keeping: against weak targets (`def_n ≤ 1`) the gradient
+does exist (12.5% → 91.4% from pool 1 to 6). A marginal test is not
+wrong in general; it is null against the tech-50 garrisons that
+dominate this venue.
+
+### 3c — the instrument fired, and the reading is large
+
+`deep-wave` on tech50war-200 (arm A, 4 games, 69 336 evaluations):
+
+| phase | rows | pf unreachable | pf slower | mean gap | d ≥ 12 unreachable |
+|---|---:|---:|---:|---:|---:|
+| all | 69 336 | **19.1%** | **25.6%** | +0.70 | 16.8% |
+| t<60 | 8 495 | 21.6% | 31.3% | +0.79 | 22.1% |
+| t60–130 | 29 820 | 16.7% | 27.8% | +0.80 | 14.5% |
+| t>130 | 31 021 | 20.6% | 21.9% | +0.57 | 18.3% |
+
+The pathfinder **never** disagrees in the other direction (0.0%
+faster). So ~45% of survival evaluations are shaped by a furthest
+attacker that either cannot arrive at all or arrives later than the
+straight-line test assumed. Nothing was changed — this is the
+observation the evidence doc asked for before anyone touches
+`deepcombat.c:443`.
+
+### Next experiment: the 3a × 3c factorial
+
+3a and 3c are on **one causal chain** — 3c inflates `n_att`, which
+depresses survival, which pins blades at `AIUNIT_DEFEND_HOME`, which
+starves the pool 3a was trying to fill. Two independent A/Bs cannot
+attribute them. The scheduled experiment is a **2×2 over
+`op_draft_marginal` × the 3c reach knob**, 4 arms × 32 games on
+tech50war-200. The live hypothesis is that 3a is null *because* 3c is
+upstream of it: a marginal test may have a gradient once survival stops
+being depressed by attackers that cannot arrive. A sequential pair
+would read that as "3a is dead" and drop it — this epic is the first
+half of exactly that mistake, and the factorial is what prevents the
+second half. `epic/era-3c-reach` is in flight in its own worktree.
+
+Cross-reference: `sessions/S-NETTHREAT-offense-as-defense.md` was
+updated with a promoted attacker-garrison-credit item and a new
+hole-covering rearrangement item that **shares the 3a cost-side seam**
+(`deep_city_stack_survival()` minus `_without()`). That seam is landed
+and inert here; it does not need rebuilding there.
+
+### For the next session
+
+- **`op_draft_marginal` stays 0.** The code is landed, proven inert,
+  and is one arm of the factorial. Do not enable it standalone.
+- **Do not schedule `op_take_target`.** No gradient exists while 84.5%
+  of consulted refusals sit at 0.000; it becomes tunable only after
+  massing moves, which is sequencing, not backlog.
+- **The expansion gate's "never block" mode still does not exist**
+  (`<= 0` means "use stock's"). §4's open question remains unaskable
+  until someone adds the setting. Small epic, unassigned.
+- **The sea clause is untested, not harmless.** `by_sea = 0` is a fact
+  about 32×32 tech50war-200, not about the clause, which has no
+  distance bound beyond `horizon × move_rate`. It needs a **naval
+  venue** before it can be asked at all. Unassigned.

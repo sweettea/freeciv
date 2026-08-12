@@ -29,6 +29,10 @@
 #include "unitlist.h"
 #include "unittype.h"
 
+/* common/aicore */
+#include "path_finding.h"
+#include "pf_tools.h"
+
 /* server/advisors */
 #include "advgoto.h"
 
@@ -322,6 +326,13 @@ struct deep_wave_census {
   int n_qual;
   int max_dist;
   int max_turns;
+  /* The furthest qualifying attacker itself, and ITS OWN
+   * straight-line verdict -- max_turns is the max over the whole
+   * wave and generally belongs to a different, slower unit, so the
+   * two are not a comparable pair. far_* is the pair. */
+  const struct unit *far_unit;
+  int far_dist;
+  int far_turns;
 };
 
 /**********************************************************************//**
@@ -336,6 +347,35 @@ struct deep_wave_census {
   the reachability test has NO distance bound beyond horizon x
   move_rate, which for anything moving 6 exceeds the diameter of a
   32x32 torus. max_dist and by_sea are what settle it.
+
+  THE PATHFINDER'S OPINION (ERA 3c instrument). The census above
+  measured the reach and the 2026-08-12 probe priced it: by t>130,
+  58.1% of survival verdicts include an attacker at least 12 tiles
+  away, admitted by `real_map_distance / move_rate` with no terrain
+  cost, no ZOC, no fog and no pathfinder. That is a candidate cause of
+  deep's over-fearfulness -- but the probe showed only the REACH, not
+  that the reach is wrong, and the evidence document is explicit that
+  guessing here is the failure mode 00-context.md section 5 names.
+  So: measure the gap before touching the test.
+
+  `pf_turns` is the pathfinder's own turn count for the SINGLE
+  furthest qualifying attacker, on the same attack parameter
+  find_something_to_kill() uses (daiunit.c:603), against `far_turns`,
+  that same unit's straight-line verdict. -1 means the pathfinder says
+  the tile is unreachable at all -- the strongest possible form of the
+  gap, and the one worth counting.
+
+  COST, stated plainly: this is one pf_map_new() per survival
+  evaluation, and survival evaluation is the hottest routine deep has
+  (437 440 calls over 32 probe games). A pf map for every qualifying
+  attacker -- the reading that would let the gap be attributed per
+  route -- is 4.8x that and was not affordable. One map for the
+  furthest attacker is, because the furthest attacker is exactly the
+  one the 3c question is about, and because pf_map_position() stops
+  expanding when it reaches the city rather than filling the map.
+  Even so the call is gated on the metric log level, the same way
+  deep_opodds_log()'s defence census is: under FREECIV_DEEP_QUIET a
+  tuning run pays nothing at all.
 **************************************************************************/
 static void deep_wave_log(const struct city *pcity, int horizon,
                           int n_att, int n_def,
@@ -344,10 +384,30 @@ static void deep_wave_log(const struct city *pcity, int horizon,
                           const struct deep_wave_census *census,
                           double surv)
 {
+  int pf_turns = -1;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+  if (census->far_unit != NULL) {
+    struct pf_parameter parameter;
+    struct pf_map *pfm;
+    struct pf_position pos;
+
+    pft_fill_unit_attack_param(&parameter, &(wld.map),
+                               (struct unit *) census->far_unit);
+    pfm = pf_map_new(&parameter);
+    if (pf_map_position(pfm, city_tile(pcity), &pos)) {
+      pf_turns = pos.turn;
+    }
+    pf_map_destroy(pfm);
+  }
+
   log_base(deep_metric_log_level(),
            "deep-wave turn=%d player=\"%s\" city=%d n_att=%d n_def=%d"
            " capped=%d by_land=%d by_sea=%d by_air=%d by_transport=%d"
            " max_att=%d max_dist=%d max_turns=%d horizon=%d"
+           " far_dist=%d far_turns=%d pf_turns=%d"
            " def_best=%d surv=%.3f",
            game.info.turn, player_name(city_owner(pcity)), pcity->id,
            n_att, n_def, census->n_qual > n_att ? 1 : 0,
@@ -355,6 +415,7 @@ static void deep_wave_log(const struct city *pcity, int horizon,
            census->by_transport,
            n_att > 0 ? att[0].rating : 0,
            census->max_dist, census->max_turns, horizon,
+           census->far_dist, census->far_turns, pf_turns,
            n_def > 0 ? def[0].rating : 0, surv);
 }
 
@@ -376,7 +437,7 @@ static double deep_city_survival_core(const struct civ_map *nmap,
   Continent_id home = tile_continent(ctile);
   bool coastal = is_terrain_class_near_tile(nmap, ctile, TC_OCEAN);
   int n_air = 0;
-  struct deep_wave_census census = { 0, 0, 0, 0, 0, 0, 0 };
+  struct deep_wave_census census = { 0, 0, 0, 0, 0, 0, 0, NULL, 0, 0 };
 
   if (wave_out != NULL) {
     *wave_out = 0;
@@ -460,6 +521,14 @@ static double deep_city_survival_core(const struct civ_map *nmap,
       census.n_qual++;
       census.max_dist = MAX(census.max_dist, dist);
       census.max_turns = MAX(census.max_turns, turns);
+      /* Keep the furthest qualifying attacker itself, so the ERA 3c
+       * instrument can ask the pathfinder about the SAME unit whose
+       * straight-line verdict admitted it. */
+      if (census.far_unit == NULL || dist > census.far_dist) {
+        census.far_unit = aunit;
+        census.far_dist = dist;
+        census.far_turns = turns;
+      }
       deep_combatant_add(att, &n_att, DEEP_WAVE_MAX, aunit, rating);
     } unit_list_iterate_end;
   } players_iterate_alive_end;

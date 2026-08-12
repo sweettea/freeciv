@@ -3937,6 +3937,17 @@ int deep_idle_ferries_on(struct ai_type *ait, struct player *pplayer,
  * arm still emits a line so that `stock_blocked` and the two wants
  * keep pricing what the gate WOULD have cost on the same city-turns.
  *
+ * `mil` is choice.want, an adv_want, i.e. a FLOAT
+ * (common/fc_types.h). It takes a float conversion, and it was given
+ * %d: the promoted double travels in a different register class from
+ * the integers, so that conversion consumed the NEXT integer argument
+ * and every conversion after it shifted by one. The 2026-08-12 era
+ * probe caught it -- `mil` was carrying city_size_get() and `size`
+ * was carrying uninitialised stack
+ * (findings/era-probe-evidence-2026-08-12.md, section 5). Every field
+ * ahead of `mil` was sound; the gate's second conjunct was
+ * unobservable for the whole probe.
+ *
  * Every value here is already computed by the decision it watches;
  * nothing is recomputed (deep_bid_log's rule). */
 static void deep_expgate_log(struct player *pplayer,
@@ -3948,7 +3959,7 @@ static void deep_expgate_log(struct player *pplayer,
   log_base(deep_metric_log_level(),
            "deep-expgate turn=%d player=\"%s\" city=%d footing=%d"
            " wave=%d surv=%.3f thresh=%.2f blocked=%d stock_blocked=%d"
-           " founder=%d worker=%d mil=%d size=%d",
+           " founder=%d worker=%d mil=%.1f size=%d",
            game.info.turn, player_name(pplayer), pcity->id,
            footing ? 1 : 0, wave, surv, thresh, blocked ? 1 : 0,
            footing ? 1 : 0, city_data->founder_want,

@@ -3097,6 +3097,9 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
   int required = 0, drafted = 0;
   int n, i, eta;
   bool overseas;
+  /* ERA 3a: the garrison draft's release test. 0 = the absolute
+   * survival_target floor this function shipped with. */
+  bool marginal_draft = tune->op_draft_marginal > 0;
   double bar;
   /* The best take-probability any prefix of the pool reached. Kept
    * from the scoring loop's own returns -- never a second call. */
@@ -3266,7 +3269,8 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
       break;
     }
   }
-  if (required == 0 && tune->survival_target > 0.0) {
+  if (required == 0
+      && (marginal_draft || tune->survival_target > 0.0)) {
     /* Garrison draft (T160 forensics): when the free pool cannot
      * clear the bar, borrow from the walls -- one sparable blade per
      * city, weakest defender first, and only where the city still
@@ -3274,7 +3278,35 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
      * honesty gate the sorties use, pointed at reconquest: a nation
      * whose whole army is DEFEND_HOME infantry can still claim the
      * empty city two tiles away. Drafted blades are ordinary members
-     * -- claimed, marched, re-gated, banked on dissolve. */
+     * -- claimed, marched, re-gated, banked on dissolve.
+     *
+     * THE MARGINAL RELEASE (ERA 3a, op_draft_marginal = 1). The
+     * absolute floor above was measured over 11 232 formation
+     * attempts and it is what starves the pool: the draft fires on
+     * 19.4% of attempts and adds 0.28 units, because only 39.9% of
+     * survival reads clear survival_target at all, while 44% of
+     * attempts reach the odds model with NOTHING in the pool
+     * (findings/era-probe-evidence-2026-08-12.md section 1). A floor
+     * asks "is this city safe enough to lend", which refuses hardest
+     * exactly where the blade is worth least -- in a city already so
+     * pressed that one more defender does not save it.
+     *
+     * The comparison replaces the floor with the trade the decision
+     * actually is: the survival the blade COSTS its own city against
+     * the take-probability it BUYS the operation. Both are
+     * probabilities already on hand -- survival with the blade minus
+     * survival without it, whole-pool odds with the blade appended
+     * minus whole-pool odds without -- so nothing is invented and no
+     * scale sits between them. A city that holds fine without the
+     * blade pays almost nothing and lends; a city the blade genuinely
+     * saves prices its own survival above any odds an assault can
+     * offer and keeps it. `held` is carried across the loop, so each
+     * blade is priced against the pool the previous ones already
+     * built. */
+    double held = (marginal_draft && n > 0)
+                  ? deep_take_odds_at_arrival(nmap, target, pool, n, eta)
+                  : 0.0;
+
     city_list_iterate(pplayer->cities, pcity) {
       struct unit *weak = NULL;
 
@@ -3300,11 +3332,28 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
           weak = u;
         }
       } unit_list_iterate_end;
-      if (weak != NULL
-          && deep_city_stack_survival_without(nmap, pcity,
-                                              tune->survival_horizon,
-                                              weak, NULL)
-             >= tune->survival_target) {
+      if (weak == NULL) {
+        continue;
+      }
+      if (marginal_draft) {
+        double cost = deep_city_stack_survival(nmap, pcity,
+                                               tune->survival_horizon, NULL)
+                      - deep_city_stack_survival_without(nmap, pcity,
+                                                         tune->survival_horizon,
+                                                         weak, NULL);
+        double with;
+
+        pool[n] = weak;
+        with = deep_take_odds_at_arrival(nmap, target, pool, n + 1, eta);
+        if (with - held > cost) {
+          n++;
+          drafted++;
+          held = with;
+        }
+      } else if (deep_city_stack_survival_without(nmap, pcity,
+                                                  tune->survival_horizon,
+                                                  weak, NULL)
+                 >= tune->survival_target) {
         pool[n++] = weak;
         drafted++;
       }
