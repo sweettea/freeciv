@@ -12402,3 +12402,28 @@ and is not this epic's.
    with the reason recorded above: `naval_bonus()` is a coastal YIELD
    term, not an option on shipping, so gating it on navigability
    prices out real food. Nothing to do; the rider is closed.
+
+## The 3a×3c factorial: honest reach is the first confirmed tech-50 fix (2026-08-12)
+
+Four cells, 16 mirrored seeds each, tech50war-200, one pinned
+post-merge binary (cells c00/c10 reproduced the era-3a arms exactly —
+the day's eleven merged epics are byte-inert at defaults).
+
+    cell means   draft off   draft on
+    reach off      -293.4     -241.1
+    reach on       -236.2     -154.4
+
+    reach main   +71.9  se 28  t +2.58  13/16 seeds   <- CONFIRMED
+    draft main   +67.1  se 59  t +1.13   7/16
+    interaction  +14.8  se 23  t +0.65   8/16
+    c11 vs c00  +138.9  se 77  t +1.81   9/16
+
+Verdicts: survival_pf_reach is the first statistically solid
+mechanism win against the collapse and is fold-ready pending an
+econ-venue guard (its effect on peaceful venues is presumed ~0 but
+unmeasured). op_draft_marginal's revival under honest reach is
+directionally supported (+81.8, t +1.60, vs +52 without) but the
+interaction term is noise; the draft stays 0 and MUSTER (3b,
+S-ERA-3b-muster.md) builds against the c11 baseline. Even both-on
+loses -154/seed: the remaining gap belongs to 3b, the sortie lean,
+MOVETYPE's honest naval pricing, and the finale's fear recalibration.
