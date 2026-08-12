@@ -348,6 +348,7 @@ else
       'ai/deep/deepcombat.c',
       'ai/deep/deepdefence.c',
       'ai/deep/deepdiplomacy.c',
+      'ai/deep/deepeffects.c',
       'ai/deep/deepexplore.c',
       'ai/deep/deephorizon.c',
       'ai/deep/deepodds.c',
@@ -1729,6 +1730,18 @@ test('deepattrition',
                 'ai/deep/deepodds.c',
                 include_directories: include_directories('ai/deep'),
                 dependencies: m_dep,
+                install: false))
+# The candidate-aware effect accessor is common/'s own requirement
+# evaluator with one test changed, so it is checked against a real
+# ruleset cache: this one links libfreeciv too.
+test('deepeffects',
+     executable('deepeffects_test',
+                'tests/deepeffects_test.c',
+                'ai/deep/deepeffects.c',
+                sources: [verhdr, specenum],
+                include_directories: [common_inc,
+                                      include_directories('ai/deep')],
+                link_with: common_lib,
                 install: false))
 # The tuning loader needs the registry, so this one links libfreeciv.
 test('deeptuning',
