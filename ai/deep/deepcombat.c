@@ -436,6 +436,23 @@ struct deep_wave_census {
    * ones that reached MARCH or STRIKE. Nothing acts on either. */
   int net_pinned;
   int net_marching;
+  /* THE SEA ARM'S OWN REACH (2026-08-12). Until the move-type fix the
+   * sea arm admitted nothing at all, so the standing worry that it has
+   * no distance bound beyond horizon x move_rate was deferred as
+   * "deferred, not dead". It is live now, and on the venue it matters
+   * on it is not a bound: a destroyer moves 6 against a horizon of 3,
+   * which admits 18 tiles, and a 32x32 torus is 16 tiles across.
+   *
+   * A tighter bound would be a new constant, which rule 7 forbids
+   * without a measurement -- so MEASURE it. `sea_max_dist` is the
+   * furthest sea-arm admission this evaluation saw; `sea_far` counts
+   * the ones further away in TILES than the horizon is in TURNS, i.e.
+   * the population admitted only because the unit moves more than one
+   * tile per turn. Both are free by-products of the loop, neither
+   * changes a decision, and together they say what a bound would
+   * remove before anyone picks one. */
+  int sea_max_dist;
+  int sea_far;
 };
 
 /**********************************************************************//**
@@ -446,10 +463,12 @@ struct deep_wave_census {
   versus one caused by a reach radius that admits a distant fleet (the
   horizon, or the sea clause below, is wrong). The 2026-08-11 forensics
   spot-checked this from the aggregate `wave=` field alone and read it
-  as small waves of local units -- but the UMT_SEA && coastal arm of
-  the reachability test has NO distance bound beyond horizon x
-  move_rate, which for anything moving 6 exceeds the diameter of a
-  32x32 torus. max_dist and by_sea are what settle it.
+  as small waves of local units -- but the sea && coastal arm of the
+  reachability test has NO distance bound beyond horizon x move_rate,
+  which for anything moving 6 exceeds the diameter of a 32x32 torus.
+  max_dist and by_sea are what settle it, and since the move-type fix
+  made that arm live, sea_far and sea_max_dist say how much of it a
+  bound would actually remove.
 
   THE PATHFINDER'S OPINION (ERA 3c instrument). The census above
   measured the reach and the 2026-08-12 probe priced it: by t>130,
@@ -509,6 +528,7 @@ static void deep_wave_log(const struct city *pcity, int horizon,
   log_base(deep_metric_log_level(),
            "deep-wave turn=%d player=\"%s\" city=%d n_att=%d n_def=%d"
            " capped=%d by_land=%d by_sea=%d by_air=%d by_transport=%d"
+           " sea_far=%d sea_max_dist=%d"
            " max_att=%d max_dist=%d max_turns=%d horizon=%d"
            " far_dist=%d far_turns=%d pf_turns=%d"
            " net_pinned=%d net_marching=%d launch=%.3f"
@@ -517,6 +537,7 @@ static void deep_wave_log(const struct city *pcity, int horizon,
            n_att, n_def, census->n_qual > n_att ? 1 : 0,
            census->by_land, census->by_sea, census->by_air,
            census->by_transport,
+           census->sea_far, census->sea_max_dist,
            n_att > 0 ? att[0].rating : 0,
            census->max_dist, census->max_turns, horizon,
            census->far_dist, census->far_turns, pf_turns,
@@ -545,7 +566,7 @@ static double deep_city_survival_core(const struct civ_map *nmap,
   int n_air = 0;
   const struct deep_tuning *tune = deep_tuning_get();
   struct deep_wave_census census = { 0, 0, 0, 0, 0, 0, 0, NULL, 0, 0,
-                                     0, 0 };
+                                     0, 0, 0, 0 };
   /* NETTHREAT item 1's instrument: the enemy cities our own operations
    * point at, gathered once per evaluation. Empty for a player with no
    * live operation, which is most of them most of the time, so the
@@ -653,6 +674,10 @@ static double deep_city_survival_core(const struct civ_map *nmap,
         census.by_transport++;
       } else {
         census.by_sea++;
+        census.sea_max_dist = MAX(census.sea_max_dist, dist);
+        if (dist > horizon) {
+          census.sea_far++;
+        }
       }
       census.n_qual++;
       /* OFFENSE CONSUMES THE WAVE (NETTHREAT item 1), measured only.
