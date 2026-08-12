@@ -39,6 +39,7 @@ before citing one; each names its own known limits.
 |---|---|---|---|
 | `tech50war-200` | 8p 32x32 T200, techlevel 50 | Gunpowder-era war; found the head-to-head sign inversion (`findings/tech50-collapse-2026-08-10.md`) | frozen research |
 | `tech80air-200` | 8p 32x32 T200, techlevel 80, `techlossforgiveness -1` | Flight/Espionage era: W32 air doctrine, SAM/SDI, W35 Spy slices | research is 80 of 87 advances at turn 1 — degenerate by design |
+| `tech65sea-150` | 8p 32x32 T150, ISLAND + `startpos SINGLE`, techlevel 65 | naval WAR: crossings, invasion go/no-go, Marines | one seat per island, so no land-war control arm |
 
 ## HOLDOUT — evaluated, never tuned on
 
