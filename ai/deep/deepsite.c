@@ -55,7 +55,6 @@
 /* ai/default */
 #include "daicity.h"
 #include "daidata.h"
-#include "daiferry.h"
 #include "daiplayer.h"
 #include "daisettler.h"
 
@@ -899,9 +898,6 @@ static double deep_site_naval_refused_want = 0.0;
  * candidates actually discounted, and the turns of wait charged. */
 static int deep_site_wait_priced = 0;
 static int deep_site_wait_turns = 0;
-/* ... and for the beachhead reach filter: candidates dropped because no
- * real hull of ours can reach any tile a landing could happen on. */
-static int deep_site_reach_refused = 0;
 
 /* Per-search memo for deep_wait_expected(), which walks the unit list
  * twice per body of water. Demand and supply cannot move DURING a
@@ -1220,79 +1216,6 @@ static struct cityresult *deep_city_desirability(struct ai_type *ait,
 }
 
 /**********************************************************************//**
-  The nearest REAL hull of ours that could carry this unit: the vehicle
-  a crossing would actually be made in.
-
-  Real and not the search's own ferry on purpose. The overseas search
-  runs on an overlap map rooted at whatever boat it was handed --
-  frequently a VIRTUAL one conjured in the settler's own city -- and an
-  overlap map enters a land tile only from a tile the hull can float
-  on, so asking that map whether a candidate beachhead is reachable
-  answers yes by construction. The question worth asking is the one
-  deep_op_form_lift() asks at formation, of a boat that exists.
-
-  NULL when we own no such hull, which is not the same as "unreachable"
-  and is not treated as such by the caller.
-**************************************************************************/
-static struct unit *deep_site_reach_hull(struct ai_type *ait,
-                                         struct player *pplayer,
-                                         struct unit *punit)
-{
-  struct unit *best = NULL;
-  int bestd = -1;
-
-  unit_list_iterate(pplayer->units, pferry) {
-    int d;
-
-    if (!dai_is_ferry(pferry, ait)
-        || get_transporter_occupancy(pferry)
-           >= get_transporter_capacity(pferry)
-        || !could_unit_load(punit, pferry)) {
-      continue;
-    }
-    d = real_map_distance(unit_tile(punit), unit_tile(pferry));
-    if (best == NULL || d < bestd) {
-      best = pferry;
-      bestd = d;
-    }
-  } unit_list_iterate_end;
-
-  return best;
-}
-
-/**********************************************************************//**
-  Can that hull put a passenger ashore here?
-
-  The landing tile is the candidate itself when the hull can float on
-  it (a coastal city -- the boat docks on top of the settler), else a
-  tile beside it; and it must be REACHABLE, not merely floatable. This
-  is deep_lift_meeting_tile() plus the pf test that follows it at
-  deepops.c, which is where a lift refuses a beachhead today -- with a
-  comment recording that 21% of traced crossings (59/275) never closed
-  the distance at all. Site scoring has never asked.
-**************************************************************************/
-static bool deep_site_hull_can_land(struct pf_map *hullmap,
-                                    struct unit *hull,
-                                    struct tile *ptile)
-{
-  const struct civ_map *nmap = &(wld.map);
-  struct pf_position pos;
-
-  if (can_unit_exist_at_tile(nmap, hull, ptile)
-      && pf_map_position(hullmap, ptile, &pos)) {
-    return TRUE;
-  }
-  adjc_iterate(nmap, ptile, atile) {
-    if (can_unit_exist_at_tile(nmap, hull, atile)
-        && pf_map_position(hullmap, atile, &pos)) {
-      return TRUE;
-    }
-  } adjc_iterate_end;
-
-  return FALSE;
-}
-
-/**********************************************************************//**
   Find nearest and best city placement in a PF iteration; derived from
   stock settler_map_iterate(), calling the deep evaluator.
 **************************************************************************/
@@ -1308,35 +1231,15 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
   struct unit_class *pclass = unit_class_get(punit);
   Continent_id curcont = tile_continent(unit_tile(punit));
   int cost = unit_build_shield_cost_base(punit);
-  struct unit *hull = NULL;
-  struct pf_map *hullmap = NULL;
-  struct pf_parameter hullparam;
 
   deep_site_naval_paid = 0;
   deep_site_naval_refused = 0;
   deep_site_naval_refused_want = 0.0;
   deep_site_wait_priced = 0;
   deep_site_wait_turns = 0;
-  deep_site_reach_refused = 0;
   deep_site_contest_ours = 0;
   deep_site_contest_want = 0.0;
   deep_wait_memo_n = 0;
-
-  /* The beachhead reach filter's own map: ONE overlap map for the
-   * nearest real hull, built once per search and queried per candidate.
-   * Only on the overseas leg (boat_cost > 0), only with the knob on,
-   * and only if we own a hull that could carry this unit -- with no
-   * fleet there is nothing to ask, and "we cannot answer" must not be
-   * scored as "cannot be reached". */
-  if (boat_cost > 0 && deep_tuning_get()->site_hull_reach > 0) {
-    hull = deep_site_reach_hull(ait, pplayer, punit);
-    if (hull != NULL) {
-      pft_fill_unit_overlap_param(&hullparam, &(wld.map), hull);
-      hullparam.omniscience = !has_handicap(pplayer, H_MAP);
-      hullparam.get_TB = no_fights_or_unknown;
-      hullmap = pf_map_new(&hullparam);
-    }
-  }
 
   pfm = pf_map_new(parameter);
   pf_map_move_costs_iterate(pfm, ptile, move_cost, FALSE) {
@@ -1356,17 +1259,6 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
         /* Land theft does not make for good neighbors. */
         continue;
       }
-    }
-
-    /* A beachhead no hull of ours can reach is not a site, whatever
-     * its tiles are worth: the lift refuses to form for it
-     * (deep_op_form_lift), the settler joins the waiting population
-     * instead, and 57.4% of those spells never end. Tested before the
-     * expensive evaluation, so the filter costs less than the sites it
-     * removes. */
-    if (hullmap != NULL && !deep_site_hull_can_land(hullmap, hull, ptile)) {
-      deep_site_reach_refused++;
-      continue;
     }
 
     /* Calculate worth */
@@ -1504,13 +1396,12 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
    * `priced` is the counter that proves the discount executed at all --
    * a term that cannot be shown firing is not evidence -- and `turns`
    * over `priced` is the average wait it charged. */
-  if (deep_site_wait_priced > 0 || deep_site_reach_refused > 0) {
+  if (deep_site_wait_priced > 0) {
     log_base(deep_metric_log_level(),
              "deep-sitewait turn=%d player=\"%s\" unit=%d priced=%d"
-             " turns=%d unreached=%d hull=%d best=(%d,%d)",
+             " turns=%d best=(%d,%d)",
              game.info.turn, player_name(pplayer), punit->id,
              deep_site_wait_priced, deep_site_wait_turns,
-             deep_site_reach_refused, hull != NULL ? hull->id : -1,
              best != NULL ? index_to_map_pos_x(tile_index(best->tile)) : -1,
              best != NULL ? index_to_map_pos_y(tile_index(best->tile)) : -1);
   }
@@ -1528,9 +1419,6 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
              best != NULL ? index_to_map_pos_y(tile_index(best->tile)) : -1);
   }
 
-  if (hullmap != NULL) {
-    pf_map_destroy(hullmap);
-  }
   pf_map_destroy(pfm);
 
   return best;
