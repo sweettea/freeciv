@@ -243,8 +243,8 @@ signs off per block. Partial folds by block are allowed; no value lands
    the fortress/irrigation want could see the same tile's competing
    activities. No consumer-behaviour change with nothing registered;
    the frozen baseline never registers one. Recorded so the call "can
-   be reversed if the human disagrees" — it has not yet been reviewed.
-   **UNDECIDED. Sign-off?**
+   be reversed if the human disagrees". **ADOPTED 2026-08-12 — see
+   §11.5.**
 8. **BALANCE's mixed-arm-mandatory rule** (`findings/balance-
    statecraft-2026-08-06.md` §0, 2026-08-06): the love-buying gift
    measured as the largest single-lever self-play move this project
@@ -338,3 +338,24 @@ Human sign-off, with two refinements over the §10.8 proposal:
 Consequence: the love-buying gift is re-openable as an ALLY-TARGETED
 mechanism — gate the gift want on stance/alliance so the +5.26
 counterparty surplus lands on friends, then re-take the mixed arm.
+
+### 11.5 The widening doctrine for inert advisor hooks (2026-08-12)
+
+Human sign-off on GROUND's `aw_task_value_fn` widening, generalised as
+doctrine rather than a one-off pardon:
+
+- Widening an already-inert, deep-only hook in `server/advisors/`
+  counts as rule 4's "adding an extension point", PROVIDED the change
+  is additive (append parameters, never repurpose existing ones), the
+  unregistered path is provably unchanged, and the widening is
+  recorded in STATUS as GROUND §7 was.
+- The ratchet guard: the hook must stay plausibly generic — the test
+  is "could this signature be offered upstream as an AI-module hook
+  without embarrassment." A widening that only makes sense for deep's
+  private bookkeeping fails the test and needs its own design
+  conversation.
+- Belt-and-braces: the next advisor-touching session takes a fresh
+  stock-arm identity proof around its own change, covering both.
+
+Consequence: W12 (trunk roads + worker locality, task #55) is
+unblocked to route through this hook.
