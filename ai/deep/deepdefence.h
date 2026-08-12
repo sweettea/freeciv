@@ -25,6 +25,13 @@ bool deep_utype_is_airborne(const struct unit_type *ut);
 int deep_utype_air_reach(const struct unit_type *ut);
 void deep_do_last_activities(struct ai_type *ait, struct player *pplayer);
 
+/* The rotation cadence (NETTHREAT item 3): sample, once per new phase,
+ * the share of this player's attack-rated units that are standing in
+ * its own cities, and read the accumulated share back. Runs in every
+ * arm; consumed only by the attacker's garrison credit. */
+void deep_cadence_sample(struct player *pplayer);
+double deep_attacker_home_share(const struct player *pplayer);
+
 /* Map crowding from lobby settings: min(1, density_prior_tiles /
  * land-per-player). Shared by the density prior, the settler rush
  * and the chokepoint site bonus. */

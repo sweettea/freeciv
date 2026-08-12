@@ -226,6 +226,10 @@ static void dpai_player_save(struct player *pplayer,
                      "player%d.deep_state.ops_formed", plrno);
   secfile_insert_int(file, plr_data->ops_launched,
                      "player%d.deep_state.ops_launched", plrno);
+  secfile_insert_int(file, plr_data->cadence_home,
+                     "player%d.deep_state.cadence_home", plrno);
+  secfile_insert_int(file, plr_data->cadence_unitturns,
+                     "player%d.deep_state.cadence_unitturns", plrno);
   secfile_insert_int(file, plr_data->last_strike_city,
                      "player%d.deep_state.last_strike_city", plrno);
   secfile_insert_int(file, plr_data->last_strike_turn,
@@ -334,6 +338,13 @@ static void dpai_player_load(struct player *pplayer,
   plr_data->ops_launched
     = secfile_lookup_int_default(file, 0,
                                  "player%d.deep_state.ops_launched", plrno);
+  plr_data->cadence_home
+    = secfile_lookup_int_default(file, 0,
+                                 "player%d.deep_state.cadence_home", plrno);
+  plr_data->cadence_unitturns
+    = secfile_lookup_int_default(file, 0,
+                                 "player%d.deep_state.cadence_unitturns",
+                                 plrno);
 
   /* Read back out loud: this hook runs before the next phase
    * re-resolves the axes, so it is the only place the round trip is
@@ -624,6 +635,10 @@ static void dpai_data_phase_begin(struct player *pplayer, bool is_new_phase)
      * axes the log line reports. */
     deep_stance_refresh(pplayer);
     deep_stance_log(pplayer);
+
+    /* Before the turn's movement, so a unit that marches out today is
+     * counted where it slept (NETTHREAT item 3's cadence). */
+    deep_cadence_sample(pplayer);
 
     plr_data->dv_turns_logged++;
     log_base(LOG_VERBOSE,

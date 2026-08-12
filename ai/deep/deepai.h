@@ -184,6 +184,15 @@ struct deep_plr {
    * anywhere connected the two. */
   int ops_formed;
   int ops_launched;
+  /* The rotation cadence (NETTHREAT item 3): attack-rated unit-turns
+   * spent standing in one of our own cities, over attack-rated
+   * unit-turns sampled at all. SAVED, on the same rule the two
+   * counters above are saved by -- it drives a build want rather than
+   * a log line, so a reload that zeroed it would change behaviour.
+   * Zero-defaulted at load, which reads as "no evidence yet" and pays
+   * no credit. */
+  int cadence_home;
+  int cadence_unitturns;
   /* The trade portfolio's two execution counters (TRADE, 2026-08-06):
    * assault targets whose score was actually discounted for being a
    * trade partner's, and love actually added for active routes. Both
