@@ -11749,3 +11749,193 @@ falsification and it costs one cell.
 - Arrival-time weighting: a pf-slower attacker still inside the
   horizon keeps full weight; the knob makes admission honest, not the
   within-horizon schedule.
+
+## GOV: government choice gets the amortized grammar, and ships off (2026-08-12)
+
+Branch `epic/gov-valuation`, based on `epic/w03-horizon-content` at
+`9ccbf8426e`. Six code commits plus this section; `ai/deep`,
+`benchmark/` and doc only. No `ai/default`, `ai/baseline` or
+`advisors` change of any kind.
+
+    d99d3f333e  ai/deep: own the government valuation hook
+    543de9b96c  ai/deep: price a government as an output stream over the horizon
+    4cb5fca771  ai/deep: charge a revolution the anarchy it costs
+    daa748835e  ai/deep: charge a government the army it has to pay for
+    484b301a88  ai/deep: credit a government the rate ceiling it unlocks
+    491e4f23ef  ai/deep: leave the rates where it found them after its extra passes
+
+### The scope this recovers, and where it came from
+
+D3 (site truth) fenced itself with "no government valuation
+(separately queued)". The queue row it pointed at is
+`sessions/README.md` row 6a -- government valuation via the
+`gov_value` hook, the seam map's item 4: *"unplanned, moderate value,
+cheapest seam in the tree"*, zero `ai/default` change because the hook
+is a vtable entry deep already forwards, ranked 4th only because
+governments change a handful of times per game. The deferral was the
+one-epic rule, not a doubt about the work.
+
+The SHAPE came from two other documents and this session followed
+both. `findings/amortization-audit-2026-08-07.md` item 1d: *"a
+revolution is an upfront cost (anarchy turns x forgone surplus)
+against a per-turn stream (the new government's deltas) amortized over
+the remaining game. The gov-value session (ladder 6a) should be
+written in exactly this form; noted here so it inherits the grammar
+rather than reinventing a WAG."* And `findings/darkfx-2026-08-06.md`
+item 5, the MAX_RATES ceiling term: *"one PLACEHOLDER weight,
+`gov_rate_ceiling_gain`, 0 = off"*.
+
+**Nothing in the recovered scope contradicted the code.**
+`dpai_gov_value` still forwarded to `dai_gov_value` untouched;
+`dai_gov_value` (`daidata.c:524`) still reads exactly as the plan
+describes it; `adv_best_government` (`advdata.c:993`) still calls the
+hook once per candidate inside its `govt_reeval` throttle. No stale
+line references, nothing to question.
+
+### The mechanism, in the currency everything else uses
+
+    value(gov) = (output(gov) - output(incumbent)) * deep_horizon_turns()
+                 - anarchy_turns * (output(incumbent) - output(anarchy))
+                 + ceiling credit
+    *val       = amortize(value, techs still missing)
+
+`output()` is the empire's arranged per-turn output in the advisor's
+tile-output currency (`dai_city_want` summed over cities, stock's two
+percentage bonuses applied to that level), MINUS the unit upkeep bill
+under that government. Five things changed from stock:
+
+1. **A delta, not a level.** Staying put scores exactly 0, so a
+   government has to be better than the incumbent rather than merely
+   large. Consequence, flagged rather than corrected blind:
+   `adv->goal.govt.val` -- which feeds the government tech want in
+   `dai_manage_government` -- now rides a delta scale instead of
+   stock's absolute-level scale, so that injection is smaller and more
+   often floored at its `MAX(val, 100)`. Readable in an A/B.
+2. **A horizon.** The per-turn delta is counted over
+   `deep_horizon_turns()` (MORT, endgame-clamped), which is what makes
+   a one-off cost comparable with an ongoing gain at all.
+3. **The revolution is charged**: anarchy turns x the output those
+   turns lose, both measured, clamped at zero from below.
+4. **The army is charged.** `dai_city_want` says in its own source
+   "Unit upkeep isn't handled here", and that is the half governments
+   differ on most.
+5. **The rate ceiling is credited** -- shipped OFF, see below.
+
+**Deliberately dropped: stock's per-government effect sum** at
+`turns = 9999` ("TODO: Set to correct value" in its own source). The
+arrangement already prices what a government does to output and, via
+the CM's happiness constraint, to order; pricing the same effects
+again in a second currency at a fake horizon is RC4 inside one
+function. **The blind spot that leaves, named rather than hidden:**
+government effects with no output shadow -- veteran chance, HP regen,
+bribe cost. Unit upkeep and the rate ceiling came back as their own
+terms; the military ones did not, because pricing them honestly is a
+combat-currency question and not a government one. First thing to
+look at if a gov A/B comes back negative on a war venue.
+
+**The CM coupling is now deliberate.** `auto_arrange_workers()`
+honours `pcity->cm_parameter`, which deep sets and stock does not, so
+every candidate government has been evaluated through deep's own city
+manager since `deepcm.c` landed (seam map 2.C, "not a bug; not
+designed either"). It stays that way, now on purpose: deep's CM is how
+deep's cities will actually be run, so it is the right arrangement to
+value a government under.
+
+### Two terms are structurally zero, and the counters say which
+
+- **Anarchy at `hard` is zero, by the handicap table.** `H_REVOLUTION`
+  is set at AWAY, NOVICE/RESTRICTED and EASY only (`ai/difficulty.c`),
+  and `handle_player_change_government()` gives an AI without it a
+  0-turn revolution. Every benchmark cell runs `hard`. Measured rather
+  than assumed: smoke seed 1 at `hard`, `anturns=0.0` on 527/527
+  candidate valuations; the SAME seed at `easy`, `anturns=3.0`
+  (REVOLEN_RANDOM at revolen 5, mean (5+1)/2) with a charge on 467 of
+  533 -- e.g. Tribal at `delta=0.0` scoring `val=-177.0`, an equal
+  government now correctly not worth three turns of anarchy. The
+  diplomacy-gamestate finding said "revolution timing: non-issue at
+  hard"; this is that claim with a counter under it. The term is
+  written anyway, because it is what makes the comparison correct
+  where anarchy is real, and because only a term that READS the game
+  has a zero worth trusting.
+- **The rate ceiling ships off.** `gov_rate_ceiling_gain` is
+  PLACEHOLDER 0.0: it converts a rates-enumeration total into a
+  government want and nothing has measured that ratio (rule 7). At 1.0
+  it is live and ordered by ceiling -- smoke seed 1, turn 10, under
+  Despotism: Monarchy +18.0, Communism +82.5, Federation +127.2, with
+  `ceil` non-zero on 339 of 528 lines. At the shipped 0.0 it is
+  `ceil=0.0` on 518/518 in the same arm.
+
+### The unit upkeep spread, which is why term 4 exists
+
+smoke seed 1, turn 100, P1 under Despotism, the SAME army priced under
+seven governments (`upk=`, want per turn):
+
+    Communism 34   Monarchy 36   Tribal 68   Republic 102
+    Federation 144   Fundamentalism 144   Democracy 216
+
+6x between Communism and Democracy on identical units, and the
+valuation was blind to every bit of it one commit earlier.
+
+### Validation
+
+- Build `-Daimodules=classic,tex,baseline,deep`; `meson test -C build`
+  **5/5 OK** at every commit.
+- `tune-audit.py` **CLEAN, 212 -> 215**: `gov_valuation`,
+  `gov_anarchy_weight`, `gov_rate_ceiling_gain`, each in all four
+  audit places (struct field, `TUNE_*` macro, compiled default,
+  `tuning-params.ini`) and in the G and ALL blocks -- G is where the
+  rates knobs live, and this is the same decision seam. All three are
+  also registered in `benchmark/knobcensus.py`'s instrument map
+  (`deep-gov` plus the field each knob scales).
+- **Off-switch proof: 10/10 smoke seeds byte-identical.** Deep arm,
+  compiled defaults both sides, under `benchmark/results/gov-identity/`:
+  `smoke-8fb20fa644e8` is a `git archive` build of base `9ccbf8426e`,
+  `smoke-6dee67816e29` is `491e4f23ef`. scorelog sha256 SAME on 10/10
+  seeds, 0 pairing violations, and 0 `deep-gov` lines anywhere in the
+  default arm -- the hook is owned and inert at the same time.
+- **Liveness, 2 games knob-on** (`tuning/gov-on.ini`,
+  `smoke-187bec478774`): 518 and 474 `deep-gov` lines across 32 and 29
+  evaluation bursts, all 4 players, `delta > 0` on 278 and 284 of
+  them; `anturns=0` and `ceil=0` throughout, exactly as the two
+  structural zeros above predict. Both scorelogs DIFFER from the off
+  arm on the same seed, so the valuation is deciding and not just
+  logging. What it decides, at T101:
+
+        seed  stock's valuation             deep's valuation
+        1     Monarchy x3 + TRIBAL          Monarchy x4 (one mid-revolution)
+        2     Monarchy x2 + TRIBAL x2       Monarchy x4
+
+  Stock leaves players parked in Tribal; deep moves them to Monarchy.
+  Directional only -- 2 games, and no score claim is made from them.
+
+### NOT done, deliberately: no A/B
+
+This session was scoped to build the mechanism and prove the switch,
+on a box already running a factorial (jobs 2, smoke/identity games
+only). **The valuation is therefore unmeasured for score.** What it
+needs next, in order:
+
+1. A paired A/B of `gov_valuation = 1` against the default on
+   contested and isolated-150 (>= 20 seeds), reading the government
+   end-state census above as the mechanism check.
+2. Only if (1) is not negative: a tuning pass on
+   `gov_rate_ceiling_gain` (0-2 registered) and `gov_anarchy_weight`
+   (0-3) -- the latter only where anarchy exists at all, which means a
+   difficulty below `hard`, so it belongs to the difficulty-ladder
+   session (row 17) rather than to a normal cell.
+3. If the A/B is negative on a war venue, the dropped military effect
+   sum is the first suspect.
+
+### Two things found on the way
+
+- **Upstream bug #48** (`findings/upstream-bugs.md`):
+  `revolentype_length()` divides by zero at `revolen = 1` with
+  revolentype QUICKENING/RANDQUICK (`server/plrhand.c:530`; the
+  setting's own minimum is 1). Not reachable in any benchmark cell,
+  reported as a courtesy; deep's own copy of the arithmetic guards it.
+- **`knobcensus.py`'s map was already out of sync before this
+  session**: `survival_pf_reach` and `op_draft_marginal` (both from
+  the ERA rounds) are in `tuning-params.ini` and not in the map, so
+  the census exits rather than running. This session's three knobs are
+  mapped; those two are left for their owner, and named here so the
+  next census run knows why it fails.
