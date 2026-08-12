@@ -346,6 +346,23 @@ struct deep_tuning {
    * whenever any war countdown exists anywhere, which sticks and
    * switches expansion off permanently. 0 restores stock exactly. */
   double expansion_war_survival;
+  /* Whether deep asks the expansion question at all. 1 (default, and
+   * what ships) runs the two regimes above: deep's survival gate when
+   * expansion_war_survival > 0, stock's dai_on_war_footing() when it
+   * is <= 0. 0 means NO GATE -- deep_expansion_blocked() is FALSE on
+   * every city-turn regardless of expansion_war_survival, so war never
+   * stops a city planning settlers and workers.
+   *
+   * A separate switch rather than a third sentinel on
+   * expansion_war_survival, because that double's two regimes are
+   * already the meaning of every archived tuning file (era-a-pv1.ini
+   * omits it; era-b-noexpgate.ini pins it to 0.0) and a new sentinel
+   * would silently re-read them. This knob is the never-block ARM of
+   * that comparison -- the corner the ERA probe could not ask
+   * (findings/era-probe-evidence-2026-08-12.md S4) -- and like
+   * stance_forced it is pinned by hand per experiment and given a
+   * degenerate range so the tuner never spends a sample on it. */
+  int expansion_gate_enabled;
   double caravan_discount;
   int caravan_foreign_trade;
 
