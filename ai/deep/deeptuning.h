@@ -121,6 +121,24 @@ struct deep_tuning {
    * finding. Set to 1 to re-enable; the census reports it either way. */
   int site_naval_gate;
 
+  /* Weight on the EXPECTED WAIT when ranking an overseas candidate:
+   * the delivery delay enters the same amortize() as the travel delay,
+   * as site_wait_discount * deep_wait_expected(beachhead's water)
+   * turns. 1.0 charges the estimated wait at face value; 0.0 is off
+   * and is the A/B arm.
+   *
+   * The defect it addresses is not a magnitude but an absence: the
+   * overseas leg ranked every candidate with NO wait term, so a
+   * beachhead on a sea whose queue has held settlers for twenty turns
+   * scored exactly as one with a hull idling beside it, and the probe
+   * that publishes colony_want priced no wait at all
+   * (expansion-logistics section 3.1).
+   *
+   * PLACEHOLDER weight -- flagged in STATUS.md for a tuning pass. The
+   * TURNS it multiplies are measured (live wait spells); how heavily a
+   * turn of queueing should count against a turn of walking is not. */
+  double site_wait_discount;
+
   /* And what that premium is WORTH, as a percentage of the site's own
    * value: stock's naval_bonus() pays a compile-time NAVAL_EMPHASIS
    * (20) -- a fifth of the whole site score for standing next to

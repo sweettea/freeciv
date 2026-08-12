@@ -62,6 +62,7 @@
 #include "deeptuning.h"
 
 #include "deepdefence.h"
+#include "deepops.h"
 #include "deepsite.h"
 
 /* Local instantiation of the tile-data-cache hash accessors; the
@@ -859,6 +860,85 @@ static int deep_site_naval_paid = 0;
 static int deep_site_naval_refused = 0;
 static double deep_site_naval_refused_want = 0.0;
 
+/* The same per-search census for the expected-wait discount: overseas
+ * candidates actually discounted, and the turns of wait charged. */
+static int deep_site_wait_priced = 0;
+static int deep_site_wait_turns = 0;
+
+/* Per-search memo for deep_wait_expected(), which walks the unit list
+ * twice per body of water. Demand and supply cannot move DURING a
+ * search, so one answer per water per search is exact, and without it
+ * the estimate would be recomputed for every candidate the pf map
+ * visits -- tens of thousands of list walks per settler. Reset at the
+ * top of deep_settler_map_iterate(). */
+#define DEEP_WAIT_MEMO 16
+static Continent_id deep_wait_memo_oc[DEEP_WAIT_MEMO];
+static int deep_wait_memo_val[DEEP_WAIT_MEMO];
+static int deep_wait_memo_n = 0;
+
+/**********************************************************************//**
+  deep_wait_expected() for one water, memoised for this search.
+**************************************************************************/
+static int deep_site_water_wait(struct ai_type *ait, struct player *pplayer,
+                                Continent_id ocean)
+{
+  int i;
+
+  for (i = 0; i < deep_wait_memo_n; i++) {
+    if (deep_wait_memo_oc[i] == ocean) {
+      return deep_wait_memo_val[i];
+    }
+  }
+
+  {
+    int wait = deep_wait_expected(ait, pplayer, ocean);
+
+    if (deep_wait_memo_n < DEEP_WAIT_MEMO) {
+      deep_wait_memo_oc[deep_wait_memo_n] = ocean;
+      deep_wait_memo_val[deep_wait_memo_n] = wait;
+      deep_wait_memo_n++;
+    }
+
+    return wait;
+  }
+}
+
+/**********************************************************************//**
+  The wait a settler bound for THIS beachhead should expect, in turns:
+  the shortest queue among the waters that touch it.
+
+  The shortest and not the longest, because a hull arriving from any of
+  them lands the passenger: the crossing joins whichever queue is
+  moving, so charging the worst adjacent water would price a wait the
+  settler would not sit through. Conservative on purpose -- this
+  discount is new and its job is to RANK delivery-blind candidates, not
+  to talk the AI out of colonising.
+
+  Zero when nothing touches water, which for a candidate the ferry's
+  own overlap map reached cannot happen: an overlap map enters a land
+  tile only from a tile the hull can float on.
+**************************************************************************/
+static int deep_site_beach_wait(struct ai_type *ait, struct player *pplayer,
+                                const struct tile *ptile)
+{
+  int best = -1;
+
+  adjc_iterate(&(wld.map), ptile, atile) {
+    Continent_id oc = tile_continent(atile);
+    int wait;
+
+    if (oc >= 0) {
+      continue;                 /* Land. */
+    }
+    wait = deep_site_water_wait(ait, pplayer, oc);
+    if (best < 0 || wait < best) {
+      best = wait;
+    }
+  } adjc_iterate_end;
+
+  return MAX(best, 0);
+}
+
 /**********************************************************************//**
   The composite defence factor of a candidate site, on stock's scale:
   10 is flat open ground, +1 per 10% of terrain defence, with the free
@@ -1121,6 +1201,9 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
   deep_site_naval_paid = 0;
   deep_site_naval_refused = 0;
   deep_site_naval_refused_want = 0.0;
+  deep_site_wait_priced = 0;
+  deep_site_wait_turns = 0;
+  deep_wait_memo_n = 0;
 
   pfm = pf_map_new(parameter);
   pf_map_move_costs_iterate(pfm, ptile, move_cost, FALSE) {
@@ -1186,6 +1269,41 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
       cr->result = amortize(cr->total, (int) (d * turns));
     }
 
+    /* The DELIVERY delay, for an overseas candidate (boat_cost > 0 is
+     * the overseas leg; the on-continent search passes 0).
+     *
+     * Until now the overseas search ranked every candidate with no
+     * wait term at all and the CHAMPION was amortized once, afterwards,
+     * by the turns to the nearest available boat
+     * (deepsettler.c ferry_wait). Two candidates on two different seas
+     * -- one with a hull idling on it, one whose queue has been holding
+     * settlers for twenty turns -- therefore ranked identically, and
+     * the probe path that publishes colony_want priced no wait at all
+     * (expansion-logistics section 3.1). This is that missing term, and
+     * because it lives inside the candidate loop the probe gets it too:
+     * both go through this function.
+     *
+     * Same currency and same discounter as the travel term above: turns
+     * into amortize(). A wait is a delay like a walk is a delay --
+     * that is the point of pricing it here rather than as a separate
+     * penalty in some other unit.
+     *
+     * The ferry_wait amortization on the winner stays. It measures a
+     * different thing (the fetch: how far the nearest free hull is from
+     * THIS settler) and applies where a free hull exists, which is
+     * exactly where deep_wait_expected() returns 0. */
+    if (boat_cost > 0 && deep_tuning_get()->site_wait_discount > 0.0) {
+      int wait = deep_site_beach_wait(ait, pplayer, ptile);
+
+      if (wait > 0) {
+        cr->result
+          = amortize(cr->result,
+                     (int) (deep_tuning_get()->site_wait_discount * wait));
+        deep_site_wait_priced++;
+        deep_site_wait_turns += wait;
+      }
+    }
+
     /* Reduce want by settler cost; also penalise for using a boat.
      * Both weights were stock's implicit 1 and 1/3; they subtract
      * SHIELDS from a weighted tile-yield sum, which is dimensionally
@@ -1234,6 +1352,20 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
              game.info.turn, player_name(pplayer), punit->id,
              deep_site_naval_paid, deep_site_naval_refused,
              deep_site_naval_refused_want,
+             best != NULL ? index_to_map_pos_x(tile_index(best->tile)) : -1,
+             best != NULL ? index_to_map_pos_y(tile_index(best->tile)) : -1);
+  }
+
+  /* The expected-wait census, on the same one-line-per-SEARCH contract.
+   * `priced` is the counter that proves the discount executed at all --
+   * a term that cannot be shown firing is not evidence -- and `turns`
+   * over `priced` is the average wait it charged. */
+  if (deep_site_wait_priced > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-sitewait turn=%d player=\"%s\" unit=%d priced=%d"
+             " turns=%d best=(%d,%d)",
+             game.info.turn, player_name(pplayer), punit->id,
+             deep_site_wait_priced, deep_site_wait_turns,
              best != NULL ? index_to_map_pos_x(tile_index(best->tile)) : -1,
              best != NULL ? index_to_map_pos_y(tile_index(best->tile)) : -1);
   }
