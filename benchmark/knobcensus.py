@@ -169,9 +169,13 @@ MAP = {
         "field on deep-def is the pre-rush number. Needs: the post-rush "
         "want logged, or a rush-applied counter."),
     "expansion_war_survival": (
-        "S3", "mag", "-", None,
-        "deep_expansion_blocked() returns a bool nobody logs "
-        "(deepdefence.c:2294). Needs: a blocked-expansion counter."),
+        "S3", "mag", "direct", [("deep-expgate", "wave>=0")],
+        "deep-expgate is the blocked-expansion counter this entry asked "
+        "for (ERA, 2026-08-11): one line per deep_expansion_blocked() "
+        "evaluation carrying surv, thresh and blocked. wave>=0 is the "
+        "knob's own branch -- the gate logs wave=-1 on the two paths "
+        "that never reach the survival comparison, which is exactly "
+        "where the knob is <= 0 or the empire is at peace."),
     "worker_flee_radius": (
         "S3", "mag", "direct", [("deep-flee", "")],
         "deep-flee is emitted exactly when a worker flees "
