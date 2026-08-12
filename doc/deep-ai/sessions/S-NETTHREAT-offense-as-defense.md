@@ -19,7 +19,32 @@ pricing plans offensives that will engage, absorb, and destroy part of
 that same army. The empire pays twice for the same enemy unit: once in
 defenders sized against it, once in attackers sent to kill it.
 
-## Three nettings, in priority order
+## PRIORITY UPDATE (human, 2026-08-12)
+
+Item 3 is PROMOTED TO LEAD. The human's call, made alongside the
+Gunpowder doctrine (attacks at era parity are generally insane; the
+sortie is the one sane strike; see S-ERA-3b-muster.md §2): an attack
+unit's defensive value is the under-credited half, so credit it first.
+
+And a fourth netting joins the family:
+
+4. **Holes get covered — price removal after rearrangement.** When an
+   attacker sorties or a blade is drafted, the naive cost is the local
+   hole (surv(city) − surv(city − blade)). But the remaining lattice
+   can move: if a neighbor's spare can backfill, the true cost is the
+   post-rearrangement marginal loss, which is smaller — and if the
+   marginal benefit of the attack was good enough, the rearrangement
+   should actually be ORDERED, not just priced. Reuse the rotation /
+   rehoming machinery for both the estimate and the move; do not build
+   a new optimizer. Start with a one-step approximation (cheapest
+   single covering move) and a counter for how often a better cover
+   existed. This same correction applies to ERA 3a's draft cost side
+   and to MUSTER's home-defense abandon trigger — one implementation,
+   three consumers (attribution note: it moves the cost side of the
+   3a×3c factorial; land it before or as an arm of that design, not
+   concurrently with it).
+
+## Three nettings, original priority order (now 3 → 1 → 2)
 
 1. **Offense consumes the wave.** Enemy units targeted by our planned
    ops/sorties will be fighting (and dying) elsewhere; the home wave
