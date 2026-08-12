@@ -1319,16 +1319,25 @@ double deep_attacker_home_share(const struct player *pplayer)
   Can units of this class stand on water / on land? Asked of the
   ruleset's own terrain nativity, NOT of utype_move_type().
 
-  The derived move type is unusable for this question and the counter
-  is what proved it: in civ2civ3 `utype_move_type()` reports the
-  TRIREME class as UMT_LAND, so every test in this module written as
-  `transport_capacity > 0 && utype_move_type(ut) == UMT_SEA` misses the
-  ancient-era transport -- which is to say the entire early- and
-  mid-game landing threat, in the default ruleset of every cell this
-  project benchmarks. The sea class measured as never live across 20
-  island games, on a cell where every seat demonstrably builds
-  Triremes, and a `mt=` debug line on the transports themselves is
-  what produced the number above.
+  The derived move type is unusable for this question, and the
+  diagnosis first recorded here was far too narrow. It was written as
+  "civ2civ3 reports the TRIREME class as UMT_LAND", i.e. one class in
+  one ruleset. It is EVERY class, in EVERY ruleset, in every
+  server-side caller:
+
+    $ grep -rn "set_unit_move_type" --include=*.c .
+    common/unittype.c:2961:void set_unit_move_type(struct unit_class *)
+    client/packhand.c:3688:    set_unit_move_type(pclass);
+
+  `unit_class::move_type` is assigned in exactly one place and that
+  place is the CLIENT, on receipt of the ruleset packet. The server
+  never calls it, so the field keeps its zero-initialised value, which
+  is UMT_LAND (unittype.h:133, SPECENUM_VALUE0). A one-shot dump of
+  all nine civ2civ3 classes on a resumed save read move_type=0 for
+  every one of them, Sea and Air included
+  (findings/venues-2026-08-12.md section 0). So server-side no
+  `== UMT_SEA` test can ever be true and no `!= UMT_LAND` test can
+  ever be false, and there is no ruleset in which that is not so.
 
   Terrain nativity cannot drift that way: the Trireme class is
   `native_to` lake and ocean in both shipped rulesets, which is what
