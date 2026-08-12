@@ -35,6 +35,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .site_enough_result = 250.0,          /* PLACEHOLDER = stock */
   .site_defence_weight = 0.0,           /* MEASURED off: D3 contested A/B */
   .site_naval_gate = 0,                 /* MEASURED off: D3 isolated-150 */
+  .site_wait_discount = 0.0,            /* PLACEHOLDER = off */
   .site_naval_weight = 20.0,            /* PLACEHOLDER = NAVAL_EMPHASIS */
   .founder_pool_per_site = 0.06,        /* PLACEHOLDER, see deeptuning.h */
   .committed_fear_mult = 1.0,           /* PLACEHOLDER = no effect */
@@ -129,6 +130,8 @@ static const struct deep_tuning deep_tuning_defaults = {
   .boat_gate_at_bid = 1,                /* filter before the choice */
   .lift_drop_radius = 12,               /* human: two boat moves */
   .lift_hitch_wait_min = 1,             /* PLACEHOLDER, untuned */
+  .lift_wait_tail_pct = 80,             /* measured: 20% of spells, 60%
+                                         * of waiting */
   .worker_flee_radius = 3,              /* PLACEHOLDER, untuned */
   .worker_guard_radius = 6,             /* PLACEHOLDER, untuned */
   .worker_danger_discount = 1.0,        /* PLACEHOLDER, untuned */
@@ -276,6 +279,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(site_enough_result) \
   TUNE_DOUBLE(site_defence_weight) \
   TUNE_INT(site_naval_gate) \
+  TUNE_DOUBLE(site_wait_discount) \
   TUNE_DOUBLE(site_naval_weight) \
   TUNE_DOUBLE(founder_pool_per_site) \
   TUNE_DOUBLE(committed_fear_mult) \
@@ -389,6 +393,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_INT(boat_gate_at_bid) \
   TUNE_INT(lift_drop_radius) \
   TUNE_INT(lift_hitch_wait_min) \
+  TUNE_INT(lift_wait_tail_pct) \
   TUNE_INT(worker_flee_radius) \
   TUNE_INT(worker_guard_radius) \
   TUNE_DOUBLE(worker_danger_discount) \

@@ -121,6 +121,24 @@ struct deep_tuning {
    * finding. Set to 1 to re-enable; the census reports it either way. */
   int site_naval_gate;
 
+  /* Weight on the EXPECTED WAIT when ranking an overseas candidate:
+   * the delivery delay enters the same amortize() as the travel delay,
+   * as site_wait_discount * deep_wait_expected(beachhead's water)
+   * turns. 1.0 charges the estimated wait at face value; 0.0 is off
+   * and is the A/B arm.
+   *
+   * The defect it addresses is not a magnitude but an absence: the
+   * overseas leg ranked every candidate with NO wait term, so a
+   * beachhead on a sea whose queue has held settlers for twenty turns
+   * scored exactly as one with a hull idling beside it, and the probe
+   * that publishes colony_want priced no wait at all
+   * (expansion-logistics section 3.1).
+   *
+   * PLACEHOLDER weight -- flagged in STATUS.md for a tuning pass. The
+   * TURNS it multiplies are measured (live wait spells); how heavily a
+   * turn of queueing should count against a turn of walking is not. */
+  double site_wait_discount;
+
   /* And what that premium is WORTH, as a percentage of the site's own
    * value: stock's naval_bonus() pays a compile-time NAVAL_EMPHASIS
    * (20) -- a fifth of the whole site score for standing next to
@@ -720,6 +738,18 @@ struct deep_tuning {
    * loaded boat for a timeout.
    * PLACEHOLDER -- flagged in STATUS.md for a tuning pass. */
   int lift_hitch_wait_min;
+  /* Which point of the live wait-spell distribution deep_wait_expected()
+   * reports, as a percentile: 100 is the longest spell that water is
+   * holding, 50 the median.
+   *
+   * Not a magnitude and not free: 80 is where the measured mass sits.
+   * A fifth of spells hold three fifths of all waiting
+   * (findings/commission-sizing.md), so the mean describes nobody --
+   * most crossings are quick and the slow ones are the ones that cost
+   * a colony. This selects the boundary of that fifth. It is a knob
+   * rather than a literal because the SHAPE of the estimator is a
+   * choice even when the number behind it is measured. */
+  int lift_wait_tail_pct;
   /* A civilian outside a city flees to the nearest own city when an
    * at-war military unit is within this many tiles. 0 disables. */
   int worker_flee_radius;

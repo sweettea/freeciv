@@ -12243,3 +12243,162 @@ needs next, in order:
   the census exits rather than running. This session's three knobs are
   mapped; those two are left for their owner, and named here so the
   next census run knows why it fails.
+## W36 expected wait: the overseas search prices the queue (2026-08-12)
+
+Branch `epic/w36-expected-wait`, based on `epic/w03-horizon-content` at
+`9ccbf8426e`. Five commits; what ships is two knobs, both default-off,
+plus one instrument.
+
+- `99de8de163` `ai/deep: keep lift waiting spells live and estimate the tail`
+- `8414577fb9` `ai/deep: discount overseas candidates by the wait their water is holding`
+- `43a3f3400d` `ai/deep: drop overseas sites no hull of ours can land at`
+- `6ac0ba54a4` `ai/deep: count sites taxed for cities our own operations are taking`
+- `c2931f0fcc` `ai/deep: withdraw the beachhead reach filter, which cannot bind`
+
+### The defect (expansion-logistics 3.1)
+
+`deep_settler_map_iterate()`'s overseas leg ranked every candidate with
+NO delivery term; the champion alone was amortized afterwards by
+`ferry_wait`, the turns to the nearest free boat. A sea with a hull
+idling on it and a sea whose queue has been holding settlers for twenty
+turns ranked identically, and the 1:1-cap probe that publishes
+`colony_want` priced no wait at all.
+
+### What ships
+
+**Live spells.** `deep_wait_census()` writes one line per waiting
+passenger per turn and the spell is reconstructed OFFLINE, so no
+decision could read it. `deep_wait_spells_update()` keeps the same
+spell in memory (32 slots, not saved, unconditional so the estimate is
+readable in BOTH arms), once per player per turn in
+`deep_manage_units()` — before the settler pass that follows
+`first_activities` in the same turn. A spell ends on an op's claim (the
+offline definition), on no longer wanting a crossing, or on death.
+
+**The estimate.** `deep_wait_expected(ocean)`: is an idle hull standing
+free BEYOND the units already queued on that water
+(`deep_idle_ferries_on` > `deep_ferry_demand_on`, the pair the colony
+want is damped by, asked of the newcomer rather than the shipyard)? If
+so the wait is 0 and the champion's `ferry_wait` fetch term already
+covers it. Otherwise the tail of that water's live spells at
+`lift_wait_tail_pct`.
+
+**Why the tail, and why 80.** `findings/commission-sizing.md` §3:
+median wait 0, mean 2.28, p75/p90 = 3/7, and spells ≥ 5 turns are
+19.8% of spells holding 61.4% of all waiting (isolated-150). The mean
+describes nobody. 80 is the boundary of that measured fifth. The live
+sample is right-censored and length-biased — a running spell is
+over-represented in a snapshot of running spells — and that bias points
+the same way as the quantity being estimated.
+
+**Consumption.** Every overseas candidate (`boat_cost > 0`) is
+amortized by `site_wait_discount * wait`, the same discounter and the
+same currency as the travel term: a wait is a delay like a walk is a
+delay. The shortest adjacent queue is charged, not the longest — any of
+those waters can carry the hull that lands the passenger. Because the
+term sits inside the candidate loop, the probe path gets it for free;
+both paths go through that function. Memoised per water per search
+(`deep_wait_expected()` walks the unit list twice per water).
+
+### Instrument only: §3.4, the tax on ground we are taking
+
+`deep_cityresult_fill()`'s rival-pressure clause counts every
+non-allied city within `4·radius_sq`, including one an assault of ours
+is three turns from capturing. `deep_op_targeted()` is now declared in
+`deepops.h`; the clause's sum is split and `deep-sitetarget` reports
+candidates carrying it and the want it costs at today's weights. No
+want changes, no knob; the split is computed only when the metric log
+level is on. The correction waits on the number.
+
+### The reach filter was built, measured, and withdrawn
+
+expansion-logistics §3.1 clause (i) asks the search to discount a
+beachhead the hull cannot path to. Built (`43a3f3400d`), measured, and
+withdrawn (`c2931f0fcc`) in the same session, because **the search
+cannot ask that question of itself**:
+
+- MEASURED, isolated-150, 2 seeds, knob on: 37 searches raised the
+  counter and 24 of them refused every candidate and returned NO site
+  (2888 candidates refused). 36 of 37 were `unit=0` — the build side's
+  founder-want probe, which searches with a VIRTUAL boat precisely
+  because it is deciding whether to build one.
+- STRUCTURAL: the overseas leg searches an overlap pf map rooted at the
+  boat it was handed. A land tile is enterable there only from a tile
+  the hull can occupy (`overlap_move` returns `move_rate` into a
+  non-native tile; the iterate refuses to expand out of a `PF_MS_NONE`
+  scope), so every candidate the search VISITS already has a reachable
+  meeting tile beside it. Asking the same hull is vacuous; asking a
+  different hull — which is what the filter did — answers a question
+  nobody asked.
+
+**So §3.1's clause (i) does not hold as written**, and the lift's 21%
+of crossings that never close distance (59/275) is not the site search
+failing to test reachability. The divergence must be between the boat
+the search assumed and the boat the lift forms with, or a beachhead
+that stops being reachable in between. That needs its own instrument
+and is not this epic's.
+
+### Validation
+
+- `meson test -C build` 5/5; `tune-audit.py` CLEAN at **214 fields**
+  (from 212; `lift_wait_tail_pct` and `site_wait_discount` registered in
+  `deeptuning.h`, a `TUNE_*` macro, `tuning-params.ini`, and the ALL +
+  X + ECON blocks).
+- **Off-switch proof: 10/10 smoke scorelogs byte-identical** at both
+  knobs 0, against a `git archive` build of base `9ccbf8426e`
+  (era-probe stage-1 pattern, `identity.ini` both sides, ports
+  7250/7265, jobs 2, results under `benchmark/results/w36-identity/`).
+  Re-run against the shipped tip `c2931f0fcc` after the withdrawal:
+  **10/10 again**. The spell table and the §3.4 split are therefore
+  proven inert, which matters because both run unconditionally.
+- **Liveness, isolated-150, 2 seeds, jobs 2, `site_wait_discount = 1.0`**
+  (`benchmark/tuning/w36-wait.ini`, results under
+  `benchmark/results/w36-live/`). Every counter fires:
+
+      deep-waitspell   75 player-turns with a live spell, mean 1.41
+                       spells, longest live spell 7 turns
+      deep-sitewait    13 searches priced a candidate; 568 candidates
+                       discounted, 1089 wait-turns charged,
+                       mean 1.92 turns per candidate
+      deep-sitetarget  4 searches, 1 site each, 1.1 want per site
+
+  The mean 1.92 turns sits where `commission-sizing.md` §3 says it
+  should (median 0, mean 2.28) — the term is small in the middle by
+  construction, and it is the tail it exists for.
+- **NO A/B.** The isolated-150 20-seed A/B is scheduled separately.
+  Nothing here is a claim that the discount pays.
+
+### For whoever runs the A/B
+
+- **The knob to move is `site_wait_discount`**, one arm, on
+  isolated-150. `lift_wait_tail_pct` is a shape parameter and should
+  stay at 80 for that arm — moving both is a factorial nobody has
+  designed.
+- **Watch `colony_want` for a demand spiral.** The probe path takes
+  the same discount by construction (§3.1 asks for it), and
+  `colony_want` is the signal that ASKS for the hull whose absence
+  creates the wait. At the measured magnitudes (mean 1.92 turns, p90
+  of completed spells 7) the discount is a few percent of a site's
+  score and a spiral is unlikely — but `deep-colony` and
+  `deep-sitewait` are in the same log and the check is one grep.
+- **`deep-sitetarget` is nearly empty on isolated-150** (4 searches, 2
+  games): islands produce few assaults, so the §3.4 population is
+  thin there by construction. Read that counter on a war venue
+  (tech50war-200 or contested) before concluding anything about the
+  size of the tax.
+
+### Corrections to the plan, recorded
+
+1. **expansion-logistics §3.1 clause (i) is wrong as written** — see
+   the withdrawal above. Reachability of the beachhead is already
+   enforced by the overlap pf map the search runs on.
+2. **The "57.4% censored" figure means "never enrolled", not "waited
+   forever".** `commission-sizing.md` §3: only 36 of 592 island spells
+   were still waiting at game end; the rest stop wanting a boat. The
+   population worth pricing is the 19.8% of spells ≥ 5 turns that hold
+   61.4% of all waiting, which is what the tail estimator targets.
+3. **§3.2 (the naval bonus gate) was already built, measured, and
+   defaulted OFF** before this epic (`4a0d05dd74`, then `f657986d1a`),
+   with the reason recorded above: `naval_bonus()` is a coastal YIELD
+   term, not an option on shipping, so gating it on navigability
+   prices out real food. Nothing to do; the rider is closed.

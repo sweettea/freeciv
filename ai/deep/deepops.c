@@ -15,6 +15,8 @@
 #include <fc_config.h>
 #endif
 
+#include <stdlib.h>
+
 /* utility */
 #include "log.h"
 
@@ -1300,6 +1302,166 @@ static void deep_wait_census(struct ai_type *ait, struct player *pplayer)
 }
 
 /**********************************************************************//**
+  Refresh this player's live wait spells: who is waiting for a
+  crossing, and since when.
+
+  The wait census beside this writes the same population to the log and
+  a spell is reconstructed offline; this keeps it in memory so a
+  DECISION can read it. Observation only -- nothing here changes a
+  want, a task or a unit -- and unconditional on purpose: the estimate
+  must be readable in the off arm too, or the arms differ by more than
+  the knob they are meant to isolate.
+
+  A unit is waiting when deep_lift_wants_boat() holds, its goal is on
+  another landmass, and no operation has claimed it. The claim is what
+  ENDS a spell, matching the offline definition (first-seen against
+  enrolment as a lift's core); a claim that dissolves starts the unit's
+  next spell at the turn it dissolved, which understates that unit's
+  total wait and never overstates it.
+**************************************************************************/
+void deep_wait_spells_update(struct ai_type *ait, struct player *pplayer)
+{
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  int live = 0, longest = 0, i;
+
+  unit_list_iterate(pplayer->units, punit) {
+    int freeslot = -1;
+    bool tracked = FALSE;
+
+    if (!deep_lift_wants_boat(ait, punit)
+        || tile_continent(unit_tile(punit))
+           == tile_continent(punit->goto_tile)
+        || deep_op_claiming(pplayer, punit->id) >= 0) {
+      continue;
+    }
+    for (i = 0; i < DEEP_WAIT_SPELLS; i++) {
+      if (dp->wait_spells[i].unit_id == punit->id) {
+        dp->wait_spells[i].seen = game.info.turn;
+        tracked = TRUE;
+        break;
+      }
+      if (dp->wait_spells[i].unit_id == 0 && freeslot < 0) {
+        freeslot = i;
+      }
+    }
+    if (!tracked && freeslot >= 0) {
+      dp->wait_spells[freeslot].unit_id = punit->id;
+      dp->wait_spells[freeslot].since = game.info.turn;
+      dp->wait_spells[freeslot].seen = game.info.turn;
+    }
+  } unit_list_iterate_end;
+
+  /* Retire every spell not seen this turn: picked up, re-aimed, or
+   * dead. Unit ids are not reused within a game, so a stale slot can
+   * never be mistaken for a fresh waiter. */
+  for (i = 0; i < DEEP_WAIT_SPELLS; i++) {
+    if (dp->wait_spells[i].unit_id == 0) {
+      continue;
+    }
+    if (dp->wait_spells[i].seen < game.info.turn) {
+      dp->wait_spells[i].unit_id = 0;
+      continue;
+    }
+    live++;
+    longest = MAX(longest, game.info.turn - dp->wait_spells[i].since);
+  }
+
+  if (live > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-waitspell turn=%d player=\"%s\" live=%d longest=%d",
+             game.info.turn, player_name(pplayer), live, longest);
+  }
+}
+
+static int deep_wait_cmp(const void *a, const void *b)
+{
+  return *(const int *) a - *(const int *) b;
+}
+
+/**********************************************************************//**
+  The wait, in turns, a unit joining the queue on this water should
+  expect.
+
+  Two questions, in this order.
+
+  1. Is a hull standing free FOR ME? Idle hulls on this water beyond
+     the units already waiting on it -- the same demand/supply pair the
+     colony want is damped by (deep_idle_ferries_on,
+     deep_ferry_demand_on), asked of the newcomer rather than of the
+     shipyard. Strictly greater, because the newcomer joins the back of
+     that queue: one spare hull with one waiter ahead is not a hull for
+     me. If there is one, the wait is 0 and the winner's own
+     ferry_wait amortization already prices the fetch.
+
+  2. Otherwise, how long is this water making people wait? The TAIL of
+     the live spells it holds, at lift_wait_tail_pct. Deliberately the
+     tail and not the mean: a fifth of spells hold three fifths of all
+     waiting (findings/commission-sizing.md), so the mean describes
+     nobody -- most crossings are quick and the ones that are not are
+     the ones that cost a colony. The sample is right-censored and
+     length-biased by construction (a spell that is still running is
+     over-represented in a snapshot of running spells), and that bias
+     points the same way as the statistic being estimated.
+
+  Zero when the water holds no spell at all: no queue has been
+  observed, so there is no wait to claim. That is not "no wait ever" --
+  it is the honest answer of an estimator with no sample, and it is why
+  a fresh empire's first crossing is priced by travel alone.
+**************************************************************************/
+int deep_wait_expected(struct ai_type *ait, struct player *pplayer,
+                       Continent_id ocean)
+{
+  const struct civ_map *nmap = &(wld.map);
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  int elapsed[DEEP_WAIT_SPELLS];
+  int n = 0, i, idx, pct;
+
+  if (ocean >= 0) {
+    return 0;                   /* Not a body of water at all. */
+  }
+  if (deep_idle_ferries_on(ait, pplayer, ocean)
+      > deep_ferry_demand_on(ait, pplayer, ocean)) {
+    return 0;                   /* A hull is standing free for me. */
+  }
+
+  for (i = 0; i < DEEP_WAIT_SPELLS; i++) {
+    struct unit *punit;
+    bool touches = FALSE;
+
+    if (dp->wait_spells[i].unit_id == 0) {
+      continue;
+    }
+    punit = game_unit_by_number(dp->wait_spells[i].unit_id);
+    if (punit == NULL || unit_owner(punit) != pplayer) {
+      continue;
+    }
+    adjc_iterate(nmap, unit_tile(punit), atile) {
+      if (tile_continent(atile) == ocean) {
+        touches = TRUE;
+        break;
+      }
+    } adjc_iterate_end;
+    if (!touches) {
+      continue;                 /* Waiting on somebody else's water. */
+    }
+    elapsed[n++] = MAX(0, game.info.turn - dp->wait_spells[i].since);
+  }
+  if (n == 0) {
+    return 0;
+  }
+
+  qsort(elapsed, n, sizeof(elapsed[0]), deep_wait_cmp);
+  pct = deep_tuning_get()->lift_wait_tail_pct;
+  pct = CLIP(0, pct, 100);
+  idx = (n * pct) / 100;
+  if (idx >= n) {
+    idx = n - 1;
+  }
+
+  return elapsed[idx];
+}
+
+/**********************************************************************//**
   Where a boat and a passenger can physically meet: the passenger's own
   tile if the boat can float there (a coastal city -- the boat docks on
   top of the settler), otherwise the adjacent tile the boat can reach
@@ -2442,6 +2604,11 @@ void deep_manage_units(struct ai_type *ait, struct player *pplayer)
    * who is STILL waiting once the lift has done its best, and was
    * there a crossing they could have joined? */
   deep_hitch_census(ait, pplayer);
+  /* The live spells first, then the census that reports the same
+   * population: the settler pass runs after this one in the same turn
+   * (auto_workers_player follows first_activities), so a site search
+   * reads a queue refreshed this turn rather than last turn's. */
+  deep_wait_spells_update(ait, pplayer);
   deep_wait_census(ait, pplayer);
 
   unit_list_iterate(pplayer->units, punit) {
@@ -2550,7 +2717,7 @@ bool deep_op_release_member(const struct player *pplayer, int unit_id)
   per target: a second wave at the same city is the reserve's claim
   (E7), not a parallel operation.
 **************************************************************************/
-static bool deep_op_targeted(const struct player *pplayer, int city_id)
+bool deep_op_targeted(const struct player *pplayer, int city_id)
 {
   const struct deep_plr *dp = deep_plr_data(pplayer);
   int oi;

@@ -118,6 +118,11 @@ struct deep_plr {
    * the worst case is one missed retraction, which is strictly better
    * than the current behaviour of never retracting at all. */
   int war_countdown_seen[MAX_NUM_PLAYER_SLOTS];
+  /* Live lift-wait spells (W36): who is waiting for a crossing and
+   * since when, refreshed once per player per turn by
+   * deep_wait_spells_update(). Recomputable rather than saved -- see
+   * the contract on struct deep_wait_spell. */
+  struct deep_wait_spell wait_spells[DEEP_WAIT_SPELLS];
   /* Colony lift demand (task #20): the best overseas site score a
    * lift-limited settler evaluation recorded, and when. Recomputable
    * -- refreshed every turn the settler pipeline runs. */

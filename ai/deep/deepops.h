@@ -100,6 +100,36 @@ enum deep_op_kind {
   DEEP_OPK_LIFT,
 };
 
+/* LIVE wait spells (W36, expansion-logistics section 3.1). The wait
+ * census (deepops.c) writes one `deep-wait` line per waiting passenger
+ * per turn, and a spell is reconstructed OFFLINE -- first-seen there
+ * against the turn that unit id appears as a lift's core. That is why
+ * nothing in the game can read it, and why site scoring has never
+ * priced the queue it sends settlers into. This is the same spell kept
+ * live: the turn a unit first wanted a crossing, carried until the
+ * wait ends.
+ *
+ * A spell ENDS when an operation claims the unit (the offline
+ * definition: enrolled as a lift's core), when it stops wanting a
+ * crossing, or when it dies. On isolated-150, 57.4% of spells end in
+ * none of those and simply run out with the game -- the censored tail,
+ * and the population the estimate is about.
+ *
+ * DEEP_WAIT_SPELLS is a bookkeeping bound like DEEP_OP_MEMBERS, not a
+ * tunable: past it a further waiter is untracked, which can only
+ * understate the queue.
+ *
+ * Not saved. A reload restarts every spell at the current turn, which
+ * understates a wait and can never overstate it; benchmarks never
+ * reload. */
+#define DEEP_WAIT_SPELLS 32
+
+struct deep_wait_spell {
+  int unit_id;                  /* 0 marks a free slot */
+  int since;                    /* turn this unit first wanted a crossing */
+  int seen;                     /* turn it was last seen still waiting */
+};
+
 struct deep_operation {
   enum deep_op_state state;
   enum deep_op_kind kind;
@@ -133,6 +163,10 @@ int deep_op_claiming(const struct player *pplayer, int unit_id);
  * must not price its marginal attacker against it. */
 bool deep_op_claimed_elsewhere(const struct player *pplayer, int unit_id,
                                int city_id);
+/* Is a live operation of ours already committed against this city?
+ * O(DEEP_OPS_MAX). Answering it is what lets a decision distinguish a
+ * rival's city from ground we are three turns from taking. */
+bool deep_op_targeted(const struct player *pplayer, int city_id);
 bool deep_op_release_member(const struct player *pplayer, int unit_id);
 bool deep_op_holds(const struct player *pplayer, int unit_id);
 /* Non-operation holds, scoped to one phase (mechanism-map D-A). A pass
@@ -150,6 +184,15 @@ void deep_hold_census(struct ai_type *ait, struct player *pplayer);
  * action. */
 void deep_capture_census(struct ai_type *ait, struct player *pplayer);
 void deep_manage_units(struct ai_type *ait, struct player *pplayer);
+/* Refresh this player's live wait spells; once per player per turn,
+ * beside the wait census it makes readable. Observation only. */
+void deep_wait_spells_update(struct ai_type *ait, struct player *pplayer);
+/* The wait, IN TURNS, that a unit joining the queue on this body of
+ * water should expect: the tail of the spells that water is already
+ * holding, or 0 where a spare hull is standing free for it. The number
+ * site scoring needs and has never had. */
+int deep_wait_expected(struct ai_type *ait, struct player *pplayer,
+                       Continent_id ocean);
 void deep_hull_order_choice(struct ai_type *ait, struct player *pplayer,
                             struct city *pcity,
                             const struct unit_type *ptype);
