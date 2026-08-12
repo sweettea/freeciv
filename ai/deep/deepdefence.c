@@ -3902,18 +3902,62 @@ int deep_idle_ferries_on(struct ai_type *ait, struct player *pplayer,
   return idle;
 }
 
+/* Observation only (ERA): one line per gate evaluation, in deep's
+ * metric style, joinable to deep-def / deep-surv on (turn, city).
+ *
+ * `stock_blocked` is the counterfactual this counter exists for --
+ * what the gate deep REPLACED would have said on the same city-turn.
+ * That verdict is dai_on_war_footing() alone, which the live path has
+ * already computed and which is a pure read of the diplomacy
+ * countdowns, so the counterfactual costs nothing and needs neither
+ * ai/baseline nor a second run. It is emitted beside `footing` (the
+ * same bool) deliberately: the analysis reads one field per question.
+ *
+ * `mil` is the gate's second conjunct at the call site, so the
+ * EFFECTIVE firing rate (blocked && mil > 0) is derivable from the
+ * line rather than inferred. wave=-1 / surv=-1 mean the survival
+ * model was never asked on this path.
+ *
+ * Every value here is already computed by the decision it watches;
+ * nothing is recomputed (deep_bid_log's rule). */
+static void deep_expgate_log(struct player *pplayer,
+                             const struct city *pcity,
+                             const struct ai_city *city_data,
+                             bool footing, int wave, double surv,
+                             double thresh, bool blocked)
+{
+  log_base(deep_metric_log_level(),
+           "deep-expgate turn=%d player=\"%s\" city=%d footing=%d"
+           " wave=%d surv=%.3f thresh=%.2f blocked=%d stock_blocked=%d"
+           " founder=%d worker=%d mil=%d size=%d",
+           game.info.turn, player_name(pplayer), pcity->id,
+           footing ? 1 : 0, wave, surv, thresh, blocked ? 1 : 0,
+           footing ? 1 : 0, city_data->founder_want,
+           city_data->worker_want, city_data->choice.want,
+           city_size_get(pcity));
+}
+
 static bool deep_expansion_blocked(struct ai_type *ait,
                                    struct player *pplayer,
                                    struct city *pcity)
 {
   const struct deep_tuning *tune = deep_tuning_get();
+  const struct ai_city *city_data = def_ai_city_data(pcity, ait);
+  /* Hoisted, not added: every path below asked this exactly once
+   * already, and it is a pure scan of the countdowns. */
+  bool footing = dai_on_war_footing(ait, pplayer);
   int wave = 0;
   double surv;
+  bool blocked;
 
   if (tune->expansion_war_survival <= 0.0) {
-    return dai_on_war_footing(ait, pplayer);
+    deep_expgate_log(pplayer, pcity, city_data, footing, -1, -1.0,
+                     tune->expansion_war_survival, footing);
+    return footing;
   }
-  if (!dai_on_war_footing(ait, pplayer)) {
+  if (!footing) {
+    deep_expgate_log(pplayer, pcity, city_data, footing, -1, -1.0,
+                     tune->expansion_war_survival, FALSE);
     return FALSE;
   }
   /* On war footing, but only cities that would actually FALL stop
@@ -3921,7 +3965,11 @@ static bool deep_expansion_blocked(struct ai_type *ait,
    * settles and still improves its land. */
   surv = deep_city_stack_survival(&(wld.map), pcity,
                                   tune->survival_horizon, &wave);
-  return wave > 0 && surv < tune->expansion_war_survival;
+  blocked = (wave > 0 && surv < tune->expansion_war_survival);
+  deep_expgate_log(pplayer, pcity, city_data, footing, wave, surv,
+                   tune->expansion_war_survival, blocked);
+
+  return blocked;
 }
 
 /* Birth-guard census, per player per turn: how often the inherited
