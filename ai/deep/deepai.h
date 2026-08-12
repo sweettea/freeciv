@@ -170,6 +170,16 @@ struct deep_plr {
   int gov_base_gov;
   double gov_base_out;
   int gov_valued;
+  /* The revolution's bill: whether anarchy is real for this player at
+   * all (asked under the incumbent, where the answer lives), the
+   * anarchy government's empire output for this burst, and the census
+   * of candidates actually charged for one. gov_anarchy_charged is 0
+   * at every difficulty above EASY, and that is a fact about
+   * H_REVOLUTION rather than a dead term -- see deepgov.c. */
+  bool gov_anarchy_real;
+  int gov_anarchy_turn;
+  double gov_anarchy_out;
+  int gov_anarchy_charged;
   /* Diplomacy (PEACE, 2026-08-06). The execution census for the
    * cease-fire pre-pass. Cumulative within a run and NOT saved: the
    * per-event log lines are what benchmark/diplcensus.py reads, and a

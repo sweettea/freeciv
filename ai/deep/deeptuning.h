@@ -1347,6 +1347,18 @@ struct deep_tuning {
    * compiled default and byte-identical. Structural off-switch, not
    * an optimiser knob. */
   int gov_valuation;
+  /* What the anarchy a revolution passes through is charged at. The
+   * cost itself is MEASURED, not assumed: the turns the server would
+   * actually make this player serve, times the empire output those
+   * turns lose, in the same currency as the gain. 1.0 therefore means
+   * "charge the measured loss at face value" and is an identity
+   * rather than a taste -- but the range is registered because the
+   * measurement values anarchy at TODAY's arrangement while the
+   * empire that emerges is a few turns older, and only a tuning pass
+   * can say whether that biases the charge up or down. Inert at
+   * gov_valuation 0, and inert at any difficulty above EASY, where
+   * the server charges an AI no anarchy at all. */
+  double gov_anarchy_weight;
 
   /* Caravan BUILD want on merit (the trade-merit epic). Deep already
    * chooses long, foreign destinations with one honest transit
