@@ -75,6 +75,21 @@ int deep_potential_improvement_bonus(const struct impr_type *pimprove,
                                      const enum req_problem_type prob_type,
                                      bool consider_multipliers)
 {
+  return deep_potential_improvement_bonus_for(pimprove, pcity, nullptr,
+                                              effect_type, prob_type,
+                                              consider_multipliers);
+}
+
+/**********************************************************************//**
+  The same, on behalf of one unit type: see deepeffects.h.
+**************************************************************************/
+int deep_potential_improvement_bonus_for(const struct impr_type *pimprove,
+                                         const struct city *pcity,
+                                         const struct unit_type *utype,
+                                         enum effect_type effect_type,
+                                         const enum req_problem_type prob_type,
+                                         bool consider_multipliers)
+{
   struct universal source = { .kind = VUT_IMPROVEMENT,
                               .value = {.building = pimprove}};
   struct effect_list *plist = get_req_source_effects(&source);
@@ -93,6 +108,7 @@ int deep_potential_improvement_bonus(const struct impr_type *pimprove,
     const struct req_context context = {
       .player = owner,
       .city = pcity,
+      .unittype = utype,
       .building = pimprove,
     };
 

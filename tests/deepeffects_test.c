@@ -42,6 +42,7 @@
 #include "game.h"
 #include "improvement.h"
 #include "requirements.h"
+#include "unittype.h"
 
 /* ai/deep */
 #include "deepeffects.h"
@@ -51,6 +52,15 @@
 #define IMPR_FLAGGED 0
 #define IMPR_PLAIN 1
 #define TEST_FLAG IF_USER_FLAG_1
+
+/* Two unit classes: one that benefits from the building (the "Barracks"
+ * class flag every in-tree ruleset puts on its ground units) and one
+ * that does not, with one unit type in each. */
+#define UCLASS_BENEFITS 0
+#define UCLASS_OTHER 1
+#define UTYPE_BENEFITS 0
+#define UTYPE_OTHER 1
+#define TEST_UCFLAG UCF_USER_FLAG_1
 
 static int failures = 0;
 
@@ -74,6 +84,8 @@ static int failures = 0;
 static void setup_ruleset(void)
 {
   struct impr_type *pimpr;
+  struct unit_class *pclass;
+  struct unit_type *putype;
 
   improvements_init();
   game.control.num_impr_types = 2;
@@ -85,22 +97,40 @@ static void setup_ruleset(void)
   pimpr = improvement_by_number(IMPR_PLAIN);
   BV_CLR_ALL(pimpr->flags);
 
+  unit_classes_init();
+  game.control.num_unit_classes = 2;
+  pclass = uclass_by_number(UCLASS_BENEFITS);
+  BV_CLR_ALL(pclass->flags);
+  BV_SET(pclass->flags, TEST_UCFLAG);
+  pclass = uclass_by_number(UCLASS_OTHER);
+  BV_CLR_ALL(pclass->flags);
+
+  unit_types_init();
+  game.control.num_unit_types = 2;
+  putype = utype_by_number(UTYPE_BENEFITS);
+  putype->uclass = uclass_by_number(UCLASS_BENEFITS);
+  putype = utype_by_number(UTYPE_OTHER);
+  putype->uclass = uclass_by_number(UCLASS_OTHER);
+
   ruleset_cache_init();
 }
 
 /**********************************************************************//**
   Register one effect of `type` and value `value`, gated on one
-  requirement.
+  requirement. The effect is returned so a second requirement can be
+  hung on it.
 **************************************************************************/
-static void add_gated_effect(enum effect_type type, int value,
-                             int req_kind, int req_range, bool present,
-                             int req_value)
+static struct effect *add_gated_effect(enum effect_type type, int value,
+                                       int req_kind, int req_range,
+                                       bool present, int req_value)
 {
   struct effect *peffect = effect_new(type, value, nullptr);
 
   effect_req_append(peffect, req_from_values(req_kind, req_range,
                                              FALSE, present, FALSE,
                                              req_value));
+
+  return peffect;
 }
 
 int main(void)
@@ -163,6 +193,39 @@ int main(void)
   CHECK(deep == -30,
         "an effect requiring the flag ABSENT credits %d for a candidate"
         " that carries it, expected -30", deep);
+
+  /* THE FULL civ2civ3 BARRACKS SHAPE: gated on the building's flag AND
+   * on the unit's class (effects.ruleset:1824). Unit-blind, a local
+   * unit-class requirement is UNKNOWN and RPT_CERTAIN discards it, so
+   * the scalar read is still zero and the credit has to say which unit
+   * it means. */
+  {
+    struct effect *peffect
+      = add_gated_effect(EFT_VETERAN_BUILD, 1, VUT_IMPR_FLAG,
+                         REQ_RANGE_CITY, TRUE, TEST_FLAG);
+
+    effect_req_append(peffect, req_from_values(VUT_UCFLAG, REQ_RANGE_LOCAL,
+                                               FALSE, TRUE, FALSE,
+                                               TEST_UCFLAG));
+  }
+
+  CHECK(deep_potential_improvement_bonus(flagged, nullptr,
+                                         EFT_VETERAN_BUILD, RPT_CERTAIN,
+                                         FALSE) == 0,
+        "a unit-class-gated effect read with no unit in the context is"
+        " UNKNOWN, and RPT_CERTAIN must keep discarding it");
+  CHECK(deep_potential_improvement_bonus_for(flagged, nullptr,
+                                             utype_by_number(UTYPE_BENEFITS),
+                                             EFT_VETERAN_BUILD, RPT_CERTAIN,
+                                             FALSE) == 1,
+        "Veteran_Build 1 is owed to a unit of the class the ruleset"
+        " names, and was not paid");
+  CHECK(deep_potential_improvement_bonus_for(flagged, nullptr,
+                                             utype_by_number(UTYPE_OTHER),
+                                             EFT_VETERAN_BUILD, RPT_CERTAIN,
+                                             FALSE) == 0,
+        "a unit of the wrong class was credited for a class-gated"
+        " effect");
 
   ruleset_cache_free();
   improvements_free();

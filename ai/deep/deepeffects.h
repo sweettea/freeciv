@@ -38,6 +38,22 @@ int deep_potential_improvement_bonus(const struct impr_type *pimprove,
                                      const enum req_problem_type prob_type,
                                      bool consider_multipliers);
 
+/* The same question asked ON BEHALF OF ONE UNIT TYPE, for the effects
+ * a ruleset gates on what the unit is as well as on what the building
+ * is: civ2civ3's Barracks pair is "BuildingFlag Barracks, City" AND
+ * "UnitClassFlag Barracks, Local" (effects.ruleset:1824, :1835), and a
+ * local unit-class requirement with no unit in the context is UNKNOWN,
+ * which RPT_CERTAIN discards. A credit that is about particular units
+ * -- the damaged ones standing here, the defender this city would
+ * build -- knows which unit it means and can say so. `utype` nullptr
+ * is exactly deep_potential_improvement_bonus(). */
+int deep_potential_improvement_bonus_for(const struct impr_type *pimprove,
+                                         const struct city *pcity,
+                                         const struct unit_type *utype,
+                                         enum effect_type effect_type,
+                                         const enum req_problem_type prob_type,
+                                         bool consider_multipliers);
+
 /* The test the accessor above is built on, exported for the one other
  * place deep walks an improvement's effect list itself
  * (deep_output_bonus_pct(), which needs the OutputType requirement
