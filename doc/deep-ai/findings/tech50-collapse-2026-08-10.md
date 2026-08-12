@@ -60,6 +60,31 @@ only mirrored numbers are meaningful.
    deep advantage in research direction is neutralized on this venue.
 4. **Killstack/rotation dynamics with strong units** — melt/rotation
    cadences assume early-era HP/firepower ratios.
+5. **Smallpox-vs-spacing (human, 2026-08-10).** On a high-starting-
+   resource world, dense fast founding beats better-spaced sites
+   because tempo compounds and the 200-turn horizon never pays
+   spacing's long-term dividend.
+
+## Founding-tempo forensics (2026-08-11)
+
+Cities-over-time from the six calib2 scorelogs, mirrored:
+
+- **t10 tempo is EQUAL.** The 8 free settlers land at the same speed:
+  seed 1 even-seats 17v17, odd-seats 9v10; seed 2 18v19 / 15v15;
+  seed 3 16v17 / 12v15. The blowout-seat gap (9v27) exists at t10 on
+  BOTH sides — it is seat geography, not AI.
+- **The divergence is t10→t100 continued founding.** Stock keeps
+  adding cities (+6..+9 per mirrored side); deep adds +3..+5 and
+  flatlines by ~t100 (e.g. seed 3 even: deep 16→19, stock 17→25).
+
+So hypothesis 5 is half-right: not initial smallpox tempo (equal),
+but **density/slot count** — on a cramped 32x32 8P map, stock's dense
+placement finds more viable sites; deep's wider spacing + (likely)
+fear-inflated settler risk stops expansion early, and 200 turns never
+repays quality-per-city. Refines #1 and #5 into one question for the
+ERA epic: why does deep stop founding after t10? (site threshold vs
+settler fear-tax vs garrison demand crowding out settler builds).
+Task #42 (placement-quality audit) is the companion analysis.
 
 ## Consequences
 
