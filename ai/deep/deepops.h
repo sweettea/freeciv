@@ -163,6 +163,10 @@ int deep_op_claiming(const struct player *pplayer, int unit_id);
  * must not price its marginal attacker against it. */
 bool deep_op_claimed_elsewhere(const struct player *pplayer, int unit_id,
                                int city_id);
+/* Is a live operation of ours already committed against this city?
+ * O(DEEP_OPS_MAX). Answering it is what lets a decision distinguish a
+ * rival's city from ground we are three turns from taking. */
+bool deep_op_targeted(const struct player *pplayer, int city_id);
 bool deep_op_release_member(const struct player *pplayer, int unit_id);
 bool deep_op_holds(const struct player *pplayer, int unit_id);
 /* Non-operation holds, scoped to one phase (mechanism-map D-A). A pass

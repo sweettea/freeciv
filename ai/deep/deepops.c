@@ -2717,7 +2717,7 @@ bool deep_op_release_member(const struct player *pplayer, int unit_id)
   per target: a second wave at the same city is the reserve's claim
   (E7), not a parallel operation.
 **************************************************************************/
-static bool deep_op_targeted(const struct player *pplayer, int city_id)
+bool deep_op_targeted(const struct player *pplayer, int city_id)
 {
   const struct deep_plr *dp = deep_plr_data(pplayer);
   int oi;

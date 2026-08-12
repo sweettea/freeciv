@@ -80,6 +80,13 @@ static void deep_tile_data_cache_destroy(struct tile_data_cache *ptdc)
 #define SPECHASH_IDATA_FREE deep_tile_data_cache_destroy
 #include "spechash.h"
 
+/* Candidate sites whose rival-pressure penalty counted a city one of
+ * our own live operations is committed against, and the want that part
+ * of the penalty took off them. Instrumentation for
+ * expansion-logistics section 3.4; nothing reads these but the log. */
+static int deep_site_contest_ours = 0;
+static double deep_site_contest_want = 0.0;
+
 /* What an existing city of ours will man, and when: its catchment
  * tiles ranked best-first, with the turn each one gets a citizen (0 if
  * it has one already, -1 if the city never reaches it). Cached for one
@@ -729,6 +736,11 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
        * discriminate nothing (findings/europe-T80.md §2). */
       Continent_id here = tile_continent(result->tile);
       double contest = 0.0;
+      /* ... of which, ours-to-be: the part of the penalty owed to
+       * cities one of our OWN live operations is committed against
+       * (expansion-logistics section 3.4). Observation only. */
+      double contest_ours = 0.0;
+      bool ask_ours = log_do_output_for_level(deep_metric_log_level());
 
       players_iterate_alive(aplayer) {
         if (aplayer == pplayer || pplayers_allied(pplayer, aplayer)) {
@@ -752,10 +764,32 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
               > 4 * result->city_radius_sq) {
             continue;
           }
-          contest += 1.0 / (1.0 + real_map_distance(city_tile(acity),
-                                                    result->tile));
+          {
+            double term = 1.0 / (1.0 + real_map_distance(city_tile(acity),
+                                                         result->tile));
+
+            contest += term;
+            if (ask_ours && deep_op_targeted(pplayer, acity->id)) {
+              contest_ours += term;
+            }
+          }
         } city_list_iterate_end;
       } players_iterate_alive_end;
+
+      /* Deep prices down exactly the ground it is about to conquer,
+       * and re-prices it up only after the capture -- by which time
+       * the settlers have gone elsewhere. Nothing has ever measured
+       * how much of the penalty that is, so: how many candidate sites
+       * carry it, and how much want it costs them at today's weights.
+       * INSTRUMENT ONLY -- the penalty itself is unchanged, and a
+       * correction waits on this number. */
+      if (contest_ours > 0.0) {
+        deep_site_contest_ours++;
+        deep_site_contest_want
+          += contest_ours * deep_tuning_get()->site_rival_pressure
+             * MAX(0.0, 1.0 - deep_tuning_get()->site_rival_crowding
+                              * deep_land_pressure());
+      }
 
       /* Being near a rival is a choice on a roomy map and unavoidable
        * on a crowded one. Where the whole board shares a landmass the
@@ -1284,6 +1318,8 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
   deep_site_wait_priced = 0;
   deep_site_wait_turns = 0;
   deep_site_reach_refused = 0;
+  deep_site_contest_ours = 0;
+  deep_site_contest_want = 0.0;
   deep_wait_memo_n = 0;
 
   /* The beachhead reach filter's own map: ONE overlap map for the
@@ -1475,6 +1511,19 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
              game.info.turn, player_name(pplayer), punit->id,
              deep_site_wait_priced, deep_site_wait_turns,
              deep_site_reach_refused, hull != NULL ? hull->id : -1,
+             best != NULL ? index_to_map_pos_x(tile_index(best->tile)) : -1,
+             best != NULL ? index_to_map_pos_y(tile_index(best->tile)) : -1);
+  }
+
+  /* Section 3.4's number: candidates taxed for a city we are already
+   * coming to take, and what that clause of the tax cost them. One
+   * line per search, like the other two censuses. */
+  if (deep_site_contest_ours > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-sitetarget turn=%d player=\"%s\" unit=%d sites=%d"
+             " want=%.1f best=(%d,%d)",
+             game.info.turn, player_name(pplayer), punit->id,
+             deep_site_contest_ours, deep_site_contest_want,
              best != NULL ? index_to_map_pos_x(tile_index(best->tile)) : -1,
              best != NULL ? index_to_map_pos_y(tile_index(best->tile)) : -1);
   }
