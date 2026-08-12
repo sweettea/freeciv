@@ -1053,6 +1053,35 @@ struct deep_tuning {
    * quorum) or dissolving. */
   double op_take_target;
   int op_muster_wait;
+  /* THE MARGINAL GARRISON DRAFT (ERA 3a,
+   * findings/era-probe-evidence-2026-08-12.md section 6).
+   *
+   * When the free pool cannot clear the formation bar, the draft
+   * borrows a blade from the walls. It decides with an ABSOLUTE
+   * floor: release the blade only if the city still clears
+   * survival_target without it. The 2026-08-12 probe priced that
+   * floor over 11 232 formation attempts -- the draft fires on 19.4%
+   * of them and adds a mean of 0.28 units, because only 39.9% of
+   * survival reads clear 0.85 at all. Meanwhile 44% of attempts reach
+   * the odds model with an EMPTY pool and 81% of a deep seat's 13.9
+   * late-game military units never appear in it. The floor is not
+   * protecting cities that are in danger; it is refusing to spend
+   * cities that are already lost, whose blades are worth nothing
+   * where they stand.
+   *
+   * 1 replaces the floor with the comparison the decision actually
+   * is: release the blade when the survival it COSTS its city is
+   * less than the take-probability it BUYS the operation. Both sides
+   * are probabilities the code already computes --
+   * deep_city_stack_survival() minus _without() for the cost,
+   * deep_take_odds_at_arrival() with and without the blade for the
+   * gain -- so there is no new magnitude and no scale factor between
+   * them. That the two probabilities are commensurable AT ALL (one
+   * is a city surviving a night, the other an operation taking a
+   * city) is precisely what the A/B tests; it is not assumed here.
+   *
+   * 0 = the absolute survival_target floor, exactly as before. */
+  int op_draft_marginal;
   /* Launch on odds, not on a head count (combat E2): a mustered wave
    * is released when the force STANDING at the staging city clears
    * the same bar formation used, re-priced against the garrison as it
