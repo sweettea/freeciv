@@ -11749,3 +11749,147 @@ falsification and it costs one cell.
 - Arrival-time weighting: a pf-slower attacker still inside the
   horizon keeps full weight; the knob makes admission honest, not the
   within-horizon schedule.
+
+## S6: deep honours its skill level by inheritance, and three paths escape (2026-08-12)
+
+Branch `epic/s6-difficulty`, base `9ccbf8426e`. Audit + harness only; **no
+`ai/deep` behaviour changed**, which was the mandate. Two commits:
+`b3eab5faef` `benchmark: run any config at another AI skill level`,
+`436cabca5b` `doc: audit how a difficulty level reaches ai/deep`.
+
+Full audit: `findings/difficulty-audit-2026-08-12.md`.
+
+### Does deep honour skill levels today?
+
+**Yes — but almost entirely by inheritance, not by asking.** Where deep
+forwards to `ai/default`, the handicap binds at stock's own consumer.
+Where deep replaced a stock decision with its own, it usually stopped
+applying. Deep's own code reads handicaps at 36 sites, **33 of them
+`H_MAP`** for pathfinder omniscience; the rest are `H_RATES`
+(`deeprates.c:374`), `H_PRODCHGPEN` (which deep *imposes on itself*,
+`deepai.c:505-524`), `H_AWAY`, and a gated `H_TARGETS` that ships off.
+`ai_fuzzy()` is called at 3 sites, all inherited from stock's defence code.
+
+`science_cost` (common-side) and `H_RATES` bind unconditionally. `expand`
+and `H_EXPANSION` bind through exactly one door.
+
+### The three gaps for S7
+
+1. **H_TARGETS on deep's ops path — the only place deep is STRONGER than
+   its level intends.** `deep_op_pick_target()` (`deepops.c:2611-2613`),
+   retargeting (`:3597-3599`) and the build-side target menu
+   (`deepdefence.c:5147`) filter on `map_is_known` — *ever* known. Stock at
+   novice/easy/normal demands `map_is_known_and_seen(..., V_MAIN)` —
+   *currently visible* (`daiunit.c:621-623`). Deep already wrote the fix
+   (`deep_impose_honest_info()` sets H_TARGETS, `deepai.c:575-577`) and
+   ships it at `honest_info = 0`. S7 needs the bit set per level, not new
+   mechanism.
+2. **Two expansion producers bypass the damping.** `H_EXPANSION` reaches
+   deep only via `domestic_advisor_choose_build()` (`deepdefence.c:6607`),
+   and deep has since built the **colony lift** (`deepdefence.c:4957-4984`,
+   a `CT_ATTACKER` bid formed on the military side) and the **founder
+   pool** (`deepsettler.c:1384-1390`, sized by map emptiness). Deep reads
+   `adv->max_num_cities` **nowhere**. Net at novice: settler *production*
+   damped 100×, settler *stock* and *transport* undamped. The
+   `settler_rush_weight`, stance and `scale_settler` multipliers are all
+   clean — they multiply upstream of the advisor, so the divisor still
+   lands on top.
+3. **A mechanism gap, recorded per rule 3.** `H_DANGER` forces
+   `city_data->danger = 1` (`daimilitary.c:976`); deep's garrison floor
+   early-returns on `danger != 0` (`deepdefence.c:1738-1740`). A handicap
+   meant to make novice *more* fearful silently disables deep's own
+   minimum-garrison insurance, which then only ever fires at hard. Needs no
+   `ai/default` change: the gate should test the real threat, not the
+   handicapped proxy.
+
+Smaller: hut valuation ignores H_HUTS (`deepexplore.c:146`) — a
+wasted-production bug, not a cheat, since the server still refuses the
+walk and caps the prize. And **fuzzy is thin**: stock spreads 400/1000
+across `ai/default`, deep inherits 3 defence sites, so deep at novice is
+*less erratic* than stock at novice by construction. That is the gap the
+build-choice sampler is meant to fill.
+
+### The harness
+
+`benchmark/run.sh --skill LEVEL` runs any existing config at another level.
+It derives a config differing only in the `SKILL=` line and runs that, so
+the level enters the key through `confhash` — an env var would not enter
+the key at all and a novice cell would cache-hit the hard results in the
+same directory. `run-game.sh` is untouched, so `runhash` is unchanged and
+**every existing result dir keeps its name and its DONE markers**. Without
+`--skill`, the key computation is byte-identical: the pre-session
+4-component formula recomputed by hand for `smoke.conf` against this binary
+gives `88a3bfd9057b`, which is the dir the new `run.sh` used with no flag.
+
+Both arms share the level, including both modules of a `mixed_XY` game
+(`run-game.sh:113` emits the bare level command after all `create` lines;
+the argument-less form rewrites every AI player, `stdinhand.c:2036-2050`).
+That shared level is what goal (c) compares.
+
+### Validation — 4 smoke games, mixed_db, 2 seeds, jobs 2, portbase 7450
+
+| cell | dir | result |
+|---|---|---|
+| hard (no flag) | `smoke-88a3bfd9057b` | 2/2, 0 pairing violations |
+| `--skill novice` | `smoke@novice-3c49c509b367` | 2/2, 0 pairing violations |
+| `--skill novice` rerun | same dir | 2 already done, 0 to run |
+
+Mechanism evidence that the handicaps reach **deep's own player**:
+
+| counter | novice | hard |
+|---|---|---|
+| `deep-bid expand=` | 450 lines, all `expand=10` | 830 lines, all `expand=100` |
+| `deep-payswitch` | **0 lines** | 2 lines (one per deep seat) |
+
+`deep-bid` is emitted only from `deep_city_choose_build()`, so both are deep
+seats reading their own vector. The zero is the sharper of the two: at
+novice the level itself sets `H_PRODCHGPEN` (`ai/difficulty.c:91`), so
+`deep_impose_switch_penalty()` early-returns at `deepai.c:512` and imposes
+nothing — the handicap *bitvector*, not just the `expand` scalar, arrived.
+
+`meson test -C build` 5/5. `tune-audit.py` **CLEAN 212/212/212/212**,
+unchanged — this session adds no tunable. No C file was touched, so no
+byte-identity run was owed; the hard path is untouched by construction.
+
+### Direction only, n=2, NOT a result
+
+Deep-vs-baseline seat scores in those same 4 games (deep = P1/P3):
+hard 101/88 vs 54/63 and 116/96 vs 69/93; novice 65/**4** vs 72/50 and
+72/67 vs 63/68. Two games decide nothing, but the `4` is a deep seat that
+finished with **0 cities and 1 tech** and is worth a look before the ladder
+measurement — as is the tech collapse both modules show at novice
+(15-20 → 7-11), which is `science_cost = 250` binding common-side on
+everyone, as designed. The ladder session owns the real numbers.
+
+### Feasibility read on the two randomizer ideas (S7 design input)
+
+- **City-choice sampler**: hooks the two `deep_want_cmp()` calls in
+  `deep_city_choose_build()` (`deepdefence.c:6650,6679`), where every
+  producer's bid is simultaneously in scope. Cheap. Three constraints are
+  load-bearing: temperature 0 at hard must be an argmax *fallback branch*
+  (not a limit of the arithmetic) or the corpus dies; tiers are not
+  samplable (`DWT_EMERGENCY` outranks value, and a grave-danger defender
+  losing a coin flip is a lost city); and the candidate set at that seam is
+  only 2-3 wide, because `building_advisor_choose()` collapses
+  `building_want[]` to a single maximum before deep sees it. **A second
+  hook inside `building_want[]` is needed for it to read as "picked a
+  plausible-but-worse building".**
+- **Tuning jitter**: `deep_tuning_get()` returns a file-scope global read
+  at **210 call sites across 16 files**, with no player parameter anywhere
+  in the API. Per-player values need either that refactor, or a
+  phase-boundary swap in `dpai_data_phase_begin()` whose safety depends on
+  first inventorying every read reachable from a shared-context callback
+  (the `choose_building` vtable hook, treaty evaluation, anything under
+  `advisors/`). That inventory is a prerequisite, not a detail. It should
+  also follow the tuning pass owed in `NEXT-SESSION.md` §0 — jitter around
+  placeholders is noise around arbitrary points. **Build the sampler
+  first.**
+
+### Where the plan was stale
+
+`sessions/S-difficulty-audit.md:33-37` records deep reading only `H_MAP`
+(17 sites), `H_FOG`, `H_AWAY` and calling `ai_fuzzy()` twice, as of
+2026-08-04. Eight days on it is 33 `H_MAP` sites, `H_RATES` honoured,
+`H_PRODCHGPEN` self-imposed, `H_TARGETS` implemented behind `honest_info`,
+and 3 `ai_fuzzy()` sites — the S5 omniscience epic. The stock half of the
+brief is exact; nothing in `ai/difficulty.c` has moved since `0896b34`.
