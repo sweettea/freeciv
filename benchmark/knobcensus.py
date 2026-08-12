@@ -200,14 +200,14 @@ MAP = {
         "commission-sizing.md). Sweep with site_wait_discount, never "
         "alone."),
     "op_draft_marginal": (
-        "S3", "mode", "direct", [("deep-opodds", "drafted")],
+        "S3", "mode", "direct", [("deep-opodds", "drafted>=1")],
         "ERA 3a's marginal garrison release (deepops.c, deep_op_form). "
         "0/1 switch; the drafted field of deep-opodds is the observing "
         "counter (arm A' 0.18 vs arm A 0.30, 2026-08-12). Falsified "
         "and score-null on tech50war-200 (STATUS 2026-08-12); stays 0 "
         "pending the MUSTER redesign."),
     "survival_pf_reach": (
-        "S3", "mode", "direct", [("deep-wave", "pf_turns")],
+        "S3", "mode", "direct", [("deep-wave", "pf_turns>=0")],
         "ERA 3c's pathfinder-confirmed land reach "
         "(deepcombat.c, deep_city_survival_core). 0/1 switch; "
         "deep-wave's far_dist/far_turns/pf_turns fields are its "
