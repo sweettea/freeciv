@@ -720,6 +720,18 @@ struct deep_tuning {
    * loaded boat for a timeout.
    * PLACEHOLDER -- flagged in STATUS.md for a tuning pass. */
   int lift_hitch_wait_min;
+  /* Which point of the live wait-spell distribution deep_wait_expected()
+   * reports, as a percentile: 100 is the longest spell that water is
+   * holding, 50 the median.
+   *
+   * Not a magnitude and not free: 80 is where the measured mass sits.
+   * A fifth of spells hold three fifths of all waiting
+   * (findings/commission-sizing.md), so the mean describes nobody --
+   * most crossings are quick and the slow ones are the ones that cost
+   * a colony. This selects the boundary of that fifth. It is a knob
+   * rather than a literal because the SHAPE of the estimator is a
+   * choice even when the number behind it is measured. */
+  int lift_wait_tail_pct;
   /* A civilian outside a city flees to the nearest own city when an
    * at-war military unit is within this many tiles. 0 disables. */
   int worker_flee_radius;
