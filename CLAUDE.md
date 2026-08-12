@@ -101,12 +101,20 @@ Benchmark runs are resumable — the result cache is keyed on
 `(tuning_hash, config, seed)`, so an interrupted `--full` picks up where it left
 off rather than restarting.
 
-**Never rebuild while a benchmark is in flight** — later games silently exec the
-new binary and the run is tainted (it happened; the result dir had to be
-deleted). Validate new work in the bench worktree instead: `.worktrees/bench`
-has its own `build/`, benchmarks take `--server`, and the sha-keyed cache keeps
-provenance exact. Sync files or commits into the worktree, build there, and
-leave the main tree's binary pinned for whatever run is using it.
+**Always pin the binary for a benchmark in flight.** Every run takes
+`--server <path>`, and that path must not be rebuilt until the run finishes. The
+failure this prevents: later games silently exec a new binary and the run is
+tainted (it happened; the result dir had to be deleted).
+
+Pinning, not abstaining, is the rule — "never rebuild" was the old wording and it
+was stricter than the invariant. A build that cannot reach a pinned path cannot
+taint anything, so **work may proceed in parallel with a run** provided each
+worker has its own worktree with its own `build/`, its own `--server` path, and
+its own port block. `.worktrees/bench` is the long-standing instance of the
+pattern; the sha-keyed cache keeps provenance exact either way.
+
+What this still forbids: rebuilding the exact binary some run is executing.
+If you cannot say which binary a live run is pinned to, do not build.
 
 ---
 
@@ -114,10 +122,21 @@ leave the main tree's binary pinned for whatever run is using it.
 
 1. Read `CLAUDE.md`, `doc/deep-ai/00-context.md`, and **one** workstream file.
 2. Check `doc/deep-ai/STATUS.md` for current state.
-3. Implement **one epic** (5–10 commits). Not a whole workstream. Not a phase.
+3. Implement **at most one epic** (5–10 commits) **per subagent session**. Not a
+   whole workstream. Not a phase.
 4. Run `./build/tests/unit_tests` and `./benchmark/run.sh --quick`.
 5. Update `STATUS.md` with what landed, the numbers, and what's next.
 6. **Stop.** Do not begin the next epic in the same session.
+
+The budget is per subagent session, not per wall-clock session: several subagents
+may each own an epic at the same time, under the pinning rule above (own
+worktree, own `build/`, own `--server`, own port block). What stays forbidden is
+one session sliding from its epic into the next one — that is what step 6 is for,
+and it is unaffected by how many sessions are running.
+
+**Parallelise scheduling, not attribution.** Two epics on the same causal chain
+still cannot be read from two separate A/Bs; if their effects can interact, they
+want one factorial design, not two concurrent arms.
 
 ---
 
