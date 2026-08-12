@@ -139,6 +139,18 @@ struct deep_tuning {
    * turn of queueing should count against a turn of walking is not. */
   double site_wait_discount;
 
+  /* 1: drop an overseas candidate whose beachhead no real hull of ours
+   * can path to a landing tile at or beside -- the same test
+   * deep_op_form_lift() applies at formation, moved to where the
+   * decision is made instead of where it is regretted. 0 is off and is
+   * the A/B arm.
+   *
+   * GEOMETRY like site_naval_gate and not a magnitude, hence 0/1: the
+   * filter removes candidates the lift will refuse, it never resizes
+   * one. Inert when we own no hull that could carry the unit -- "we
+   * cannot answer" is not "cannot be reached". */
+  int site_hull_reach;
+
   /* And what that premium is WORTH, as a percentage of the site's own
    * value: stock's naval_bonus() pays a compile-time NAVAL_EMPHASIS
    * (20) -- a fifth of the whole site score for standing next to
