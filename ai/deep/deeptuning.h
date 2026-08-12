@@ -1854,6 +1854,44 @@ struct deep_tuning {
    * defender that arrives cheap next turn is worth nothing. 0 = off =
    * byte-identical. PLACEHOLDER. */
   int buy_per_gold;
+
+  /* Whether a deep seat declines omniscience (W04 / RC6, epic S5).
+   *
+   * H_MAP and H_FOG are set at exactly one difficulty level -- AWAY,
+   * the "not playing" mode (ai/difficulty.c:52-133) -- and H_TARGETS
+   * stops at `normal`, so at `hard` and above the seat this project
+   * measures has no information handicap at all. Everything in
+   * findings/honest-information.md follows from that, including the
+   * argument that a strategy layer evaluated under omniscience cannot
+   * be evaluated at all.
+   *
+   * honest_info != 0 ORs H_MAP, H_FOG and H_TARGETS onto deep's own
+   * player in deep's own phase hook -- the same shape as
+   * pay_switch_penalty, and for the same reason: nothing in
+   * ai/default, ai/baseline or the server changes, the seat simply
+   * stops being exempt. It never CLEARS a bit, so 0 means "deep adds
+   * nothing" rather than "deep guarantees omniscience", and an AWAY
+   * seat keeps the handicaps its level gave it either way.
+   *
+   * What this closes: the ~18 handicap-gated sites in deep
+   * (pathfinding omniscience, the site-eval unknown-tile gate, the
+   * explorer discovery term, the settler overnight veto) plus the ~40
+   * forwarded stock gates. What it does NOT close, and cannot: every
+   * ground-truth read that carries no gate at all -- the survival and
+   * take-odds census over rival unit lists, enemy-city `worth`, the
+   * garrison-menace score ratio, and the whole of stock's Tier-3
+   * strategic layer (dai_war_desire, daitech.c, daidata.c). Those are
+   * inventoried with file:line in
+   * findings/omniscience-census-2026-08-11.md; the flag is the
+   * measuring instrument for the ones that ARE gated, not a fix.
+   *
+   * 1 is therefore expected to make deep WORSE, and per that census
+   * worse in a specific direction: deep's gates mostly fail
+   * dangerously optimistic (an unseen wave reads as no wave), where
+   * stock's fail passive. The knob exists so the breakage can be
+   * measured rather than argued. 0 = off = every measurement ever
+   * taken. STRUCTURAL EXPERIMENT FLAG, not a tuning target. */
+  int honest_info;
 };
 
 void deep_tuning_init(void);
