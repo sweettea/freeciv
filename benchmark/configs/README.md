@@ -29,6 +29,17 @@ historical comparability — the tier is the statement of intent.
 | `mixed-8p-classic` | TO CREATE: same, classic | trade + war vs stock at table |
 | `longhaul-300` | TO CREATE: 6p fractal civ2civ3, T300 | culture/endgame/wonder horizon (cloud only) |
 
+## ERA — specialist venues, cited only for what they were built to see
+
+Each buys one era or one geometry the canonical portfolio cannot reach,
+by paying for it somewhere else. Read the provenance comment in the file
+before citing one; each names its own known limits.
+
+| cell | world | built for | pays with |
+|---|---|---|---|
+| `tech50war-200` | 8p 32x32 T200, techlevel 50 | Gunpowder-era war; found the head-to-head sign inversion (`findings/tech50-collapse-2026-08-10.md`) | frozen research |
+| `tech80air-200` | 8p 32x32 T200, techlevel 80, `techlossforgiveness -1` | Flight/Espionage era: W32 air doctrine, SAM/SDI, W35 Spy slices | research is 80 of 87 advances at turn 1 — degenerate by design |
+
 ## HOLDOUT — evaluated, never tuned on
 
 - `europe-eval` (TO FORMALIZE from the derby kit): real-map asymmetric
