@@ -20,6 +20,8 @@
 
 /* common */
 #include "city.h"
+#include "unit.h"
+#include "unitlist.h"
 #include "effects.h"
 #include "game.h"
 #include "government.h"
@@ -104,6 +106,87 @@
  */
 
 /**********************************************************************//**
+  What one point of `otype` is worth per turn, in the same currency
+  and at the same prices `dai_city_want()` pays for the city's own
+  output -- including its gold emphasis, which reads a tax rate above
+  50 as evidence that the empire is short of gold. Reusing the city
+  want's prices is the whole point: a shield paid to a unit and a
+  shield produced by a tile have to be the same shield or the
+  subtraction below means nothing.
+**************************************************************************/
+static double deep_gov_output_price(const struct player *pplayer,
+                                    const struct adv_data *adv,
+                                    Output_type_id otype)
+{
+  switch (otype) {
+  case O_FOOD:
+    return adv->food_priority;
+  case O_SHIELD:
+    return adv->shield_priority;
+  case O_GOLD:
+    if (pplayer->economic.tax > 50) {
+      return adv->gold_priority * (pplayer->economic.tax - 40) / 14.0;
+    }
+    return adv->gold_priority;
+  default:
+    /* Nothing else is ever charged as unit upkeep. */
+    return 0.0;
+  }
+}
+
+/**********************************************************************//**
+  The empire's unit upkeep bill under the government currently set.
+
+  This is the half of "output and upkeep" that the arrangement cannot
+  see. `dai_city_want()` says so itself -- "Unit upkeep isn't handled
+  here" -- and it is precisely the half governments differ most on:
+  under civ2civ3 the early governments charge almost no unit gold and
+  Republic and Democracy charge for nearly everything, so a valuation
+  built on arranged output alone systematically recommends the
+  government whose bill it is not reading.
+
+  A rule-3 copy of `update_unit_upkeep()`'s arithmetic
+  (server/citytools.c:3119) rather than a call to it, for the reason
+  that function exists: it WRITES `punit->upkeep[]` and sends packets.
+  A counterfactual may not do either. `unit_upkeep_cost()` reads the
+  owner's government through the effect system, so setting the
+  candidate government above is what makes this the candidate's bill.
+**************************************************************************/
+static double deep_gov_unit_upkeep(struct player *pplayer,
+                                   const struct adv_data *adv)
+{
+  double bill = 0.0;
+
+  city_list_iterate(pplayer->cities, pcity) {
+    int free_uk[O_LAST];
+
+    output_type_iterate(o) {
+      free_uk[o] = get_city_output_bonus(pcity, get_output_type(o),
+                                         EFT_UNIT_UPKEEP_FREE_PER_CITY);
+    } output_type_iterate_end;
+
+    unit_list_iterate(pcity->units_supported, punit) {
+      output_type_iterate(o) {
+        int cost = unit_upkeep_cost(punit, o);
+
+        if (cost > 0) {
+          if (free_uk[o] > cost) {
+            free_uk[o] -= cost;
+            cost = 0;
+          } else {
+            cost -= free_uk[o];
+            free_uk[o] = 0;
+          }
+        }
+        bill += cost * deep_gov_output_price(pplayer, adv, o);
+      } output_type_iterate_end;
+    } unit_list_iterate_end;
+  } city_list_iterate_end;
+
+  return bill;
+}
+
+/**********************************************************************//**
   Empire output per turn under `gov`, in the advisor's want currency.
 
   Sets the government, lets the ruleset clamp the rates to it, and
@@ -121,9 +204,10 @@
   government look worse the more immunities it granted.
 **************************************************************************/
 static double deep_gov_output(struct player *pplayer, struct adv_data *adv,
-                              struct government *gov)
+                              struct government *gov, double *upkeep)
 {
   double out = 0.0;
+  double bill;
   double bonus;
   int revolution_turns;
 
@@ -141,6 +225,13 @@ static double deep_gov_output(struct player *pplayer, struct adv_data *adv,
   city_list_iterate(pplayer->cities, pcity) {
     out += dai_city_want(pplayer, pcity, adv, NULL);
   } city_list_iterate_end;
+
+  /* Net of what the standing army costs under THIS government. */
+  bill = deep_gov_unit_upkeep(pplayer, adv);
+  out -= bill;
+  if (upkeep != NULL) {
+    *upkeep = bill;
+  }
 
   bonus = adv_gov_action_immunity_want(gov)
           + adv_gov_player_bonus_want(pplayer);
@@ -170,7 +261,7 @@ static double deep_gov_baseline(struct player *pplayer, struct adv_data *adv,
 
   if (dp->gov_base_turn != game.info.turn
       || dp->gov_base_gov != government_number(now)) {
-    dp->gov_base_out = deep_gov_output(pplayer, adv, now);
+    dp->gov_base_out = deep_gov_output(pplayer, adv, now, NULL);
     dp->gov_base_turn = game.info.turn;
     dp->gov_base_gov = government_number(now);
     /* Whether a revolution costs anarchy at all is a property of the
@@ -266,7 +357,8 @@ static double deep_gov_anarchy_output(struct player *pplayer,
 
   if (dp->gov_anarchy_turn != game.info.turn) {
     dp->gov_anarchy_out = deep_gov_output(pplayer, adv,
-                                          game.government_during_revolution);
+                                          game.government_during_revolution,
+                                          NULL);
     dp->gov_anarchy_turn = game.info.turn;
   }
 
@@ -309,7 +401,7 @@ void deep_gov_value(struct ai_type *ait, struct player *pplayer,
   struct adv_data *adv;
   struct government *now;
   double base, cand, value;
-  double anarchy_turns = 0.0, charge = 0.0;
+  double anarchy_turns = 0.0, charge = 0.0, upkeep = 0.0;
   int horizon;
 
   if (tune->gov_valuation == 0) {
@@ -347,7 +439,7 @@ void deep_gov_value(struct ai_type *ait, struct player *pplayer,
     }
   }
 
-  cand = deep_gov_output(pplayer, adv, gov);
+  cand = deep_gov_output(pplayer, adv, gov, &upkeep);
   horizon = deep_horizon_turns();
 
   value = (cand - base) * horizon - charge;
@@ -357,11 +449,11 @@ void deep_gov_value(struct ai_type *ait, struct player *pplayer,
 
   log_base(deep_metric_log_level(),
            "deep-gov turn=%d player=\"%s\" gov=\"%s\" now=\"%s\""
-           " base=%.1f out=%.1f delta=%.1f horizon=%d anturns=%.1f"
+           " base=%.1f out=%.1f upk=%.1f delta=%.1f horizon=%d anturns=%.1f"
            " ancost=%.1f dist=%d val=%.1f",
            game.info.turn, player_name(pplayer),
            government_rule_name(gov), government_rule_name(now),
-           base, cand, cand - base, horizon, anarchy_turns, charge,
+           base, cand, upkeep, cand - base, horizon, anarchy_turns, charge,
            deep_gov_tech_distance(pplayer, gov), (double) *val);
 
   *override = TRUE;
