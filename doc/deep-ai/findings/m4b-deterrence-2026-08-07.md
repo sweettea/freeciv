@@ -260,6 +260,36 @@ arithmetic is unexercised, so its two knobs are untuned *and* untested
 against live data. Do not tune them until the accessor can see the
 effect.
 
+> **Correction (2026-08-12, session CREDIT).** The defect is real and
+> the measurement above is right; the *mechanism* named in this section
+> is wrong on both counts, and the correction matters because it is
+> what made the fix small.
+>
+> The effect **is** returned. `effect_req_append()`
+> (`common/effects.c:276`, in tree since 2022) indexes an effect with a
+> `VUT_IMPR_FLAG` requirement under **every improvement carrying that
+> flag**, so `get_req_source_effects()` on the Barracks hands it back.
+> What drops it is the requirement loop: the accessor short-circuits a
+> requirement naming the improvement *itself* (the city does not have
+> the building yet) and evaluates everything else live, so
+> `"BuildingFlag", "Barracks", "City"` is asked of a city with no
+> barracks and is **definitively FALSE**. That is also why
+> `RPT_POSSIBLE` did not help — the requirement is false, not unknown.
+>
+> And the building flag was only half of it. Both effects also carry
+> `"UnitClassFlag", "Barracks", "Local"`, which with no unit in the
+> context *is* unknown, and `RPT_CERTAIN` discards it. Fixing only the
+> building half left `deep-barracks` at 0.00 in a smoke game — measured,
+> which is the only reason the second half was found.
+>
+> Both halves are fixed on `epic/credit-integrity`
+> (`ai/deep/deepeffects.c`): the candidate satisfies a flag requirement
+> the way it satisfies a requirement naming itself, and the two barracks
+> credits ask on behalf of the unit they are about. `deep-barracks` goes
+> 0 -> 109 lines in one smoke game. The knobs stay closed; see that
+> session's STATUS entry for why the first census makes the veteran term
+> look far too large.
+
 ---
 
 ## 6. Item 5 — unit lifetime upkeep at the build seam

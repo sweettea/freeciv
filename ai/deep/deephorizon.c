@@ -45,6 +45,7 @@
 
 #include "deepai.h"
 #include "deepcombat.h"
+#include "deepeffects.h"
 #include "deepstance.h"
 #include "deeptuning.h"
 
@@ -468,12 +469,12 @@ static adv_want deep_content_credit(struct city *pcity,
     return 0;
   }
 
-  amount = get_potential_improvement_bonus(pimprove, pcity,
-                                           EFT_MAKE_CONTENT,
-                                           RPT_CERTAIN, FALSE)
-           + get_potential_improvement_bonus(pimprove, pcity,
-                                             EFT_FORCE_CONTENT,
-                                             RPT_CERTAIN, FALSE);
+  amount = deep_potential_improvement_bonus(pimprove, pcity,
+                                            EFT_MAKE_CONTENT,
+                                            RPT_CERTAIN, FALSE)
+           + deep_potential_improvement_bonus(pimprove, pcity,
+                                              EFT_FORCE_CONTENT,
+                                              RPT_CERTAIN, FALSE);
   if (amount <= 0) {
     return 0;
   }
@@ -528,8 +529,8 @@ static adv_want deep_growth_credit(struct city *pcity,
   int pct, ttg, steps;
   adv_want per_citizen, extra;
 
-  pct = get_potential_improvement_bonus(pimprove, pcity, EFT_GROWTH_FOOD,
-                                        RPT_CERTAIN, FALSE);
+  pct = deep_potential_improvement_bonus(pimprove, pcity, EFT_GROWTH_FOOD,
+                                         RPT_CERTAIN, FALSE);
   if (pct <= 0) {
     return 0;
   }
@@ -563,14 +564,16 @@ static adv_want deep_growth_credit(struct city *pcity,
   Percentage output bonuses pimprove would add to pcity, per output
   type. Output_Bonus effects carry an OutputType requirement at Local
   range naming which output they scale, so the answer is a vector and
-  not the scalar get_potential_improvement_bonus() would return -- that
+  not the scalar deep_potential_improvement_bonus() would return -- that
   one filters on effect type alone and would fold a Marketplace's +50%
   gold and +50% luxury into a meaningless 100.
 
   The OutputType requirement is evaluated against the output being
   computed rather than against a city, so it is read here rather than
   passed to is_req_active(); every OTHER requirement must be active,
-  which is the same discipline get_potential_improvement_bonus() uses.
+  which is the same discipline deep_potential_improvement_bonus() uses,
+  down to deep_req_source_is_candidate() for the requirements the
+  candidate itself would satisfy.
 **************************************************************************/
 static void deep_output_bonus_pct(const struct city *pcity,
                                   const struct impr_type *pimprove,
@@ -603,9 +606,9 @@ static void deep_output_bonus_pct(const struct city *pcity,
         otype = preq->source.value.outputtype;
         continue;
       }
-      if (preq->source.kind == VUT_IMPROVEMENT
-          && preq->source.value.building == pimprove) {
-        /* The building itself: that is what we are pricing. */
+      if (deep_req_source_is_candidate(preq, pimprove)) {
+        /* The building itself, or a flag it carries: that is what we
+         * are pricing, and the city does not have it yet. */
         if (!preq->present) {
           useful = FALSE;
           break;
@@ -891,8 +894,8 @@ static adv_want deep_gov_center_credit(struct city *pcity,
   if (tune->horizon_govcenter_weight <= 0.0) {
     return 0;
   }
-  if (get_potential_improvement_bonus(pimprove, pcity, EFT_GOV_CENTER,
-                                      RPT_CERTAIN, FALSE) <= 0) {
+  if (deep_potential_improvement_bonus(pimprove, pcity, EFT_GOV_CENTER,
+                                       RPT_CERTAIN, FALSE) <= 0) {
     return 0;
   }
   if (is_gov_center(pcity)) {
@@ -1223,44 +1226,49 @@ static double deep_heal_paid = 0.0, deep_vet_paid = 0.0;
 
   A city with no casualties is owed nothing, which is the whole point:
   stock pays for a Barracks in a city that has never seen a fight.
+
+  Asked PER UNIT, because the ruleset gates the effect on the unit as
+  well as on the building: civ2civ3's regen carries "UnitClassFlag
+  Barracks, Local" beside its building flag, so the rate a Warriors
+  gets from a Barracks and the rate a Trireme gets are different
+  numbers and neither is readable without saying which unit is meant.
+  Today's rate is get_unit_bonus(), which is the read hp_gain_coord()
+  itself makes, and the building's contribution ADDS to it the way
+  every other HP_Regen source in the ruleset does (fortress 25,
+  airstrip 10, airbase 24, "cumulative" in the ruleset's own comment).
 **************************************************************************/
 static adv_want deep_heal_stream_credit(struct city *pcity,
                                         const struct impr_type *pimprove)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   struct player *pplayer = city_owner(pcity);
-  int add_regen;
   double saved = 0.0;
   adv_want credit;
 
   if (tune->heal_stream_gain <= 0.0) {
     return 0;
   }
-  add_regen = get_potential_improvement_bonus(pimprove, pcity,
-                                              EFT_HP_REGEN,
-                                              RPT_CERTAIN, FALSE);
-  if (add_regen <= 0) {
-    return 0;
-  }
   {
-    int have = get_city_bonus(pcity, EFT_HP_REGEN);
-
-    if (have >= add_regen) {
-      return 0;               /* Already healing at least this fast. */
-    }
     unit_list_iterate(city_tile(pcity)->units, punit) {
       const struct unit_type *ut = unit_type_get(punit);
       int missing = ut->hp - punit->hp;
-      int now, with, t_now, t_with;
+      int add_regen, have, now, with, t_now, t_with;
 
       if (unit_owner(punit) != pplayer
           || unit_has_type_flag(punit, UTYF_CIVILIAN)
           || missing <= 0) {
         continue;
       }
+      add_regen = deep_potential_improvement_bonus_for(pimprove, pcity, ut,
+                                                       EFT_HP_REGEN,
+                                                       RPT_CERTAIN, FALSE);
+      if (add_regen <= 0) {
+        continue;               /* Nothing here for this unit. */
+      }
       /* The ruleset's own arithmetic, both ways. */
+      have = get_unit_bonus(punit, EFT_HP_REGEN);
       now = ut->hp * have / 100;
-      with = ut->hp * add_regen / 100;
+      with = ut->hp * (have + add_regen) / 100;
       if (with <= now) {
         continue;
       }
@@ -1331,16 +1339,6 @@ static adv_want deep_veteran_stream_credit(struct city *pcity,
   if (tune->veteran_stream_gain <= 0.0) {
     return 0;
   }
-  add_lv = get_potential_improvement_bonus(pimprove, pcity,
-                                           EFT_VETERAN_BUILD,
-                                           RPT_CERTAIN, FALSE);
-  if (add_lv <= 0) {
-    return 0;
-  }
-  have_lv = get_city_bonus(pcity, EFT_VETERAN_BUILD);
-  if (add_lv <= have_lv) {
-    return 0;                   /* No margin over what we already get. */
-  }
 
   unit_type_iterate(ut) {
     if (ut->defense_strength > 0
@@ -1354,9 +1352,24 @@ static adv_want deep_veteran_stream_credit(struct city *pcity,
     return 0;
   }
 
+  /* Both reads are about THAT unit, because the ruleset's veteran
+   * effects are gated on the unit as much as on the building
+   * (civ2civ3 excludes NonMil and NoVeteran types by name, and admits
+   * only classes flagged Barracks). Today's level is the server's own
+   * city_production_unit_veteran_level(); the candidate's levels add
+   * to it, which is what get_unittype_bonus() would do once it is
+   * built. */
+  add_lv = deep_potential_improvement_bonus_for(pimprove, pcity, best,
+                                                EFT_VETERAN_BUILD,
+                                                RPT_CERTAIN, FALSE);
+  if (add_lv <= 0) {
+    return 0;
+  }
+  have_lv = city_production_unit_veteran_level(pcity, best);
+
   levels = utype_veteran_levels(best);
   lv_now = MIN(have_lv, levels - 1);
-  lv_new = MIN(add_lv, levels - 1);
+  lv_new = MIN(have_lv + add_lv, levels - 1);
   if (lv_new <= lv_now) {
     return 0;                   /* Ruleset caps it out. */
   }
@@ -1448,9 +1461,9 @@ static adv_want deep_pop_insurance_credit(struct city *pcity,
   if (get_city_bonus(pcity, EFT_UNIT_NO_LOSE_POP) > 0) {
     return 0;                   /* Already insured; nothing to buy. */
   }
-  if (get_potential_improvement_bonus(pimprove, pcity,
-                                      EFT_UNIT_NO_LOSE_POP,
-                                      RPT_CERTAIN, FALSE) <= 0) {
+  if (deep_potential_improvement_bonus(pimprove, pcity,
+                                       EFT_UNIT_NO_LOSE_POP,
+                                       RPT_CERTAIN, FALSE) <= 0) {
     return 0;
   }
 
@@ -1488,11 +1501,11 @@ static adv_want deep_culture_credit(struct city *pcity,
   if (tune->horizon_culture_weight <= 0.0) {
     return 0;
   }
-  h = get_potential_improvement_bonus(pimprove, pcity, EFT_HISTORY,
-                                      RPT_CERTAIN, FALSE)
-      + get_potential_improvement_bonus(pimprove, pcity,
-                                        EFT_NATION_HISTORY,
-                                        RPT_CERTAIN, FALSE);
+  h = deep_potential_improvement_bonus(pimprove, pcity, EFT_HISTORY,
+                                       RPT_CERTAIN, FALSE)
+      + deep_potential_improvement_bonus(pimprove, pcity,
+                                         EFT_NATION_HISTORY,
+                                         RPT_CERTAIN, FALSE);
   if (h <= 0) {
     return 0;
   }
@@ -1948,9 +1961,9 @@ void deep_adjust_building_wants(struct ai_type *ait,
 
       if (!threatened && game.info.illness_on
           && city_size_get(pcity) + 1 >= game.info.illness_min_size) {
-        int health = get_potential_improvement_bonus(pimprove, pcity,
-                                                     EFT_HEALTH_PCT,
-                                                     RPT_CERTAIN, FALSE);
+        int health = deep_potential_improvement_bonus(pimprove, pcity,
+                                                      EFT_HEALTH_PCT,
+                                                      RPT_CERTAIN, FALSE);
 
         if (health > 0) {
           /* Plague insurance is worth having BEFORE the size gate the
