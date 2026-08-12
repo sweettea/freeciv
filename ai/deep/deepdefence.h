@@ -23,6 +23,13 @@ void deep_do_first_activities(struct ai_type *ait, struct player *pplayer);
  * how far does it reach doing it. */
 bool deep_utype_is_airborne(const struct unit_type *ut);
 int deep_utype_air_reach(const struct unit_type *ut);
+
+/* "Does it float" / "does it walk", for the thirteen call sites that
+ * used to ask utype_move_type() -- which is UMT_LAND for every class
+ * on the server, because only the client ever computes it. Answered
+ * from terrain nativity; see deep_uclass_swims() in deepdefence.c. */
+bool deep_utype_is_sea(const struct unit_type *ut);
+bool deep_utype_is_land(const struct unit_type *ut);
 void deep_do_last_activities(struct ai_type *ait, struct player *pplayer);
 
 /* HOLES GET COVERED (NETTHREAT item 4): the cost of taking one blade

@@ -609,7 +609,7 @@ static double deep_city_survival_core(const struct civ_map *nmap,
 
       if (tile_continent(unit_tile(aunit)) != home
           && !unit_transported(aunit)
-          && !(utype_move_type(at) == UMT_SEA && coastal)
+          && !(deep_utype_is_sea(at) && coastal)
           && !flies_in) {
         continue;
       }
