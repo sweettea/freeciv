@@ -184,6 +184,34 @@ MAP = {
         "gate logs it only when the knob is 0, and at the shipped "
         "default 1 it never appears, so MODE with an empty live list is "
         "the expected reading at defaults."),
+    "op_draft_marginal": (
+        "S3", "mode", "direct", [("deep-opodds", "drafted")],
+        "ERA 3a's marginal garrison release (deepops.c, deep_op_form). "
+        "0/1 switch; the drafted field of deep-opodds is the observing "
+        "counter (arm A' 0.18 vs arm A 0.30, 2026-08-12). Falsified "
+        "and score-null on tech50war-200 (STATUS 2026-08-12); stays 0 "
+        "pending the MUSTER redesign."),
+    "survival_pf_reach": (
+        "S3", "mode", "direct", [("deep-wave", "pf_turns")],
+        "ERA 3c's pathfinder-confirmed land reach "
+        "(deepcombat.c, deep_city_survival_core). 0/1 switch; "
+        "deep-wave's far_dist/far_turns/pf_turns fields are its "
+        "instrument, and the nonzero-wave row count is its footprint "
+        "(45,034 -> 31,802 when on). Factorial arm, 2026-08-12."),
+    "attacker_garrison_gain": (
+        "S3", "mag", "direct", [("deep-agc", "")],
+        "NETTHREAT item 3 (deepunit want seam): credit an attacker's "
+        "build want with marginal attrition x menace x OBSERVED home "
+        "cadence (deep-cadence, ~0.89 mean). deep-agc lines appear "
+        "only when the gain is nonzero; 0 lines at default is the "
+        "expected reading (off-switch proof 2026-08-12)."),
+    "cover_removal": (
+        "S3", "mode", "direct", [("deep-cover", "")],
+        "NETTHREAT item 4 (deep_cover_removal_cost): price defender "
+        "removal after the cheapest covering move; consumers are the "
+        "sortie gate and both draft release tests. deep-cover lines "
+        "only at knob 1; factorial-sensitive (moves the 3a cost side), "
+        "enters that design as its own arm."),
     "worker_flee_radius": (
         "S3", "mag", "direct", [("deep-flee", "")],
         "deep-flee is emitted exactly when a worker flees "
