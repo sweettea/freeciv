@@ -262,7 +262,12 @@ static double deep_gov_baseline(struct ai_type *ait, struct player *pplayer,
 
   if (dp->gov_base_turn != game.info.turn
       || dp->gov_base_gov != government_number(now)) {
+    struct player_economic was = pplayer->economic;
+
     dp->gov_base_out = deep_gov_output(pplayer, adv, now, NULL);
+    /* See deep_gov_anarchy_output(): an EXTRA pass may not leave the
+     * player's rates anywhere stock's own passes would not. */
+    pplayer->economic = was;
     dp->gov_base_turn = game.info.turn;
     dp->gov_base_gov = government_number(now);
     /* Whether a revolution costs anarchy at all is a property of the
@@ -356,6 +361,15 @@ static double deep_gov_anarchy_turns(struct player *pplayer,
 /**********************************************************************//**
   Empire output per turn under the anarchy the revolution passes
   through, computed once per burst and only when anarchy is real.
+
+  The rates are snapshotted around it. `check_player_max_rates()` does
+  not just read a ceiling -- it CLAMPS the player's live rates down to
+  it and notifies the player it did. Anarchy's ceiling is the lowest
+  in most rulesets, so pricing the detour would otherwise leave the
+  empire's tax split squeezed to anarchy's cap for the rest of the
+  phase, and post a message about it, for a government we are only
+  imagining. Stock's candidate loop leaves the same trace and this
+  file cannot fix that from here; what it can do is not ADD one.
 **************************************************************************/
 static double deep_gov_anarchy_output(struct player *pplayer,
                                       struct adv_data *adv)
@@ -363,9 +377,12 @@ static double deep_gov_anarchy_output(struct player *pplayer,
   struct deep_plr *dp = deep_plr_data(pplayer);
 
   if (dp->gov_anarchy_turn != game.info.turn) {
+    struct player_economic was = pplayer->economic;
+
     dp->gov_anarchy_out = deep_gov_output(pplayer, adv,
                                           game.government_during_revolution,
                                           NULL);
+    pplayer->economic = was;
     dp->gov_anarchy_turn = game.info.turn;
   }
 
