@@ -245,15 +245,109 @@ static struct deep_survival_memo *deep_survival_cache = NULL;
 static int deep_survival_n = 0;
 static int deep_survival_cap = 0;
 
+/* HONEST LAND REACH (ERA 3c): one pathfinder map per attacker per
+ * phase, shared by every city that asks about that attacker.
+ *
+ * The 3c instrument below measured the straight-line admission test
+ * against the pathfinder on tech50war-200 (69 336 wave evaluations):
+ * the furthest admitted attacker is unreachable outright in 19.1% of
+ * evaluations and slower than assumed in another 25.6%, and the
+ * pathfinder NEVER disagrees in the other direction (0.0% faster).
+ * Confirming with the pathfinder therefore only ever REMOVES
+ * attackers, which is why the straight-line test can stay in front as
+ * a free prefilter: nothing it rejects would have been admitted.
+ *
+ * Cost containment, because deep_city_survival_core() is the hottest
+ * routine deep has (437 440 calls over 32 probe games) and a
+ * pf_map_new() per qualifying attacker per evaluation is not
+ * affordable there: pf maps are lazily expanded, so ONE map per
+ * attacker -- kept for the phase, keyed on the unit and the tile it
+ * stood on when the map was drawn -- prices every (attacker, city)
+ * question with a single shared Dijkstra frontier. Counterfactual
+ * re-evaluations (_without/_with vary only defenders) hit the memo
+ * every time. A map whose owner has moved since it was drawn is
+ * redrawn: a stale origin is the same dishonesty this test exists to
+ * remove. */
+struct deep_reach_memo {
+  int unit_id;
+  int tile_index;           /* origin tile when the map was drawn */
+  struct pf_map *pfm;
+};
+
+static struct deep_reach_memo *deep_reach_cache = NULL;
+static int deep_reach_n = 0;
+static int deep_reach_cap = 0;
+
 /**********************************************************************//**
   Forget every remembered verdict. Called at the start of each player
   phase, which is what makes "once per city per turn" true and what
   keeps a verdict from a previous game in the same server process from
   ever being read.
+
+  The reach memo shares the lifecycle for the same reason: the phase
+  is the unit of coherence, and a pathfinder map may never outlive the
+  phase whose unit positions it was drawn from.
 **************************************************************************/
 void deep_survival_cache_clear(void)
 {
+  int i;
+
   deep_survival_n = 0;
+
+  for (i = 0; i < deep_reach_n; i++) {
+    pf_map_destroy(deep_reach_cache[i].pfm);
+  }
+  deep_reach_n = 0;
+}
+
+/**********************************************************************//**
+  The pathfinder's turn count for this attacker reaching this city, on
+  the same attack parameter find_something_to_kill() uses
+  (daiunit.c:603) -- terrain, ZOC and all. -1 means unreachable.
+  Memoised per attacker per phase; see the reach memo above.
+**************************************************************************/
+static int deep_reach_pf_turns(const struct civ_map *nmap,
+                               const struct unit *aunit,
+                               struct tile *ctile)
+{
+  struct deep_reach_memo *m = NULL;
+  struct pf_position pos;
+  int i;
+
+  for (i = 0; i < deep_reach_n; i++) {
+    if (deep_reach_cache[i].unit_id == aunit->id) {
+      m = &deep_reach_cache[i];
+      break;
+    }
+  }
+  if (m != NULL && m->tile_index != tile_index(unit_tile(aunit))) {
+    /* The attacker moved since the map was drawn (phases are
+     * concurrent); redraw from where it stands now. */
+    pf_map_destroy(m->pfm);
+    m->pfm = NULL;
+  }
+  if (m == NULL) {
+    if (deep_reach_n >= deep_reach_cap) {
+      deep_reach_cap = MAX(64, deep_reach_cap * 2);
+      deep_reach_cache = fc_realloc(deep_reach_cache,
+                                    deep_reach_cap
+                                    * sizeof(*deep_reach_cache));
+    }
+    m = &deep_reach_cache[deep_reach_n++];
+    m->unit_id = aunit->id;
+    m->pfm = NULL;
+  }
+  if (m->pfm == NULL) {
+    struct pf_parameter parameter;
+
+    pft_fill_unit_attack_param(&parameter, nmap, aunit);
+    m->tile_index = tile_index(unit_tile(aunit));
+    m->pfm = pf_map_new(&parameter);
+  }
+  if (pf_map_position(m->pfm, ctile, &pos)) {
+    return pos.turn;
+  }
+  return -1;
 }
 
 /**********************************************************************//**
@@ -437,6 +531,7 @@ static double deep_city_survival_core(const struct civ_map *nmap,
   Continent_id home = tile_continent(ctile);
   bool coastal = is_terrain_class_near_tile(nmap, ctile, TC_OCEAN);
   int n_air = 0;
+  const struct deep_tuning *tune = deep_tuning_get();
   struct deep_wave_census census = { 0, 0, 0, 0, 0, 0, 0, NULL, 0, 0 };
 
   if (wave_out != NULL) {
@@ -504,6 +599,25 @@ static double deep_city_survival_core(const struct civ_map *nmap,
       turns = (dist * SINGLE_MOVE + rate - 1) / rate;
       if (turns > horizon) {
         continue;
+      }
+      /* HONEST LAND REACH (ERA 3c): confirm the straight-line
+       * admission with the pathfinder. Land arm only -- the probe
+       * measured the gap there (19.1% unreachable, 25.6% slower,
+       * never faster); the sea arm admitted zero units in 437 440
+       * evaluations, the air arm prices a reach that IS the point of
+       * flight, and a passenger's approach belongs to its hull.
+       * Because the pathfinder is never faster than the straight
+       * line on the measured venue, the test above remains a free
+       * prefilter and this clause only removes attackers. */
+      if (tune->survival_pf_reach > 0
+          && !flies_in
+          && !unit_transported(aunit)
+          && tile_continent(unit_tile(aunit)) == home) {
+        int pf_turns = deep_reach_pf_turns(nmap, aunit, ctile);
+
+        if (pf_turns < 0 || pf_turns > horizon) {
+          continue;
+        }
       }
       /* Census (ERA), on the same four arms the test above just
        * evaluated and in its order: flight first, then own landmass,

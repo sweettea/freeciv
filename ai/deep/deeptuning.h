@@ -846,6 +846,30 @@ struct deep_tuning {
   double survival_target;
   double survival_fear_value;
   int survival_horizon;
+  /* HONEST LAND REACH (ERA 3c,
+   * findings/era-probe-evidence-2026-08-12.md section 3).
+   *
+   * The wave admits an attacker when straight-line distance over
+   * move rate fits inside survival_horizon -- no terrain, no ZOC,
+   * no pathfinder. The 3c instrument priced that estimate against
+   * the pathfinder's on 69 336 wave evaluations (tech50war-200):
+   * the furthest admitted attacker is unreachable outright in 19.1%
+   * and slower than assumed in another 25.6%, and the pathfinder is
+   * NEVER faster. So ~45% of survival verdicts are shaped by an
+   * attacker that cannot arrive as assumed -- inflated n_att,
+   * depressed survival, and (the 3a autopsy's suspect) blades pinned
+   * at DEFEND_HOME by fear of units that were never coming.
+   *
+   * 1 requires the pathfinder to confirm every land-arm admission:
+   * same attack parameter find_something_to_kill() uses, same
+   * horizon bound the straight line was held to, memoised one map
+   * per attacker per phase (deepcombat.c's reach memo) so the
+   * hottest routine pays one shared Dijkstra per attacker instead
+   * of one per evaluation. A mechanism switch, not a magnitude --
+   * every quantity inside is already computed.
+   *
+   * 0 = the straight-line test alone, exactly as before. */
+  int survival_pf_reach;
   /* Tired-attack discipline: a unit adjacent to its attack target
    * with only a tired strike left (moves_left < SINGLE_MOVE scales
    * attack power down) holds a turn to strike fresh, unless its
