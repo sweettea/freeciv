@@ -481,6 +481,66 @@ static void deep_settler_berth_census(struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Send a founder that is waiting on the wrong water to a coast a hull
+  could fetch it from.
+
+  The population is the one the census above reports and slice 2
+  measured from the supply side: `coast=1 serves=0`, a founder that
+  satisfied the ferry path's "am I beside water" test beside a sea
+  that does not reach its target. It asks for a boat, no boat can come,
+  and the drop-boatless clause deliberately spares a unit holding
+  FERRY_WANTED -- so it stands there, and the wait it accumulates is
+  what damps the founder want that would have commissioned the hull.
+
+  Three deliberate restrictions:
+
+  * Only where the founder ALREADY touches water. An inland founder is
+    not stranded: aiferry_gobyboat() walks it toward a real hull, and
+    if there is none the mission is dropped and re-searched land-only
+    the same turn. The defect is exactly the tile at which that walk
+    stops.
+  * The berth must be one this settler's own risk pathfinder can
+    reach; deep_settler_serviceable_berth() returns NULL otherwise and
+    nothing moves.
+  * The caller STILL calls aiferry_gobyboat() afterwards, so the
+    founder asks for a boat from wherever it ends the turn. Skipping
+    the request would leave ferryboat at FERRY_NONE and hand the
+    mission straight to the drop-boatless clause -- the walk would
+    cancel the very mission it was serving.
+
+  Returns FALSE iff the settler died on the way.
+**************************************************************************/
+static bool deep_settler_berth_route(struct ai_type *ait,
+                                     struct player *pplayer,
+                                     struct unit *punit,
+                                     const struct tile *dest)
+{
+  const struct civ_map *nmap = &(wld.map);
+  struct tile *berth;
+  int turns = -1;
+
+  if (deep_tuning_get()->founder_berth_route <= 0
+      || !is_terrain_class_near_tile(nmap, unit_tile(punit), TC_OCEAN)
+      || deep_water_serves_crossing(unit_tile(punit), dest)) {
+    return TRUE;
+  }
+
+  berth = deep_settler_serviceable_berth(punit, dest, &turns);
+  if (berth == NULL || same_pos(berth, unit_tile(punit))) {
+    return TRUE;
+  }
+
+  log_base(deep_metric_log_level(),
+           "deep-berthroute turn=%d player=\"%s\" unit=%d at=(%d,%d)"
+           " target=(%d,%d) berth=(%d,%d) dist=%d turns=%d",
+           game.info.turn, player_name(pplayer), punit->id,
+           TILE_XY(unit_tile(punit)), TILE_XY(dest), TILE_XY(berth),
+           real_map_distance(unit_tile(punit), berth), turns);
+
+  return deep_settler_goto(ait, punit, berth);
+}
+
+/**********************************************************************//**
   Ferry-enabled goto for settlers; the deep counterpart of
   dai_gothere(), using the route-sampling bodyguard request and the
   risk-aware land leg above. Zone of control stays respected: the
@@ -517,6 +577,9 @@ static bool deep_settler_gothere(struct ai_type *ait,
       /* Standing on its own legs and needing a hull: the population
        * slice 2's demand-supply gap is made of. */
       deep_settler_berth_census(pplayer, punit, dest_tile);
+      if (!deep_settler_berth_route(ait, pplayer, punit, dest_tile)) {
+        return FALSE;           /* Died walking to the berth. */
+      }
     }
     if (!aiferry_gobyboat(ait, pplayer, punit, dest_tile, bg_needed)) {
       return FALSE;
