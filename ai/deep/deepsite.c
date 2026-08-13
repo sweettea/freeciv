@@ -1530,6 +1530,17 @@ void deep_contemplate_new_city(struct ai_type *ait, struct city *pcity)
   unit_type = best_role_unit(pcity, action_id_get_role(ACTION_FOUND_CITY));
 
   if (unit_type == NULL) {
+    /* One of the two silent exits. era-probe-evidence 2 measured
+     * `founder_want > 0` in 5.0% of UNBLOCKED city-turns and could not
+     * say why the other 95% are zero, because this function reports
+     * nothing: it returns here without touching founder_want (so the
+     * STALE value stands), or it writes 0 below, and the two are
+     * indistinguishable from outside. `role=0` is this exit. */
+    log_base(deep_metric_log_level(),
+             "deep-founder turn=%d player=\"%s\" city=%d size=%d role=0"
+             " want=0 boat=0 fresh=0",
+             game.info.turn, player_name(pplayer), pcity->id,
+             city_size_get(pcity));
     log_debug("No ACTION_FOUND_CITY role unit available");
     return;
   }
@@ -1565,6 +1576,25 @@ void deep_contemplate_new_city(struct ai_type *ait, struct city *pcity)
       CITY_LOG(LOG_DEBUG, pcity, "want no city");
       city_data->founder_want = 0;
     }
+
+    /* THE decision line. `want` keeps its sign (negative means "and I
+     * need a boat first", daicity.h:60), `boat` is the errand flag the
+     * build side reads, and `fresh=1` marks a want this call produced
+     * as opposed to a cached one -- deepdefence only calls us every
+     * AI_CITY_RECALC_SPEED turns or so, and the ratio of these lines to
+     * city-turns is the cache rate nobody has measured either.
+     *
+     * Read it against the deep-siteladder lines emitted immediately
+     * before it by the same search: together they say whether a zero
+     * want is a map with no legal sites, a map with no SAFE sites, or a
+     * map whose sites are worth less than the settler that reaches
+     * them. */
+    log_base(deep_metric_log_level(),
+             "deep-founder turn=%d player=\"%s\" city=%d size=%d role=1"
+             " want=%d boat=%d fresh=1",
+             game.info.turn, player_name(pplayer), pcity->id,
+             city_size_get(pcity), city_data->founder_want,
+             city_data->founder_boat ? 1 : 0);
   } else {
     fc_assert_ret(is_ai(pplayer));
   }
