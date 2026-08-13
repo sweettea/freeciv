@@ -13738,3 +13738,21 @@ controls after 7ad93151b8 is void. Ledger:
   the composed baseline (rival leg to 0), or hold for a larger-n
   read. The old indiscriminate gift's -3.34 transfer is what this
   replaces.
+
+## Derby-4 (2026-08-12 overnight): the era collapse, third confirmation
+
+7 deep vs 7 classic, Europe-style generated map (startpos was
+adjusted — NOT the true scenario map, a kit item for derby-5),
+T300, tip binary, pv2 + trait-seeded stances. Result: deep LOSES
+1761 v 2095 (-48/seat), classic sweeps the podium, deep's best is
+Iceland (337, and the most cities at 20).
+
+The trajectory is the finding: +70 at T50, crossover T100-150,
+monotone divergence to -337 at T300 — the tech-50 collapse
+reproduced in the flagship venue, with the crossover exactly where
+the canonical venues' horizons end. The benchmark canon measured the
+half of the game deep wins. Consequences: the ERA/massing arc and
+the finale's late-era blend are the campaign's critical path, full
+stop. Kit lessons banked: set timeout -1 for headless (memory), true
+scenario map for derby-5, zero eliminations in 300 turns on this
+geometry.
