@@ -1496,8 +1496,10 @@ struct deep_tuning {
    * measurement values anarchy at TODAY's arrangement while the
    * empire that emerges is a few turns older, and only a tuning pass
    * can say whether that biases the charge up or down. Inert at
-   * gov_valuation 0, and inert at any difficulty above EASY, where
-   * the server charges an AI no anarchy at all. */
+   * gov_valuation 0. NOT inert above EASY: H_REVOLUTION decides how
+   * many EXTRA turns of anarchy are served, not whether the empire
+   * passes through anarchy, and it always does for one turn of
+   * production (see deep_gov_anarchy_turns()). */
   double gov_anarchy_weight;
   /* What a government's RATE CEILING is worth (darkfx item 5). A
    * government decides how far the tax/science/luxury split may be

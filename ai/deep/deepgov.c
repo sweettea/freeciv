@@ -331,16 +331,32 @@ static double deep_revolen_expected(struct government *gov)
   Turns of anarchy this player would actually serve to reach `gov`.
 
   Mirrors `handle_player_change_government()`'s own decision, because
-  a cost the server will not charge must not be priced: a revolution
-  already under way is served once, `EFT_NO_ANARCHY` skips it, and an
-  AI without the H_REVOLUTION handicap skips it too. That last one is
-  not a corner case -- H_REVOLUTION is set at AWAY, NOVICE/RESTRICTED
-  and EASY only, so at the `hard` skill every benchmark cell runs at,
-  this term is exactly zero and the government valuation is a pure
-  stream comparison. It is written anyway because it is what makes the
-  stream comparison correct at the levels where anarchy is real, and
-  because a term that reads the game rather than assuming them is the
-  only kind whose zero can be trusted.
+  a cost the server will not charge must not be priced -- and, equally,
+  a cost it DOES charge must not be priced at zero.
+
+  The floor is ONE turn, always. `H_REVOLUTION` and `EFT_NO_ANARCHY`
+  decide `turns`, the number of EXTRA turns served; they do not decide
+  whether the empire passes through anarchy at all.
+  `handle_player_change_government()` sets
+  `pplayer->government = game.government_during_revolution`
+  unconditionally (server/plrhand.c:615) and then sets
+  `revolution_finishes = game.info.turn + turns`, while the only call
+  to `update_revolution()` is at BEGIN phase (server/srv_main.c:1381).
+  So even with `turns == 0` the empire is under Anarchy when that
+  turn's city production runs, and does not leave until the next
+  turn begins. A revolution costs one full turn of output at every
+  difficulty; more where anarchy is real.
+
+  This was measured, not reasoned: across the 20 G3 lategame-80 games
+  the savegame's own `changed_to_times` counter and the scorelog's
+  government tag agree at exactly 1.00 turns of Anarchy per government
+  change in 20/20 seeds (deep 26.8 changes and 26.8 anarchy turns per
+  game; stock 17.8 and 17.9).
+
+  A player who is ALREADY in anarchy needs no special case: the turn
+  is sunk, and `base` is then the anarchy output itself, so the
+  `MAX(0.0, base - anarchy_out)` in the caller is zero and the charge
+  vanishes on its own.
 **************************************************************************/
 static double deep_gov_anarchy_turns(struct player *pplayer,
                                      struct government *gov)
@@ -352,10 +368,11 @@ static double deep_gov_anarchy_turns(struct player *pplayer,
     return pplayer->revolution_finishes - game.info.turn;
   }
   if (!dp->gov_anarchy_real) {
-    return 0.0;
+    /* No EXTRA turns, but the pass through anarchy still happens. */
+    return 1.0;
   }
 
-  return deep_revolen_expected(gov);
+  return MAX(1.0, deep_revolen_expected(gov));
 }
 
 /**********************************************************************//**

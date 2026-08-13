@@ -176,12 +176,12 @@ struct deep_plr {
   int gov_base_gov;
   double gov_base_out;
   int gov_valued;
-  /* The revolution's bill: whether anarchy is real for this player at
-   * all (asked under the incumbent, where the answer lives), the
-   * anarchy government's empire output for this burst, and the census
-   * of candidates actually charged for one. gov_anarchy_charged is 0
-   * at every difficulty above EASY, and that is a fact about
-   * H_REVOLUTION rather than a dead term -- see deepgov.c. */
+  /* The revolution's bill: whether EXTRA anarchy turns are real for
+   * this player (asked under the incumbent, where the answer lives),
+   * the anarchy government's empire output for this burst, and the
+   * census of candidates actually charged for one. Above EASY,
+   * gov_anarchy_real is FALSE and the charge is the one turn of
+   * production the server always takes -- see deepgov.c. */
   bool gov_anarchy_real;
   int gov_anarchy_turn;
   double gov_anarchy_out;
