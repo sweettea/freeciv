@@ -219,6 +219,18 @@ struct deep_plr {
    * anywhere connected the two. */
   int ops_formed;
   int ops_launched;
+  /* THE UNIT-SINK CENSUS (ERA 3b, CONSEQ N3's launch-rate reality
+   * check). Musters entered, musters that reached MARCH, and musters
+   * abandoned -- the three numbers that tell a mechanism which masses
+   * a decisive force apart from one which parks the army in a yard
+   * forever. Cumulative within a run and NOT saved: they are read off
+   * the deep-opodds stream, which carries them as running totals, and
+   * a reload that resets the tallies costs a partial count of an
+   * already-logged stream (the contract the rates and diplomacy
+   * counters ship under). Nothing branches on them. */
+  int musters_formed;
+  int musters_launched;
+  int musters_abandoned;
   /* The rotation cadence (NETTHREAT item 3): attack-rated unit-turns
    * spent standing in one of our own cities, over attack-rated
    * unit-turns sampled at all. SAVED, on the same rule the two

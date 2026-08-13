@@ -3282,12 +3282,29 @@ static double deep_op_assault_bar(struct player *pplayer,
   The defence census is a pure read of the target tile and is gated on
   the metric log level, the same way deep-anchor's counterfactual pick
   is: under FREECIV_DEEP_QUIET it does not run.
+
+  MUSTER STATE (ERA 3b) rides on this counter rather than on a parallel
+  one, because every question about a muster is a question about the
+  same decision this line already reports: what force stood there, what
+  odds it reached, and what the seat did about it. `op` is NULL where
+  there is no slot to read (a refusal), and then the muster fields are
+  zeros and `verdict` is one of the two the counter has always carried.
+
+  The population changed and the field says so: a reader who wants the
+  pre-3b population -- one line per formation attempt -- filters
+  `verdict` to formed|refused, and the per-turn muster lines all carry
+  muster=1. mform/mlaunch/mabandon are the player's running totals, so
+  the launch-rate reality check is readable off any late line without
+  re-aggregating the stream.
 **************************************************************************/
 static void deep_opodds_log(struct player *pplayer, int oi,
                             struct city *target, const char *verdict,
                             double odds, double bar, int required,
-                            int pool, int drafted, int eta, bool overseas)
+                            int pool, int drafted, int eta, bool overseas,
+                            const struct deep_operation *op,
+                            const char *why)
 {
+  const struct deep_plr *dp = deep_plr_data(pplayer);
   int def_n = 0, def_best = 0;
 
   if (!log_do_output_for_level(deep_metric_log_level())) {
@@ -3311,11 +3328,21 @@ static void deep_opodds_log(struct player *pplayer, int oi,
            "deep-opodds turn=%d player=\"%s\" op=%d target=%d"
            " verdict=\"%s\" odds=%.3f bar=%.3f take_target=%.2f"
            " required=%d pool=%d drafted=%d eta=%d overseas=%d"
-           " def_n=%d def_best=%d",
+           " def_n=%d def_best=%d muster=%d members=%d best=%d stall=%d"
+           " worth=%d why=%s mform=%d mlaunch=%d mabandon=%d",
            game.info.turn, player_name(pplayer), oi, target->id,
            verdict, odds, bar, deep_tuning_get()->op_take_target,
            required, pool, drafted, eta, overseas ? 1 : 0,
-           def_n, def_best);
+           def_n, def_best,
+           op != NULL ? op->muster : 0,
+           op != NULL ? op->n_members : 0,
+           op != NULL ? op->muster_best : 0,
+           op != NULL && op->muster
+             ? game.info.turn - op->muster_grew : 0,
+           op != NULL ? op->muster_worth : 0,
+           why != NULL ? why : "none",
+           dp->musters_formed, dp->musters_launched,
+           dp->musters_abandoned);
 }
 
 /**********************************************************************//**
@@ -3749,11 +3776,12 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
         || !deep_muster_worth(ait, pplayer, target, pool, n, eta, bar,
                               &eff)) {
       deep_opodds_log(pplayer, oi, target, "refused", best_odds, bar,
-                      0, n, drafted, eta, overseas);
+                      0, n, drafted, eta, overseas, NULL, NULL);
       return FALSE;
     }
     muster = TRUE;
     muster_worth = (int) eff;
+    dp->musters_formed++;
   }
   /* required == 1 forms too (T160 forensics): "one unit needs no
    * operation" assumed stock would claim singleton targets, but
@@ -3805,7 +3833,8 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
            op->staging_city, op->required, op->n_members, drafted,
            dp->last_strike_city == target->id ? 1 : 0);
   deep_opodds_log(pplayer, oi, target, muster ? "muster" : "formed",
-                  best_odds, bar, required, n, drafted, eta, overseas);
+                  best_odds, bar, required, n, drafted, eta, overseas,
+                  op, NULL);
 
   return TRUE;
 }
@@ -4873,6 +4902,12 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
          * "formed but never marched" quantity keeps its meaning and
          * ops_launched cannot outrun ops_formed. */
         deep_plr_data(pplayer)->ops_formed++;
+        dp->musters_launched++;
+        deep_opodds_log(pplayer, oi, target, "muster-launch", odds_now,
+                        deep_op_assault_bar(pplayer, target, FALSE),
+                        op->required, present, 0,
+                        deep_op_eta(pplayer, op, target),
+                        deep_op_crossing(op, target), op, NULL);
         op->muster = 0;
       }
       deep_plr_data(pplayer)->ops_launched++;
@@ -4892,6 +4927,12 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
        * cannot clear, and laundering an abandoned muster into another
        * one is how a unit sink hides from its own counters. Members
        * are banked, as on every deliberate abort. */
+      dp->musters_abandoned++;
+      deep_opodds_log(pplayer, oi, target, "muster-abandon", odds_now,
+                      deep_op_assault_bar(pplayer, target, FALSE),
+                      op->required, present, 0,
+                      deep_op_eta(pplayer, op, target),
+                      deep_op_crossing(op, target), op, abandon);
       deep_op_dissolve(op, oi, abandon, pplayer);
       return;
     } else if (!op->muster
@@ -4905,6 +4946,19 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
       }
       return;
     } else {
+      if (op->muster) {
+        /* One line per muster per turn, carrying the odds the force
+         * standing here actually reaches. This is the pre-registered
+         * falsification's own instrument: 3a asked whether a bigger
+         * pool moves the odds histogram out of the "exactly 0" bin,
+         * and only a per-turn read of a GROWING pool against the same
+         * target can answer it. */
+        deep_opodds_log(pplayer, oi, target, "muster-hold", odds_now,
+                        deep_op_assault_bar(pplayer, target, FALSE),
+                        op->required, present, joined,
+                        deep_op_eta(pplayer, op, target),
+                        deep_op_crossing(op, target), op, NULL);
+      }
       for (i = 0; i < op->n_members; i++) {
         struct unit *m = game_unit_by_number(op->members[i]);
         struct unit_ai *ud;
