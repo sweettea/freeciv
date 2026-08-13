@@ -5560,6 +5560,7 @@ static void deep_assault_want(struct ai_type *ait,
   struct unit *vunit;
   adv_want tworth, raw_worth, want, gross;
   double l0 = 0.0, l1 = 0.0, loss;
+  bool overseas;
 
   if (tune->attack_value_weight <= 0.0 || punittype == NULL) {
     return;
@@ -5598,10 +5599,13 @@ static void deep_assault_want(struct ai_type *ait,
       }
       city_list_iterate(aplayer->cities, acity) {
         double score;
-        bool overseas = tile_continent(city_tile(acity)) != home;
+        /* Named apart from the function-scope `overseas`, which is the
+         * same predicate about the CHOSEN target rather than about this
+         * candidate. */
+        bool cand_overseas = tile_continent(city_tile(acity)) != home;
 
         if (!map_is_known(city_tile(acity), pplayer)
-            || (overseas
+            || (cand_overseas
                 && (!can_sail
                     || !is_terrain_class_near_tile(nmap,
                                                    city_tile(acity),
@@ -5643,13 +5647,16 @@ static void deep_assault_want(struct ai_type *ait,
   raw_worth = def_ai_city_data(target, ait)->worth;
   tworth = deep_conquest_worth(ait, pplayer, target);
 
+  /* Is this want an INVASION want? The chosen target sits on another
+   * landmass, so buying this blade is a vote to put an army across
+   * water. Hoisted to function scope because it is now also a logged
+   * fact: see the deep-kill line at the foot of this function. */
+  overseas = tile_continent(city_tile(target)) != home;
+
   {
     /* March or sail time is the defender's budget on BOTH terrains
      * (one law): the marginal odds are priced against the garrison
      * as it will be at arrival. */
-    bool overseas
-      = tile_continent(city_tile(target)) != home;
-
     if (overseas) {
       const struct unit_type *ferrytype
         = best_role_unit_for_player(pplayer, L_FERRYBOAT);
@@ -5818,8 +5825,6 @@ static void deep_assault_want(struct ai_type *ait,
      * power-biased. Sweep the buildable land attackers for the type
      * whose amortized want is best: cheap and fast wins on its own
      * arithmetic, no extra weighting. */
-    bool overseas = tile_continent(city_tile(target)) != home;
-
     unit_type_iterate(ut) {
       struct unit *v2;
       double pa, la = 0.0;
@@ -5926,14 +5931,23 @@ static void deep_assault_want(struct ai_type *ait,
   want += deep_attacker_garrison_credit(nmap, pcity, punittype,
                                         deep_garrison_menace(pplayer));
 
+  /* sea= is the invasion want's own counter, and eta= is the budget it
+   * gave the defender. Without them no archived corpus can answer "does
+   * deep ever want to INVADE" -- the naval half of this want has always
+   * been priced (overseas targets joined the menu with naval slice 3)
+   * and has never been separable on the line from a land want, which is
+   * the evidence gap the convoy family's excluded-dead verdict rests
+   * on. Both are facts already computed above; nothing is decided here. */
   log_base(deep_metric_log_level(),
            "deep-kill turn=%d player=\"%s\" city=%d target=%d barb=%d"
+           " sea=%d eta=%d"
            " worth=" ADV_WANT_PRINTF " eworth=" ADV_WANT_PRINTF
            " pool=%d elsewhere=%d far=%d p0=%.3f"
            " p1=%.3f ck=%d type=\"%s\" gross=" ADV_WANT_PRINTF
            " loss=%.2f want=" ADV_WANT_PRINTF,
            game.info.turn, player_name(pplayer), pcity->id, target->id,
            is_barbarian(city_owner(target)) ? 1 : 0,
+           overseas ? 1 : 0, eta,
            raw_worth, tworth, n_pool, n_elsewhere, n_far, p0, p1,
            csize,
            utype_rule_name(punittype), gross, loss, want);

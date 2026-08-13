@@ -453,6 +453,36 @@ wants") with a mechanism, not a memory. **Campaign action:** EXCLUDE, as
 CAMPAIGN-v4's cut-line already anticipates if M2 stays outside the gates
 (§2, open question 2).
 
+**CORRECTION (2026-08-12, M2 session).** The verdict EXCLUDE stands; the
+mechanism above was the wrong reason, and the receipt it "confirmed" was
+wrong twice over.
+
+1. `deep_manage_convoys()` was **dead in its entirety**, not starved of a
+   population. Its hull loop tested `utype_move_type()`, which returns
+   `UMT_LAND` for every unit class on the server (`set_unit_move_type()`
+   is called only from `client/packhand.c`), so the loop rejected every
+   boat and neither branch was ever reached. The 1:1-ferry-cap argument
+   above is a true statement about the hold branch that never got to
+   bind. Fixed unconditionally on `epic/movetype` (merged 2026-08-12);
+   `deep-convoy` went 0 → 1 line on the `tech65sea-150` liveness pair.
+2. "Pending invasion wants" was already stale when it was written here.
+   Invasion wants landed on **2026-07-31** and the defence-at-arrival
+   go/no-go closed as task #16 on **2026-08-01** — four days before this
+   census. See STATUS "#16 closed: the invade gate at the right seam"
+   and `deep_assault_want()`'s overseas branch.
+
+So the family is inert because its own gate was broken, and it is only
+now — post-`movetype`, on a naval venue — that a census of it means
+anything.
+
+**First honest re-census** (2 games, `tech65sea-150`, deep arm,
+compiled defaults, `benchmark/results/m2-liveness/`): `convoy_min_load`
+now reads **LIVE, population 1**. One firing in two games is not a
+searchable dimension, so **the campaign action EXCLUDE stands** — but
+it now rests on a measured population rather than on a mechanism claim
+that was false. Re-read it at freeze on a larger naval sample before
+deciding otherwise.
+
 ### `rates_science_gain`, `rates_luxury_gain` — S1 — off by default
 
 `deep-rates` appears in zero logs, which is exactly right:

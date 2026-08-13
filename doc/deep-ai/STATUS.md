@@ -12716,3 +12716,122 @@ spending seeds on it.**
   PLACEHOLDERs for the pile; the 17 + 3 cut lives only in the probe.
 - The nativity helper's unit test (§0), which needs the helper made
   freestanding first.
+## M2 naval invasion slice 3: the scope had already landed (2026-08-12, night)
+
+Branch `epic/m2-invasion`, based at `ccf9e10e55`. The session opened to
+build "invasion wants + defence-at-arrival go/no-go". **Both halves were
+already in the tree, and had been for twelve days.** This is the stale-plan
+stop condition (CLAUDE.md), taken as a stop rather than as a rewrite.
+
+### What the charter said, and where it went
+
+`findings/civ2civ3-adjustments.md` "Naval convoy design" (2026-07-30) names
+three slices: (1) full-load gate, (2) escort pairing, (3) **massed
+landings — hold the convoy until the assembled force clears a bar against
+the target's DEFENCE AT ARRIVAL, current garrison plus eta x a
+reinforcement rate**. STATUS's mechanism-epoch queue added the build side:
+"invasion wants + defence-at-arrival go/no-go".
+
+- Slices 1-2 landed **2026-07-30** (convoy hold + aiguard escort pairing).
+- Slice 3 landed **2026-07-31**: `a255144c34` "target across water and
+  price arrival on both terrains" is the invasion want, `f4eb702e65` /
+  `5a7c70988a` / `d67ae21055` the arrival pricing, the convoy hold and the
+  ledger tripwires.
+- Task **#16 CLOSED 2026-08-01** — STATUS "#16 closed: the invade gate at
+  the right seam", 11 go / 57 hold on lategame where every prior run had
+  zero.
+
+So the assignment's three named deliverables all exist:
+
+| Asked for | In tree since | Where |
+|---|---|---|
+| invasion wants (target worth, amortized) | 2026-07-31 | `deep_assault_want()` overseas branch, `deepdefence.c` |
+| defence-at-arrival go/no-go | 2026-07-31 | `deep_take_odds_at_arrival()` + the MARCH crossing re-gate, `deepops.c` |
+| price the SET, not the margin | 2026-07-31 | the campaign-pricing block: smallest force clearing `op_take_target`, each member valued at `(pk-p0)/made` |
+| CONSEQ N3 never-launches damper | later | `attacker_hold_damper` |
+
+**Nothing was re-implemented.** No knob was added, because no mechanism
+was; `tune-audit.py` stays CLEAN at **219/219/219/219**.
+
+### What did land: the invasion want had no counter
+
+The one real gap was evidential. `deep-kill` carried `target=`, `pool=`,
+`p0/p1`, `want=` — and nothing saying the target was across water or how
+long the defender had to prepare. So "does deep ever want to INVADE" was
+unanswerable from any archived corpus, which matters because two live
+campaign documents rest on the answer:
+
+- `findings/knob-coverage.md` excluded the convoy family as
+  "inert pending invasion wants" — a receipt that was already four days
+  stale when written, and whose stated mechanism (the 1:1 ferry cap) was
+  not the binding one: `deep_manage_convoys()` was dead **entirely**,
+  because its hull loop asked `utype_move_type()`. Corrected in place.
+- `CAMPAIGN-v4.md` open question 2 asked the human "is M2 in or out of the
+  gates?". Marked **MOOT**; the surviving question is narrower and is now
+  a measurement, not a call.
+
+Two commits of mechanism-free instrument, one of doc:
+- `bad46de04b ai/deep: log whether an assault want is an invasion`
+  (`sea=`, `eta=` on `deep-kill`; the two duplicate inner `overseas`
+  copies collapse into one function-scope fact, candidate predicate
+  renamed `cand_overseas`).
+- `9d7a911ea6 benchmark: probe the reinforcement rate where the build side
+  applies it` (`invasion_reinforce_rate` gains `deep-kill eta>=1`
+  alongside `deep-invade`; the old probe only fires when a fleet is
+  literally mid-sail, so the knob read DEAD while its arithmetic ran
+  thousands of times a game).
+
+### Validation
+
+- Build `-Daimodules=classic,tex,baseline,deep` clean (pre-existing
+  warnings only); `meson test -C build` **5/5 OK**; `tune-audit.py`
+  **CLEAN 219/219/219/219**, before and after.
+- **Identity, 10 paired smoke seeds, `--arms deep,baseline`, jobs 2,
+  ports 7100/7140, 40 games, 0 failures, 0 pairing violations**
+  (`benchmark/results/m2-identity/`), this binary against a `git archive`
+  build of `ccf9e10e55`: `scorelog.txt` **byte-identical on 20/20 game
+  pairs — 10/10 deep, 10/10 baseline**. A log field cannot move a game
+  and did not.
+- **Liveness, `tech65sea-150`, 2 seeds, `--arms deep`, jobs 2, port 7180,
+  compiled defaults** (`benchmark/results/m2-liveness/`):
+
+      deep-kill (assault want)      8 253 lines
+        sea=1 (INVASION want)       8 011   (97.1%)
+        sea=0 (land want)             242
+        want>0 among sea=1          1 879   (23.5%)
+      eta on sea=1 lines            3:3193 4:3946 5:741 6:112 7:13 8:6
+      deep-invade go                   29
+      deep-invade hold                 25
+      deep-op retarget                 46
+      deep-convoy                       1
+
+  On the naval war cell **the assault want is essentially all invasion
+  want**, the go/no-go shows **both verdicts** (29/25 — a coin-flip gate,
+  not a rubber stamp), and 76% of invasion wants price at zero: the odds
+  machinery refuses most crossings, which is the intended shape.
+
+### What this buys the campaign
+
+`invasion_reinforce_rate` reads **LIVE, population 8 307** on
+`tech65sea-150` through the new probe. `convoy_min_load` reads **LIVE,
+population 1** — so the family is no longer provably dead, but one firing
+in two games is not a searchable dimension and **EXCLUDE stands, now on a
+measured population instead of a false mechanism claim**. Re-read at
+freeze on a larger naval sample.
+
+### Open, and explicitly NOT done here
+
+- **No A/B.** Two seeds is not a result (rule 6), and there is nothing to
+  A/B: the binary is behaviourally identical to its base by proof.
+- **`invasion_reinforce_rate` is still a PLACEHOLDER 0.34 flat rate.** The
+  charter said "a tunable slope on the defender's public production /
+  military signals"; what landed is a constant times eta. Replacing it
+  with an observed rate is a real, unstarted mechanism — and it is a
+  *different* epic, not this one.
+- The `+2` embark/disembark turns in the overseas eta
+  (`deepdefence.c`) is an unregistered constant. Flagged, not touched.
+- `benchmark/cities.py` matches a `sail-anyway` invade verdict that no
+  code emits (harmless; the counter is a Counter). Cosmetic.
+- The next honest naval question is **not** more invasion machinery. It is
+  the fear-calibration debt MOVETYPE's merge note already owns: survival
+  0.73 -> 0.40 under honest sea threat, constants tuned warship-blind.
