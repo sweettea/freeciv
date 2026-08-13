@@ -37,6 +37,9 @@
 #include "unitlist.h"
 #include "unittype.h"
 
+/* common/aicore */
+#include "cm.h"
+
 /* ai */
 #include "aitraits.h"
 #include "difficulty.h"
@@ -6966,6 +6969,15 @@ static void deep_founder_bid_log(struct player *pplayer, struct city *pcity,
                 : 0);
   bool fed = (founder_type != NULL && pcity->surplus[O_FOOD] >= upkeep);
   adv_want bid = (adv_want) city_data->founder_want;
+  /* Whether the food the veto measures is under deep's management at
+   * all. `deep_set_city_manager_params()` sets cm_parameter only where
+   * a posture matched and frees it otherwise, so cm=0 means this city's
+   * citizens are arranged by the stock default and no deep rule asked
+   * for the surplus that the founder bid needs. That distinction
+   * decides whether a food-vetoed want is reachable from here. */
+  int cm = (pcity->cm_parameter != NULL) ? 1 : 0;
+  int minfood = (pcity->cm_parameter != NULL
+                 ? pcity->cm_parameter->minimal_surplus[O_FOOD] : -99);
 
   if (wonder) {
     bid /= (founder_type == NULL || founder_type->pop_cost > 0) ? 5 : 2;
@@ -6978,11 +6990,12 @@ static void deep_founder_bid_log(struct player *pplayer, struct city *pcity,
   log_base(deep_metric_log_level(),
            "deep-founderbid turn=%d player=\"%s\" city=%d want=%d"
            " wonder=%d capped=%d maxcities=%d cities=%d trait=%d"
-           " food=%d upkeep=%d fed=%d bid=" ADV_WANT_PRINTF,
+           " food=%d upkeep=%d fed=%d cm=%d minfood=%d"
+           " bid=" ADV_WANT_PRINTF,
            game.info.turn, player_name(pplayer), pcity->id,
            city_data->founder_want, wonder ? 1 : 0, capped ? 1 : 0,
            adv->max_num_cities, city_list_size(pplayer->cities), trait,
-           pcity->surplus[O_FOOD], upkeep, fed ? 1 : 0, bid);
+           pcity->surplus[O_FOOD], upkeep, fed ? 1 : 0, cm, minfood, bid);
 }
 
 /**********************************************************************//**
