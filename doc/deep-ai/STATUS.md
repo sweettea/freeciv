@@ -12849,6 +12849,13 @@ freeze on a larger naval sample.
   scalar to sweep. Inspect the term's currency at the site-want seam
   before any tuning; the probe path (colony_want) taking the same
   discount is the first suspect.
+  **WITHDRAWN 2026-08-12 (W36-DIM, end of file): this comparison's two
+  arms ran different binaries — the control's games finished the
+  previous night, ≥26 ai/deep commits earlier. Three of its 20 seeds
+  never applied the discount once and still "lost" 13–33 points, and
+  on two of them tonight's knob-0 game is byte-identical to the G2
+  arm's knob-1.0 game. The −54.6 is not a measurement of the knob.
+  G1 and G3 below were run the same way.**
 ---
 
 ## EXPANSION slice 1: the founding decision is instrumented, and the slice's own premise is falsified (2026-08-12)
@@ -13526,3 +13533,194 @@ the tech-50 arm wants >= 16 mirrored seeds and is tomorrow's machine
 work). No default moved. No tuning pass on `op_muster_stall`. No
 change to the odds model, the bar, the expansion gate or the sea
 clause -- all three priced dead by the probe.
+---
+
+## W36-DIM: the wait discount was never measured (2026-08-12, task #60)
+
+Branch `epic/w36-dim`, cut from `epic/w03-horizon-content` at
+`c93649faf4`. Machine budget: jobs 2, portbase 7700, liveness only —
+the G2-style holdout re-run is queued machine work and was NOT run.
+
+Task #60 asked which dimensional defect makes `site_wait_discount = 1.0`
+cost −54.6/seed when the term's own liveness read was a 1.92-turn
+discount, and named the CREDIT precedent (a term priced in the wrong
+currency, 1–2 orders too large). **It is neither a currency defect nor
+an honest term at a wrong weight. The G2 verdict is not a measurement
+of the knob**: the arm and its control ran different binaries.
+
+### The proof, from the G2 games themselves
+
+Arm: `benchmark/results/nightbatch/g2-wait-isolated/holdout-report`
+(pv2-wait.ini, `site_wait_discount = 1.0`, games run 2026-08-12 20:01–20:19).
+Control: `benchmark/results/tuning/f2-d6-isolated/holdout-report` — the
+run whose numbers `bec743c69f` published as pv2's isolated-150 holdout
+(+55.0), games completed **2026-08-11 22:45 on binary 9275e9bd**.
+`diff benchmark/tuning/pv2.ini benchmark/tuning/pv2-wait.ini` is one
+line, `commands.serv` and `maphash.txt` are identical per seed — so the
+tuning and the map were controlled and the binary was not.
+
+Re-pairing those two dirs reproduces the published verdict exactly
+(paired **−13.65 score/seat, se 3.41, t −4.00, 16/20 worse**; ×4 seats
+= the −54.6 STATUS reported). Then:
+
+1. **Three seeds never applied the discount once.** 105, 108 and 111
+   have **zero** `deep-sitewait` lines in 150 turns. The census
+   increments on the same branch that applies the amortize
+   (`deepsite.c`, `if (wait > 0)`), and the metric log was plainly on
+   in those games — 171/202/514 `deep-sitenaval` lines from the *same
+   function*, 37/14/630 `deep-colony` lines — so the arm was
+   behaviourally the knob-0 arm there. Those three seeds lost
+   **−29.8, −32.8 and −13.0** score/seat.
+2. **18 of 20 seeds diverge before the term could act.** First
+   scorelog turn where arm and control differ, against the first turn
+   any candidate was discounted:
+
+       seed  first-diff  first-wait     seed  first-diff  first-wait
+        101      53         103          111      54          none
+        102      55          65          112      47           58
+        103      57          53          113      56           65
+        104      47         128          114      61           61
+        105      59         none         115      50           65
+        106      55          64          116      51           62
+        107      56          68          117      42           83
+        108      40         none         118      48           71
+        109      44          90          119      47           80
+        110      47          68          120      56           73
+
+   Only seed 103 diverges after its first firing; 114 ties.
+3. **No dose-response.** Pearson r between candidates priced and score
+   delta = **−0.10** (n=20). The half of the seeds where the term fired
+   *least* is hurt *more* (−19.0/seat, mean 227 candidates priced) than
+   the half where it fired most (−8.3/seat, mean 1172 candidates).
+4. **At least 26 non-merge `ai/deep` commits** landed between the
+   control's games (Aug 11 22:45) and the earliest binary the night
+   batch could have used (Aug 12 17:21) — 38 by the time the G2 cell
+   ran. The published −54.6 is those commits plus one knob, and nothing
+   on disk said so: the night-batch result dirs carry no `key.txt`,
+   because the driver named its own arm directories.
+
+### What the term actually does — 20 real games at 1.0
+
+- **337 searches** priced a candidate; **13 995 candidates** discounted;
+  45 225 wait-turns → **3.23 turns per candidate**, a **12.9% haircut**
+  at amortize's 23/24 (the liveness read of 1.92 was a 2-game smoke;
+  3.23 is the 20-game figure).
+- **288 of 337 firings (85%) are `unit=0`** — `deep_contemplate_new_city()`'s
+  virtual settler, i.e. the build-side *founder want*, not a settler
+  choosing where to go. The term was built to rank destinations and
+  five sixths of its firings land on a want.
+- **10.2% of `deep-colony` publications** carry the discount, so the
+  demand-spiral seam the W36 hand-off flagged is live but thin.
+- Whether the discount ever moved an **answer** is not in the log at
+  all: `priced`/`turns` count candidates, not decisions. Fixed below.
+
+### What landed
+
+- `ai/deep: report whether the wait discount moved the answer` —
+  `deep-sitewait` now carries `bestwait` (the wait charged to the site
+  that won) and `flip` (the site that would have won with the term off
+  is a different tile). Observation only; inert at knob 0.
+- `benchmark: record the binary and tuning each game ran on` —
+  `run-game.sh` writes `provenance.txt` (sha256 of server, config,
+  tuning, runner) into **every** game directory, whichever driver named
+  it. This is the artefact whose absence made the confound invisible.
+
+### The same-binary A/B nobody had run
+
+Five isolated-150 seeds, **one binary** (`server sha 1600b9d7`, one
+config, one runner — `key.txt` in both dirs proves it), `pv2.ini` vs
+`pv2-wait.ini`, jobs 2, ports 7700/7740. Results under
+`benchmark/results/w36-dim/`.
+
+    metric        knob 0    knob 1.0    delta     se       t   wins
+    score         183.20     181.55    -1.65    1.91   -0.86   1/5
+    cities         14.25      13.75    -0.50    0.31   -1.63   0/5
+    pop            81.85      79.50    -2.35    1.53   -1.54   0/5
+    mfg            59.95      57.75    -2.20    1.35   -1.63   0/5
+    settledarea    61950      60000    -1950    1226   -1.59   0/5
+
+    seed  scorelogs   searches  cands  turns/cand   knob0   knob1  delta
+     105  IDENTICAL          0      0        0.00   164.5   164.5   +0.0
+     108  IDENTICAL          0      0        0.00   162.8   162.8   +0.0
+     111  differ            17    724        1.62   181.2   181.2   +0.0
+     115  differ            27   1463        5.46   202.0   192.8   -9.2
+     116  differ            29   1585        2.10   205.5   206.5   +1.0
+
+**And the closing proof.** On seeds 105 and 108 tonight's knob-0
+scorelog is **byte-identical to the G2 arm's knob-1.0 scorelog** —
+the same game, to the byte — while both differ from the control the
+verdict paired them against by −29.7 and −32.7 score/seat. On those
+seeds the measured "harm of the wait discount" is 100% binary and 0%
+knob, and it is provable from files already on disk.
+
+At n=5 the honest same-binary read is **−1.65/seat (t −0.86, 1/5)**,
+i.e. at most about an eighth of the −13.65 that was published, and not
+significant. Five seeds is not a verdict — that is the point of the
+gate below.
+
+### Liveness of the new counters (seeds 115/116 at 1.0)
+
+    56 searches, 3048 candidates, 11 316 wait-turns -> 3.71 turns/cand
+    bestwait   mean 0.89, median 0, ZERO for 32/56 winners, max 5
+    flip=1     24/56 searches (42.9%)
+    unit=0     48/56 searches (86%)
+
+So the term does change decisions — two searches in five — and the
+site it picks usually pays no wait itself (0.89 against 3.71 mean per
+candidate), which is the steering it was built to do. Whether that
+steering pays is exactly what was never measured.
+
+### Verdict on task #60
+
+**Not a dimensional defect.** The term's currency is turns and it goes
+into the same `amortize()` as the travel delay at 1–5 turns per
+candidate; the CREDIT failure was 1–2 orders of magnitude in the wrong
+unit and there is nothing like that here. **Not an indicted weight
+either** — nothing has yet measured 1.0 against anything. No knob was
+moved and no formula was changed, because the evidence that would
+justify either does not exist.
+
+**The queued gate** (machine work, not this session's budget): the
+G2-style 20-seed isolated-150 holdout at `site_wait_discount = 1.0`,
+**both arms on one binary**, with `provenance.txt` on both sides. Do
+not sweep a range first — one arm at 1.0 answers whether there is
+anything to sweep. If it reads harmful, the next question is not a
+smaller scalar but the seam: 86% of firings are `unit=0`, the
+build-side founder want, where `deep_wait_expected() > 0` means "no
+hull is free for me" and the discount damps the want that commissions
+the hull. That is a where-it-lands question, and `flip`/`bestwait` are
+now in the log to answer it.
+
+### Collateral: G1 and G3 were run the same way
+
+Both compared tonight's batch binary against controls whose games
+finished 2026-08-11 (`f1-d6-econ` at 22:24, `f2-d6-isolated` at 22:45
+— the pv2 adoption run, binary 9275e9bd). **G1's NULL and G3's
+"gov valuation harmful as shipped, −26.4, t −2.92" carry the same
+uncontrolled variable** and neither is attributable as it stands. G3
+cannot be rescued by the divergence test used here — its knob acts
+from turn 5 — so it needs a same-binary re-run before that verdict
+stands. G4/G5 ran both arms that night and are unaffected.
+
+**The rule this earns:** a cached control is only a control if its
+binary is the arm's binary. From now the artefacts say so.
+
+## Cross-binary control corrections (2026-08-12, very late)
+
+W36-DIM proved G2 measured a BINARY, not the knob (knob-0 scorelogs
+byte-identical to G2's knob-1.0 on seeds 105/108; zero-firing seeds
+"lost" 30 points). MOVETYPE's unconditional merge broke the
+inert-at-defaults chain; every comparison against cached pre-MOVETYPE
+controls after 7ad93151b8 is void. Ledger:
+- G2 wait-discount "harmful, t -4.00": WITHDRAWN. Same-binary 5-seed
+  probe reads -1.65, t -0.86. Proper same-binary gate queued.
+- G3 gov "harmful, t -2.92": score attribution VOID (same flaw). The
+  anarchy-zero DIAGNOSIS stands - its evidence (26.8 changes/game vs
+  stock 17.8, ancost=0 on 8712 lines) is within-arm, binary-neutral.
+  The running g3rerun is same-binary and remains the gate.
+- G1 reach econ null: direction unaffected (null), magnitude
+  unreliable; re-take same-binary only if it ever matters.
+- F1 food-veto (+17.9 t+1.48) used the same-binary H0 control: VALID.
+- RULE, from tonight: an arm and its control run on ONE binary, or
+  the control re-runs. Result dirs now record binary provenance
+  (2e91446316).
