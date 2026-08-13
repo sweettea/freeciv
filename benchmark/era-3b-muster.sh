@@ -72,15 +72,29 @@ identity)
   unset TUNING
 
   echo "=== identity stage c: provenance + scorelog assertion ==="
-  if grep -rqm1 'mform=' "$OUT"/base/smoke-*/deep/seed-*/game.log; then
+  if grep -rqm1 'mform=' "$OUT"/base/smoke-*/deep/seed-1/game.log; then
     echo "STOP: the BASE arm emits mform=, a field only this branch has;" >&2
     echo "      the base build is the branch and the proof is void." >&2
     exit 1
   fi
+  # Resolve each side's cell EXPLICITLY rather than by glob. The
+  # result key includes the server sha, so a rebuilt head lands in a
+  # SECOND smoke-<key> directory beside the first -- and a glob that
+  # then expands to two paths makes every seed read as "MISSING",
+  # which is a passing-looking failure of the wrong kind. Newest cell
+  # per side wins, and its name is printed so the pair is auditable.
+  cell() { ls -1dt "$1"/smoke-* 2>/dev/null | head -n 1; }
+  base_cell=$(cell "$OUT/base"); head_cell=$(cell "$OUT/head")
+  echo "base cell: $base_cell"
+  echo "head cell: $head_cell"
+  [ -n "$base_cell" ] && [ -n "$head_cell" ] || {
+    echo "STOP: could not resolve both cells." >&2; exit 1; }
+  [ "$base_cell" != "$head_cell" ] || {
+    echo "STOP: both sides resolved to the SAME cell." >&2; exit 1; }
   same=0; diff_n=0; missing=0
   for seed in $(grep -E '^[0-9]+$' benchmark/seeds/train.txt | head -n "$SEEDS"); do
-    a=$(echo "$OUT"/base/smoke-*/deep/seed-"$seed"/scorelog.txt)
-    b=$(echo "$OUT"/head/smoke-*/deep/seed-"$seed"/scorelog.txt)
+    a=$base_cell/deep/seed-$seed/scorelog.txt
+    b=$head_cell/deep/seed-$seed/scorelog.txt
     if [ ! -r "$a" ] || [ ! -r "$b" ]; then
       echo "seed $seed: MISSING scorelog"; missing=$((missing + 1))
     elif cmp -s "$a" "$b"; then
