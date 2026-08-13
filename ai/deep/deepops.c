@@ -2165,6 +2165,69 @@ static bool deep_lift_serve_stop(struct player *pplayer,
 
   Returns FALSE if the operation was dissolved (caller must return).
 **************************************************************************/
+static bool deep_lift_mission_dead(struct ai_type *ait, struct unit *m)
+{
+  return m != NULL
+         && m->goto_tile != NULL
+         && def_ai_unit_data(m, ait)->task == AIUNIT_BUILD_CITY
+         && !city_can_be_built_here(&(wld.map), m->goto_tile, m, FALSE);
+}
+
+static void deep_lift_invalid_log(struct player *pplayer,
+                                  const struct deep_operation *op, int oi,
+                                  const struct unit *m, struct unit *ferry,
+                                  struct tile *beach, const char *phase)
+{
+  log_base(deep_metric_log_level(),
+           "deep-lift-invalid turn=%d player=\"%s\" op=%d unit=%d"
+           " target=(%d,%d) beach=(%d,%d) wasbeach=%d boatd=%d"
+           " turns=%d phase=%s",
+           game.info.turn, player_name(pplayer), oi, m->id,
+           TILE_XY(m->goto_tile), TILE_XY(beach),
+           same_pos(m->goto_tile, beach) ? 1 : 0,
+           real_map_distance(unit_tile(ferry), beach),
+           game.info.turn - op->formed_turn, phase);
+}
+
+/**********************************************************************//**
+  The same question during the MUSTER, where nothing has ever asked it.
+
+  deep_lift_revalidate() below runs on every MARCH turn, and D-E's
+  numbers (3-7 aborted crossings a game) are all crossings. But
+  deep_op_holds() holds a lift's members through MUSTER as firmly as
+  through MARCH, and the gather window is lift_gather_turns long, so a
+  passenger standing at the quay with a dead target is in exactly the
+  position D-E described -- held above the settler path's own
+  foundability check -- for as many turns as the rendezvous takes,
+  and it then SAILS on a mission that was already dead before the
+  hull left.
+
+  Observation only: this counts what the muster is holding, and the
+  release is a separate decision behind its own knob. `phase` is on
+  both lines so the two populations can be read apart.
+**************************************************************************/
+static int deep_lift_muster_invalid(struct ai_type *ait,
+                                    struct player *pplayer,
+                                    struct deep_operation *op, int oi,
+                                    struct unit *ferry, struct tile *beach)
+{
+  int i, dead = 0;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return 0;
+  }
+  for (i = 0; i < op->n_members; i++) {
+    struct unit *m = game_unit_by_number(op->members[i]);
+
+    if (deep_lift_mission_dead(ait, m)) {
+      deep_lift_invalid_log(pplayer, op, oi, m, ferry, beach, "muster");
+      dead++;
+    }
+  }
+
+  return dead;
+}
+
 static bool deep_lift_revalidate(struct ai_type *ait, struct player *pplayer,
                                  struct deep_operation *op, int oi,
                                  struct unit *ferry, struct tile *beach)
@@ -2176,19 +2239,8 @@ static bool deep_lift_revalidate(struct ai_type *ait, struct player *pplayer,
   for (i = 0; i < op->n_members; i++) {
     struct unit *m = game_unit_by_number(op->members[i]);
 
-    if (m != NULL
-        && m->goto_tile != NULL
-        && def_ai_unit_data(m, ait)->task == AIUNIT_BUILD_CITY
-        && !city_can_be_built_here(nmap, m->goto_tile, m, FALSE)) {
-      log_base(deep_metric_log_level(),
-               "deep-lift-invalid turn=%d player=\"%s\" op=%d unit=%d"
-               " target=(%d,%d) beach=(%d,%d) wasbeach=%d boatd=%d"
-               " turns=%d",
-               game.info.turn, player_name(pplayer), oi, op->members[i],
-               TILE_XY(m->goto_tile), TILE_XY(beach),
-               same_pos(m->goto_tile, beach) ? 1 : 0,
-               real_map_distance(unit_tile(ferry), beach),
-               game.info.turn - op->formed_turn);
+    if (deep_lift_mission_dead(ait, m)) {
+      deep_lift_invalid_log(pplayer, op, oi, m, ferry, beach, "march");
       if (same_pos(m->goto_tile, beach)) {
         beach_dead = TRUE;
       }
@@ -2286,6 +2338,12 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
   }
 
   if (op->state == DEEP_OP_MUSTER) {
+    /* What is the quay holding? The hold that keeps a marching
+     * passenger from re-checking its own mission (D-E) is on during
+     * the gather too, and for lift_gather_turns of it. Counted here,
+     * released nowhere yet. */
+    (void) deep_lift_muster_invalid(ait, pplayer, op, oi, ferry, beach);
+
     /* The core passenger is members[0] -- the one the lift was formed
      * for. Once it is aboard the lift CAN sail; whether it should is
      * deep_lift_worth_waiting(), which holds the quay for a straggler
