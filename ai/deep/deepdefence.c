@@ -6931,6 +6931,61 @@ static void deep_bid_log(struct player *pplayer, struct city *pcity,
 }
 
 /**********************************************************************//**
+  Census what happens to `founder_want` AFTER deep has finished writing
+  it and BEFORE the settler is bid for -- the four transforms
+  domestic_advisor_choose_build() (daidomestic.c:537-604) applies that
+  deep never sees the result of.
+
+  Two of them are divisors that can silently annihilate a want deep
+  worked to produce: the wonder-city divisor (/5 or /2) and the
+  city-count divisor (/100 when `adv->max_num_cities` is reached or the
+  player cannot found at all). One is a trait multiplier. The fourth is
+  not a scale at all but a VETO: a city whose food surplus is below the
+  founder's food upkeep makes no founder bid whatever, at any want.
+
+  `bid` is the number daidomestic will actually compare against the
+  worker/building bid, so `deep-founder want=W` (deepsite.c) minus this
+  line's `bid` is exactly what the ai/default layer takes off the top.
+  Nothing here recomputes a decision or touches one: every input is a
+  field or a pure query, and the function is called from the same seam
+  as deep_bid_log(), before the auction.
+**************************************************************************/
+static void deep_founder_bid_log(struct player *pplayer, struct city *pcity,
+                                 const struct ai_city *city_data)
+{
+  struct adv_data *adv = adv_data_get(pplayer, NULL);
+  struct unit_type *founder_type
+    = best_role_unit(pcity, action_id_get_role(ACTION_FOUND_CITY));
+  bool wonder = (adv->wonder_city == pcity->id);
+  bool capped = (adv->max_num_cities <= city_list_size(pplayer->cities)
+                 || !player_can_do_action_result(pplayer,
+                                                 ACTRES_FOUND_CITY));
+  int trait = ai_trait_get_value(TRAIT_EXPANSIONIST, pplayer);
+  int upkeep = (founder_type != NULL
+                ? utype_upkeep_cost(founder_type, NULL, pplayer, O_FOOD)
+                : 0);
+  bool fed = (founder_type != NULL && pcity->surplus[O_FOOD] >= upkeep);
+  adv_want bid = (adv_want) city_data->founder_want;
+
+  if (wonder) {
+    bid /= (founder_type == NULL || founder_type->pop_cost > 0) ? 5 : 2;
+  }
+  if (capped) {
+    bid /= 100;
+  }
+  bid *= (double) trait / TRAIT_DEFAULT_VALUE;
+
+  log_base(deep_metric_log_level(),
+           "deep-founderbid turn=%d player=\"%s\" city=%d want=%d"
+           " wonder=%d capped=%d maxcities=%d cities=%d trait=%d"
+           " food=%d upkeep=%d fed=%d bid=" ADV_WANT_PRINTF,
+           game.info.turn, player_name(pplayer), pcity->id,
+           city_data->founder_want, wonder ? 1 : 0, capped ? 1 : 0,
+           adv->max_num_cities, city_list_size(pplayer->cities), trait,
+           pcity->surplus[O_FOOD], upkeep, fed ? 1 : 0, bid);
+}
+
+/**********************************************************************//**
   Rescale the two domestic wants ai/default computes for deep, in
   place, for the duration of one domestic_advisor_choose_build() call.
 
@@ -7013,6 +7068,7 @@ static void deep_city_choose_build(struct ai_type *ait,
   }
 
   deep_bid_log(pplayer, pcity, city_data);
+  deep_founder_bid_log(pplayer, pcity, city_data);
 
   if (has_handicap(pplayer, H_AWAY)
       && !city_built_last_turn(pcity)
