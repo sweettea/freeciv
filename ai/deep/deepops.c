@@ -3393,6 +3393,11 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
   /* ERA 3a: the garrison draft's release test. 0 = the absolute
    * survival_target floor this function shipped with. */
   bool marginal_draft = tune->op_draft_marginal > 0;
+  /* ERA 3b: the draft also releases blades that cost their city
+   * NOTHING, whichever release test is in force -- the muster's feed,
+   * since a blade it does not have to pay for is worth having in a
+   * set that is not fighting yet. */
+  bool muster_feed = tune->op_muster > 0;
   double bar;
   /* The best take-probability any prefix of the pool reached. Kept
    * from the scoring loop's own returns -- never a second call. */
@@ -3657,19 +3662,49 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
 
         pool[n] = weak;
         with = deep_take_odds_at_arrival(nmap, target, pool, n + 1, eta);
-        if (with - held > cost) {
+        /* THE FREE BLADE (ERA 3b). The marginal comparison still
+         * cannot bootstrap: in the flat region `with - held` is
+         * exactly 0 for every blade in the set, so a positive cost
+         * always wins and nothing is ever released. A muster does not
+         * need the blade to buy odds, because it is not fighting this
+         * turn -- it needs the blade to be FREE. Cost of exactly zero
+         * is that, with no epsilon to invent: the city's survival is
+         * the same number with the blade and without it. */
+        if (with - held > cost || (muster_feed && cost <= 0.0)) {
           n++;
           drafted++;
           held = with;
         }
-      } else if ((covered
-                  ? cover.surv_after
-                  : deep_city_stack_survival_without(nmap, pcity,
-                                                     tune->survival_horizon,
-                                                     weak, NULL))
-                 >= tune->survival_target) {
-        pool[n++] = weak;
-        drafted++;
+      } else {
+        double surv_after
+          = covered
+            ? cover.surv_after
+            : deep_city_stack_survival_without(nmap, pcity,
+                                               tune->survival_horizon,
+                                               weak, NULL);
+
+        if (surv_after >= tune->survival_target) {
+          pool[n++] = weak;
+          drafted++;
+        } else if (muster_feed) {
+          /* The free blade again, under the absolute floor -- and this
+           * is the population the probe named: a city the floor
+           * refuses BECAUSE it is already below the bar, whose blade
+           * changes its survival by nothing at all. The floor reads
+           * that as "too dangerous to lend" when what it means is
+           * "this blade is not what saves this city". */
+          double cost
+            = covered
+              ? cover.cost
+              : deep_city_stack_survival(nmap, pcity,
+                                         tune->survival_horizon, NULL)
+                - surv_after;
+
+          if (cost <= 0.0) {
+            pool[n++] = weak;
+            drafted++;
+          }
+        }
       }
     } city_list_iterate_end;
     if (drafted > 0) {
