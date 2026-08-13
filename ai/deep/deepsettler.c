@@ -364,6 +364,198 @@ static bool deep_settler_goto(struct ai_type *ait, struct unit *punit,
 }
 
 /**********************************************************************//**
+  The nearest tile this settler can stand on from which a hull could
+  carry it to 'dest': a SERVICEABLE BERTH.
+
+  Serviceable is deep_water_serves_crossing() -- one body of water
+  touching both the tile and the target -- so the answer is exact
+  rather than a heuristic about "the sea". Distance is the settler's
+  own risk pathfinder, the same parameter the site search plans with
+  and the same one deep_settler_goto() will walk with, so a berth this
+  returns is one the mover has already agreed it can reach and would
+  not die reaching.
+
+  pf yields positions in cost order, so the FIRST serviceable tile is
+  the nearest one and the walk over the rest of the continent never
+  happens. The map is bounded by the settler's own landmass in any
+  case: a land parameter cannot cross the water it is looking for.
+
+  Returns NULL when no berth on this continent serves this crossing --
+  the honest answer that the target cannot be reached by hull from
+  here, rather than a coast the founder would walk to for nothing.
+  '*turns' gets the arrival turn, or -1.
+**************************************************************************/
+static struct tile *deep_settler_serviceable_berth(struct unit *punit,
+                                                   const struct tile *dest,
+                                                   int *turns)
+{
+  struct pf_parameter parameter;
+  struct deep_settler_risk risk;
+  struct pf_map *pfm;
+  const struct civ_map *nmap = &(wld.map);
+  struct tile *best = NULL;
+
+  *turns = -1;
+
+  pft_fill_unit_parameter(&parameter, nmap, punit);
+  parameter.omniscience = !has_handicap(unit_owner(punit), H_MAP);
+  deep_settler_apply_risk(&parameter, &risk, punit);
+  pfm = pf_map_new(&parameter);
+
+  pf_map_positions_iterate(pfm, pos, FALSE) {
+    if (deep_water_serves_crossing(pos.tile, dest)) {
+      best = pos.tile;
+      *turns = pos.turn;
+      break;
+    }
+  } pf_map_positions_iterate_end;
+
+  pf_map_destroy(pfm);
+
+  return best;
+}
+
+/**********************************************************************//**
+  Where a founder that needs a lift is standing, and whether a hull
+  could ever come for it there.
+
+  EXPANSION slice 2 left this as its banked finding: the lift queue is
+  GEOMETRY, not supply. 60 of 67 positive demand-supply gaps were
+  founders queued beside water that closes on their own continent,
+  while the bridging water that could have carried them sat one tile
+  away holding 4-16 idle berths. Nothing in the founder's own path
+  ever asked which water it was waiting on -- aiferry_gobyboat() tests
+  is_terrain_class_near_tile(TC_OCEAN), under which a lake, a dead-end
+  sea and the world ocean are one thing, and a founder that passes it
+  requests a boat and stands still for the rest of the game.
+
+  This is the demand side of that circle, counted before it is acted
+  on. One line per founder-turn that needs a hull:
+
+    coast     the founder touches water at all -- the test the stock
+              ferry path stops at
+    serves    that water reaches the target: the sharper test
+    bridge    that water leads to SOME other continent (slice 2's
+              build-side gate), so `bridge=1 serves=0` names a founder
+              waiting on a sea that goes somewhere useless
+    destsea   the target can be landed at by hull at all
+    berth     the nearest tile that does serve this crossing, and the
+              turns to walk there
+    found     the passenger can found a city -- the ruleset's own
+              answer (ACTION_FOUND_CITY), and the same predicate
+              deep_founder_demand_on() counts the lift gap with, so
+              this line and slice 2's gap line describe one population.
+              A worker crossing to unimproved colony work reaches the
+              same code (deep_idle_cross_water) and is counted here
+              with found=0, because it is a different question with a
+              different owner (worker_cross_continent_discount).
+
+  Cost: one pf map per founder-turn that needs a boat, so it is built
+  only when the metric log is on, and (from the routing knob) only for
+  the founders that are not already at a serviceable berth.
+**************************************************************************/
+static void deep_settler_berth_census(struct player *pplayer,
+                                      struct unit *punit,
+                                      const struct tile *dest)
+{
+  const struct civ_map *nmap = &(wld.map);
+  struct tile *berth;
+  bool serves;
+  int turns = -1;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+
+  serves = deep_water_serves_crossing(unit_tile(punit), dest);
+  berth = (serves ? unit_tile(punit)
+           : deep_settler_serviceable_berth(punit, dest, &turns));
+  if (serves) {
+    turns = 0;
+  }
+
+  log_base(deep_metric_log_level(),
+           "deep-berth turn=%d player=\"%s\" unit=%d at=(%d,%d)"
+           " target=(%d,%d) coast=%d serves=%d bridge=%d destsea=%d"
+           " berth=(%d,%d) turns=%d found=%d",
+           game.info.turn, player_name(pplayer), punit->id,
+           TILE_XY(unit_tile(punit)), TILE_XY(dest),
+           is_terrain_class_near_tile(nmap, unit_tile(punit),
+                                      TC_OCEAN) ? 1 : 0,
+           serves ? 1 : 0,
+           deep_city_water_bridges(unit_tile(punit)) ? 1 : 0,
+           deep_city_water_bridges(dest) ? 1 : 0,
+           TILE_XY(berth), turns,
+           unit_can_do_action(punit, ACTION_FOUND_CITY) ? 1 : 0);
+}
+
+/**********************************************************************//**
+  Send a founder that is waiting on the wrong water to a coast a hull
+  could fetch it from.
+
+  The population is the one the census above reports and slice 2
+  measured from the supply side: `coast=1 serves=0`, a founder that
+  satisfied the ferry path's "am I beside water" test beside a sea
+  that does not reach its target. It asks for a boat, no boat can come,
+  and the drop-boatless clause deliberately spares a unit holding
+  FERRY_WANTED -- so it stands there, and the wait it accumulates is
+  what damps the founder want that would have commissioned the hull.
+
+  Three deliberate restrictions:
+
+  * Only a FOUNDER, by the ruleset's own ACTION_FOUND_CITY, which is
+    the population deep_founder_demand_on() counts the lift gap with
+    and therefore the only one this slice has evidence about. A worker
+    crossing to colony work reaches the same code and is left alone;
+    the census still counts it (found=0).
+  * Only where the founder ALREADY touches water. An inland founder is
+    not stranded: aiferry_gobyboat() walks it toward a real hull, and
+    if there is none the mission is dropped and re-searched land-only
+    the same turn. The defect is exactly the tile at which that walk
+    stops.
+  * The berth must be one this settler's own risk pathfinder can
+    reach; deep_settler_serviceable_berth() returns NULL otherwise and
+    nothing moves.
+  * The caller STILL calls aiferry_gobyboat() afterwards, so the
+    founder asks for a boat from wherever it ends the turn. Skipping
+    the request would leave ferryboat at FERRY_NONE and hand the
+    mission straight to the drop-boatless clause -- the walk would
+    cancel the very mission it was serving.
+
+  Returns FALSE iff the settler died on the way.
+**************************************************************************/
+static bool deep_settler_berth_route(struct ai_type *ait,
+                                     struct player *pplayer,
+                                     struct unit *punit,
+                                     const struct tile *dest)
+{
+  const struct civ_map *nmap = &(wld.map);
+  struct tile *berth;
+  int turns = -1;
+
+  if (deep_tuning_get()->founder_berth_route <= 0
+      || !unit_can_do_action(punit, ACTION_FOUND_CITY)
+      || !is_terrain_class_near_tile(nmap, unit_tile(punit), TC_OCEAN)
+      || deep_water_serves_crossing(unit_tile(punit), dest)) {
+    return TRUE;
+  }
+
+  berth = deep_settler_serviceable_berth(punit, dest, &turns);
+  if (berth == NULL || same_pos(berth, unit_tile(punit))) {
+    return TRUE;
+  }
+
+  log_base(deep_metric_log_level(),
+           "deep-berthroute turn=%d player=\"%s\" unit=%d at=(%d,%d)"
+           " target=(%d,%d) berth=(%d,%d) dist=%d turns=%d",
+           game.info.turn, player_name(pplayer), punit->id,
+           TILE_XY(unit_tile(punit)), TILE_XY(dest), TILE_XY(berth),
+           real_map_distance(unit_tile(punit), berth), turns);
+
+  return deep_settler_goto(ait, punit, berth);
+}
+
+/**********************************************************************//**
   Ferry-enabled goto for settlers; the deep counterpart of
   dai_gothere(), using the route-sampling bodyguard request and the
   risk-aware land leg above. Zone of control stays respected: the
@@ -396,6 +588,14 @@ static bool deep_settler_gothere(struct ai_type *ait,
 
   if (unit_transported(punit) || !can_walk) {
     /* Must go by boat, call an aiferryboat function */
+    if (!unit_transported(punit)) {
+      /* Standing on its own legs and needing a hull: the population
+       * slice 2's demand-supply gap is made of. */
+      deep_settler_berth_census(pplayer, punit, dest_tile);
+      if (!deep_settler_berth_route(ait, pplayer, punit, dest_tile)) {
+        return FALSE;           /* Died walking to the berth. */
+      }
+    }
     if (!aiferry_gobyboat(ait, pplayer, punit, dest_tile, bg_needed)) {
       return FALSE;
     }

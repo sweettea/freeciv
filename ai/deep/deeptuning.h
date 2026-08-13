@@ -837,6 +837,24 @@ struct deep_tuning {
    * nobody left to deliver. At 0 the muster only COUNTS them
    * (deep-lift-invalid phase=muster), which is what shipped first. */
   int lift_muster_release;
+  /* Walk a founder that needs a hull to a coast a hull could actually
+   * fetch it from (0/1, not a magnitude). The ferry path's own test is
+   * is_terrain_class_near_tile(TC_OCEAN) -- "am I beside water" --
+   * under which a lake, a dead-end sea and the world ocean are one
+   * thing; a founder that passes it asks for a boat that can never
+   * come and, because the drop-boatless clause spares a unit holding
+   * FERRY_WANTED, stands there for the rest of the game. EXPANSION
+   * slice 2 counted the population: 60 of 67 positive lift gaps were
+   * founders on water that closes on its own continent, with 4-16
+   * idle berths on the bridging water beside them.
+   * At 1 such a founder is sent to the nearest tile that shares a
+   * body of water with its target (deep_water_serves_crossing), by
+   * its own risk pathfinder, and STILL asks for a boat on arrival, so
+   * the mission is never dropped for lack of a request. At 0 nothing
+   * moves and the geometry is only counted (deep-berth).
+   * Not a magnitude and not a candidate for the tuner: a value between
+   * on and off has no meaning. */
+  int founder_berth_route;
   /* Which point of the live wait-spell distribution deep_wait_expected()
    * reports, as a percentile: 100 is the longest spell that water is
    * holding, 50 the median.

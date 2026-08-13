@@ -632,6 +632,14 @@ MAP = {
         "0, releasing at 1 -- so it proves the population exists, not "
         "that the release ran; the op's `lift-invalid` dissolution and "
         "`reaim` are what separate the arms."),
+    "founder_berth_route": (
+        "S3", "mode", "direct", [("deep-berthroute", "dist>=1")],
+        "EXPANSION slice 3's demand-side route (deepsettler.c, "
+        "deep_settler_berth_route). 0/1 switch. deep-berthroute is "
+        "written ONLY when the knob acts, and dist is the walk it "
+        "ordered, so the line cannot fire in the off arm; the "
+        "population it acts on is deep-berth coast=1 serves=0, which "
+        "is counted in both."),
     "hull_commission_weight": (
         "S3", "mag", "direct", [("deep-commission", "gap>=1")],
         "EXPANSION slice 2's commission (deepdefence.c, the colony "

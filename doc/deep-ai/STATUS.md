@@ -14457,3 +14457,227 @@ deep's does not.
 
 Retention: verdict banked; saves/ and game.logs pruned per policy
 (scorelogs kept, derby-6 final save kept for replay).
+||||||| 1bcf470d5a
+## EXPANSION slice 3: the founder was waiting beside a lake (2026-08-13)
+
+Branch `epic/expansion-s3`, cut from `epic/w03-horizon-content` at
+`1bcf470d5a`. Eight commits: one counter, one knob (default-off), two
+corrections the counter earned, a benchmark kit and two fixes to it,
+plus this entry. Own worktree, own `build/`, ports 7200-7299.
+
+- `3fe417259d` `ai/deep: count the water a stranded founder is actually waiting on`
+- `fa399b4dfa` `ai/deep: walk a stranded founder to a coast a hull can reach`
+- `1192a17b63` `benchmark: add the founder-berth arm and its census reader`
+- `e197a883a0` `ai/deep: name which passengers in the berth census are founders`
+- `42cb9650d2` `ai/deep: hold the berth route to the founder population`
+- `d9adaa00c6` `benchmark: pin the berth stages to one directory each`
+- `4752646666` `benchmark: run the berth A/B's on arm first`
+- `bbff3c606b` `benchmark: point the berth A/B's compare at the two cells`
+
+### The mechanism, and it is a one-line test in stock
+
+Slice 2 banked the finding and declined to act on it: the lift queue is
+GEOMETRY, not supply -- 60 of its 67 positive demand-supply gaps were
+founders queued beside water that closes on its own continent, while
+bridging water one tile away held 4-16 idle berths. The build side
+could see the gap and could not see the founder.
+
+Read from the founder's side it is one predicate.
+`aiferry_gobyboat()` (daiferry.c:766) walks a passenger toward a hull
+only while `!is_terrain_class_near_tile(nmap, unit_tile(punit),
+TC_OCEAN)`. The moment that flips it stops, looks for a boat nearby,
+and failing that calls `aiferry_request_boat()` and returns FALSE.
+**Under that test a lake, a dead-end sea and the world ocean are one
+thing.** A settler walking to the coast stops at the first puddle.
+
+Deep's own drop-boatless clause then keeps the dead mission alive, on
+purpose: it drops only `ferryboat == FERRY_NONE`, because dropping a
+settler that had just successfully ASKED for a boat was the 1200-event
+pick-drop loop. So the founder holds FERRY_WANTED, is spared, and
+stands there. Measured worst case in the off arm: **27 turns on the
+same lake shore.**
+
+`deep_water_serves_crossing()` is the sharper question and it is
+exact, not heuristic: ocean continent ids are connected components of
+water, so a crossing exists exactly when ONE body of water touches
+both the founder's tile and its target. Sixteen adjacency tests. It is
+the named-far-side form of `deep_water_bridges()`, and the difference
+matters because a shipyard has no passenger in front of it while a
+founder does -- to a founder, a sea that bridges to the wrong
+continent is worth what a lake is worth.
+
+### What the census found (`deep-berth`, 16 isolated-150 games, defaults)
+
+2523 founder-turns that needed a hull, turns 45-150:
+
+    coast=1  beside water at all               2421   96.0%
+    serves=1 that water reaches the target     1744   69.1%
+    STRANDED coast=1 serves=0                   677   26.8%
+      ... of which bridge=1                      58    2.3%
+      ... with a serviceable berth reachable    588   23.3%
+    inland coast=0                              102    4.0%
+    destsea=0 target unlandable by hull          89    3.5%
+    found=1  a founder, not a worker            2522  100.0%
+
+**One founder-turn in four that needs a lift is standing where no hull
+can ever come**, and in 87% of those a berth that would serve the
+crossing is a mean **0.76 turns' walk away**. 189 distinct founders,
+worst standing 27 turns.
+
+Two readings worth keeping:
+
+- **`bridge=1 serves=0` is only 2.3%.** The case slice 2 could not see
+  from the build side -- water that goes somewhere, just not where
+  this founder is going -- is real but small. The mass is `bridge=0`:
+  lakes and closed seas, where `boat_water_gate` is right to refuse
+  the keel and the founder should never have stopped.
+- **`found=1` is 100.0% of the census in BOTH arms.** No worker ever
+  reached this code path on this venue, so the founder-only gate
+  (`42cb9650d2`) is inert here and costs nothing; the worker-crossing
+  question (`worker_cross_continent_discount`) is untouched and
+  unmeasured.
+
+### What shipped
+
+**`founder_berth_route`** (int 0/1, default **0** = off, the 231st
+tunable). A founder that needs a hull, already touches water, and
+whose water does not reach its target is sent to the nearest tile that
+does -- found by its own risk pathfinder in cost order, so the first
+hit is the nearest and no berth is returned that the mover would die
+reaching.
+
+It then **still calls `aiferry_gobyboat()`**, and that is the design's
+load-bearing detail: skipping the request would leave `ferryboat` at
+FERRY_NONE and feed the mission straight to the drop-boatless clause,
+so the walk would cancel the mission it was serving.
+
+Not a magnitude and not a candidate for the tuner: a value between on
+and off has no meaning, like `boat_water_gate` beside it. **There is
+nothing here to sweep, and therefore no PLACEHOLDER.**
+
+### A/B: 16 mirrored isolated-150 seeds, one binary, one knob
+
+`benchmark/results/berth-ab/`, `paircmp.py`, deep seats only.
+
+    metric              OFF        ON     delta      se       t   wins
+    score            186.67    184.94     -1.73    2.66   -0.65   7/16
+    cities            14.89     15.39     +0.50    0.54   +0.92   6/16
+    settlers           2.42      2.83     +0.41    0.32   +1.25  10/16
+    landarea         190688    194375     +3688    4809   +0.77   8/16
+    unitsbuilt        84.78     90.28     +5.50    1.70   +3.23  12/16
+    techs             28.89     28.17     -0.72    0.49   -1.46   5/16
+    lift-formed       32.62     34.12     +1.50    1.30   +1.16   9/16
+    lift-arrived      20.81     21.31     +0.50    1.22   +0.41   8/16
+
+**Score does not move.** -1.73 with se 2.66 is a wash and 7/16 is a
+coin. Nothing here says the fix pays.
+
+**The mechanism moves hard, paired per seed:**
+
+    per seed                        OFF      ON     delta     se       t
+    berth founder-turns          157.69  168.31   +10.62  10.68   +0.99
+    STRANDED coast=1 serves=0     42.31   19.56   -22.75   5.87   -3.88
+    liftgap gap>0 water-turns     46.19   35.44   -10.75   5.90   -1.82
+    ... of those on bridge=0      40.06   27.56   -12.50   6.48   -1.93
+
+**Stranded founder-turns fall 54%, 14 of 16 seeds down, t -3.88.** The
+worst single founder's stand falls 27 turns -> 11. Per founder the
+stand falls 3.58 turns -> 1.61.
+
+### The before/after of slice 2's own counter
+
+`deep-liftgap`, the identical census slice 2 published, both arms:
+
+    gap > 0 on water-turns          739/4971 (14.9%)  ->  567/5128 (11.1%)
+    ... on water that BRIDGES             98 (13.3%)  ->      126 (22.2%)
+    ... on water that bridges NOWHERE     641 (86.7%) ->      441 (77.8%)
+    wait > 0 water-turns                        743   ->        663
+    sum of wait                                3626   ->       3410
+
+Slice 2's headline was **60 of 67 (89.6%) of positive gaps on
+non-bridging water**; this venue at 16 seeds reproduces it at 86.7%,
+and the routing takes it to 77.8%. In absolute terms the queue on
+water no hull can serve falls **641 -> 441 (-31%)** while the queue on
+water hulls CAN serve rises **98 -> 126 (+29%)**. That is the
+re-routing, measured on the counter that named the problem: demand
+moved from geometry that cannot be served to geometry that can.
+
+### Reading it honestly
+
+The defect is real, the fix removes half of it, and the empire is no
+better off in score. Three candidate reasons, none of them measured
+here, in the order I would test them:
+
+1. **The founder arrives in a queue that is already long.** Slice 2:
+   the bridging water carries 3.9 idle hulls and 7.8 berths against
+   0.23 waiting founders, and `deep-liftgap` still shows `gap > 0` on
+   11% of water-turns after routing. Delivering a founder to a berth
+   does not deliver it to a site.
+2. **The site may not survive the extra turns.** Mean walk is under a
+   turn, but `deep-lift-invalid` rose 114+25 -> 123+29: slightly more
+   missions died in flight, not fewer.
+3. **`unitsbuilt +5.50 (t +3.23)` is the largest effect in the table
+   and nobody asked for it.** More cities and more lifts formed will
+   do that, but it is unexplained and it is the one number in this A/B
+   that is not noise.
+
+00-context section 8 is the frame: record the proxy AND the aggregate,
+and do not discard a correct fix because the headline was flat. **The
+knob stays 0** until something downstream can use the founders it
+delivers.
+
+### Validation
+
+- `meson test -C build` **5/5** after every commit; `tune-audit.py`
+  **CLEAN at 233 fields**, `founder_berth_route` in `deeptuning.h`,
+  the `TUNE_INT` list, `tuning-params.ini` and the ALL + ECON blocks;
+  `knobcensus.py` MAP entry added, grade **direct** on `deep-berthroute
+  dist>=1`, census verdict **MODE with population 221** on the A/B's
+  on cell.
+- **Off-switch proof: 10/10 paired smoke seeds BYTE-IDENTICAL**, 0
+  differ, 0 missing, against a `git archive` build of base
+  `1bcf470d5a`, `identity.ini` both sides, ports 7220/7240
+  (`benchmark/results/berth-identity/`). The census runs
+  unconditionally when the metric log is on, so this is what proves it
+  inert. The stage also asserts the BASE arm emits no `deep-berth`
+  line, so the proof cannot pass by both sides being HEAD -- it does
+  not.
+- **The knob executing, end to end**, on arm seed 1: T55 unit 250 at
+  (37,29) `serves=0 bridge=0`, routed to (36,29) `dist=1`; T58 the
+  same unit at (38,31) `serves=1`. 221 walks over 16 seeds, 166
+  distinct founders, mean 1.49 tiles / 0.84 turns.
+- Runner: `benchmark/expansion-berth.sh {live|knob|identity|ab}`;
+  reader: `benchmark/berth.py`, plus `liftgap.py` unchanged for the
+  before/after.
+
+### Two harness traps this epic hit, both worth not repeating
+
+1. **A second stage's `cp -f` landed on the binary a live game was
+   executing** and the server took a bus error at turn 146. That is
+   the pinning rule's failure mode reached by COPYING rather than by
+   rebuilding, and the fix is a per-stage pin directory
+   (`d9adaa00c6`), which makes it mechanical instead of remembered.
+2. **Editing a runner script while bash is executing it kills the
+   run.** bash reads a script incrementally by byte offset; a `sed -i`
+   mid-run took out two games at turn 9. Edit between stages, never
+   during one.
+
+### What slice 4 should be, if the counters point anywhere
+
+1. **Ask what happens AFTER the berth.** This slice proved founders
+   can be delivered to serviceable water and that it changes nothing
+   downstream. The next question is the one it exposes: of the 221
+   re-routed founders, how many boarded, how many sailed, how many
+   founded? `deep-berth` has the unit ids and `deep-lift-*` has the
+   crossings; joining them is a reader, not an epic.
+2. **`unitsbuilt +5.50, t +3.23`** is the only significant number in
+   the A/B and it is a side effect. Find out what deep built.
+3. **The 2.3% `bridge=1 serves=0` population** is the case the
+   build-side gate structurally cannot see, and `boat_water_gate` is
+   the knob that would have to learn a destination to see it. Small,
+   but it is the only remaining geometry the supply side is blind to.
+4. **Not another expansion-geometry slice.** Three slices have now
+   found the founding channel to be sound in valuation (slice 1:
+   `neg = 0`), not short of hulls (slice 2: hull-rich, founder-poor),
+   and not short of serviceable coasts once routed (this slice). The
+   binding constraint is somewhere the lift census cannot see.

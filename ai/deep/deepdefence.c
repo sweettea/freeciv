@@ -4140,6 +4140,55 @@ bool deep_city_water_bridges(const struct tile *ptile)
 }
 
 /**********************************************************************//**
+  Can one hull fetch a passenger standing on 'from' and land it at
+  'dest'?
+
+  Ocean continent ids are connected components of water, so a boat
+  afloat on one of them reaches every tile that touches it and no tile
+  that does not -- there is no hopping between seas. A crossing from
+  'from' to 'dest' therefore exists exactly when ONE body of water
+  touches both ends, which is an adjacency test over sixteen tiles and
+  needs no pathfinder.
+
+  This is the sharper form of deep_water_bridges(), and the difference
+  is which side is asking. A shipyard has no passenger in front of it,
+  so all it can ask is "does this sea lead anywhere at all". A founder
+  has a target, and to a founder a sea that bridges to the WRONG
+  continent is worth exactly what a lake is worth.
+
+  EXPANSION slice 2 measured why that distinction earns a function: 60
+  of the 67 positive lift gaps were founders queued beside water that
+  closes on its own continent, while bridging water one tile away held
+  4-16 idle berths.
+
+  'dest' is the passenger's own target, which is also the beachhead a
+  deep lift sails to (deep_op_form_lift takes op->beachhead from
+  punit->goto_tile), so a target no water touches cannot be reached by
+  hull at all. That case answers FALSE here too, and callers that need
+  to tell the two apart ask deep_city_water_bridges() of 'dest'.
+**************************************************************************/
+bool deep_water_serves_crossing(const struct tile *from,
+                                const struct tile *dest)
+{
+  const struct civ_map *nmap = &(wld.map);
+
+  adjc_iterate(nmap, from, atile) {
+    Continent_id oc = tile_continent(atile);
+
+    if (oc >= 0) {
+      continue;
+    }
+    adjc_iterate(nmap, dest, dtile) {
+      if (tile_continent(dtile) == oc) {
+        return TRUE;
+      }
+    } adjc_iterate_end;
+  } adjc_iterate_end;
+
+  return FALSE;
+}
+
+/**********************************************************************//**
   Spare hulls on the waters this tile touches: idle beyond the units
   waiting to cross them, summed over each distinct body of water.
 **************************************************************************/
