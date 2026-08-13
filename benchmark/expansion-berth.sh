@@ -160,7 +160,10 @@ ab)
   OUT=$ROOT/benchmark/results/berth-ab
   SEEDS=${2:-16}
   pin_server "$1"
-  for arm in off on; do
+  # ON first, deliberately: if the knob turns out not to fire on this
+  # venue the whole comparison is void, and that is worth learning in
+  # the first arm rather than the second.
+  for arm in on off; do
     case $arm in
       off) ini=$ROOT/benchmark/tuning/identity.ini;      port=7260;;
       on)  ini=$ROOT/benchmark/tuning/expansion-berth.ini; port=7280;;
