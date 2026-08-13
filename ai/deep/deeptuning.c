@@ -251,6 +251,10 @@ static const struct deep_tuning deep_tuning_defaults = {
   .peace_seek_gain = 1.0,
   .gift_border_value = 0.0,             /* PLACEHOLDER, 0 = off */
   .gift_love_gain = 0.0,                /* PLACEHOLDER, 0 = off */
+  /* GIFT-REFOLD: 1.0 = every class priced as today = identity. */
+  .gift_ally_gain = 1.0,
+  .gift_instrument_gain = 1.0,
+  .gift_rival_gain = 1.0,
   .proxy_arm_gain = 0.0,                /* PLACEHOLDER, 0 = off */
   .embassy_price_gain = 0.0,            /* PLACEHOLDER, 0 = off */
   .embassy_give_gain = 1.0,             /* PLACEHOLDER, untuned */
@@ -485,6 +489,9 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(peace_seek_gain) \
   TUNE_DOUBLE(gift_border_value) \
   TUNE_DOUBLE(gift_love_gain) \
+  TUNE_DOUBLE(gift_ally_gain) \
+  TUNE_DOUBLE(gift_instrument_gain) \
+  TUNE_DOUBLE(gift_rival_gain) \
   TUNE_DOUBLE(proxy_arm_gain) \
   TUNE_DOUBLE(embassy_price_gain) \
   TUNE_DOUBLE(embassy_give_gain) \

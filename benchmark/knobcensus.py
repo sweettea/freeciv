@@ -1134,6 +1134,23 @@ MAP = {
         "S1", "mag", "direct", [("deep-lovegift", "")],
         "deep_love_gift() is called only when gift_love_gain > 0.0 "
         "(deepdiplomacy.c:1453)."),
+    "gift_ally_gain": (
+        "S1", "mag", "direct", [("deep-lovegift", "rel=ally")],
+        "GIFT-REFOLD (11.4): rel= on deep-lovegift is "
+        "deep_gift_rel_of()'s class and relgain= is literally this "
+        "knob on an ally-class line; bound= is gift_love_gain * worth "
+        "* relgain, and refused=1 counts the gifts this class price "
+        "declined."),
+    "gift_instrument_gain": (
+        "S1", "mag", "direct", [("deep-lovegift", "rel=instr")],
+        "GIFT-REFOLD (11.4): the instrumental class -- no friendship, "
+        "but we are at war elsewhere and they press our border. "
+        "relgain= on a rel=instr line is this knob."),
+    "gift_rival_gain": (
+        "S1", "mag", "direct", [("deep-lovegift", "rel=rival")],
+        "GIFT-REFOLD (11.4): the population that banked BALANCE's "
+        "+5.26 counterparty surplus. relgain= on a rel=rival line is "
+        "this knob; at 0.0 every such line carries refused=1 took=0."),
     "proxy_arm_gain": (
         "S1", "mag", "direct", [("deep-proxy", "")],
         "deep_proxy_arm() is called only when proxy_arm_gain > 0.0 "

@@ -13039,3 +13039,162 @@ Runner: `benchmark/expansion-slice1.sh {live|knob|identity}`.
   damage this session** — clause (i) already withdrawn by W36, §4's
   first-ranked item demoted here. That document's §4 is a ranking by
   argument; it now has counters to be re-ranked against.
+## GIFT-REFOLD: the love gift learns who it is talking to (2026-08-12 night)
+
+Branch `epic/gift-refold`, based at `ccf9e10e55`. `ai/deep` +
+`benchmark` + doc only; zero `ai/default`, `ai/baseline` or
+`server/advisors` changes.
+
+CAMPAIGN-v4 **§11.4** re-opened BALANCE's love-buying gift as an
+ALLY-TARGETED mechanism. The gift is the largest single-lever self-play
+move this project has measured (+8.28 contested, +8.92 lategame-80) and
+the mixed head-to-head said it was a transfer, not an advantage: deep
++1.93 (t 0.72), counterparty **+5.26** (t 2.15), deep's margin over
+`ai/default` **−3.34** (`findings/balance-statecraft-2026-08-06.md` §0).
+§11.4's fold criterion is not "no surplus" — it is that the surplus
+lands inside the alliance.
+
+### What landed
+
+| # | Commit | What |
+|---|---|---|
+| 1 | `fca2570185` | `deep_gift_rel_of()` — the relationship classifier, measurement only |
+| 2 | `fe8da34be7` | the class price: three knobs on the willingness bound |
+| 3 | `7c8c281c1d` | the shared-vision give-leg SEAM, comment only |
+| 4 | `330ac18af4` | `benchmark/tuning/gift-refold.ini`, the arm for the queued mixed run |
+
+### How the target is chosen
+
+Every criterion is state deep already reads for another decision; no
+new information enters the AI.
+
+- **ALLY** — the pact itself, a **shared enemy** (someone we are both
+  at war with), or a **common ally**. Note which population this
+  actually reaches: an existing ally never arrives at `deep_love_gift`
+  at all (the pre-pass skips allied pairs, and bought love cannot raise
+  a bar the alliance is already past), so "inside the alliance" here
+  means the alliance's **candidates** — the players who would fight
+  beside us, financed while financing them still buys something.
+- **INSTRUMENT** — no friendship, but we are **already at war
+  elsewhere** and this player **presses our border** by the same
+  density lattice `deep_top_menacer()` ranks menacers with. The second
+  front deep cannot afford, priced rather than assumed, behind its own
+  knob.
+- **RIVAL** — everyone else, and explicitly anyone a deep **operation
+  is marching on** (the same veto `deep_peace_wanted()` applies) or who
+  is **allied to a player we fight** (the same counterparty the
+  tech-leak veto refuses).
+
+Ordered and exclusive: op-target and enemy-ally disqualify before
+anything can promote.
+
+### The knobs (all default 1.0 = today's bound for every class)
+
+    gift_ally_gain         the alliance and its candidates
+    gift_instrument_gain   a second front we are already paying for
+    gift_rival_gain        everyone else -- the +5.26 population
+
+A multiplier and not a gate, because the classes differ in degree as
+well as kind: a would-be ally is worth paying MORE for than the flat
+bound, and a bool cannot say that. Registered in the four audit places
+plus `knobcensus.py`'s MAP with parseable predicates
+(`deep-lovegift rel=ally` / `rel=instr` / `rel=rival`).
+
+**`ALL` block only, deliberately.** These are cross-border by
+construction and §11.4's finding is that an all-deep cell cannot tell a
+positive-sum mechanism from a competitive one — so putting them in a
+block the ECON search optimises on paired score would tune them on the
+reading that cannot see what they do.
+
+### The seam that was marked and not taken
+
+`findings/omniscience-flag-breakage.md` item (b): giving vision is an
+intel concession and "belongs in the gift/love currency". That currency
+is this bound, and the seam is one line wide — `tech_worth` is the
+whole of what a gift costs us today, so a give-leg is a second term
+added to it before the comparison, behind its own knob and its own
+class price. **Comment only, no behaviour**: vision is worth nothing to
+an omniscient player, so pricing it now would price a good nobody
+consumes. Honest-info epoch, with items (a), (c) and (d).
+
+### Validation
+
+- Build `-Daimodules=classic,tex,baseline,deep` clean (pre-existing
+  warnings only, none in `deepdiplomacy.c`); `meson test -C build`
+  **5/5 OK**; `tune-audit.py` **CLEAN 222/222/222/222** (from 219 —
+  `gift_ally_gain`, `gift_instrument_gain`, `gift_rival_gain`).
+- **Identity, 10/10 byte-identical scorelogs.** 10 paired smoke seeds,
+  `--arms deep`, `identity.ini` on both binaries, jobs 2, ports 7350,
+  this build (`f9cf1a665d50`) against a `git archive` build of
+  `ccf9e10e55` (`f0f3cd213159`), under
+  `benchmark/results/gift-identity/`:
+
+      86fa9cf8e9ea  20e77144ddce  516442070fa0  0c0e8db3ccd8  d26859d9f559
+      7feae491265f  1947015da4da  a7c49b4535fd  a1339da3f752  93ae385c00a1
+
+- **Identity WITH THE GIFT LIVE, 2/2 byte-identical.** `identity.ini`
+  proves nothing about this change on its own — at `gift_love_gain = 0`
+  the pre-pass returns before any of it runs. So the same pair was
+  taken on `contested` under **`pv2.ini`**, where the gift fires 72
+  times a pair of games: `0ccd771be1fb`, `e773d3605428`, same on both
+  binaries (`benchmark/results/gift-live/`). The class multipliers at
+  1.0 are inert on a path that is actually executing.
+- **A trap worth recording.** The first archive build was wrong and the
+  first identity proof was worthless: `meson setup <builddir>` with no
+  source argument takes the CALLER'S CWD, which on this harness is the
+  worktree root — so the "base" binary was the branch under test and
+  the proof compared the branch with itself. It was caught by a census
+  line: the base arm's log carried `rel=`, a field that does not exist
+  in `ccf9e10e55`. **Always pass the source dir explicitly, and always
+  grep the base arm for a field only the branch can emit.**
+- **Liveness, `contested`, 2 seeds per arm, `--arms deep`, jobs 2**
+  (`benchmark/results/gift-live/`). Counters only — 2 seeds is not a
+  result (rule 6), and no score is read from these games.
+
+      pv2.ini (untargeted, the adopted baseline)
+      rel      census   priced   sent  refused   gold given
+      ally        772       12      7        0         1454
+      instr       368       30     30        0         4238
+      rival      1914       35     35        0         2020
+
+      gift-refold.ini (gift_rival_gain = 0.0)
+      rel      census   priced   sent  refused   gold given
+      ally        941       18     18        0         2427
+      instr       542       42     42        0         3232
+      rival      2498      133      0      133            0
+
+  The mechanism does what §11.4 asked: the rival leg goes to zero, 133
+  gifts are refused BY THE CLASS PRICE and counted as such, and the
+  surplus that remains is ally- and instrument-directed. The two arms
+  diverge in play, so the columns are populations and not a paired
+  comparison.
+- `knobcensus.py` on the same corpus: all three knobs **LIVE**
+  (`gift_ally_gain` 30 firings, `gift_instrument_gain` 72,
+  `gift_rival_gain` 168).
+
+### The queued arm — MANDATORY before any default changes
+
+**Nothing here has been measured for effect, and no default moved.**
+Under §11.4 this mechanism folds only on a **MIXED head-to-head arm**
+showing deep's margin over `ai/default` is a wash or better. That arm
+is **queued and not run** — the box was owned by another batch tonight,
+and an all-deep paired-score cell is precisely the reading that cannot
+see a transfer.
+
+The arm to run:
+
+    mixed_dc, seat-mirrored, contested + lategame-80
+    A: benchmark/tuning/pv2.ini          (untargeted -- today)
+    B: benchmark/tuning/gift-refold.ini  (ally-targeted)
+    read: deep's margin over ai/default, per §11.4; the counterparty
+          column is the one that moved -3.34 last time
+
+**pv2 ships `gift_love_gain = 46.59`**, so the mechanism BALANCE
+measured as a transfer is live in the adopted composed baseline right
+now. That is the reason this arm matters beyond the knob: if the
+refold reads as a wash or better, it is a candidate for pv2's own
+defaults; if the fold criterion fails, the honest reading may be that
+pv2 should carry `gift_love_gain = 0` instead.
+
+Not attempted, deliberately: no A/B of any kind tonight, no default
+change, and no vision pricing (item (b)'s seam is a comment).
