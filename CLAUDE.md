@@ -91,7 +91,7 @@ pass.
 ```sh
 meson setup build && ninja -C build     # full build (minutes)
 ninja -C build                          # incremental
-./build/tests/unit_tests                # L0 unit tests (fast)
+meson test -C build                     # L0 unit tests (fast, 5 suites)
 ./benchmark/run.sh --quick              # 10 paired seeds (~5 min, directional)
 ./benchmark/run.sh --full               # 100 paired seeds (hours, resumable)
 ./benchmark/report.py                   # table + CIs from results/
@@ -124,7 +124,7 @@ If you cannot say which binary a live run is pinned to, do not build.
 2. Check `doc/deep-ai/STATUS.md` for current state.
 3. Implement **at most one epic** (5–10 commits) **per subagent session**. Not a
    whole workstream. Not a phase.
-4. Run `./build/tests/unit_tests` and `./benchmark/run.sh --quick`.
+4. Run `meson test -C build` and `./benchmark/run.sh --quick`.
 5. Update `STATUS.md` with what landed, the numbers, and what's next.
 6. **Stop.** Do not begin the next epic in the same session.
 
