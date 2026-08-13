@@ -13756,3 +13756,8 @@ the finale's late-era blend are the campaign's critical path, full
 stop. Kit lessons banked: set timeout -1 for headless (memory), true
 scenario map for derby-5, zero eliminations in 300 turns on this
 geometry.
+
+- E1/E2 hut-flip: +24.7 vs +24.7 — the honest arm is a practical
+  no-op on its own venue (the misdirected discount it corrects was
+  being spent on huts that changed no outcomes). Knob stays 0,
+  correctness noted, priority floor. Batch 2 complete 00:11.
