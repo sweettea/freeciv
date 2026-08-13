@@ -395,3 +395,33 @@ standing note, and now with a price attached: −9.35 head-to-head score and
 - **The Tier-3 stock layer stayed omniscient throughout** (`dai_war_desire`,
   `daitech.c`, `daidata.c` — 0 handicap checks). Every number here is a
   lower bound on what a genuinely honest deep would suffer.
+
+## The vision economy (human, 2026-08-12) — required alongside any honest-info fold
+
+Once visibility is real, vision is a produced good and must be priced.
+Four producers the want machinery must credit, none of which exist
+today because omniscience made their product worthless:
+
+a) **Explorers earn their vision.** The explore want currently prices
+   huts (+ a discovery term measured 2 orders too small). Under honest
+   info, tiles revealed and kept-current is the product — and the S5p2
+   census showed the compensator is dead without this (explorers 0.78
+   -> 0.77 while blind).
+b) **Worldmap/seamap trades and shared vision, priced accurately.**
+   Diplomacy can buy sight (map exchanges, shared-vision pacts, and
+   embassies as score/tech sight). These are cross-border mechanisms:
+   the §11.4 mixed-arm rule applies, and an ally's shared vision is
+   exactly the "wash as alliance benefit" case.
+c) **Boats see.** Naval units as pickets/scouts — hull positioning and
+   idle-hull disposition should carry a vision term (the lift/ferry
+   pool doubles as a radar fence). Interacts with MOVETYPE honest
+   naval pricing.
+d) **Vision-platform units (AWACS-likes).** Large-vision-radius units
+   are worthless under omniscience and load-bearing without it; their
+   build want needs the vision credit or they will never be built —
+   the same never-built trap the air venue just exposed for Bombers.
+
+Sequencing: these are fold-companions, not fixes — they belong in the
+same epoch as (A) pathfinder passability and (B) honest site eval from
+the existing roadmap, because turning on honest info without paying
+vision producers locks in the blindness the flag creates.
