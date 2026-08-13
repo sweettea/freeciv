@@ -12546,3 +12546,173 @@ finale's naval-fear family sweep on tech65sea-150. Human call: merge.
 pv2 on tech50war measured −250 vs the pv1 family's −293 on the same
 seeds — ECON tuning travels to the war venue (~+43, pairing pending
 G5). by_sea live: 0 → 309,594.
+
+## NAVSEE + hut-flip: two corrections landed inert, three venue findings that redirect their A/Bs (2026-08-12 night)
+
+Branch `epic/navsee-hutflip`, based at `ccf9e10e55`. Six commits.
+Machine budget was smoke/identity/liveness only — a night batch owned
+the box — so **neither mechanism ships on and no A/B was run**. What
+this session bought is two corrections behind default-preserving
+knobs, the instruments that size them, and three measured facts that
+change where their A/Bs should be spent.
+
+### 0. S-NAVSEE part A is already built — by MOVETYPE, this afternoon
+
+The brief's headline job was to generalize the terrain-nativity test
+to four blind sites: `deep_boat_shadow_fear` (F2), `deep_density_fear`'s
+floats gate (F3), `deep_reachable_free_land`, and the ferry census.
+**All four were converted six hours earlier** by `073b50341f` on
+`epic/movetype` (deepdefence.c:447, 794, 610, 5398 respectively), as
+part of the thirteen-site sweep, and merged at `7ad93151b8`. The brief
+predates that work and its evidence is stale in deep's favour: it
+asked for one shared helper and there is one
+(`deep_utype_is_sea`/`_is_land`), it asked for the class-fact riders
+and they are folded in, and it asked for an A/B which MOVETYPE ran and
+the human merged on.
+
+The one acceptance item MOVETYPE did not deliver is the nativity
+helper's **unit test in the deepodds pattern**. That pattern compiles a
+FREESTANDING module against no freeciv tree (`tests/deepodds_test.c`
+header comment); `deep_utype_is_sea` lives in deepdefence.c and reads
+`struct unit_type` and terrain nativity, so testing it that way means
+extracting it first. **Not done, and flagged rather than faked** —
+MOVETYPE's runtime evidence (by_sea 0 → 309,594 admissions on
+tech65sea-150) is stronger than the unit test would have been.
+
+So this session built part B and the hut-flip.
+
+### 1. The hut-risk sign, corrected behind `hut_risk_honest` (default 0)
+
+M3's item 2 established from the server source that the discount runs
+backwards. `_deflua_hut_get_barbarians` (`data/default/default.lua:112`)
+and the handicap path `hut_get_limited` (`server/unittools.c:3321`)
+both refuse to unleash when ANY player's city lies within
+CITY_MAP_MAX_RADIUS, so the huts that CAN unleash are the far ones,
+and `deepexplore.c` discounts the near ones.
+
+`hut_risk_honest = 1` charges `hut_risk_discount` against the server's
+own set, fixing all three mismatches at once (the sign; our cities vs
+every player's; `real_map_distance` vs the squared-radius city map).
+`hut_risk_radius` is then unread — the radius is the server's.
+
+**Default 0.** Not doubt: the flip moves an explore-value term on
+every hut map, and v3b's tuner has been zeroing `explore_hut_value` on
+classic *in response to this term's wrong sign*, so sign and magnitude
+are one factorial question.
+
+### 2. The maritime premium, split behind `site_naval_connect_weight` (0.0)
+
+Human design 2026-08-05. `site_naval_weight` (20.0, unchanged) is now
+documented and implemented as coastal YIELD — any workable water, dead
+lake included. `site_naval_connect_weight` is a NEW additive term paid
+only where `deep_city_water_bridges()` says the water leaves the
+continent. Both read the SAME `cr->total` before either is added.
+
+The evidence for splitting is D3's own negative result: `site_naval_gate`
+tested the VETO form of this distinction and measured **−11.68 (se 8.02,
+t −1.46, 7/20)** on isolated-150, because a veto withholds yield from
+water that genuinely yields. Additive is the shape that can price "a
+useful lake beats a dead lake" without pricing "a dead lake is worth
+nothing".
+
+`benchmark/tuning/navsee-split.ini` carries the human's 17 + 3 cut as
+the A/B arm, zero-sum at a connected site by construction, with the
+value's provenance stated and labelled PLACEHOLDER.
+
+### 3. Instrument first: `deep-explore` and `deep-sitenaval` grew four fields
+
+`huts_disc` (what the term in force charged), `huts_unleash` (what the
+SERVER would let unleash, from its own predicate, counted whether or
+not any gate reads it), `barbs_armed` (the rate+onset gate), and on
+the site line `connect` / `connectwant`. `findings/knob-coverage.md`
+had named the first of these exactly — "Needs: huts_discounted= on
+deep-explore" — and both `hut_risk_*` knobs move from NO-INSTRUMENT to
+direct in the census MAP.
+
+### 4. THE VENUE FINDINGS. All three redirect an A/B the brief specified
+
+**(a) No existing cell can exercise the hut-risk term.** Its hut-DENSE
+cells and its barbarian-ARMED cells are disjoint sets:
+
+    cell         huts         armed?                 huts_vis observed
+    huts         150          NO (civ2civ3 sets      -- T80 < 120
+                                 onsetbarbs 120)
+    smoke        ~15 default  NO (T100 < 120)        max 1; armed=0 on
+                                                     all 400 lines
+    storm-150    ~24 default  YES (onsetbarbs 30)    max 1; 968 armed
+                                                     lines, 7 with any
+                                                     hut, 0 with both
+    tech65sea    ~15 default  YES                    2 lines with a hut
+
+That is why both knobs sat NO-INSTRUMENT: there was nothing to
+instrument. `benchmark/configs/hutrisk-80.conf` fixes it — huts.conf's
+geometry and density with storm-150's onset, every value copied from
+an existing canonical cell.
+
+**(b) On that venue the shipped discount is spent ENTIRELY on
+risk-free huts.** One paired game, seed 1, T80, both arms:
+
+                              honest=1     honest=0 (shipped)
+    deep-explore lines             338            333
+    armed lines                    222            217
+    lines with a hut in view       105            100
+    lines with huts_disc > 0         0             33
+    lines with huts_unleash > 0     51             51
+    armed AND huts_unleash > 0       0              0
+
+Every hut deep sees during the armed window stands inside some city's
+max city map. The shipped form discounts on 33 lines; the corrected
+form discounts on none, because there is nothing dangerous to discount.
+The arms diverge (338 vs 333 lines), so the knob is live. **One game
+is liveness, not a result** — but it says the flip's realised effect
+is "stop paying a discount that never bought anything", which is a
+smaller and cheaper claim than the A/B was being sized for.
+
+**(c) The split's A/B must NOT be run on isolated-150.** The connect
+term's discriminating population is `paid − connect` — coastal
+candidates whose water goes nowhere — and on an island map there
+essentially are none:
+
+    venue (seed 1, split probe)   paid     connect   discriminating
+    tech65sea-150 (ISLAND)      16 725      16 722         3  (0.02%)
+    smoke (continental)          2 766       2 700        66  (2.4%)
+
+The brief names isolated-150 because that is where the VETO was
+measured. But on island geometry every coastal site is on bridging
+water, so the split is inert there by construction and n=40 would buy
+a zero. The discrimination lives on continental maps with lakes and
+closed seas. **Measure `paid − connect` on a candidate cell before
+spending seeds on it.**
+
+### 5. Validation
+
+- Build `-Daimodules=classic,tex,baseline,deep`: clean.
+- `meson test -C build`: **5/5 OK** (baseline-frozen, deepodds,
+  deepattrition, deepeffects, deeptuning).
+- `tune-audit.py`: **CLEAN 219 → 221**, both new knobs in all four
+  audit places and in ALL plus their domain blocks (M/MIL for
+  `hut_risk_honest`, X/ECON for `site_naval_connect_weight`).
+- `knobcensus.py` MAP: four entries changed, sync check passes,
+  predicates in the parseable `field>=N` form.
+- **IDENTITY: 10/10.** smoke, 10 paired train seeds, arm `deep`,
+  tuning=none, this tree's binary vs a `git archive ccf9e10e55` build
+  (`benchmark/results/navsee-identity/`, keys
+  `smoke-1a3940ba642d` = before, `smoke-1c0c0f710012` = after):
+  **scorelogs byte-identical 10/10, maphash equal 10/10, metrics.csv
+  identical.** Both mechanisms are off at their compiled defaults and
+  the new counters cost nothing observable.
+- LIVENESS: 4 games. tech65sea-150 with the split probe — connect
+  fired on 587/587 searches, 16 722 candidates, 194 627 summed
+  connectwant; by_sea 89 079 (part A live in the same game).
+  hutrisk-80 ON/OFF as in §4b. storm-150 as the negative control.
+
+### 6. Owed
+
+- The two A/Bs, on the venues §4 identifies rather than the ones the
+  brief named: `hut_risk_honest` on hutrisk-80 (and the
+  `explore_hut_value` factorial), `site_naval_connect_weight` on a
+  continental cell chosen by its `paid − connect` gap.
+- `site_naval_weight` 20.0 and `site_naval_connect_weight` 0.0 are
+  PLACEHOLDERs for the pile; the 17 + 3 cut lives only in the probe.
+- The nativity helper's unit test (§0), which needs the helper made
+  freestanding first.
