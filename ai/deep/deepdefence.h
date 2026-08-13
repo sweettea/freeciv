@@ -123,5 +123,10 @@ int deep_water_surplus(struct ai_type *ait, struct player *pplayer,
  * city that can build into it, whatever the demand does. */
 bool deep_water_bridges(Continent_id ocean);
 bool deep_city_water_bridges(const struct tile *ptile);
+/* The same geometry with a NAMED far side: is there one body of water
+ * touching both 'from' and 'dest', which is what a hull needs to fetch
+ * a passenger standing on the first and land it at the second. */
+bool deep_water_serves_crossing(const struct tile *from,
+                                const struct tile *dest);
 
 #endif /* FC__DEEPDEFENCE_H */
