@@ -988,6 +988,18 @@ static void deep_love_gift(struct ai_type *ait, struct player *pplayer,
    * over the second is a gift the REFOLD refused, and that one is
    * logged, because a redirection nobody can count is indistinguishable
    * from a mechanism that never fired. */
+  /* THE SEAM A VISION GIVE-LEG WOULD PLUG INTO, marked and NOT taken.
+   * findings/omniscience-flag-breakage.md item (b) says giving sight is
+   * an intel concession -- they see your gaps, your musters, your
+   * undefended coast -- and that it "belongs in the gift/love
+   * currency", which is this bound. The shape it would take is
+   * arithmetic, not architecture: `tech_worth` is the whole of what a
+   * gift costs us today, so a give-leg is a second term added to it
+   * before the comparison, behind its own knob and its own class
+   * price. It is deliberately not written here: vision is worth
+   * nothing while deep is omniscient, so pricing it now would be
+   * pricing a good nobody consumes. It belongs to the honest-info
+   * epoch, alongside items (a), (c) and (d). */
   bound = t->gift_love_gain * worth;
   rel = deep_gift_rel_of(pplayer, aplayer);
   relgain = deep_gift_rel_gain(t, rel);
