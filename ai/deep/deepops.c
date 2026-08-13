@@ -2230,7 +2230,8 @@ static int deep_lift_muster_invalid(struct ai_type *ait,
 
 static bool deep_lift_revalidate(struct ai_type *ait, struct player *pplayer,
                                  struct deep_operation *op, int oi,
-                                 struct unit *ferry, struct tile *beach)
+                                 struct unit *ferry, struct tile *beach,
+                                 const char *phase)
 {
   const struct civ_map *nmap = &(wld.map);
   bool beach_dead = FALSE;
@@ -2240,7 +2241,7 @@ static bool deep_lift_revalidate(struct ai_type *ait, struct player *pplayer,
     struct unit *m = game_unit_by_number(op->members[i]);
 
     if (deep_lift_mission_dead(ait, m)) {
-      deep_lift_invalid_log(pplayer, op, oi, m, ferry, beach, "march");
+      deep_lift_invalid_log(pplayer, op, oi, m, ferry, beach, phase);
       if (same_pos(m->goto_tile, beach)) {
         beach_dead = TRUE;
       }
@@ -2340,9 +2341,27 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
   if (op->state == DEEP_OP_MUSTER) {
     /* What is the quay holding? The hold that keeps a marching
      * passenger from re-checking its own mission (D-E) is on during
-     * the gather too, and for lift_gather_turns of it. Counted here,
-     * released nowhere yet. */
-    (void) deep_lift_muster_invalid(ait, pplayer, op, oi, ferry, beach);
+     * the gather too, and for lift_gather_turns of it.
+     *
+     * With lift_muster_release the gather answers the same way the
+     * crossing does -- drop the dead mission, re-aim if it was the
+     * beachhead, abort if nothing is left -- which is strictly the
+     * cheaper end to do it at: before the hull has sailed, a released
+     * founder is still standing on its own continent with its own
+     * legs. At 0 the pass only counts, which is what shipped first. */
+    if (deep_tuning_get()->lift_muster_release > 0) {
+      if (!deep_lift_revalidate(ait, pplayer, op, oi, ferry, beach,
+                                "muster")) {
+        return;                 /* Aborted: nothing left to deliver. */
+      }
+      beach = index_to_tile(nmap, op->beachhead);
+      if (beach == NULL) {
+        deep_op_dissolve(op, oi, "lift-nobeach", pplayer);
+        return;
+      }
+    } else {
+      (void) deep_lift_muster_invalid(ait, pplayer, op, oi, ferry, beach);
+    }
 
     /* The core passenger is members[0] -- the one the lift was formed
      * for. Once it is aboard the lift CAN sail; whether it should is
@@ -2664,7 +2683,8 @@ static void deep_op_drive_lift(struct ai_type *ait, struct player *pplayer,
     {
       int was_beach = op->beachhead;
 
-      if (!deep_lift_revalidate(ait, pplayer, op, oi, ferry, beach)) {
+      if (!deep_lift_revalidate(ait, pplayer, op, oi, ferry, beach,
+                                "march")) {
         return;                 /* Aborted: nothing left to deliver. */
       }
       if (op->beachhead != was_beach) {

@@ -767,6 +767,17 @@ struct deep_tuning {
    * loaded boat for a timeout.
    * PLACEHOLDER -- flagged in STATUS.md for a tuning pass. */
   int lift_hitch_wait_min;
+  /* Re-validate a lift passenger's mission during the MUSTER as well
+   * as the crossing (0/1, not a magnitude). The op-hold sits above
+   * the settler path's own city_can_be_built_here() check, so a held
+   * passenger never re-examines its target -- deep_lift_revalidate()
+   * has asked for it on every MARCH turn since 0d6440e194, and the
+   * gather, which is just as held and lasts lift_gather_turns, never
+   * did. 1 drops a member whose target died before the hull sails,
+   * re-aims if that target was the beachhead, and aborts a lift with
+   * nobody left to deliver. At 0 the muster only COUNTS them
+   * (deep-lift-invalid phase=muster), which is what shipped first. */
+  int lift_muster_release;
   /* Which point of the live wait-spell distribution deep_wait_expected()
    * reports, as a percentile: 100 is the longest spell that water is
    * holding, 50 the median.

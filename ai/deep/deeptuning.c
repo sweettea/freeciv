@@ -131,6 +131,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .boat_gate_at_bid = 1,                /* filter before the choice */
   .lift_drop_radius = 12,               /* human: two boat moves */
   .lift_hitch_wait_min = 1,             /* PLACEHOLDER, untuned */
+  .lift_muster_release = 0,             /* off; A/B switch */
   .lift_wait_tail_pct = 80,             /* measured: 20% of spells, 60%
                                          * of waiting */
   .worker_flee_radius = 3,              /* PLACEHOLDER, untuned */
@@ -406,6 +407,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_INT(boat_gate_at_bid) \
   TUNE_INT(lift_drop_radius) \
   TUNE_INT(lift_hitch_wait_min) \
+  TUNE_INT(lift_muster_release) \
   TUNE_INT(lift_wait_tail_pct) \
   TUNE_INT(worker_flee_radius) \
   TUNE_INT(worker_guard_radius) \

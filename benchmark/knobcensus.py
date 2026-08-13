@@ -607,6 +607,14 @@ MAP = {
         "the lift= form of deep-colony is the colony-lift want being "
         "raised (deepdefence.c:2938). The demand= form is the settler "
         "side's probe and does NOT prove this weight applied."),
+    "lift_muster_release": (
+        "S3", "mode", "direct", [("deep-lift-invalid", "phase=muster")],
+        "the muster-phase half of D-E's mission re-validation "
+        "(deepops.c, deep_op_drive_lift). 0/1 switch. The muster form "
+        "of deep-lift-invalid is written in BOTH arms -- counting at "
+        "0, releasing at 1 -- so it proves the population exists, not "
+        "that the release ran; the op's `lift-invalid` dissolution and "
+        "`reaim` are what separate the arms."),
     "hull_commission_weight": (
         "S3", "mag", "direct", [("deep-commission", "gap>=1")],
         "EXPANSION slice 2's commission (deepdefence.c, the colony "
