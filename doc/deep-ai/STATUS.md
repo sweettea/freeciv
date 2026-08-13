@@ -14365,3 +14365,45 @@ radius ceiling, visible exactly where it was predicted.
   deep to offer corridor tiles the advisor never enumerates, in the
   shape `deep_idle_fallback_work()` already uses to reach outside the
   auction. See `workstreams/LATER-PHASES.md`.
+
+## 2026-08-13 — MUSTER A/B verdict: reject as offense, retention signal noted
+
+Three arms on tech50war-200 mixed, 16 mirrored seeds each, all on the
+one pinned `.muster-bin` binary (control re-run on it after the
+MOVETYPE merge — one-binary rule). Baseline pv1+reach (fact-c01).
+
+    arm                    score/seed  vs control        cities deep:stock
+    A  control              -22.7                        0.850
+    B  muster (as shipped)  -34.8      -12.1  t -1.98    0.768
+    B' muster, home off     -29.0       -6.3  t -0.85    0.902
+
+Lifecycle totals (32 games/arm, running mform/mlaunch/mabandon):
+
+    B   formed 2788  launched 24  abandoned 1208
+    B'  formed 2392  launched 22  abandoned  396
+
+Reading:
+- The home-defense trigger was the churn engine (abandonment falls 3x
+  without it) and it is what made as-shipped muster actively harmful.
+- It was NOT the launch blocker. Launches are ~0.9% of formations in
+  BOTH arms: the take-odds launch gate almost never clears even at
+  accumulated pools, exactly as 3a's flat odds curve predicted.
+  MUSTER as designed accumulates forever and never attacks.
+- B' is a score wash vs control but holds the best cities ratio of
+  the three arms (0.902 v 0.850): parked pools garrison where they
+  stand and stop the home-trigger bleeding. The mechanism's real,
+  measurable effect is defensive massing, not offense.
+
+Verdict: `op_muster` stays 0. No fold. The retention signal is
+consistent with the derby-6 lean-lattice finding and belongs to the
+MIL-finale fear/garrison sweep, where a parked-army sink is the wrong
+implementation of it. The deferred odds-bar question is now formally
+unblocked (pools exist, odds still flat) but per the Gunpowder
+doctrine it is a design question for the finale, not a knob to force.
+
+Ops note, banked to memory: freeciv scorelog resume validation
+requires the existing file to end with EXACTLY the loaded save's turn
+block (`last_turn + 1 == first logged turn after load`, scores write
+at begin-turn, synchronized with autosave); anything else disables
+scorelogging silently for the whole session. Both derbies hit this
+after the power-loss resume and were repaired from backups.
