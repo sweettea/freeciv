@@ -13,6 +13,60 @@
 #ifndef FC__DEEPTUNING_H
 #define FC__DEEPTUNING_H
 
+struct player;
+
+/* WHERE THE VALUES COME FROM -- the loading scheme (PERPLAYER,
+ * 2026-08-12). Two layers, and the first one is exactly what shipped
+ * before this file grew the second.
+ *
+ * LAYER 1, the base values, unchanged: the compiled defaults below,
+ * overlaid by the [tuning] section of $FREECIV_DEEP_TUNING if that
+ * variable names a readable file. One file per server process, applied
+ * to every deep seat. With FREECIV_DEEP_ARENA unset this is the whole
+ * scheme, every seat's pointer is the base struct's address, and the
+ * behaviour is byte-identical to the process-global loader it replaced
+ * -- which is the gate this work shipped behind, not a hope.
+ *
+ * LAYER 2, the ARENA, opt-in: $FREECIV_DEEP_ARENA names a MANIFEST ini
+ * that gives named seats their own tuning file, so several candidate
+ * value sets can be judged inside ONE game (findings/
+ * tuning-venues-2026-08-06.md section 6a -- eight candidates at one
+ * table is within-game selection, and it triages, it never claims).
+ *
+ *   [arena]
+ *   P1   = "benchmark/tuning/candidate-a.ini"
+ *   P2   = "benchmark/tuning/candidate-b.ini"
+ *   slot2 = "benchmark/tuning/candidate-c.ini"
+ *
+ * A seat is looked up FIRST by player name ("arena.<name>"), then by
+ * slot number ("arena.slot<n>", n = player_number()). Names are the
+ * useful key -- benchmark/run-game.sh creates P1..PN -- and the slot
+ * form is the fallback for names an ini key cannot hold. A seat named
+ * by neither keeps the base values, so a manifest mentioning two of
+ * eight seats is a two-candidate arena with six controls.
+ *
+ * Each named file is loaded the SAME way the base file is (compiled
+ * defaults, then the file's keys), so a candidate ini is an ordinary
+ * tuning file and archived inis mean what they always meant. Files are
+ * cached by path, so eight seats sharing one file share one struct.
+ *
+ * The assignment resolves LAZILY, on the seat's first read, because the
+ * player_alloc hook runs before server_player_set_name()
+ * (server/stdinhand.c create_command_newcomer: server_create_player at
+ * :908, the name at :939) -- at alloc time there is no name to key on.
+ * By the time anything reads a tunable the seat is named and playing.
+ *
+ * READING: deep_tuning_get() returns the values of the seat whose
+ * decision is being made, via a scope pointer that deepai.c's hook
+ * wrappers set from the player the hook serves. AI phases are strictly
+ * sequential per player, so that pointer has no concurrent reader by
+ * construction. deep_tuning_for(pplayer) is the explicit form for code
+ * that holds a player and does not want to trust the ambient scope.
+ * deep_tuning_scopeless_reads() counts reads that found NO scope while
+ * an arena was configured: it is zero when the guards cover the code
+ * that runs, and any other number is a coverage defect to be reported,
+ * not an approximation to be lived with. */
+
 /* Tunable constants of the deep AI.
  *
  * Every value here is a PLACEHOLDER until it has been through a
@@ -2268,5 +2322,14 @@ struct deep_tuning {
 void deep_tuning_init(void);
 enum log_level deep_metric_log_level(void);
 const struct deep_tuning *deep_tuning_get(void);
+
+/* The per-seat layer; see the loading scheme at the top of this file. */
+const struct deep_tuning *deep_tuning_for(const struct player *pplayer);
+void deep_tuning_player_init(const struct player *pplayer);
+void deep_tuning_player_free(const struct player *pplayer);
+const struct deep_tuning *deep_tuning_scope_set(const struct player *pplayer);
+void deep_tuning_scope_restore(const struct deep_tuning *saved);
+bool deep_tuning_arena_active(void);
+int deep_tuning_scopeless_reads(void);
 
 #endif /* FC__DEEPTUNING_H */

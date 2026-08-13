@@ -140,6 +140,7 @@ static void dpai_player_alloc(struct player *pplayer)
   /* Identity until the first phase resolves it: a zeroed stance is a
    * ratio nothing can be read from. */
   plr_data->stance = deep_stance_identity();
+  deep_tuning_player_init(pplayer);
   dai_data_init(deftype, pplayer);
 }
 
@@ -150,6 +151,7 @@ static void dpai_player_free(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
 
+  deep_tuning_player_free(pplayer);
   dai_player_free(deftype, pplayer);
 }
 
