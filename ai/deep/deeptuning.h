@@ -871,6 +871,25 @@ struct deep_tuning {
    * 1 + d shape as worker_danger_discount, inverted because lower turns
    * win. 0 makes a boat trip cost exactly its real turns. */
   double worker_cross_continent_discount;
+  /* Travel discount on the PRIMARY worker task auction. Among tiles
+   * not yet worked, worker_evaluate_improvements() compares candidates
+   * on the resulting tile value alone -- the walk is folded into
+   * amortize() only once, after the loops, on the champion, so two
+   * candidates worth the same to the city rank the same whether they
+   * are one tile away or fifteen. Here the improvement (value minus
+   * the tile's value without it) is discounted by
+   * amortize(gain, discount * arrival), the same shape the site search
+   * uses for its own travel term (site_travel_discount). 0 disables
+   * and restores stock ranking exactly. */
+  double worker_travel_discount;
+  /* Trunk roads (W12). A road candidate on a tile the empire's
+   * minimum spanning tree runs through carries the LINK's worth on top
+   * of its own: the movement points the finished link saves on one
+   * traversal, discounted by amortize() over the corridor tiles still
+   * missing. This gain converts those movement points into the
+   * advisor's tile currency. 0 disables the whole term, plan included.
+   */
+  double trunk_road_gain;
 
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).

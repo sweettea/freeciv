@@ -14144,3 +14144,224 @@ a waiting founder to a coast a hull can reach, and nothing prices that
 walk against the wait it would end. That is a demand-side mechanism on
 the same seam, it is measurable with the counter that now exists, and
 it is where the mass is.
+## W12 slice 1: trunk roads and worker locality, both behind zeros (2026-08-13)
+
+Task #55 from the stray-asks audit
+(`findings/stray-asks-audit-2026-08-12.md` ask 2): "workers bias
+toward nearby jobs" was PARTIAL (fallback-only, measured inert) and
+"trunk road value connecting cities should go up" was MISSING
+(unbuilt W12). Both are now built on the primary path, both ship at
+0.
+
+Branch `epic/w12-roads`, 5 commits.
+
+### 1. The hole each mechanism fills
+
+**Locality.** `worker_evaluate_improvements()` amortizes travel
+exactly once -- after every loop, on the champion
+(`autoworkers.c:939-943`). Inside the loops, the branch that chooses
+between tiles nobody works yet compares the resulting tile value and
+nothing else (`autoworkers.c:457-474`); distance enters only as a
+tie-break on exact equality. Two candidates worth the same to the
+city rank the same whether the worker stands on one of them or
+fifteen tiles away. That is the hole, and it is on the path every
+worker takes -- unlike `deep_idle_fallback_work()`, which ran only
+where nothing else was wanted and measured inert for a reason that
+does not transfer (`findings/idle-workers.md` section 7: in
+lategame-80 the declined improvements really were worth nothing,
+cities average size 5.8 and never grow to work the outer tiles).
+This term never adds a job; it re-ranks jobs the auction already
+wants.
+
+**Trunk roads.** The advisor prices a road by what it does for the
+TILE. `adv_workers_road_bonus()` (`autoworkers.c:138-306`) is the
+function that *claims* otherwise -- its own comment reads "this
+calculates the overall benefit of connecting the civilization" -- and
+what it computes is a 12-tile adjacency template around the candidate,
+counting how many road neighbours it would join. That is a local
+pattern, not a connectivity query: it cannot tell a tile between two
+cities from a tile between two dead-end spurs. Nothing anywhere in the
+auction knows a road here would join two cities.
+
+### 2. What landed
+
+`deep_worker_travel_price()` (`ai/deep/deepsettler.c:2190`)
+discounts the IMPROVEMENT -- candidate value minus the same tile
+without it -- by `amortize(gain, worker_travel_discount * arrival)`,
+the shape the site search already uses (`deepsite.c:1487`). The
+improvement and not the total, because the advisor also compares the
+total against `old_tile_value` to decide whether a candidate improves
+anything at all: discounting THAT makes distant candidates vanish
+rather than rank lower.
+
+`ai/deep/deeptrunk.c` spans the player's cities with a minimum
+spanning tree on map distance, walks each edge into a tile corridor
+(greedy, land only; a link that must cross water is dropped whole),
+and gives every corridor tile still lacking a road the LINK's worth:
+
+    saving = corridor terrain cost - corridor cost under this road
+    want   = trunk_road_gain * saving/SINGLE_MOVE * amortize(1, gap)
+
+The saving is movement points on one traversal once the link is
+whole, from the same terrain and road move costs `autoworkers.c`
+reads two lines away. The `amortize()` over the tiles still missing
+is the standard discounter, so the nearly-finished link is closed
+before the barely-started one is begun. An MST and not every pair:
+n-1 links make every city reachable, while pricing all n(n-1)/2 would
+pile the same want onto whatever tiles lie between the two densest
+clusters.
+
+This is steps 1, 2 and half of step 3 of the sketch in
+`findings/better-ai-plan.md` section 2, with one deliberate
+departure recorded in `workstreams/LATER-PHASES.md`: the sketch's
+"finish what you started" term is `is_last_gap_in_segment ? 3 : 1`,
+an invented constant. `amortize(1, gap)` is monotone in the same
+direction and carries no number of its own (rule 7).
+
+Both reach the auction through the task-value hook, beside the base
+want and on the same footing: all three say what an extra is worth
+for a reason the advisor's tile arithmetic structurally cannot hold,
+and all are added after the danger discount rather than through it.
+
+**Known ceiling, stated because the census will show it.** The
+advisor only enumerates tiles inside the player's own city radii
+(`autoworkers.c:586-588`), so corridor tiles in the gap between two
+distant cities are never offered to the hook at all. This slice moves
+which road tile a worker builds, not whether a worker is dispatched
+into no-man's land to build one. `links>0 hits=0` on a `deep-trunk`
+line is that ceiling speaking, not a dead knob.
+
+### 3. The 11.5 widening record
+
+`aw_task_value_fn` was widened a second time (`9682267cb6`), and this
+is the record CAMPAIGN-v4 11.5 requires. Appended, nothing
+repurposed:
+
+    old_tile_value   the same tile valued WITHOUT the candidate
+                     improvement. The hook's `value` is a resulting
+                     TOTAL; a consumer that wants the delta cannot
+                     recover it.
+    arrival          turns before this worker could begin work there.
+                     It exists only inside worker_evaluate_
+                     improvements()'s own pf_map; a consumer can only
+                     guess it from map distance, which is the
+                     terrain-blind guess pathfinding replaces.
+
+Against 11.5's ratchet guard -- "could this signature be offered
+upstream as an AI-module hook without embarrassment" -- the question
+the widened hook asks is "what is this candidate worth now, what was
+it worth before, and how far away is it". That is not deep's private
+bookkeeping. The unregistered path is untouched: the call is still
+inside `if (aw_task_value_hook != NULL)`.
+
+### 4. Knobs, both PLACEHOLDER, both zero
+
+    worker_travel_discount  0.0  OFF. Turns of amortize() per turn of
+                                 walking. 1.0 is the unit case.
+    trunk_road_gain         0.0  OFF (the plan is not even built).
+                                 Movement points -> advisor tile
+                                 currency.
+
+Four audit places each, plus the G/ECON/ALL blocks and the knobcensus
+MAP (`deep-worklocal disc>0`, `deep-trunk hits>0`, both direct-grade).
+`tune-audit` CLEAN at 230 fields (base 228 + 2). `meson test` 5/5.
+Neither has ever been tuned and neither has a score reading -- this
+epic bought mechanism and instruments, not a result.
+
+### 5. Identity: both proofs, fresh, around this change
+
+CAMPAIGN-v4 11.5's belt-and-braces clause landed on this session, and
+this is the discharge. Base binary = git-archive of
+`304e36af41` (`epic/w03-horizon-content` tip) built in a scratch tree,
+sha `52a8f58667aba910`; branch binary sha `578320920139c6e0`. Ten
+paired smoke seeds per arm, tuning=none, jobs 2, portbase 7200,
+`benchmark/results/w12-identity/`.
+
+**Stock arm, the one 11.5 asks for: 20/20 byte-identical.**
+
+    classic   scorelogs IDENTICAL 10/10
+    baseline  scorelogs IDENTICAL 10/10
+
+Both stock arms, not just the frozen one, because the hook is
+registered at module setup (`deepai.c:1294`) whenever the deep module
+is compiled in -- so it is live in games with no deep player at all,
+and "no consumer registers" is NOT the state a stock arm runs in. What
+keeps those games identical is the consumer's own first line,
+`pplayer->ai != deep_ai_get_self() -> return value`, and 20/20 is that
+line proved rather than asserted.
+
+**Deep arm at the new knobs' zeros: 10/10 byte-identical.**
+
+    deep      scorelogs IDENTICAL 10/10
+
+Not "no significant difference" -- identical sha256 per seed.
+
+### 6. Liveness: both mechanisms execute, and one moves behaviour
+
+Two lategame-80 games with `tuning/w12-on.ini`
+(`worker_travel_discount` 1.0, `trunk_road_gain` 5.0) against the same
+two seeds at the shipping zeros; `benchmark/results/w12-live/`.
+knobcensus reads both knobs **LIVE, direct grade**
+(`worker_travel_discount` 843 cells-lines, `trunk_road_gain` 724).
+
+    deep-worklocal          knobs ON      knobs OFF
+    candidates offered      2 064 236     2 531 610
+    candidates discounted     593 139 (28.7%)     0
+    want removed            1 761 814             0
+    mean arrival of those      3.79 turns         -
+
+    BEHAVIOUR (en-route workers at end of player-turn)
+    walker unit-turns             926          1 033   -10.4%
+    mean remaining walk          6.148          6.884  -10.7%
+
+The bottom two rows are the claim the ask actually made. Workers under
+the discount end fewer turns walking, and the walks they are on are
+shorter -- the auction is choosing nearer jobs, not merely pricing
+them differently. (The offered-candidate count differs between arms
+because the games diverge from turn 1; it is not a bug and not
+comparable.)
+
+    deep-trunk (ON arm only; OFF emits no line at all -- the knob
+    gates the plan, not just the want)
+    player-turns with a plan            739
+    link-turns planned                2 229
+    corridor tiles missing a road     4 360
+    candidates the want reached      68 267
+    player-turns with hits>0        724 / 739
+    largest want issued               44.98
+
+The corridors close, which is the mechanism working rather than merely
+firing. One player's own trajectory, seed 1:
+
+    turn  4  links=2 gap=7  hits=32   maxwant=22.00
+    turn 14  links=5 gap=12 hits=304  maxwant=26.02
+    turn 24  links=4 gap=7  hits=150  maxwant=27.15
+    turn 44  links=3 gap=5  hits=105  maxwant=27.15
+    turn 64  links=2 gap=3  hits=13   maxwant=22.36
+
+Links appear as cities are founded and then leave the plan as their
+gaps reach zero, while `hits` falls because there is less left to
+want. The 15 player-turns with `links>0 hits=0` are section 2's
+radius ceiling, visible exactly where it was predicted.
+
+### 7. What the next session must know
+
+- **No score reading exists for either mechanism, and none is
+  claimed.** This epic was budgeted for smoke, identity and liveness
+  only. Both knobs are PLACEHOLDER at 0; the A/B is unbought.
+- **The trunk probe magnitude is arbitrary.** `trunk_road_gain = 5.0`
+  was chosen to put the want on the same order as the tile wants it
+  competes with so the census could show it landing. `maxwant` around
+  25-45 against tile values in the same range means the term is
+  currently able to dominate, which is a tuning question and not
+  evidence.
+- **The locality term is the cheaper bet of the two.** It costs one
+  amortize() per candidate, needs no plan, and already moves a
+  behaviour metric by 10%. If only one gets an A/B, it should be that
+  one -- and its arm is `worker_travel_discount` alone, since the two
+  knobs are independent and both default off.
+- **Slice 2 is a task SOURCE, not a want.** The radius ceiling cannot
+  be lifted from inside `worker_evaluate_improvements()`; it needs
+  deep to offer corridor tiles the advisor never enumerates, in the
+  shape `deep_idle_fallback_work()` already uses to reach outside the
+  auction. See `workstreams/LATER-PHASES.md`.

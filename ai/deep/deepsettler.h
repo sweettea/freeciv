@@ -39,10 +39,16 @@ bool deep_settler_overnight_veto(struct unit *punit,
  * the behaviour metric -- workers actually building a base now. */
 void deep_fort_census(struct player *pplayer);
 
+/* Travel-discount census: candidates offered, candidates discounted,
+ * their mean arrival and the want removed, plus how far the workers
+ * that ended the turn en route still have to walk. */
+void deep_worker_travel_census(struct player *pplayer);
+
 adv_want deep_worker_task_value(const struct player *pplayer,
                                 const struct unit *punit,
                                 enum unit_activity act,
                                 const struct extra_type *target,
-                                struct tile *ptile, adv_want value);
+                                struct tile *ptile, adv_want value,
+                                adv_want old_tile_value, int arrival);
 
 #endif /* FC__DEEPSETTLER_H */

@@ -53,6 +53,31 @@ proper, is designed and DEFERRED until W04, because every input it
 needs is omniscient today and no victory has ever fired in any cell we
 run.
 
+## W12 is no longer unstarted (2026-08-13)
+
+Slice 1 landed on `epic/w12-roads`: `ai/deep/deeptrunk.c` builds the
+MST over the player's cities and prices its corridor tiles into the
+worker auction through the advisor task-value hook
+(`STATUS.md`, "W12 slice 1"). It implements steps 1, 2 and half of 3
+of the sketch in `findings/better-ai-plan.md` §2, with two deliberate
+departures:
+
+- The "finish what you started" bonus is the sketch's
+  `is_last_gap_in_segment ? 3 : 1`, which is an invented constant.
+  Here it is `amortize(1, gap)` over the corridor tiles still missing
+  -- continuous, monotone in the same direction, and carrying no
+  number of its own (rule 7).
+- The sketch's step 3 says to iterate plan tiles IN ADDITION to
+  city-radius tiles. That half is NOT built: the want reaches only
+  the corridor tiles the advisor already enumerates, i.e. those
+  inside some city radius. Dispatching a worker into the gap between
+  two distant cities is slice 2, and it needs a worker task source
+  outside `worker_evaluate_improvements()` rather than a want inside
+  it.
+
+Steps 4 (rail on trunk vs spur) and 5 (worker-budget allocator) are
+untouched.
+
 ## Do not skip ahead
 
 The hard orderings in `../00-context.md` §7 exist because violating them costs

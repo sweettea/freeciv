@@ -62,6 +62,7 @@
 #include "deepdefence.h"
 #include "deepodds.h"
 #include "deepsite.h"
+#include "deeptrunk.h"
 #include "deeptuning.h"
 
 #include "deepai.h"
@@ -2153,6 +2154,120 @@ void deep_fort_census(struct player *pplayer)
   deep_fort_maxwant[pn] = 0.0;
 }
 
+/* Per-player census for the travel discount, reset per turn. */
+static int deep_local_cand[MAX_NUM_PLAYER_SLOTS];
+static int deep_local_disc[MAX_NUM_PLAYER_SLOTS];
+static int deep_local_turns[MAX_NUM_PLAYER_SLOTS];
+static double deep_local_shave[MAX_NUM_PLAYER_SLOTS];
+
+/**********************************************************************//**
+  Price the walk on the PRIMARY worker task auction.
+
+  worker_evaluate_improvements() folds travel into amortize() exactly
+  once -- after every loop has run, on the champion
+  (autoworkers.c:933-937). Inside the loops, the branch that picks
+  between tiles nobody works yet compares the resulting tile value and
+  nothing else (autoworkers.c:452-469), so two candidates worth the
+  same to the city rank identically whether the worker is standing on
+  one of them or fifteen tiles away. Only the tie-break between them is
+  distance, and only on exact equality.
+
+  Here the IMPROVEMENT -- the candidate value minus the same tile
+  without it -- is discounted by amortize() over
+  worker_travel_discount * arrival turns, the shape deepsite.c:1487
+  already uses for the site search's own travel term. Discounting the
+  improvement rather than the total is deliberate: the total is a tile
+  value that the advisor also compares against old_tile_value to decide
+  whether a candidate improves anything at all, and shrinking THAT
+  makes a distant candidate stop being an improvement and vanish
+  instead of ranking lower.
+
+  Why this is not the idle fallback again: `deep_idle_fallback_work()`
+  measured inert because it only ran where nothing else was wanted, and
+  in that regime the declined improvements really were worth nothing
+  (findings/idle-workers.md section 7 -- lategame-80 cities average size
+  5.8 and never grow to work the outer tiles). This term never adds a
+  job; it re-ranks jobs the advisor already wants.
+**************************************************************************/
+static adv_want deep_worker_travel_price(const struct player *pplayer,
+                                         adv_want want,
+                                         adv_want old_tile_value,
+                                         int arrival)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int pn = player_number(pplayer);
+  adv_want gain, priced;
+
+  /* Counted before the gate, like the base want's offers: "the auction
+   * offered a candidate" and "we discounted it" are separate facts. */
+  deep_local_cand[pn]++;
+
+  if (tune->worker_travel_discount <= 0.0 || arrival <= 0) {
+    return want;
+  }
+
+  gain = want - old_tile_value;
+  if (gain <= 0) {
+    /* amortize() shrinks toward zero, so discounting a negative delta
+     * would make a distant non-improvement look BETTER than a near one.
+     * The auction discards these anyway. */
+    return want;
+  }
+
+  priced = old_tile_value
+    + amortize(gain, (int) (tune->worker_travel_discount * arrival));
+
+  deep_local_disc[pn]++;
+  deep_local_turns[pn] += arrival;
+  deep_local_shave[pn] += want - priced;
+
+  return priced;
+}
+
+/**********************************************************************//**
+  One line per player per turn: how many candidates the primary auction
+  offered, how many the travel term discounted, the mean arrival of
+  those, and the want it removed -- plus the BEHAVIOUR metric the want
+  metrics cannot give, how far the workers who ended this turn en route
+  still have to walk. That last number is the one the discount exists
+  to move, and it is comparable between a knobs-on and a knobs-off run
+  of the same seed.
+**************************************************************************/
+void deep_worker_travel_census(struct player *pplayer)
+{
+  int pn = player_number(pplayer);
+
+  if (log_do_output_for_level(deep_metric_log_level())) {
+    int walkers = 0, walkdist = 0;
+
+    unit_list_iterate(pplayer->units, u) {
+      if (unit_has_type_flag(u, UTYF_WORKERS)
+          && u->activity == ACTIVITY_IDLE
+          && u->goto_tile != NULL) {
+        walkers++;
+        walkdist += real_map_distance(unit_tile(u), u->goto_tile);
+      }
+    } unit_list_iterate_end;
+
+    if (deep_local_cand[pn] > 0 || walkers > 0) {
+      log_base(deep_metric_log_level(),
+               "deep-worklocal turn=%d player=\"%s\" cand=%d disc=%d"
+               " meanturns=%.2f shave=%.2f walkers=%d meanwalk=%.2f",
+               game.info.turn, player_name(pplayer), deep_local_cand[pn],
+               deep_local_disc[pn],
+               deep_local_disc[pn] > 0
+               ? (double) deep_local_turns[pn] / deep_local_disc[pn] : 0.0,
+               deep_local_shave[pn], walkers,
+               walkers > 0 ? (double) walkdist / walkers : 0.0);
+    }
+  }
+
+  deep_local_cand[pn] = 0;
+  deep_local_disc[pn] = 0;
+  deep_local_turns[pn] = 0;
+  deep_local_shave[pn] = 0.0;
+}
+
 /**********************************************************************//**
   Danger-aware worker task selection (human request 2026-07-30),
   registered on the advisors' inert task-value hook: candidates on
@@ -2164,41 +2279,54 @@ void deep_fort_census(struct player *pplayer)
   players not managed by deep, which keeps every other module,
   including the frozen baseline, bit-identical.
 
-  Also the seat of the BASE want (deep_base_want() above), because the
-  advisor's own valuation of a base is structurally zero and this is
-  the one place deep is allowed to say otherwise. The base want is
-  added AFTER the danger discount and is deliberately not subject to
-  it: exposed ground is exactly where a fortress is worth building,
-  and discounting the fortress for standing where it is needed would
-  be the danger term arguing with itself.
+  Also the seat of the wants the advisor's tile arithmetic structurally
+  cannot hold: the BASE want (deep_base_want() above), because
+  adv_calc_extra() sums food, shield and trade and a fortress changes
+  none of them, and the TRUNK want (deep_trunk_want(), deeptrunk.c),
+  because no term in the advisor knows that a road here would join two
+  cities. Both are added AFTER the danger discount and are deliberately
+  not subject to it: exposed ground is exactly where a fortress is
+  worth building and where a corridor most needs closing, and
+  discounting them for standing where they are needed would be the
+  danger term arguing with itself.
+
+  The travel term (deep_worker_travel_price() above) is applied LAST,
+  to whatever the other terms settled on, because it prices the walk
+  to the job and not the job: a fortress twelve tiles away is still a
+  fortress, and it is still twelve turns of a worker not improving
+  anything nearer.
 **************************************************************************/
 adv_want deep_worker_task_value(const struct player *pplayer,
                                 const struct unit *punit,
                                 enum unit_activity act,
                                 const struct extra_type *target,
-                                struct tile *ptile, adv_want value)
+                                struct tile *ptile, adv_want value,
+                                adv_want old_tile_value, int arrival)
 {
   /* Registered globally with the advisors, so it is reached without
    * passing any of deepai.c's hook wrappers and has to name its own
    * seat -- the explicit accessor rather than the ambient scope. */
   const struct deep_tuning *tune = deep_tuning_for(pplayer);
-  adv_want base = 0.0;
+  adv_want addon;
   bool exposed;
 
   if (pplayer->ai != deep_ai_get_self()) {
     return value;
   }
 
+  addon = deep_trunk_want(pplayer, target, ptile);
+
   if (act == ACTIVITY_BASE) {
     /* Counted BEFORE any gate: "the advisor offered a base candidate
      * at all" and "we priced it" are different questions, and the
      * first one is the one a zero want has to answer first. */
     deep_fort_offers[player_number(pplayer)]++;
-    base = deep_base_want(pplayer, target, ptile);
+    addon += deep_base_want(pplayer, target, ptile);
   }
 
   if (tune->worker_danger_discount <= 0.0 || value <= 0) {
-    return value + base;
+    return deep_worker_travel_price(pplayer, value + addon,
+                                    old_tile_value, arrival);
   }
 
   exposed = (tile_owner(ptile) != pplayer);
@@ -2221,8 +2349,11 @@ adv_want deep_worker_task_value(const struct player *pplayer,
     } players_iterate_alive_end;
   }
   if (!exposed) {
-    return value + base;
+    return deep_worker_travel_price(pplayer, value + addon,
+                                    old_tile_value, arrival);
   }
 
-  return value / (1.0 + tune->worker_danger_discount) + base;
+  return deep_worker_travel_price(pplayer,
+                                  value / (1.0 + tune->worker_danger_discount)
+                                  + addon, old_tile_value, arrival);
 }
