@@ -182,9 +182,12 @@ if [ -n "${TUNING:-}" ]; then
 fi
 # ARENA names a manifest that gives individual deep seats their own
 # tuning files -- several candidates judged inside ONE game (the arena
-# tier, findings/tuning-venues-2026-08-06.md section 6a). TUNING still
-# sets the values every unnamed seat runs, so the two compose: a base
-# plus per-seat overrides. benchmark/arena.py writes the manifest.
+# tier, findings/tuning-venues-2026-08-06.md section 6a). The two
+# compose at SEAT level, not at key level: a seat the manifest names
+# runs its own file loaded from the compiled defaults, exactly the way
+# TUNING's file is loaded, and every seat the manifest does NOT name
+# runs TUNING's. A candidate ini is therefore a whole tuning file, like
+# every archived one. benchmark/arena.py writes the manifest.
 if [ -n "${ARENA:-}" ]; then
   export FREECIV_DEEP_ARENA=$(readlink -f "$ARENA")
 fi

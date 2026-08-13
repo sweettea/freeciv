@@ -50,6 +50,11 @@ struct player;
  * tuning file and archived inis mean what they always meant. Files are
  * cached by path, so eight seats sharing one file share one struct.
  *
+ * The two layers therefore compose at SEAT level and not at key level:
+ * a named seat runs its own file from the defaults, NOT the base plus a
+ * delta. One semantics for every tuning file this project has ever
+ * written is worth more than the convenience of an overlay.
+ *
  * The assignment resolves LAZILY, on the seat's first read, because the
  * player_alloc hook runs before server_player_set_name()
  * (server/stdinhand.c create_command_newcomer: server_create_player at
