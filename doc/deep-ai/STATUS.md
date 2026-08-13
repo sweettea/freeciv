@@ -13208,3 +13208,22 @@ change, and no vision pricing (item (b)'s seam is a comment).
   toward cheap-and-poor governments), the dropped effect-sum's blind
   spot (veteran/HP/bribe), or revolution timing. Diagnosis session
   owed before any sweep.
+
+- G4/G5 — THE FOLD DIES, INSTRUCTIVELY: reach on the pv2 base is
+  +2.8/seed, t +0.04, 8/16 (paired sd 259 vs 148 on the pv1 base).
+  The +71.9 t+2.58 effect on pv1 is real and does NOT transfer to the
+  tuned ECON baseline — a measured mechanism-x-block interaction,
+  exactly what campaign gate 8 (separability) predicted we would
+  find. Resolution per block-freeze doctrine: no pv3;
+  survival_pf_reach stays 0 in the composed file and is swept
+  JOINTLY with the fear lattice in the MIL finale on the tech-50
+  blend. MUSTER's baseline question inherits this: build 3b against
+  pv1+reach (where the war-venue evidence lives), and let the finale
+  arbitrate the composed default.
+
+Night batch complete (21:55). Ledger: MOVETYPE gates passed and
+merged; reach free on econ but non-transferable to pv2 (no fold);
+wait discount HARMFUL at placeholder (t -4.00, dimensionality task
+#60); gov valuation HARMFUL as shipped (t -2.92, diagnosis task #61).
+Three of four candidate folds stopped by measurement. The pipeline
+is the product.
