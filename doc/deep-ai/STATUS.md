@@ -13761,3 +13761,12 @@ geometry.
   no-op on its own venue (the misdirected discount it corrects was
   being spent on huts that changed no outcomes). Knob stays 0,
   correctness noted, priority floor. Batch 2 complete 00:11.
+
+## pv3 minted (2026-08-13): the gift fold — 11.4's first execution
+
+Human go. pv3 = pv2 + gift_ally_gain 1.0 / gift_instrument_gain 1.0 /
+gift_rival_gain 0.0 (benchmark/tuning/pv3.ini). Evidence: mixed
+head-to-head holdout +62.8 vs pv2's +36.9, paired +25.9, t +0.74 —
+clears 11.4's wash-or-better criterion with room; liveness showed
+rival-directed gold 2020 -> 0. pv3 is the composed baseline for all
+future arms; pv2 remains the control lineage.
