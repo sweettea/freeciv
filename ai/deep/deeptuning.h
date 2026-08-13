@@ -881,6 +881,23 @@ struct deep_tuning {
   int cm_grow_food;
   int cm_grow_shield;
   int cm_grow_trade;
+  /* A city carrying a founder want it cannot FUND: domestic_advisor_
+   * choose_build() (daidomestic.c:561) makes no founder bid at all
+   * unless the city's food surplus covers the founder's food upkeep,
+   * and 2 lategame-80 liveness games measured 13-31% of nonzero
+   * founder wants vetoed there, 83% of them at surplus exactly 0
+   * against an upkeep of exactly 1. 82% of the vetoed city-turns had
+   * NO deep cm_parameter at all (deep-founderbid cm=0), i.e. deep's
+   * posture machine declined to govern the food its own want needed.
+   *
+   * Above 0 this adds a last arm to that machine -- fires only where
+   * DEEP_CM_NO_POSTURE would have handed the city back to the stock
+   * default -- which takes the grow posture and floors the food
+   * surplus at cm_founder_food x the founder's food upkeep. 0 is the
+   * off switch and the shipped default: the coupling is measured, the
+   * fix is not, and it needs an A/B before it can be worth anything.
+   * 1.0 asks for exactly the upkeep the veto tests. PLACEHOLDER. */
+  double cm_founder_food;
   /* Exponent on catchment trade-richness (workable trade / workable
    * shields) scaling every CM state's trade factor: the map sets the
    * trade appetite. 0 restores plain constants; 1 is proportional. */

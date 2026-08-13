@@ -12849,3 +12849,193 @@ freeze on a larger naval sample.
   scalar to sweep. Inspect the term's currency at the site-want seam
   before any tuning; the probe path (colony_want) taking the same
   discount is the first suspect.
+---
+
+## EXPANSION slice 1: the founding decision is instrumented, and the slice's own premise is falsified (2026-08-12)
+
+Branch `epic/expansion-slice1`, cut from `epic/w03-horizon-content` at
+`ccf9e10e55`. Seven commits: five counters, one default-off knob, this
+entry. **No A/B** — a night batch owned the machine, the budget was
+jobs 2 and ports 7250+, so everything here is a mechanism read.
+
+- `fe74035d61` `ai/deep: census why a site search comes home empty`
+- `65888b0067` `ai/deep: report the founding decision each city-turn reaches`
+- `cb7173c399` `ai/deep: price what ai/default takes off a founder want before the bid`
+- `983f9fee79` `ai/deep: split the search's largest refusal into its four causes`
+- `a9b71efc30` `ai/deep: record whether the food a founder bid needs is deep's to arrange`
+- `6dd2c889ff` `ai/deep: let a city that wants to found ask for the food the bid needs`
+
+### Why this slice, out of the epoch's menu
+
+The menu was settling order, planned lifts, corridors, colony net
+value, city roles. **Colony net value + the demand side** was taken,
+on one line of evidence: `findings/era-probe-evidence-2026-08-12.md`
+§2 had already closed the expansion gate as the cause of the founding
+flatline (it fires on 6.25% of city-turns and is worth +149/seed as it
+stands) and named the replacement — `founder_want > 0` in only **5.0%
+of *unblocked*** city-turns — and then said *"That decision is not
+instrumented."*
+
+Every other item on the menu is a structural build with nothing to aim
+it. This one had a measured hole with a named function at the bottom
+of it, and the instrument cost five short commits in code we own. That
+ratio was the whole argument.
+
+### What the counters said — and the first answer is NO
+
+**`neg = 0`. In all 2138 site searches, across both seeds.**
+
+Not one scored candidate ever went non-positive after the travel
+discount, the expected-wait discount, the settler cost and the boat
+cost came off it. The valuation refuses nothing. **Whatever stops deep
+founding cities, it is not that colonies are priced above what they are
+worth** — so net colony value, the thing this slice was commissioned to
+build, is aimed at a mechanism that never fires. Withdrawn.
+
+That is the case for instrument-before-fix, and it cost two games.
+
+**The land search dies at t20, and it dies on citymindist.**
+`deep-siteladder`, means per search, seed 1:
+
+| phase | leg | seen | nofound | of which citymindist vs a real city | scored | found% |
+|---|---|---:|---:|---:|---:|---:|
+| t<20 | land | 71.5 | 37.7 | 30.1 (80%) | 8.9 | 53.0 |
+| t20–49 | land | 69.1 | 63.0 | **56.2 (89%)** | **0.0** | **0.6** |
+| t50+ | land | 77.4 | 50.7 | **45.0 (89%)** | **0.0** | **1.4** |
+| t20–49 | sea | 1077.4 | 968.9 | 67.5 (7%) | 31.2 | 83.2 |
+
+Seed 2 reproduces it: 0.3 and 0.1 scored on the two late land buckets,
+6.9% and 3.1% found. **From t20 onward the home continent produces no
+legal site at all**, and 89% of the refusals are the citymindist ring
+around a real city. Not terrain (6–7 tiles a search), not fog
+(`nomap` = 0 — H_MAP is unset, RC6), not legality (`nolegal` ≈ 1).
+
+On the overseas leg the same bucket is 93% **water** (`noterr`) — the
+overlap pf map walking the ocean, which means nothing. Splitting
+`nofound` earned its own commit for exactly that reason: before the
+split the two legs' largest number looked like one finding, and they
+are opposite findings.
+
+**So after t20 every founding want deep has is an OVERSEAS want**, the
+sea leg finds a site 83% of the time worth `best_net` 280–491, and the
+whole question becomes the colony/lift pipeline. That is DERBY-F1's
+colony-demand hallucination seen from the demand side, and it is
+structural, not a valuation error.
+
+**The food veto, which nobody had ever counted.**
+`domestic_advisor_choose_build()` (daidomestic.c:561) makes **no founder
+bid at all** — not a reduced one — unless the city's food surplus covers
+the founder's food upkeep. `deep-founderbid`, 6555 city-turns:
+
+    nonzero founder want        1430 (seed 1)      1321 (seed 2)
+    of those, food-vetoed        451  31.5%         314  23.8%
+    at surplus 0 vs upkeep 1     83% of the vetoed
+    with NO deep cm_parameter    418  92.7%         298  94.9%
+
+One food stands between a want of several hundred and no settler, and
+at ~93% of those city-turns **deep's own posture machine had returned
+`DEEP_CM_NO_POSTURE` and handed the city to the stock default** — deep
+wanted the settler and nothing in deep asked for the food it cost.
+
+Two hypotheses the counters also closed: `capped` (the
+`adv->max_num_cities` /100 divisor) fired **0 times** in 6555
+city-turns (`max_num_cities` is 1600 here), and `role=0` — the silent
+exit that leaves a stale want standing — fired **0 times**.
+
+### What shipped as a fix
+
+`cm_founder_food` (double, **default 0.0 = off**, the 220th tunable)
+adds a last arm to `deep_set_city_manager_params()`'s posture machine,
+**over `DEEP_CM_NO_POSTURE` only**: a city carrying a founder want it
+cannot fund takes the grow posture and gets `minimal_surplus[O_FOOD]`
+floored at `cm_founder_food ×` the founder's upkeep. It reuses the grow
+factors rather than inventing any, and firing only where deep had
+declined to govern bounds it to the measured population and leaves
+every live posture untouched.
+
+`pcity->cm_parameter` is precisely the abandoned mechanism
+`00-context` §3 lists ("honoured by `auto_arrange_workers`, never set
+by `ai/default` — `ai/deep` sets it"), and `deepcm.c` already owns the
+write. This is a coupling, not a new subsystem.
+
+**1.0 is a PLACEHOLDER** flagged for `benchmark/tune.py`: it is the
+identity scaling of the upkeep the veto itself tests, which is the only
+non-arbitrary value available, and it has never been tuned.
+
+### Validation
+
+- `meson test -C build` **5/5** after every commit; `tune-audit.py`
+  **CLEAN at 220 fields** (219 + `cm_founder_food`, registered in
+  `deeptuning.h`, the `TUNE_DOUBLE` list, `tuning-params.ini` and the
+  ALL + G + ECON blocks); `knobcensus.py` MAP entry added, grade
+  **direct** on `deep-cmfound floor>=1`.
+- Built `-Daimodules=classic,tex,baseline,deep` in this epic's own
+  worktree with its own `build/`, its own `--server` and ports 7250+ —
+  the pinning rule, with a night batch on the box.
+- **Liveness, 2 × lategame-80, jobs 2, counters at LOG_NORMAL**
+  (`benchmark/results/expansion-live/`, run twice — once before the
+  `nofound` split and the `cm` field, once after). Every counter fires:
+  2138 `deep-siteladder`, 945 `deep-founder`, 6555 `deep-founderbid`.
+  The ladder's buckets partition `seen` on every line by construction.
+  The two runs' ladder aggregates are **identical to the digit**,
+  incidental evidence that the split and the `cm` field are inert.
+- **Knob liveness, 2 × lategame-80, `cm_founder_food = 1.0`**
+  (`benchmark/tuning/expansion-cmfound.ini`,
+  `benchmark/results/expansion-knob/`): `deep-cmfound` fires, first at
+  T29 on a size-4 city with `want=1052 food=-1 upkeep=1 floor=1` —
+  exactly the population the veto census described. 69 and 76 firings
+  over 14 distinct cities per game, T29–T80, mean |want| 671. (The two
+  arms' games diverge from T29, so **no rate comparison against the
+  off arm is a result** — this shows the arm executing, nothing more.)
+- **Off-switch proof: 10/10 paired smoke seeds BYTE-IDENTICAL**, 0
+  differ, 0 missing, against a `git archive` build of base
+  `ccf9e10e55`, `identity.ini` both sides, jobs 2, ports 7280/7300,
+  `benchmark/results/expansion-identity/`. All five counters and the
+  knob's dead branch are therefore proven inert, which matters because
+  the ladder's increments run unconditionally.
+- **NO A/B, and nothing here claims the fix pays.** Two liveness seeds
+  price nothing.
+
+Runner: `benchmark/expansion-slice1.sh {live|knob|identity}`.
+
+### The epoch's menu, re-ranked by what the counters said
+
+1. **Planned lifts (menu item 2) rises to first.** The overseas channel
+   is now measured as the *only* channel after t20 — 0 legal land sites
+   in both seeds, 83% overseas hit rate, `best_net` 280–491. Every
+   remaining expansion question on a settled venue is a delivery
+   question, and planned lifts is the one item that acts on the channel
+   the map leaves open.
+2. **The founder food veto** — the fix above, needing its A/B. Small,
+   isolated, and the only demand-side item the counters indicted.
+   Arm: `cm_founder_food = 1.0`, lategame-80, ≥16 mirrored seeds.
+3. **Settling order (menu item 1)** was ranked first by
+   `findings/deep-dive-2026-08-04/expansion-logistics.md` §4 on RC2
+   purity. It **falls**: with the continent legally full from t20,
+   ordering sites we cannot found coordinates nothing. It becomes
+   interesting again only where the land search still scores — read
+   `deep-siteladder scored` on `isolated-150` and `primary-120` before
+   spending an epic on it.
+4. **Colony net value (menu item 4)** — **withdrawn on `neg = 0`.** Do
+   not build it without first showing a venue where a scored candidate
+   goes non-positive. That check is one grep.
+5. **Corridors and city roles** — untouched, unmeasured, rank
+   unchanged.
+
+### For whoever picks this up
+
+- **`deep-siteladder` is venue-diagnostic and cheap.** `scored` and
+  `nomin` on the land leg answer "is there anywhere left to settle
+  here" in one grep, and no venue but lategame-80 has been asked.
+- **The 5.0% ERA figure and this venue's 22–32% are not in conflict.**
+  `tech50war-200` is 8 players on 32×32, lategame-80 is 6 on 40×40.
+  What reproduces across both is the shape: the want is absent far more
+  often than it is beaten.
+- **`deep-founderbid` carries the ai/default haircut for free.** `want`
+  minus `bid` is exactly what daidomestic takes off the top, and
+  `wonder=1` fires on ~10% of city-turns; nobody has priced the
+  wonder-city divisor on a founder want.
+- **`expansion-logistics` §3.1 clause (i) and §4's ranking both took
+  damage this session** — clause (i) already withdrawn by W36, §4's
+  first-ranked item demoted here. That document's §4 is a ranking by
+  argument; it now has counters to be re-ranked against.

@@ -639,6 +639,7 @@ void deep_set_city_manager_params(struct ai_type *ait,
     enum deep_cm_posture posture;
     bool matched;
     bool threatened;
+    int food_floor = 0;
 
     deep_cm_base(&cmp, pcity);
 
@@ -720,7 +721,61 @@ void deep_set_city_manager_params(struct ai_type *ait,
 
     posture = (threatened ? DEEP_CM_WAR
                           : deep_cm_peace_posture(ait, pcity));
+
+    /* A founder want this city cannot FUND.
+     *
+     * domestic_advisor_choose_build() makes no founder bid at all
+     * unless `pcity->surplus[O_FOOD]` covers the founder's food upkeep
+     * (daidomestic.c:561) -- not a scaled want, no bid. Two lategame-80
+     * liveness games measured that veto on 13-31% of the city-turns
+     * carrying a nonzero founder want, and 83% of the vetoed ones sat
+     * at surplus exactly 0 against an upkeep of exactly 1. One food
+     * stood between a want of several hundred and no settler.
+     *
+     * 82% of those city-turns had NO deep cm_parameter at all
+     * (deep-founderbid cm=0): the posture machine returned
+     * DEEP_CM_NO_POSTURE and handed the city to the stock default, so
+     * nothing in deep ever asked for the food deep's own want needed.
+     * That is the missing coupling, and this is the arm that closes it.
+     *
+     * Deliberately LAST, and only over NO_POSTURE. A city that is under
+     * threat, growth-capped, building a wonder or already growing hard
+     * has a live reason for the arrangement it has, and a settler is
+     * not worth overriding it; the measured population is exactly the
+     * cities deep had declined to govern. So this can only ever ADD
+     * management where there was none, which also bounds what an A/B
+     * on it can be measuring.
+     *
+     * The grow posture's own factors are reused rather than invented --
+     * "make food" is what that posture is for -- and the floor is the
+     * upkeep the veto actually tests, scaled by the tunable. 0 is off
+     * and is the shipped default. */
+    if (posture == DEEP_CM_NO_POSTURE
+        && tune->cm_founder_food > 0.0
+        && city_data->founder_want != 0) {
+      struct unit_type *ftype
+        = best_role_unit(pcity, action_id_get_role(ACTION_FOUND_CITY));
+
+      if (ftype != NULL) {
+        int upkeep = utype_upkeep_cost(ftype, NULL, pplayer, O_FOOD);
+
+        if (upkeep > 0 && pcity->surplus[O_FOOD] < upkeep) {
+          posture = DEEP_CM_GROW;
+          food_floor = (int) ceil(tune->cm_founder_food * upkeep);
+          log_base(deep_metric_log_level(),
+                   "deep-cmfound turn=%d player=\"%s\" city=%d size=%d"
+                   " want=%d food=%d upkeep=%d floor=%d",
+                   game.info.turn, player_name(pplayer), pcity->id,
+                   city_size_get(pcity), city_data->founder_want,
+                   pcity->surplus[O_FOOD], upkeep, food_floor);
+        }
+      }
+    }
+
     matched = deep_cm_apply_posture(&cmp, pcity, posture);
+    if (matched && food_floor > cmp.minimal_surplus[O_FOOD]) {
+      cmp.minimal_surplus[O_FOOD] = food_floor;
+    }
 
     if (matched) {
       if (pcity->cm_parameter == NULL) {
