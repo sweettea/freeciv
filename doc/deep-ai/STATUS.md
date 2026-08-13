@@ -13730,3 +13730,11 @@ controls after 7ad93151b8 is void. Ledger:
   (spuriously) harmful to neutral; knob to the pile for the finale
   ECON sweep alongside gov_anarchy_weight and the untested ceiling
   credit.
+
+- H1/H2 gift mixed arm (same binary, seat-mirrored, 20 holdout
+  seeds): gift-refold +62.8 vs pv2 +36.9 — paired +25.9, t +0.74,
+  10/20. Clears §11.4's wash-or-better bar with room; FOLD-ELIGIBLE.
+  Human decision queued: adopt gift-refold.ini's class values into
+  the composed baseline (rival leg to 0), or hold for a larger-n
+  read. The old indiscriminate gift's -3.34 transfer is what this
+  replaces.
