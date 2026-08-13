@@ -899,6 +899,31 @@ static double deep_site_naval_refused_want = 0.0;
 static int deep_site_wait_priced = 0;
 static int deep_site_wait_turns = 0;
 
+/* THE REFUSAL LADDER (era-probe-evidence 2.  "Deep stops founding
+ * because deep_contemplate_new_city() stops wanting cities, not because
+ * the gate zeroes a want that exists. That decision is not
+ * instrumented.")
+ *
+ * Every candidate tile the pf map hands the search leaves by exactly
+ * one of these doors, so the buckets partition `seen` and the sum is
+ * checkable on the line. What the ladder separates is the three
+ * hypotheses nobody could tell apart from outside: the map is FULL (the
+ * foundability gates eat everything), the map is DANGEROUS (adv_danger
+ * does), or the sites are simply WORTH LESS THAN A SETTLER (they score
+ * and then go negative against cost and travel). Only the third is a
+ * valuation defect, and only the third is fixable by pricing. */
+static int deep_site_lad_seen = 0;    /* tiles the pf map offered */
+static int deep_site_lad_off = 0;     /* land bridge / peaceful border */
+static int deep_site_lad_nofound = 0; /* city_can_be_built_here, unknown */
+static int deep_site_lad_mindist = 0; /* citymindist reservation scan */
+static int deep_site_lad_danger = 0;  /* adv_danger_at */
+static int deep_site_lad_taken = 0;   /* reserved / own city / size limit */
+static int deep_site_lad_starve = 0;  /* fill NULL, food/shield starvation */
+static int deep_site_lad_scored = 0;  /* produced a cityresult */
+static int deep_site_lad_neg = 0;     /* scored, then <= 0 after costs */
+static double deep_site_lad_best_raw = 0.0;  /* best cr->total seen */
+static double deep_site_lad_best_net = 0.0;  /* best cr->result seen */
+
 /* Per-search memo for deep_wait_expected(), which walks the unit list
  * twice per body of water. Demand and supply cannot move DURING a
  * search, so one answer per water per search is exact, and without it
@@ -1102,32 +1127,38 @@ static struct cityresult *deep_city_desirability(struct ai_type *ait,
   if (!city_can_be_built_here(nmap, ptile, punit, FALSE)
       || (has_handicap(pplayer, H_MAP)
           && !map_is_known(ptile, pplayer))) {
+    deep_site_lad_nofound++;
     return NULL;
   }
 
   /* Check if another settler has taken a spot within mindist */
   square_iterate(&(wld.map), ptile, game.info.citymindist - 1, tile1) {
     if (citymap_is_reserved(tile1)) {
+      deep_site_lad_mindist++;
       return NULL;
     }
   } square_iterate_end;
 
   if (adv_danger_at(punit, ptile)) {
+    deep_site_lad_danger++;
     return NULL;
   }
 
   if (pcity && (city_size_get(pcity) + unit_pop_value(punit)
                 > game.info.add_to_size_limit)) {
     /* Can't exceed population limit. */
+    deep_site_lad_taken++;
     return NULL;
   }
 
   if (!pcity && citymap_is_reserved(ptile)) {
+    deep_site_lad_taken++;
     return NULL; /* Reserved, go away */
   }
 
   /* If (x, y) is an existing city, consider immigration */
   if (pcity && city_owner(pcity) == pplayer) {
+    deep_site_lad_taken++;
     return NULL;
   }
 
@@ -1140,12 +1171,14 @@ static struct cityresult *deep_city_desirability(struct ai_type *ait,
   /* Burn CPU, burn! */
   if (!cr) {
     /* Failed to find a good spot */
+    deep_site_lad_starve++;
     return NULL;
   }
 
   /*** Alright: Now consider building a new city ***/
 
   if (food_starvation(cr) || shield_starvation(cr)) {
+    deep_site_lad_starve++;
     cityresult_destroy(cr);
     return NULL;
   }
@@ -1240,14 +1273,27 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
   deep_site_contest_ours = 0;
   deep_site_contest_want = 0.0;
   deep_wait_memo_n = 0;
+  deep_site_lad_seen = 0;
+  deep_site_lad_off = 0;
+  deep_site_lad_nofound = 0;
+  deep_site_lad_mindist = 0;
+  deep_site_lad_danger = 0;
+  deep_site_lad_taken = 0;
+  deep_site_lad_starve = 0;
+  deep_site_lad_scored = 0;
+  deep_site_lad_neg = 0;
+  deep_site_lad_best_raw = 0.0;
+  deep_site_lad_best_net = 0.0;
 
   pfm = pf_map_new(parameter);
   pf_map_move_costs_iterate(pfm, ptile, move_cost, FALSE) {
     int turns;
 
+    deep_site_lad_seen++;
     if (boat_cost == 0 && pclass->adv.sea_move == MOVE_NONE
         && tile_continent(ptile) != curcont) {
       /* We have an accidental land bridge. Ignore it. */
+      deep_site_lad_off++;
       continue;
     }
     if (BORDERS_DISABLED != game.info.borders) {
@@ -1257,6 +1303,7 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
           && powner != pplayer
           && pplayers_in_peace(powner, pplayer)) {
         /* Land theft does not make for good neighbors. */
+        deep_site_lad_off++;
         continue;
       }
     }
@@ -1267,6 +1314,10 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
     /* Check if actually found something */
     if (cr == NULL) {
       continue;
+    }
+    deep_site_lad_scored++;
+    if ((double) cr->total > deep_site_lad_best_raw) {
+      deep_site_lad_best_raw = (double) cr->total;
     }
 
     /* This algorithm punishes long treks. HOW HARD it punishes them
@@ -1347,6 +1398,18 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
     cr->result -= cost * deep_tuning_get()->site_settler_cost_weight
                   + boat_cost * deep_tuning_get()->site_boat_cost_weight;
 
+    /* The ladder's last rung, and the only one that is a VALUATION
+     * verdict rather than a legality one: the site scored, and then the
+     * settler it would cost -- plus the walk, plus the queue -- ate the
+     * whole score. A search that ends here has found land and priced it
+     * below the price of going there. */
+    if ((double) cr->result > deep_site_lad_best_net) {
+      deep_site_lad_best_net = (double) cr->result;
+    }
+    if (cr->result <= 0) {
+      deep_site_lad_neg++;
+    }
+
     /* Find best spot */
     if ((!best && cr->result > 0)
         || (best && cr->result > best->result)) {
@@ -1376,6 +1439,29 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
       break;
     }
   } pf_map_move_costs_iterate_end;
+
+  /* The refusal ladder, one line per SEARCH. `seen` is every tile the
+   * pf map offered and the buckets partition it, so
+   * off+nofound+mindist+danger+taken+starve+scored == seen is an
+   * arithmetic self-check on every line. `best_raw` is the best site
+   * value the map contains and `best_net` the best after travel, wait
+   * and settler cost -- the pair that says whether a search came home
+   * empty because there was nothing there or because what was there
+   * did not survive its own price. */
+  if (deep_site_lad_seen > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-siteladder turn=%d player=\"%s\" unit=%d boat=%d"
+             " seen=%d off=%d nofound=%d mindist=%d danger=%d taken=%d"
+             " starve=%d scored=%d neg=%d best_raw=%.1f best_net=%.1f"
+             " found=%d",
+             game.info.turn, player_name(pplayer), punit->id, boat_cost,
+             deep_site_lad_seen, deep_site_lad_off, deep_site_lad_nofound,
+             deep_site_lad_mindist, deep_site_lad_danger,
+             deep_site_lad_taken, deep_site_lad_starve,
+             deep_site_lad_scored, deep_site_lad_neg,
+             deep_site_lad_best_raw, deep_site_lad_best_net,
+             best != NULL ? 1 : 0);
+  }
 
   /* One census line per SEARCH -- a few hundred a game, against the
    * tens of thousands a per-candidate line would be. `refused` is the
