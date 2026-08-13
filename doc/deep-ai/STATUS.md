@@ -13724,3 +13724,9 @@ controls after 7ad93151b8 is void. Ledger:
 - RULE, from tonight: an arm and its control run on ONE binary, or
   the control re-runs. Result dirs now record binary provenance
   (2e91446316).
+
+- G3 same-binary re-run (anarchy floor in): gov_valuation=1 vs H0
+  control, paired -5.5, t -0.55 — NULL. The floor fix moved gov from
+  (spuriously) harmful to neutral; knob to the pile for the finale
+  ECON sweep alongside gov_anarchy_weight and the untested ceiling
+  credit.
