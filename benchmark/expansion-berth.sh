@@ -42,7 +42,7 @@ BASE_SHA=1bcf470d5a
 SERVER=$ROOT/build/freeciv-server
 BASE_TREE=$ROOT/.berth-base/base-$BASE_SHA
 BASE_SERVER=$BASE_TREE/build/freeciv-server
-JOBS=2
+JOBS=${JOBS:-2}
 
 MESON_OPTS="-Dclients=stub -Dfcmp=cli -Dtools= -Dnls=false -Daudio=none
             -Dreadline=false -Daimodules=classic,tex,baseline,deep"
@@ -54,18 +54,27 @@ MESON_OPTS="-Dclients=stub -Dfcmp=cli -Dtools= -Dnls=false -Daudio=none
 # exactly where a run gets rebuilt under itself. The server's RUNPATH is
 # $ORIGIN/, so libfreeciv.so travels with it and the copy is
 # self-contained.
+#
+# The pin directory is PER STAGE, and that is not tidiness: pinning two
+# stages to one path is the same taint by another route. It happened
+# here -- a second stage's cp -f landed on the binary a live game was
+# executing and the server took a bus error at turn 146, because the
+# text pages it was demand-paging had been replaced underneath it. The
+# stage name in the path is what makes "do not rebuild the binary a run
+# is executing" mechanically true rather than a thing to remember.
 pin_server() {
-  mkdir -p "$ROOT/.berth-pin"
-  cp -f "$(dirname "$SERVER")/libfreeciv.so" "$ROOT/.berth-pin/"
-  cp -f "$SERVER" "$ROOT/.berth-pin/freeciv-server"
-  SERVER=$ROOT/.berth-pin/freeciv-server
+  pin=$ROOT/.berth-pin/$1
+  mkdir -p "$pin"
+  cp -f "$(dirname "$SERVER")/libfreeciv.so" "$pin/"
+  cp -f "$SERVER" "$pin/freeciv-server"
+  SERVER=$pin/freeciv-server
   echo "pinned: $SERVER sha256=$(sha256sum "$SERVER" | cut -d' ' -f1)"
 }
 
 case "${1:-}" in
 live)
   OUT=$ROOT/benchmark/results/berth-live
-  pin_server
+  pin_server "$1"
   echo "=== liveness: 2 isolated-150 games, counters at LOG_NORMAL ==="
   TUNING=$ROOT/benchmark/tuning/identity.ini \
     ./benchmark/run.sh --count 2 --arms deep \
@@ -80,7 +89,7 @@ knob)
   # executing. Not an A/B: two seeds price nothing and the games diverge
   # from the first walk.
   OUT=$ROOT/benchmark/results/berth-knob
-  pin_server
+  pin_server "$1"
   echo "=== liveness: 2 isolated-150 games, expansion-berth.ini ==="
   TUNING=$ROOT/benchmark/tuning/expansion-berth.ini \
     ./benchmark/run.sh --count 2 --arms deep \
@@ -105,7 +114,7 @@ identity)
     nice -n 10 ninja -C "$BASE_TREE/build" -j "$JOBS"
   fi
 
-  pin_server
+  pin_server "$1"
   echo "=== identity stage b: 10 paired smoke seeds, base vs head ==="
   export TUNING=$ROOT/benchmark/tuning/identity.ini
   for side in base head; do
@@ -150,7 +159,7 @@ ab)
   # readable seed by seed.
   OUT=$ROOT/benchmark/results/berth-ab
   SEEDS=${2:-16}
-  pin_server
+  pin_server "$1"
   for arm in off on; do
     case $arm in
       off) ini=$ROOT/benchmark/tuning/identity.ini;      port=7260;;
