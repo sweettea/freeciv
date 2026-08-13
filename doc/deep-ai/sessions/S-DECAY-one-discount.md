@@ -91,10 +91,22 @@ found+loss cancels); the T201-300 row is derby-only (3 games).
    Default 0. The measured anchors define the SEARCH RANGE, not a
    compiled constant (rule 7: the default is off, and the anchor
    numbers are derived, not invented).
+2b. **Turn-scheduled rate** (human ask 2026-08-13: "can we tune it so
+   mort is turn-related?"): rate as a tuned function of the turn —
+   early rate, late rate, transition — three knobs, sweepable. The
+   measured table says a two-piece schedule (~0.037 before T50,
+   ~0.002 after T100) captures most of the phase structure. This is
+   the natural CONTROL ARM for slice 3.
 3. **Live anchor variant**: `horizon_decay_live` — rate from the
    empire's own trailing g + hazard (both cheap from data the AI
    already has), so the discount tracks the phase structure the table
-   shows. Own knob, own arm; slice 2 is the control.
+   shows — and differs per player, which no schedule can (a thriving
+   empire is patient, a collapsing one myopic). Own knob, own arm;
+   slices 2/2b are the controls.
+
+Mechanical note: MORT lives in server/advisors/advtools.h, shared with
+human auto-workers — never touched. Deep grows its own deep_amortize()
+with the variable rate at deep call sites, pure ai/deep.
 4. **Endgame clamp**: re-express W03's `endgame_horizon` clamp as the
    closed-form truncated geometric sum; identity at rectangle mode.
 
