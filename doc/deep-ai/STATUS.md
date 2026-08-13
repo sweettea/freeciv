@@ -13227,3 +13227,85 @@ wait discount HARMFUL at placeholder (t -4.00, dimensionality task
 #60); gov valuation HARMFUL as shipped (t -2.92, diagnosis task #61).
 Three of four candidate folds stopped by measurement. The pipeline
 is the product.
+
+## GOV-DIAG (2026-08-12) — task #61 answered: the revolution was free
+
+Full write-up: `findings/gov-anarchy-2026-08-12.md`. Re-derivable with
+the new `benchmark/govcensus.py`. No holdout re-run tonight; liveness
+and identity games only.
+
+**Guilty suspect: #3, revolution timing — but the timing model is not
+mistimed, the anarchy charge is structurally DEAD.** `ancost` is 0.0
+on all 8712 candidate lines in the G3 corpus, because
+`deep_gov_anarchy_turns()` returned 0.0 without the `H_REVOLUTION`
+handicap on the reasoning (its own comment) that "at `hard` this term
+is exactly zero". **The premise is false.** `H_REVOLUTION` decides how
+many EXTRA turns are served; `handle_player_change_government()` sets
+`government = game.government_during_revolution` unconditionally
+(`plrhand.c:615`) and the only `update_revolution()` call is at BEGIN
+phase (`srv_main.c:1381`), so the empire produces one full turn under
+Anarchy at every difficulty.
+
+The key number, from the savegame's own `changed_to_times` counter and
+the scorelog's government tag, in the games already on disk:
+
+| | deep gov=1 | stock |
+|---|---|---|
+| government changes per game | **26.8** | 17.8 |
+| player-turns of Anarchy per game | **26.8** | 17.9 |
+| Anarchy turns per change | **1.00 ± 0.00** | 1.01 ± 0.02 |
+
+Paired change delta **+9.0/game, t +6.51, 20/20 seeds.** One turn of
+anarchy per revolution in 20 seeds out of 20, priced at zero.
+
+Cost of that turn, measured on bursts evaluated while in Anarchy:
+**26.6% of a turn's empire output**, median 850 want, against a median
+revolution margin of 2439 want — 19.6% of deep's revolutions have a
+margin smaller than the charge. Replayed at the measured rate the
+charge removes 17.3% of them.
+
+Why zero mattered so much: `adv_best_government()` starts
+`best_val = 0` (`advdata.c:996`), and deep's differencing design makes
+"stay put" score exactly 0, so **the anarchy charge is the only
+hysteresis in the system.** Re-scoring the government already held —
+which must be 0 — comes out at mean **-16.8** output/turn (median
+-14.5, sd 52.4, negative 67.1% of 1312 bursts), noise from
+`auto_arrange_workers()` being path-dependent, amplified x24 by the
+horizon. At zero cost that noise floor alone revolts. Deep revolves to
+Democracy 132 times in the corpus and finishes there once; it holds
+Federation 42.3% of turns vs stock's 75.0%, and pays +3.0 corruption
+(t +4.08) and -74.5 gold (t -5.83) for it.
+
+**Suspects 1 and 2 cleared as the cause.** The upkeep spread is real
+(Democracy 215.4 vs Communism 29.6 charged per burst) and re-ranking
+without it flips 12.9% of bursts, 106 Communism->Federation — a live
+second-order bias, but it cannot explain deep spending 3x longer than
+stock in Democracy, the priciest government on the board. It is a bias
+in WHICH government, not in HOW OFTEN. Suspect 2's ceiling half was
+never tested at all: `ceil` is 0.0 on all 8712 lines because
+`gov_rate_ceiling_gain` defaults to 0.0 and `pv2-gov.ini` sets only
+`gov_valuation = 1`. The military effects (veteran/HP/bribe) remain
+the valuation's stated blind spot, neither indicted nor cleared.
+
+**Landed:** `ai/deep: charge a revolution the turn of anarchy the
+server always serves`. Floors the term at 1.0 turn. No new constant —
+`gov_anarchy_weight` already exists at 1.0 ("charge the measured loss
+at face value") and the loss is measured. Identity at knob 0 is by
+construction (`deep_gov_value()` forwards to `dai_gov_value()` before
+reaching the function) and demonstrated: smoke 10/10, `--arms deep`,
+`TUNING=pv2.ini`, fixed binary vs `git archive` build of base
+`c93649faf4`, `metrics.csv` **byte-identical over 40 player-rows**.
+`meson test` 5/5 including `baseline-frozen`.
+
+### QUEUED GATE — the G3 re-run, unchanged
+
+    A: benchmark/tuning/pv2.ini      (gov_valuation = 0)
+    B: benchmark/tuning/pv2-gov.ini  (gov_valuation = 1, fixed)
+    venue: lategame-80, holdout seeds, 20 paired, jobs per budget
+    read: B - A per seed; as shipped this was -26.4, t -2.92, 16/20
+
+Secondary read via `govcensus.py`: changes/game should fall from 26.8
+toward 17.8 and Federation occupancy should rise from 42.3%. If the
+change count falls but the score does not recover, the residue is
+suspect 1 and the next GOV session prices the upkeep bill properly
+instead of netting it. **The knob stays 0 until that arm reads.**
