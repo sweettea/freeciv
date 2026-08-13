@@ -14407,3 +14407,53 @@ block (`last_turn + 1 == first logged turn after load`, scores write
 at begin-turn, synchronized with autosave); anything else disables
 scorelogging silently for the whole session. Both derbies hit this
 after the power-loss resume and were repaired from backups.
+
+## 2026-08-13 — Derby postmortem: the lean lattice flips a −809 into a +337
+
+Paired exhibition on the real Europe scenario (177x100, 37 startpos),
+same seed, same pinned binary (174fce8cd2), 5 deep + 9 stock + barbs,
+endturn 300. ONE variable: derby-5 ran the standard personality tuning
+(pv2 base + stances), derby-6 the "lean" file — the same plus four
+fear/floor knobs hand-zeroed after the live-log diagnosis
+(floor_interior_weight, garrison_floor_danger, boat_shadow_fear,
+density_fear_value; the diagnosis: garrison_floor mandates defenders
+OUTSIDE the want auction, and 86% of military production was bought at
+danger=0).
+
+    final            DEEP           CLASSIC        margin
+    derby-5 std      1391 (T282)    2200           -809 and falling (killed at T282, out of value)
+    derby-6 lean     1498 (T301)    1161           +337 WON
+    derby-4 std      1761 (T300)    2095           -334 (generated map, prior run)
+
+Mechanism, visible in the tables every 25 turns:
+- Standard: deep's over-garrisoned economy leaves one stock seat
+  (Norge) to snowball unopposed — 100 cities by T160, 213 by T282,
+  with a 491-unit army and a tech runaway (78 techs / 553 output at
+  T217 vs deep's whole-team 233).
+- Lean: the same Norge is contained at 6-10 cities ALL GAME; no
+  runaway ever forms; classic collapses to 40 cities total while deep
+  holds 91.
+- Per-seat mirror: Deep_Rus finishes FIRST overall in lean (294, 31
+  cities) and dies in standard (93, 1 city). Same seat, same map.
+- Tech is the same story restated: at T217 deep's own tech pace is
+  IDENTICAL in both arms (mean 47.7 vs 47.4) — the lean arm wins the
+  tech race by preventing the rival runaway, not by researching
+  harder. Era collapse is an economy failure, not a research one.
+- Tail risk is real: lean Deep_Anglia was ELIMINATED (T~190) and
+  Osmanli ground to 1 city late. The lean posture trades individual
+  seat survival for the team mean.
+
+Caveats: one map, one seed, hand-picked zeros, exhibition format
+(team-of-5 vs team-of-9 on a fixed scenario). This is evidence for
+PRIORITY, not a tunable verdict.
+
+Consequence, already queued: the MIL-finale fear/garrison sweep leads
+with the floor family (multi-seed lean-lattice A/B on benchmark
+venues, jointly with survival_pf_reach and survival_target — the
+thrice-implicated floor family is now four-times-implicated). The
+DECAY brief's measured-rate table is the same finding from the
+pricing side: the world's discount rate collapses after T100 and
+deep's does not.
+
+Retention: verdict banked; saves/ and game.logs pruned per policy
+(scorelogs kept, derby-6 final save kept for replay).
