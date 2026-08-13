@@ -12835,3 +12835,17 @@ freeze on a larger naval sample.
 - The next honest naval question is **not** more invasion machinery. It is
   the fear-calibration debt MOVETYPE's merge note already owns: survival
   0.73 -> 0.40 under honest sea threat, constants tuned warship-blind.
+
+## Night-batch guard verdicts (2026-08-12 late)
+
+- G1 reach econ guard: pv2+survival_pf_reach on lategame-80 holdout
+  -17.5 vs pv2 -10.1 — paired -7.4, t -0.59, NULL. Reach is free on
+  econ venues; pv3 fold awaits only G4/G5.
+- G2 W36 wait discount: pv2+site_wait_discount=1.0 on isolated-150
+  holdout +0.5 vs pv2 +55.0 — paired **-54.6, t -4.00, 16/20 worse.
+  DECISIVELY HARMFUL at the placeholder weight.** The knob stays 0.
+  A ~2-turn/candidate discount cannot honestly cost 55 points at
+  weight 1.0: suspect DIMENSIONAL mismatch (the CREDIT lesson), not a
+  scalar to sweep. Inspect the term's currency at the site-want seam
+  before any tuning; the probe path (colony_want) taking the same
+  discount is the first suspect.
