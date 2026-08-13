@@ -260,6 +260,7 @@ static const struct deep_tuning deep_tuning_defaults = {
    * waived. PLACEHOLDER value -- 1.0 is the setting PEACE measured its
    * population at, not a tuned optimum. */
   .peace_seek_gain = 1.0,
+  .diplo_deep_only_pacts = 0,           /* PLACEHOLDER, 0 = off */
   .gift_border_value = 0.0,             /* PLACEHOLDER, 0 = off */
   .gift_love_gain = 0.0,                /* PLACEHOLDER, 0 = off */
   /* GIFT-REFOLD: 1.0 = every class priced as today = identity. */
@@ -533,6 +534,7 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(scale_ferry) \
   TUNE_DOUBLE(emergency_value_cap) \
   TUNE_DOUBLE(peace_seek_gain) \
+  TUNE_INT(diplo_deep_only_pacts) \
   TUNE_DOUBLE(gift_border_value) \
   TUNE_DOUBLE(gift_love_gain) \
   TUNE_DOUBLE(gift_ally_gain) \
