@@ -80,8 +80,8 @@ live)
     ./benchmark/run.sh --count 2 --arms deep \
       --config benchmark/configs/isolated-150.conf \
       --server "$SERVER" --jobs "$JOBS" --portbase 7200 --out "$OUT"
-  ./benchmark/berth.py "$OUT"
-  ./benchmark/liftgap.py "$OUT" | head -20
+  python3 benchmark/berth.py "$OUT"
+  python3 benchmark/liftgap.py "$OUT" | head -20
   ;;
 
 knob)
@@ -95,8 +95,8 @@ knob)
     ./benchmark/run.sh --count 2 --arms deep \
       --config benchmark/configs/isolated-150.conf \
       --server "$SERVER" --jobs "$JOBS" --portbase 7200 --out "$OUT"
-  ./benchmark/berth.py "$OUT"
-  ./benchmark/liftgap.py "$OUT" | head -20
+  python3 benchmark/berth.py "$OUT"
+  python3 benchmark/liftgap.py "$OUT" | head -20
   ;;
 
 identity)
@@ -174,15 +174,21 @@ ab)
       --server "$SERVER" --jobs "$JOBS" --portbase "$port" \
       --out "$OUT/$arm"
   done
+  # paircmp reads metrics.csv from the CELL directory, and the two arms
+  # sit in different cells by construction: the tuning file is part of
+  # the result key, which is the same property that keeps the two arms
+  # from ever sharing a cached game.
+  off_cell=$(echo "$OUT"/off/isolated-150-*)
+  on_cell=$(echo "$OUT"/on/isolated-150-*)
   echo "=== paired compare ==="
-  ./benchmark/paircmp.py "$OUT/off" "$OUT/on" --arm deep
+  ./benchmark/paircmp.py "$off_cell" "$on_cell" --arm deep
   echo "=== gap counter, off arm ==="
-  ./benchmark/liftgap.py "$OUT/off" | head -22
+  python3 benchmark/liftgap.py "$OUT/off" | head -22
   echo "=== gap counter, on arm ==="
-  ./benchmark/liftgap.py "$OUT/on" | head -22
+  python3 benchmark/liftgap.py "$OUT/on" | head -22
   echo "=== berth census, both arms ==="
-  ./benchmark/berth.py "$OUT/off"
-  ./benchmark/berth.py "$OUT/on"
+  python3 benchmark/berth.py "$OUT/off"
+  python3 benchmark/berth.py "$OUT/on"
   ;;
 
 *)
