@@ -408,10 +408,21 @@ a) **Explorers earn their vision.** The explore want currently prices
    census showed the compensator is dead without this (explorers 0.78
    -> 0.77 while blind).
 b) **Worldmap/seamap trades and shared vision, priced accurately.**
-   Diplomacy can buy sight (map exchanges, shared-vision pacts, and
-   embassies as score/tech sight). These are cross-border mechanisms:
-   the §11.4 mixed-arm rule applies, and an ally's shared vision is
-   exactly the "wash as alliance benefit" case.
+   Diplomacy can buy sight (map exchanges, embassies as score/tech
+   sight, shared vision). Shared vision is ONE-DIRECTIONAL (human,
+   2026-08-12): usually exchanged bidirectionally, but not always —
+   so it prices as two separate legs. GIVING vision is an intel
+   concession (they see your realm: your gaps, your musters, your
+   undefended coast) and belongs in the gift/love currency; RECEIVING
+   is the benefit, worth more the worse your own coverage is — and it
+   partially substitutes for scouting, so item (a)'s explorer want
+   must net out vision already received. Accepting a bidirectional
+   swap is NOT automatically a wash: the legs differ with relative
+   map knowledge and posture. Revoking a given leg is a tell —
+   cancellation timing interacts with war planning. Cross-border
+   throughout: the §11.4 mixed-arm rule applies, and the
+   ally-directed give is exactly the "wash as alliance benefit"
+   case.
 c) **Boats see.** Naval units as pickets/scouts — hull positioning and
    idle-hull disposition should carry a vision term (the lift/ferry
    pool doubles as a radar fence). Interacts with MOVETYPE honest
