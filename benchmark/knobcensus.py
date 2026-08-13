@@ -280,6 +280,14 @@ MAP = {
         "and fires at any knob value, so it does not evidence it; "
         "meanwalk= is the behaviour metric, comparable across a "
         "knobs-on and knobs-off run of the same seed."),
+    "trunk_road_gain": (
+        "S3", "mag", "direct", [("deep-trunk", "hits>0")],
+        "deep_trunk_want() returns before building a plan when "
+        "trunk_road_gain <= 0.0, so the deep-trunk line does not "
+        "exist at all below the gate (deeptrunk.c:283); hits= counts "
+        "the road candidates the want actually reached, and "
+        "maxwant= is a monotone multiple of the gain. links>0 with "
+        "hits=0 is the radius ceiling, not a dead knob."),
 
     # ---------------- Stage 1: economy / horizon / CM ---------------
     "horizon_capacity_weight": (

@@ -812,6 +812,14 @@ struct deep_tuning {
    * uses for its own travel term (site_travel_discount). 0 disables
    * and restores stock ranking exactly. */
   double worker_travel_discount;
+  /* Trunk roads (W12). A road candidate on a tile the empire's
+   * minimum spanning tree runs through carries the LINK's worth on top
+   * of its own: the movement points the finished link saves on one
+   * traversal, discounted by amortize() over the corridor tiles still
+   * missing. This gain converts those movement points into the
+   * advisor's tile currency. 0 disables the whole term, plan included.
+   */
+  double trunk_road_gain;
 
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).

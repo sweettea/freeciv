@@ -359,6 +359,7 @@ else
       'ai/deep/deepspy.c',
       'ai/deep/deepstance.c',
       'ai/deep/deeptrade.c',
+      'ai/deep/deeptrunk.c',
       'ai/deep/deepsettler.c',
       'ai/deep/deeptuning.c',
       'ai/deep/deepwant.c',

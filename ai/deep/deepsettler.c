@@ -62,6 +62,7 @@
 #include "deepdefence.h"
 #include "deepodds.h"
 #include "deepsite.h"
+#include "deeptrunk.h"
 #include "deeptuning.h"
 
 #include "deepai.h"
@@ -2276,13 +2277,16 @@ void deep_worker_travel_census(struct player *pplayer)
   players not managed by deep, which keeps every other module,
   including the frozen baseline, bit-identical.
 
-  Also the seat of the BASE want (deep_base_want() above), because the
-  advisor's own valuation of a base is structurally zero and this is
-  the one place deep is allowed to say otherwise. The base want is
-  added AFTER the danger discount and is deliberately not subject to
-  it: exposed ground is exactly where a fortress is worth building,
-  and discounting the fortress for standing where it is needed would
-  be the danger term arguing with itself.
+  Also the seat of the wants the advisor's tile arithmetic structurally
+  cannot hold: the BASE want (deep_base_want() above), because
+  adv_calc_extra() sums food, shield and trade and a fortress changes
+  none of them, and the TRUNK want (deep_trunk_want(), deeptrunk.c),
+  because no term in the advisor knows that a road here would join two
+  cities. Both are added AFTER the danger discount and are deliberately
+  not subject to it: exposed ground is exactly where a fortress is
+  worth building and where a corridor most needs closing, and
+  discounting them for standing where they are needed would be the
+  danger term arguing with itself.
 
   The travel term (deep_worker_travel_price() above) is applied LAST,
   to whatever the other terms settled on, because it prices the walk
@@ -2298,23 +2302,25 @@ adv_want deep_worker_task_value(const struct player *pplayer,
                                 adv_want old_tile_value, int arrival)
 {
   const struct deep_tuning *tune = deep_tuning_get();
-  adv_want base = 0.0;
+  adv_want addon;
   bool exposed;
 
   if (pplayer->ai != deep_ai_get_self()) {
     return value;
   }
 
+  addon = deep_trunk_want(pplayer, target, ptile);
+
   if (act == ACTIVITY_BASE) {
     /* Counted BEFORE any gate: "the advisor offered a base candidate
      * at all" and "we priced it" are different questions, and the
      * first one is the one a zero want has to answer first. */
     deep_fort_offers[player_number(pplayer)]++;
-    base = deep_base_want(pplayer, target, ptile);
+    addon += deep_base_want(pplayer, target, ptile);
   }
 
   if (tune->worker_danger_discount <= 0.0 || value <= 0) {
-    return deep_worker_travel_price(pplayer, value + base,
+    return deep_worker_travel_price(pplayer, value + addon,
                                     old_tile_value, arrival);
   }
 
@@ -2338,11 +2344,11 @@ adv_want deep_worker_task_value(const struct player *pplayer,
     } players_iterate_alive_end;
   }
   if (!exposed) {
-    return deep_worker_travel_price(pplayer, value + base,
+    return deep_worker_travel_price(pplayer, value + addon,
                                     old_tile_value, arrival);
   }
 
   return deep_worker_travel_price(pplayer,
                                   value / (1.0 + tune->worker_danger_discount)
-                                  + base, old_tile_value, arrival);
+                                  + addon, old_tile_value, arrival);
 }
