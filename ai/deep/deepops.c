@@ -4677,7 +4677,7 @@ static const char *deep_muster_abandon(struct ai_type *ait,
                          &worth)) {
     return "muster-worth";
   }
-  if (tune->survival_target <= 0.0 || present < 1) {
+  if (!tune->op_muster_home || tune->survival_target <= 0.0 || present < 1) {
     return NULL;
   }
   for (i = 0; i < present; i++) {

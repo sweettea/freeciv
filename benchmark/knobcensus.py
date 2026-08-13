@@ -224,6 +224,13 @@ MAP = {
         "field counts the clock on every muster line; why=muster-stall "
         "is the abandon it causes, beside muster-worth and "
         "muster-home."),
+    "op_muster_home": (
+        "S3", "mode", "direct", [("deep-opodds", "why=muster-home")],
+        "ERA 3b's home-defence abandon trigger, separably. Measured on "
+        "tech50war-200 it is not one of three triggers but THE trigger: "
+        "155 of 191 abandons (81%) against 34 worth and 2 stall, with "
+        "only 5 of 433 musters ever launching. 1 = armed (as designed); "
+        "0 = the stall clock and worth gate only. Its own arm."),
     "survival_pf_reach": (
         "S3", "mode", "direct", [("deep-wave", "pf_turns>=0")],
         "ERA 3c's pathfinder-confirmed land reach "

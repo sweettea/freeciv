@@ -1290,6 +1290,30 @@ struct deep_tuning {
    * a formed wave by fiat, and flagged in STATUS.md for the tuning
    * pass. Only read when op_muster is on. */
   int op_muster_stall;
+  /* The muster's HOME-DEFENCE abandon trigger, separably (ERA 3b
+   * liveness, 2 tech50war-200 games, 2026-08-12).
+   *
+   * The trigger asks what the staging city keeps once the wave's best
+   * defender leaves and the cheapest one-hop backfill arrives, and
+   * abandons below survival_target. Measured on the venue it was
+   * designed for, it is not one of three triggers -- it is THE
+   * trigger: 155 of 191 abandons (81%), against 34 worth collapses
+   * and 2 stalls, with 337 of 457 held muster-turns holding exactly
+   * one member and only 5 of 433 musters ever launching.
+   *
+   * The reading is honest either way and this knob is what lets the
+   * A/B decide which: at survival_target = 0.85 on a war venue, a
+   * frontier staging city essentially never spares its best blade, so
+   * either the muster is correctly refusing to disarm a home front
+   * that is genuinely under threat (the Gunpowder doctrine's own
+   * claim) or the trigger is priced against the wrong counterfactual
+   * and starves the mechanism before it can gather. A dominant
+   * behaviour that cannot be switched off cannot be attributed.
+   *
+   * 1 = the trigger as designed and as measured. 0 = the muster
+   * answers to the stall clock and the worth gate only. Only read
+   * when op_muster is on. */
+  int op_muster_home;
   /* Launch on odds, not on a head count (combat E2): a mustered wave
    * is released when the force STANDING at the staging city clears
    * the same bar formation used, re-priced against the garrison as it
