@@ -1793,6 +1793,47 @@ struct deep_tuning {
    * PLACEHOLDER. */
   double gift_love_gain;
 
+  /* GIFT-REFOLD -- WHERE THE SURPLUS LANDS (CAMPAIGN-v4 section 11.4).
+   *
+   * The love gift is the largest single-lever self-play move this
+   * project has measured (+8.28 contested, +8.92 lategame-80) and the
+   * mixed head-to-head says it is a TRANSFER: deep +1.93 (t 0.72),
+   * the counterparty +5.26 (t 2.15), deep's margin over ai/default
+   * -3.34 (findings/balance-statecraft-2026-08-06.md section 0). The
+   * human's fold criterion is not "no surplus" -- it is that the
+   * surplus lands INSIDE the alliance: "i don't mind multiple folks
+   * getting better, but it _is_ more fun to get a wash as an alliance
+   * benefit."
+   *
+   * So these three multiply gift_love_gain's willingness bound by the
+   * relationship the gift would serve (deep_gift_rel_of):
+   *
+   * - gift_ally_gain    the alliance and its candidates: an existing
+   *                     ally, a shared enemy, a common ally. This is
+   *                     where section 11.4 wants the surplus.
+   * - gift_instrument_gain  no friendship, but we are already at war
+   *                     elsewhere and this player presses our border:
+   *                     the second front deep cannot afford, priced
+   *                     rather than assumed. Its own term so the fold
+   *                     can keep it, kill it, or read it separately
+   *                     from friendship.
+   * - gift_rival_gain   everyone else -- the population that banked
+   *                     the +5.26. 0.0 refuses them outright.
+   *
+   * A MULTIPLIER RATHER THAN A GATE because the classes differ in
+   * degree as well as in kind: a would-be ally is worth paying MORE
+   * for than today's flat bound, not merely more than a rival, and a
+   * bool could not say that.
+   *
+   * 1.0 on all three is exactly today's bound for every class, so the
+   * shipped configuration -- including the adopted pv2 baseline, which
+   * carries gift_love_gain = 46.59 -- is unchanged until an arm moves
+   * them. PLACEHOLDERS: the fold arm is a mixed head-to-head and the
+   * numbers are its business, not this file's. */
+  double gift_ally_gain;
+  double gift_instrument_gain;
+  double gift_rival_gain;
+
   /* BALANCE lever 2 -- proxy arming (human design call, 2026-08-05).
    *
    * Hand a military advance to a DISTANT power that is already in the

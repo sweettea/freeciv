@@ -709,6 +709,29 @@ static enum deep_gift_rel deep_gift_rel_of(const struct player *pplayer,
 }
 
 /**********************************************************************//**
+  What the willingness bound is multiplied by for this class.
+
+  One knob per class rather than one gate, because the classes differ
+  in degree as well as in kind: a would-be ally is worth paying MORE
+  for than the flat bound, which a bool could not express. 1.0
+  everywhere is today's bound for everyone.
+**************************************************************************/
+static double deep_gift_rel_gain(const struct deep_tuning *t,
+                                 enum deep_gift_rel rel)
+{
+  switch (rel) {
+  case DEEP_GIFT_ALLY:
+    return t->gift_ally_gain;
+  case DEEP_GIFT_INSTRUMENT:
+    return t->gift_instrument_gain;
+  case DEEP_GIFT_RIVAL:
+    break;
+  }
+
+  return t->gift_rival_gain;
+}
+
+/**********************************************************************//**
   The class as a log word. Bare words rather than an integer because
   the knob census reads these lines with a field predicate and a tag
   that has to be greppable by hand as well.
@@ -893,6 +916,21 @@ static bool deep_gift_send(struct ai_type *ait, struct player *pplayer,
   against a 250 bar, so the clamp is load-bearing and not decorative:
   every one of that cell's gifts had the headroom to jump the pair
   straight into alliance range.
+
+  WHO THE SURPLUS IS FOR (GIFT-REFOLD, CAMPAIGN-v4 section 11.4). The
+  bound is multiplied by the class of the relationship the gift would
+  serve, so the same mechanism can pay a would-be ally more than it
+  pays a rival -- or refuse a rival outright at gift_rival_gain = 0.0.
+  The mixed head-to-head is what may move those knobs off 1.0; nothing
+  here decides it.
+
+  Note which population the ALLY class actually reaches. An existing
+  ally never arrives at this function at all -- the pre-pass skips
+  allied pairs and the state check above returns for DS_ALLIANCE --
+  because bought love cannot raise a bar the alliance is already past.
+  So "surplus inside the alliance" means the alliance's CANDIDATES:
+  the players who share our enemies today and would fight beside us
+  tomorrow, financed while financing them still buys something.
 **************************************************************************/
 static void deep_love_gift(struct ai_type *ait, struct player *pplayer,
                            struct player *aplayer)
@@ -902,8 +940,9 @@ static void deep_love_gift(struct ai_type *ait, struct player *pplayer,
     = player_diplstate_get(pplayer, aplayer);
   struct ai_plr *theirs;
   struct deep_plr *dp = deep_plr_data(pplayer);
-  bool close_here, capped;
-  double worth;
+  enum deep_gift_rel rel;
+  bool close_here, capped, refused = FALSE;
+  double worth, bound, relbound, relgain;
   int love, bar, cap, step, tech_worth = 0, gain;
   Tech_type_id tech;
 
@@ -938,8 +977,27 @@ static void deep_love_gift(struct ai_type *ait, struct player *pplayer,
   }
 
   tech = deep_gift_tech_pick(pplayer, aplayer, step, &tech_worth);
-  if (tech == A_NONE || tech_worth > t->gift_love_gain * worth) {
+  if (tech == A_NONE) {
     return;
+  }
+
+  /* Two bounds: what the gift would cost us against what the
+   * relationship is worth (BALANCE's, unchanged), and the same bound
+   * repriced for the class. A tech over BOTH is simply unaffordable
+   * and returns silently as it always did; a tech under the first and
+   * over the second is a gift the REFOLD refused, and that one is
+   * logged, because a redirection nobody can count is indistinguishable
+   * from a mechanism that never fired. */
+  bound = t->gift_love_gain * worth;
+  rel = deep_gift_rel_of(pplayer, aplayer);
+  relgain = deep_gift_rel_gain(t, rel);
+  relbound = bound * relgain;
+  if (tech_worth > relbound) {
+    if (tech_worth > bound) {
+      return;
+    }
+    refused = TRUE;
+    dp->gifts_offclass++;
   }
 
   gain = MIN(tech_worth / step, theirs->diplomacy.love_incr * 150) * 10;
@@ -947,19 +1005,22 @@ static void deep_love_gift(struct ai_type *ait, struct player *pplayer,
   /* The clamp. Logged either way, and with the ceiling beside the
    * prediction, because a decline nobody can count is indistinguishable
    * from a mechanism that never fired. */
-  capped = love + gain > cap;
+  capped = !refused && love + gain > cap;
   if (capped) {
     dp->gifts_capped++;
   }
   log_base(deep_metric_log_level(),
-           "deep-lovegift turn=%d plr=\"%s\" to=\"%s\" ds=%d love=%d"
-           " bar=%d cap=%d tech=\"%s\" price=%d worth=%.1f expect=%d"
-           " capped=%d took=%d",
+           "deep-lovegift turn=%d plr=\"%s\" to=\"%s\" ds=%d rel=%s"
+           " relgain=%.2f love=%d bar=%d cap=%d tech=\"%s\" price=%d"
+           " worth=%.1f bound=%.1f expect=%d capped=%d refused=%d"
+           " offclass=%d took=%d",
            game.info.turn, player_name(pplayer), player_name(aplayer),
-           (int) ds->type, love, bar, cap,
+           (int) ds->type, deep_gift_rel_name(rel), relgain, love, bar, cap,
            advance_rule_name(advance_by_number(tech)), tech_worth, worth,
-           gain, capped ? 1 : 0,
-           capped ? 0
+           relbound, gain, capped ? 1 : 0, refused ? 1 : 0,
+           dp->gifts_offclass,
+           (capped || refused)
+           ? 0
            : (deep_gift_send(ait, pplayer, aplayer, tech, CLAUSE_LAST)
               ? 1 : 0));
 }
