@@ -128,6 +128,16 @@ struct deep_plr {
    * -- refreshed every turn the settler pipeline runs. */
   int colony_want;
   int colony_turn;
+  /* Berths the hull commission has already ordered THIS turn, and the
+   * turn the tally belongs to (EXPANSION slice 2). Every coastal city
+   * on a water reads the same gap in the same turn, and the
+   * in-production term cannot see an order placed one city ago --
+   * measured: 8 cities priced one gap of 2 on the same turn and 5 of
+   * them beat their incumbent choice. This is that term extended to
+   * orders taken since the queue was counted. Recomputable, not
+   * saved, and never touched while the knob is 0. */
+  int commission_turn;
+  int commission_berths;
   /* Share of the world's land that nobody has claimed yet, 0..1000
    * (per mille, so the cache is an int). deep_map_crowding() and
    * deep_land_pressure() both answer from lobby settings and never

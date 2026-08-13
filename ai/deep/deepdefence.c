@@ -5609,7 +5609,20 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
           }
           founders = deep_founder_demand_on(ait, pplayer, oc);
           berths = deep_lift_berths_on(ait, pplayer, oc, &building);
-          gap = founders - berths - building;
+          /* ... and the orders taken since the queue was counted.
+           * Production is a once-a-turn photograph: every coastal city
+           * on this water evaluates against the same gap in the same
+           * turn, and a hull ordered one city ago is invisible to
+           * `building` until next turn. Measured on the first liveness
+           * arm: 8 cities priced one gap of 2 on turn 88 and 5 of them
+           * beat their incumbent choice. Orders and not deliveries, so
+           * a choice later overridden is still charged -- the
+           * conservative direction for a term that multiplies. */
+          if (dp->commission_turn != game.info.turn) {
+            dp->commission_turn = game.info.turn;
+            dp->commission_berths = 0;
+          }
+          gap = founders - berths - building - dp->commission_berths;
           if (gap <= 0) {
             continue;           /* The queue is already covered. */
           }
@@ -5638,18 +5651,20 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
           }
           log_base(deep_metric_log_level(),
                    "deep-commission turn=%d player=\"%s\" city=%d"
-                   " ocean=%d founders=%d berths=%d building=%d gap=%d"
+                   " ocean=%d founders=%d berths=%d building=%d"
+                   " ordered=%d gap=%d"
                    " wait=%d age=%d value=" ADV_WANT_PRINTF
                    " n=%d want=" ADV_WANT_PRINTF " beat=%d",
                    game.info.turn, player_name(pplayer), pcity->id, oc,
-                   founders, berths, building, gap, wait,
-                   MAX(0, game.info.turn - dp->colony_turn), value, n, cw,
-                   cw > choice->want ? 1 : 0);
+                   founders, berths, building, dp->commission_berths, gap,
+                   wait, MAX(0, game.info.turn - dp->colony_turn), value, n,
+                   cw, cw > choice->want ? 1 : 0);
           if (cw > choice->want) {
             choice->value.utype = boattype;
             choice->want = cw;
             choice->type = CT_ATTACKER;
             adv_choice_set_use(choice, "hull commission");
+            dp->commission_berths += boattype->transport_capacity;
           }
         } adjc_iterate_end;
       }
