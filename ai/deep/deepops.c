@@ -2932,6 +2932,13 @@ static void deep_op_dissolve(struct deep_operation *op, int oi,
   /* Cleared here as well as set at formation, so a slot reused by an
    * assault can never hand a stale meeting point to a later lift. */
   op->rendezvous = -1;
+  /* Same contract for the muster fields (ERA 3b): a slot reused by an
+   * ordinary wave, a raid or a lift must not inherit the previous
+   * occupant's muster flag or its stall clock. */
+  op->muster = 0;
+  op->muster_worth = 0;
+  op->muster_best = 0;
+  op->muster_grew = 0;
 }
 
 /**********************************************************************//**
@@ -3275,12 +3282,29 @@ static double deep_op_assault_bar(struct player *pplayer,
   The defence census is a pure read of the target tile and is gated on
   the metric log level, the same way deep-anchor's counterfactual pick
   is: under FREECIV_DEEP_QUIET it does not run.
+
+  MUSTER STATE (ERA 3b) rides on this counter rather than on a parallel
+  one, because every question about a muster is a question about the
+  same decision this line already reports: what force stood there, what
+  odds it reached, and what the seat did about it. `op` is NULL where
+  there is no slot to read (a refusal), and then the muster fields are
+  zeros and `verdict` is one of the two the counter has always carried.
+
+  The population changed and the field says so: a reader who wants the
+  pre-3b population -- one line per formation attempt -- filters
+  `verdict` to formed|refused, and the per-turn muster lines all carry
+  muster=1. mform/mlaunch/mabandon are the player's running totals, so
+  the launch-rate reality check is readable off any late line without
+  re-aggregating the stream.
 **************************************************************************/
 static void deep_opodds_log(struct player *pplayer, int oi,
                             struct city *target, const char *verdict,
                             double odds, double bar, int required,
-                            int pool, int drafted, int eta, bool overseas)
+                            int pool, int drafted, int eta, bool overseas,
+                            const struct deep_operation *op,
+                            const char *why)
 {
+  const struct deep_plr *dp = deep_plr_data(pplayer);
   int def_n = 0, def_best = 0;
 
   if (!log_do_output_for_level(deep_metric_log_level())) {
@@ -3304,11 +3328,73 @@ static void deep_opodds_log(struct player *pplayer, int oi,
            "deep-opodds turn=%d player=\"%s\" op=%d target=%d"
            " verdict=\"%s\" odds=%.3f bar=%.3f take_target=%.2f"
            " required=%d pool=%d drafted=%d eta=%d overseas=%d"
-           " def_n=%d def_best=%d",
+           " def_n=%d def_best=%d muster=%d members=%d best=%d stall=%d"
+           " worth=%d why=%s mform=%d mlaunch=%d mabandon=%d",
            game.info.turn, player_name(pplayer), oi, target->id,
            verdict, odds, bar, deep_tuning_get()->op_take_target,
            required, pool, drafted, eta, overseas ? 1 : 0,
-           def_n, def_best);
+           def_n, def_best,
+           op != NULL ? op->muster : 0,
+           op != NULL ? op->n_members : 0,
+           op != NULL ? op->muster_best : 0,
+           op != NULL && op->muster
+             ? game.info.turn - op->muster_grew : 0,
+           op != NULL ? op->muster_worth : 0,
+           why != NULL ? why : "none",
+           dp->musters_formed, dp->musters_launched,
+           dp->musters_abandoned);
+}
+
+/**********************************************************************//**
+  ERA 3b's WORTH gate: is this target worth STARTING a muster for?
+
+  The muster's whole claim is that a SET of blades is worth having
+  where every increment is worth nothing, so the question it must ask
+  at formation is the SET question -- not "can this pool take the
+  city" (the odds test already said no, and saying it louder is 3a's
+  mistake) but "is the take worth having at all".
+
+  That question already has an answer in this file, at the launch
+  seat: worth x P(take) minus what the assault is expected to cost,
+  converted at SHIELD_WEIGHTING through attack_loss_gain (human call
+  2026-08-06). This asks it with the only odds a muster ever launches
+  at -- the bar itself, since clearing the bar IS the launch condition
+  -- and the loss the force standing here today would take. Nothing
+  new is invented: eff worth, the bar, attack_loss_gain and
+  SHIELD_WEIGHTING are all already in the caller.
+
+  Deliberately OPTIMISTIC about the loss, and named as such: a muster
+  that grows to eight blades will lose more shields than today's two
+  would. A gate whose job is to refuse worthless targets may be
+  generous about the cost of good ones, and the launch seat re-asks
+  the same question at full strength before anything marches.
+
+  With op_net_value off there is no such arithmetic to borrow and the
+  gate is the bare "worth anything at all" it degenerates to.
+**************************************************************************/
+static bool deep_muster_worth(struct ai_type *ait, struct player *pplayer,
+                              struct city *target, struct unit *const *pool,
+                              int n, int eta, double bar, double *worth_out)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  double eff = deep_conquest_worth(ait, pplayer, target);
+  double loss = 0.0, surv = 0.0;
+
+  *worth_out = eff;
+  if (eff <= 0.0) {
+    return FALSE;
+  }
+  if (!tune->op_net_value || n < 1) {
+    /* Nothing to price a loss with -- the collapse re-ask runs with an
+     * empty staging tile whenever the whole muster is still walking in
+     * -- so the gate is the bare worth test. Formation refuses an
+     * empty pool on its own account, one branch up. */
+    return TRUE;
+  }
+  (void) deep_take_odds_cost(&(wld.map), target, pool, n, eta,
+                             &loss, &surv);
+
+  return bar * eff - tune->attack_loss_gain * loss * SHIELD_WEIGHTING > 0.0;
 }
 
 /**********************************************************************//**
@@ -3328,9 +3414,17 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
   int required = 0, drafted = 0;
   int n, i, eta;
   bool overseas;
+  /* ERA 3b: this slot is entering MUSTER with the odds refused. */
+  bool muster = FALSE;
+  int muster_worth = 0;
   /* ERA 3a: the garrison draft's release test. 0 = the absolute
    * survival_target floor this function shipped with. */
   bool marginal_draft = tune->op_draft_marginal > 0;
+  /* ERA 3b: the draft also releases blades that cost their city
+   * NOTHING, whichever release test is in force -- the muster's feed,
+   * since a blade it does not have to pay for is worth having in a
+   * set that is not fighting yet. */
+  bool muster_feed = tune->op_muster > 0;
   double bar;
   /* The best take-probability any prefix of the pool reached. Kept
    * from the scoring loop's own returns -- never a second call. */
@@ -3595,19 +3689,49 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
 
         pool[n] = weak;
         with = deep_take_odds_at_arrival(nmap, target, pool, n + 1, eta);
-        if (with - held > cost) {
+        /* THE FREE BLADE (ERA 3b). The marginal comparison still
+         * cannot bootstrap: in the flat region `with - held` is
+         * exactly 0 for every blade in the set, so a positive cost
+         * always wins and nothing is ever released. A muster does not
+         * need the blade to buy odds, because it is not fighting this
+         * turn -- it needs the blade to be FREE. Cost of exactly zero
+         * is that, with no epsilon to invent: the city's survival is
+         * the same number with the blade and without it. */
+        if (with - held > cost || (muster_feed && cost <= 0.0)) {
           n++;
           drafted++;
           held = with;
         }
-      } else if ((covered
-                  ? cover.surv_after
-                  : deep_city_stack_survival_without(nmap, pcity,
-                                                     tune->survival_horizon,
-                                                     weak, NULL))
-                 >= tune->survival_target) {
-        pool[n++] = weak;
-        drafted++;
+      } else {
+        double surv_after
+          = covered
+            ? cover.surv_after
+            : deep_city_stack_survival_without(nmap, pcity,
+                                               tune->survival_horizon,
+                                               weak, NULL);
+
+        if (surv_after >= tune->survival_target) {
+          pool[n++] = weak;
+          drafted++;
+        } else if (muster_feed) {
+          /* The free blade again, under the absolute floor -- and this
+           * is the population the probe named: a city the floor
+           * refuses BECAUSE it is already below the bar, whose blade
+           * changes its survival by nothing at all. The floor reads
+           * that as "too dangerous to lend" when what it means is
+           * "this blade is not what saves this city". */
+          double cost
+            = covered
+              ? cover.cost
+              : deep_city_stack_survival(nmap, pcity,
+                                         tune->survival_horizon, NULL)
+                - surv_after;
+
+          if (cost <= 0.0) {
+            pool[n++] = weak;
+            drafted++;
+          }
+        }
       }
     } city_list_iterate_end;
     if (drafted > 0) {
@@ -3625,10 +3749,39 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
     }
   }
   if (required < 1) {
-    /* No force clears the bar. */
-    deep_opodds_log(pplayer, oi, target, "refused", best_odds, bar,
-                    0, n, drafted, eta, overseas);
-    return FALSE;
+    /* THE MUSTER (ERA 3b). No prefix of the pool clears the bar --
+     * and on this venue that is the answer 98.2% of the time, with
+     * 84.5% of the refusals returning odds of EXACTLY zero. The odds
+     * model is not wrong to say it: at Gunpowder a city held by one
+     * defender needs 8-15 attackers to be even 36% likely to clear
+     * the bar, and deep brings a mean of 2.69.
+     *
+     * So the slot does not dissolve. If the target clears the worth
+     * gate it enters MUSTER anyway, gathers across turns, and lets
+     * the odds test be the LAUNCH gate it already is -- the set is
+     * priced when it is complete instead of one worthless increment
+     * at a time.
+     *
+     * Two things it will not do. It will not muster on an empty pool:
+     * a slot with no members is dissolved by the validation pass on
+     * the next turn regardless, so an empty muster is a log line
+     * pretending to be a plan. And it will not muster without
+     * op_launch_odds, because the launch gate would then be a head
+     * count against a `required` no prefix ever justified -- which is
+     * precisely the trickle the muster discipline exists to
+     * prevent. */
+    double eff = 0.0;
+
+    if (tune->op_muster <= 0 || tune->op_launch_odds <= 0 || n < 1
+        || !deep_muster_worth(ait, pplayer, target, pool, n, eta, bar,
+                              &eff)) {
+      deep_opodds_log(pplayer, oi, target, "refused", best_odds, bar,
+                      0, n, drafted, eta, overseas, NULL, NULL);
+      return FALSE;
+    }
+    muster = TRUE;
+    muster_worth = (int) eff;
+    dp->musters_formed++;
   }
   /* required == 1 forms too (T160 forensics): "one unit needs no
    * operation" assumed stock would claim singleton targets, but
@@ -3639,27 +3792,49 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
 
   op->state = DEEP_OP_MUSTER;
   op->kind = DEEP_OPK_ASSAULT;
-  dp->ops_formed++;
+  if (!muster) {
+    /* A muster is NOT counted as a formed operation until it launches.
+     * ops_formed/ops_launched drive the never-launches damper (CONSEQ
+     * item 5), whose quantity is "operations formed that never reached
+     * MARCH" -- and a muster sitting unlaunched while it grows is the
+     * mechanism working, not the pathology the damper was built to
+     * notice. Feeding it here would starve the attacker pump exactly
+     * where the muster needs it most. The muster's own three counters
+     * are the ones that make a unit sink visible. */
+    dp->ops_formed++;
+  }
   op->target_city = target->id;
   op->staging_city = staging->id;
-  op->required = required;
+  /* A muster has no quorum: no prefix of the pool ever cleared the
+   * bar, so any head count would be a number nothing justified. */
+  op->required = muster ? 0 : required;
   op->formed_turn = game.info.turn;
+  op->muster = muster ? 1 : 0;
+  op->muster_worth = muster_worth;
   /* Enroll the required force plus a small margin; the rest of the
    * pool stays free as the designated reserve (E7) -- the second
-   * wave if the first falls short, ordinary units otherwise. */
-  op->n_members = MIN(MIN(n, required + (required + 1) / 2),
-                      DEEP_OP_MEMBERS);
+   * wave if the first falls short, ordinary units otherwise. A
+   * muster takes the whole pool instead: accumulating the set IS the
+   * plan, and a reserve held back from a force that cannot yet fight
+   * is a reserve for nothing. */
+  op->n_members = muster
+    ? MIN(n, DEEP_OP_MEMBERS)
+    : MIN(MIN(n, required + (required + 1) / 2), DEEP_OP_MEMBERS);
   for (i = 0; i < op->n_members; i++) {
     op->members[i] = pool[i]->id;
   }
+  op->muster_best = op->n_members;
+  op->muster_grew = game.info.turn;
   log_base(deep_metric_log_level(),
-           "deep-op turn=%d player=\"%s\" op=%d form target=%d staging=%d"
+           "deep-op turn=%d player=\"%s\" op=%d %s target=%d staging=%d"
            " required=%d pool=%d drafted=%d wave2=%d",
-           game.info.turn, player_name(pplayer), oi, op->target_city,
+           game.info.turn, player_name(pplayer), oi,
+           muster ? "muster" : "form", op->target_city,
            op->staging_city, op->required, op->n_members, drafted,
            dp->last_strike_city == target->id ? 1 : 0);
-  deep_opodds_log(pplayer, oi, target, "formed", best_odds, bar,
-                  required, n, drafted, eta, overseas);
+  deep_opodds_log(pplayer, oi, target, muster ? "muster" : "formed",
+                  best_odds, bar, required, n, drafted, eta, overseas,
+                  op, NULL);
 
   return TRUE;
 }
@@ -3926,6 +4101,20 @@ static bool deep_op_retarget(struct ai_type *ait, struct player *pplayer,
              alt->id, rally != NULL ? rally->id : 0, ns, alt_eta,
              alt_odds);
     op->target_city = alt->id;
+    /* A retarget clears the muster flag (ERA 3b): the alternative had
+     * to clear the FULL formation bar at the force's own eta to be
+     * picked at all, so what comes out of here is an ordinary wave
+     * with a real quorum, whatever went in. That is also the moment
+     * the operation becomes a formed one for the damper's census --
+     * a muster is counted when it stops being a muster, never
+     * before, so ops_launched can never outrun ops_formed. */
+    if (op->muster) {
+      deep_plr_data(pplayer)->ops_formed++;
+    }
+    op->muster = 0;
+    op->muster_worth = 0;
+    op->muster_best = 0;
+    op->muster_grew = game.info.turn;
     if (rally != NULL) {
       op->staging_city = rally->id;
       op->required = ns;
@@ -4389,6 +4578,129 @@ static void deep_op_drive_strike(struct ai_type *ait,
 }
 
 /**********************************************************************//**
+  ERA 3b: grow a muster. Every free attacker standing on the staging
+  city's continent that no live operation has claimed joins it, up to
+  the storage bound.
+
+  This is the memoryless half of 3a's falsification answered. Formation
+  ran 0.88 times per player-turn, each pass asking "can I win NOW",
+  each pass leaving nothing behind -- so the pool a target faced was
+  whatever happened to be idle that instant, mean 2.69 against a
+  requirement of 8-15. A muster keeps what it gathered and adds to it,
+  which is the only way a force that big is ever standing in one place
+  on this venue.
+
+  The selector is deep_op_collect_pool() unchanged, so a muster claims
+  exactly what a formation would have claimed and nothing more:
+  military, attack-rated, not bodyguarding, NOT AIUNIT_DEFEND_HOME, and
+  not already claimed -- members of this op included, since a claim is
+  a claim. Garrisons are never conscripted here; the only path from the
+  walls into a muster is the draft's own release test.
+
+  Returns how many joined.
+**************************************************************************/
+static int deep_muster_enroll(struct ai_type *ait, struct player *pplayer,
+                              struct deep_operation *op,
+                              struct city *staging)
+{
+  struct unit *pool[DEEP_OP_MEMBERS];
+  int n, i, joined = 0;
+
+  if (op->n_members >= DEEP_OP_MEMBERS) {
+    return 0;
+  }
+  n = deep_op_collect_pool(ait, pplayer,
+                           tile_continent(city_tile(staging)),
+                           pool, DEEP_OP_MEMBERS);
+  for (i = 0; i < n && op->n_members < DEEP_OP_MEMBERS; i++) {
+    op->members[op->n_members++] = pool[i]->id;
+    joined++;
+  }
+
+  return joined;
+}
+
+/**********************************************************************//**
+  ERA 3b's three abandon triggers, in the brief's own order of kinds.
+  Returns the dissolve reason, or NULL to keep mustering.
+
+  A muster with no end is a unit sink, and the sink is the mechanism's
+  own worst case: blades that would have garrisoned or trickled into
+  stock's attacks instead stand in a yard forever. So the muster is
+  told, in three ways, when to stop.
+
+  1. STALL -- op_muster_stall turns without a new high-water member
+     count. Free to evaluate, and the only trigger that fires on a
+     muster nothing is wrong with except that it is not working.
+
+  2. WORTH -- the formation gate, re-asked. The target may have been
+     taken by somebody else, walled, or grown a garrison that turns
+     the take into a loss; the same arithmetic that admitted the
+     muster is what evicts it.
+
+  3. HOME -- the defence demand at the muster point spiking. Priced by
+     deep_cover_removal_cost(), whose header has named this consumer
+     since NETTHREAT: what the staging city keeps once the wave's best
+     defender leaves and the cheapest one-hop backfill arrives. Below
+     survival_target and the force is not free to march, so it is not
+     a wave -- it is a garrison holding a piece of paper.
+
+     ONE BLADE, not the whole wave: a proxy for a departure that has
+     not been decided and may never be, at the cost of one pricing
+     call per muster per turn. It understates the hole the launch
+     would open, which errs toward keeping the muster.
+
+  cover_removal moves trigger 3's cost side exactly as it moves the
+  garrison draft's; that overlap is a factorial fact, not an accident,
+  and the A/B design has to name which arms carry it.
+**************************************************************************/
+static const char *deep_muster_abandon(struct ai_type *ait,
+                                       struct player *pplayer,
+                                       const struct deep_operation *op,
+                                       struct city *target,
+                                       struct city *staging,
+                                       struct unit *const *here, int present)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  struct deep_cover_move cover;
+  struct unit *blade = NULL;
+  double worth = 0.0, surv_after;
+  int i;
+
+  if (game.info.turn - op->muster_grew >= tune->op_muster_stall) {
+    return "muster-stall";
+  }
+  if (!deep_muster_worth(ait, pplayer, target, here, present,
+                         deep_op_eta(pplayer, op, target),
+                         deep_op_assault_bar(pplayer, target, FALSE),
+                         &worth)) {
+    return "muster-worth";
+  }
+  if (!tune->op_muster_home || tune->survival_target <= 0.0 || present < 1) {
+    return NULL;
+  }
+  for (i = 0; i < present; i++) {
+    if (blade == NULL
+        || adv_unit_def_rating_basic(here[i])
+           > adv_unit_def_rating_basic(blade)) {
+      blade = here[i];
+    }
+  }
+  surv_after
+    = deep_cover_removal_cost(ait, nmap, staging, blade, &cover)
+      ? cover.surv_after
+      : deep_city_stack_survival_without(nmap, staging,
+                                         tune->survival_horizon, blade,
+                                         NULL);
+  if (surv_after < tune->survival_target) {
+    return "muster-home";
+  }
+
+  return NULL;
+}
+
+/**********************************************************************//**
   Drive one live operation for a turn. MUSTER: walk members in, hold
   arrivals, launch at quorum (or half-quorum at the wait cap). A land
   launch enters MARCH: members go to the stock attack path while the
@@ -4432,7 +4744,29 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
     int present = 0;
     struct unit *here[DEEP_OP_MEMBERS];
     double odds_now = 0.0, surv_now = 0.0, loss_now = 0.0;
+    const char *abandon = NULL;
+    int joined = 0;
     bool go;
+
+    if (op->muster) {
+      joined = deep_muster_enroll(ait, pplayer, op, staging);
+      /* The stall clock measures GROWTH, and growth means a new
+       * high-water mark. A muster that loses two blades to the
+       * counter-claim and enrolls two more has not grown -- it has
+       * held station, and holding station is exactly the state the
+       * clock exists to end. */
+      if (op->n_members > op->muster_best) {
+        op->muster_best = op->n_members;
+        op->muster_grew = game.info.turn;
+      }
+      if (joined > 0) {
+        log_base(deep_metric_log_level(),
+                 "deep-op turn=%d player=\"%s\" op=%d grow target=%d"
+                 " joined=%d members=%d best=%d",
+                 game.info.turn, player_name(pplayer), oi, op->target_city,
+                 joined, op->n_members, op->muster_best);
+      }
+    }
 
     for (i = 0; i < op->n_members; i++) {
       struct unit *m = game_unit_by_number(op->members[i]);
@@ -4517,11 +4851,29 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
         }
       }
     } else {
-      go = present >= op->required;
+      /* ERA 3b: a muster has no quorum to count against, and
+       * `required` 0 would read as "everybody is here" on an empty
+       * staging tile. Forming one already requires op_launch_odds, so
+       * this branch is unreachable for a muster; the test says so
+       * rather than relying on it. */
+      go = !op->muster && present >= op->required;
+    }
+
+    /* The three abandon triggers, asked only of a muster that is not
+     * launching this turn: a wave about to march is not a unit sink,
+     * whatever its stall clock says. */
+    if (op->muster && !go) {
+      abandon = deep_muster_abandon(ait, pplayer, op, target, staging,
+                                    here, present);
     }
 
     if (go
-        || (game.info.turn - op->formed_turn >= tune->op_muster_wait
+        /* The half-quorum patience release is for a wave that formed
+         * against a priced quorum. A muster never formed against one
+         * (ERA 3b): its release is the odds test, and its patience
+         * rule is the stall clock, not this one. */
+        || (!op->muster
+            && game.info.turn - op->formed_turn >= tune->op_muster_wait
             && present >= (op->required + 1) / 2)) {
       /* Land or sea, the wave marches shadowed: the ferry system
        * carries the crossing (transported members stay on stock's
@@ -4543,6 +4895,21 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
       op->state = DEEP_OP_MARCH;
       op->march_turn = game.info.turn;
       op->march_eta = MAX(deep_op_eta(pplayer, op, target), 1);
+      if (op->muster) {
+        /* The muster became an operation at the instant it launched
+         * (ERA 3b): counted into BOTH censuses here, never into
+         * ops_formed while it was still gathering, so the damper's
+         * "formed but never marched" quantity keeps its meaning and
+         * ops_launched cannot outrun ops_formed. */
+        deep_plr_data(pplayer)->ops_formed++;
+        dp->musters_launched++;
+        deep_opodds_log(pplayer, oi, target, "muster-launch", odds_now,
+                        deep_op_assault_bar(pplayer, target, FALSE),
+                        op->required, present, 0,
+                        deep_op_eta(pplayer, op, target),
+                        deep_op_crossing(op, target), op, NULL);
+        op->muster = 0;
+      }
       deep_plr_data(pplayer)->ops_launched++;
       deep_brief_allies(pplayer, target, TRUE, op->march_eta);
       log_base(deep_metric_log_level(),
@@ -4554,15 +4921,44 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
                op->march_eta, odds_now, surv_now,
                tune->op_launch_odds ? 1 : 0);
       /* Fall through: the first march turn re-gates immediately. */
-    } else if (game.info.turn - op->formed_turn >= tune->op_muster_wait) {
+    } else if (abandon != NULL) {
+      /* Dissolve rather than retarget: a retarget is a fresh
+       * commitment at the FULL bar, which a muster by definition
+       * cannot clear, and laundering an abandoned muster into another
+       * one is how a unit sink hides from its own counters. Members
+       * are banked, as on every deliberate abort. */
+      dp->musters_abandoned++;
+      deep_opodds_log(pplayer, oi, target, "muster-abandon", odds_now,
+                      deep_op_assault_bar(pplayer, target, FALSE),
+                      op->required, present, 0,
+                      deep_op_eta(pplayer, op, target),
+                      deep_op_crossing(op, target), op, abandon);
+      deep_op_dissolve(op, oi, abandon, pplayer);
+      return;
+    } else if (!op->muster
+               && game.info.turn - op->formed_turn >= tune->op_muster_wait) {
       /* Wait cap without even half a quorum: before banking, see if
        * the force that DID gather can take something else from
-       * where it stands. */
+       * where it stands. (A muster is not on this clock -- it answers
+       * to the stall clock and the two other abandon triggers.) */
       if (!deep_op_retarget(ait, pplayer, op, oi)) {
         deep_op_dissolve(op, oi, "abort-wait", pplayer);
       }
       return;
     } else {
+      if (op->muster) {
+        /* One line per muster per turn, carrying the odds the force
+         * standing here actually reaches. This is the pre-registered
+         * falsification's own instrument: 3a asked whether a bigger
+         * pool moves the odds histogram out of the "exactly 0" bin,
+         * and only a per-turn read of a GROWING pool against the same
+         * target can answer it. */
+        deep_opodds_log(pplayer, oi, target, "muster-hold", odds_now,
+                        deep_op_assault_bar(pplayer, target, FALSE),
+                        op->required, present, joined,
+                        deep_op_eta(pplayer, op, target),
+                        deep_op_crossing(op, target), op, NULL);
+      }
       for (i = 0; i < op->n_members; i++) {
         struct unit *m = game_unit_by_number(op->members[i]);
         struct unit_ai *ud;

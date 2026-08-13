@@ -206,6 +206,31 @@ MAP = {
         "counter (arm A' 0.18 vs arm A 0.30, 2026-08-12). Falsified "
         "and score-null on tech50war-200 (STATUS 2026-08-12); stays 0 "
         "pending the MUSTER redesign."),
+    "op_muster": (
+        "S3", "mode", "direct", [("deep-opodds", "muster>=1")],
+        "ERA 3b's muster (deepops.c, deep_op_form + deep_op_drive): a "
+        "slot whose target clears the worth gate enters MUSTER with "
+        "the odds refused, accumulates across turns and launches when "
+        "the odds at the current pool clear the bar. 0/1 switch. The "
+        "muster field of deep-opodds is 1 only on lines a muster "
+        "produced (verdict muster|muster-hold|muster-launch|"
+        "muster-abandon); the pre-3b population is verdict "
+        "formed|refused, where it is 0."),
+    "op_muster_stall": (
+        "S3", "mode", "direct", [("deep-opodds", "why=muster-stall")],
+        "turns without a new high-water member count before ERA 3b "
+        "abandons a muster. PLACEHOLDER (no accumulation has ever been "
+        "observed, so there is no cadence to read it off). The stall "
+        "field counts the clock on every muster line; why=muster-stall "
+        "is the abandon it causes, beside muster-worth and "
+        "muster-home."),
+    "op_muster_home": (
+        "S3", "mode", "direct", [("deep-opodds", "why=muster-home")],
+        "ERA 3b's home-defence abandon trigger, separably. Measured on "
+        "tech50war-200 it is not one of three triggers but THE trigger: "
+        "155 of 191 abandons (81%) against 34 worth and 2 stall, with "
+        "only 5 of 433 musters ever launching. 1 = armed (as designed); "
+        "0 = the stall clock and worth gate only. Its own arm."),
     "survival_pf_reach": (
         "S3", "mode", "direct", [("deep-wave", "pf_turns>=0")],
         "ERA 3c's pathfinder-confirmed land reach "

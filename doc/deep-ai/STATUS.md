@@ -13309,3 +13309,220 @@ toward 17.8 and Federation occupancy should rise from 42.3%. If the
 change count falls but the score does not recover, the residue is
 suspect 1 and the next GOV session prices the upkeep bill properly
 instead of netting it. **The knob stays 0 until that arm reads.**
+
+## ERA 3b — MUSTER: the odds test becomes a launch gate (2026-08-12 night)
+
+Branch `epic/era-3b-muster`, based at `c93649faf4`. `ai/deep` +
+`benchmark` + doc only; zero `ai/default`, `ai/baseline` or
+`server/advisors` changes. **Default OFF, and no A/B was run.**
+
+3a's falsification is the design input, and the human's Gunpowder
+doctrine (2026-08-12) is the frame. The take-odds curve is flat at
+zero until pool 6-8, so nothing that asks each blade to justify
+itself incrementally can bootstrap across it -- a SET of eight blades
+is worth having while every increment in it is worth nothing -- and
+formation is memoryless besides (0.88 attempts per player-turn, each
+asking "can I win NOW"). Two independent reasons nothing masses.
+MUSTER exists to make the RARE sane attack possible, not to attack
+more often.
+
+### What landed
+
+| # | Commit | What |
+|---|---|---|
+| 1 | `0423c0aef5` | the two knobs: `op_muster`, `op_muster_stall` |
+| 2 | `44e0a82b35` | muster state on the operation slot, saved and cleared |
+| 3 | `67c086a2a4` | enter MUSTER on the worth gate when the odds refuse |
+| 4 | `44ab3cbdb6` | accumulate the muster across turns |
+| 5 | `b1b89fb64c` | abandon: stall, worth collapse, home-defence spike |
+| 6 | `9554ef68b8` | the free blade -- 3a's release feeds the muster |
+| 7 | `59c4182b85` | muster state on the `deep-opodds` counter |
+| 8 | `9b9707bbfc` | `benchmark/era-3b-muster.{sh,ini}` -- identity, liveness, the arm |
+| 9 | `f1677316ac` | `op_muster_home` -- the dominant trigger gets its own switch |
+
+### The mechanism, and where each piece already existed
+
+- **Formation** (`deep_op_form`). When no prefix of the pool clears
+  the bar, the slot no longer dissolves: if the target clears a WORTH
+  gate it enters `DEEP_OP_MUSTER` with `required = 0` and the WHOLE
+  pool enrolled. The worth gate borrows the launch seat's own
+  arithmetic -- `worth x P(take) - attack_loss_gain x loss x
+  SHIELD_WEIGHTING` -- asked at the only odds a muster ever launches
+  at, the bar. No threshold was invented; the gate is optimistic
+  about the loss and says so at the seam.
+- **Accumulation** (`deep_muster_enroll`). `deep_op_collect_pool()`
+  unchanged, every turn: a muster claims exactly what a formation
+  would have claimed and nothing more. Members walk to the muster
+  point on the existing rotation/goto hold.
+- **Launch** is the odds test that was already there
+  (`op_launch_odds` + `op_net_value` + `op_hold_survivors`), untouched.
+  A muster is never released by a head count and is not on the
+  `op_muster_wait` clock -- forming one without `op_launch_odds` is
+  refused outright.
+- **Abandon** (`deep_muster_abandon`): stall (`op_muster_stall` turns
+  without a new high-water count), worth collapse (the formation gate
+  re-asked), home-defence spike (`deep_cover_removal_cost()` on the
+  staging city -- the third consumer its NETTHREAT header has named
+  since the day it landed). Abandon dissolves rather than retargets:
+  laundering an abandoned muster into another one is how a unit sink
+  hides from its own counters.
+- **The free blade** (the draft). 3a's marginal comparison cannot
+  bootstrap because in the flat region a blade's marginal gain is
+  exactly 0. A muster does not need the blade to buy odds -- it needs
+  the blade to be FREE, and free has an exact meaning that invents no
+  epsilon: the lending city's survival is the same number with the
+  blade and without it. Wired into BOTH release tests.
+
+### The knobs
+
+    op_muster        0/1, default 0 -- the mechanism
+    op_muster_stall  turns without GROWTH before abandon
+    op_muster_home   0/1, default 1 -- the home-defence abandon trigger
+
+`op_muster_stall` is a **flagged PLACEHOLDER and needs a tuning
+pass**. The brief asked for an observed cadence; there is none to be
+had, because nothing in deep has ever accumulated a force across
+turns, so there is no accumulation to read a stall off. It ships
+equal to `op_muster_wait` (itself PLACEHOLDER) so a muster is not
+granted more patience than a formed wave by fiat.
+
+### Guards, each one checked rather than asserted
+
+- **Default OFF**, with the byte-identity proof below.
+- **Mustered units still garrison where they stand**: they hold at
+  the staging city with `done = TRUE`, so `deep_city_stack_survival()`
+  counts them as present, and `deep_muster_reserve_credit()` already
+  credits nearby cities for en-route muster members (it predates this
+  epic and needed no change).
+- **No double-spend with deterrence/sortie prizes** holds by
+  construction: muster members are op-claimed, and every claiming
+  pool -- including both sortie passes since military audit C2 --
+  checks `deep_op_claiming()` first. The defence counter-claim can
+  still POACH a muster member, which is a priced transfer of one
+  blade to one owner, not a second payment for the same body.
+- **The never-launches damper is not fed by a working muster**: a
+  muster enters `ops_formed` at the instant it stops being one
+  (launch or retarget), never while it gathers. The damper's quantity
+  is "formed but never marched", and a muster gathering is the
+  mechanism working. `ops_launched` can never outrun `ops_formed`.
+- **The unit-sink is visible**: `mform`/`mlaunch`/`mabandon` ride on
+  every `deep-opodds` line as running totals, so CONSEQ N3's
+  launch-rate reality check is readable off any late line.
+
+### The A/B that is NOT run here, and what it must be
+
+**Baseline is `pv1 + survival_pf_reach = 1` (`fact-c01.ini`), not
+pv2** -- reach's +71.9/seed on pv1 does not transfer to the tuned ECON
+baseline (G4/G5: +2.8/seed, t +0.04), so the war-venue evidence lives
+on pv1+reach. The arm is `benchmark/tuning/era-3b-muster.ini` =
+`fact-c01.ini` + `op_muster = 1`, nothing else.
+
+    venue   tech50war-200, mixed, seat-mirrored, >= 16 seeds
+    A       benchmark/tuning/fact-c01.ini        (pv1 + reach)
+    B       benchmark/tuning/era-3b-muster.ini   (A + op_muster = 1)
+    B'      B + op_muster_home = 0               (see the liveness read)
+
+**B alone may not be worth the machine.** The liveness census says B
+is mostly deep forming musters and abandoning them a turn later: 433
+formed, 5 launched, 155 of 191 abandons from the home trigger. An arm
+that measures a mechanism which is not gathering measures churn. B'
+is the arm where the muster can actually accumulate, and the pair
+B/B' is what separates "massing does not help on this venue" from
+"the home trigger never let it mass". Whoever runs this should run
+B' if only one extra arm fits.
+
+**Attribution.** `cover_removal` stays **0 in both arms**: it moves
+the muster's home-defence trigger AND the garrison draft's release
+cost at the same time, so it cannot be read as a passenger on this
+arm and enters the factorial as its own. `op_draft_marginal` stays
+**0 in both** (3a falsified, score-null). `op_muster_stall` is
+absent from both files, i.e. the compiled placeholder in both.
+
+**Pre-registered predictions, in the doctrine's terms.** 3a's
+"forms rise, strikes rise" scorecard is retired and is NOT used here.
+
+| metric | prediction if MUSTER is the mechanism |
+|---|---|
+| kill-exchange ratio (killed/lost, deep seats, T200) | RISES from the control's; deep was out-killed ~2:1 (2289/3726 = 0.61 at pv1) while stock ran 1.13 |
+| cities held at T200 | does NOT fall -- the disarmament lens (NETTHREAT). A muster that buys kills by emptying the walls is refused whatever it kills |
+| score/seed, paired mirrored | the headline. Flat is a null and does not fold |
+| `mlaunch`/`mform` | > 0. A muster→launch rate of ZERO with `mform` climbing is a unit sink and the mechanism is reverted whatever the score says |
+| formation/strike counts | **no prediction**. They may legitimately fall; they are not evidence either way |
+
+### Validation
+
+- Build `-Daimodules=classic,tex,baseline,deep` clean (pre-existing
+  warnings only, none in `deepops.c`); `meson test -C build` **5/5 OK**;
+  `tune-audit.py` **CLEAN 228/228/228/228** (from 225 --
+  `op_muster`, `op_muster_stall`, `op_muster_home`).
+- `knobcensus.py` MAP entries for all three, predicates verified
+  against the compiled predicate language: `muster>=1`,
+  `why=muster-stall`, `why=muster-home`.
+- **Identity, 10/10 byte-identical, taken on the SHIPPED tree**
+  (`f1677316ac`, i.e. after the `op_muster_home` commit -- the first
+  proof was taken at `9b9707bbfc` and stopped being a proof the moment
+  the tree moved). 10 paired smoke seeds,
+  `--arms deep`, `identity.ini` on both binaries, jobs 2, ports 7600,
+  against a `git archive` build of the base sha `c93649faf4`, under
+  `benchmark/results/muster-identity/`. Provenance checked as well as
+  equality: the BASE arm carries **0** `mform=` lines and the head arm
+  **277** in seed 1 alone, so the two binaries are demonstrably
+  different ones (the gift epic's trap -- a proof that compared the
+  branch with itself -- fails loudly here instead of passing).
+
+  **A trap this run added to the ledger.** The re-run first reported
+  `0/10 byte-identical, 0 differ, 10 MISSING`. Nothing was wrong with
+  the games: the result key includes the server sha, so the rebuilt
+  head landed in a SECOND `smoke-<key>` directory beside the first,
+  and the assertion's `smoke-*` glob expanded to two paths, making
+  every seed unreadable. A failure that reads as "missing" rather than
+  "differs" is the shape to distrust -- the equality was 10/10 when
+  the two cells were named explicitly. The script now resolves the
+  newest cell per side, prints both names, and refuses to run if the
+  two sides resolve to the same cell.
+- **Liveness, 2 `tech50war-200` games, `era-3b-muster.ini`, jobs 2**
+  (`benchmark/results/muster-live/`, read by
+  `benchmark/mustercensus.py`). Counters only: 2 seeds price nothing
+  (rule 6) and no score is read from these games.
+
+      verdict        lines
+      muster           433   entered on the worth gate
+      muster-hold      457   held turns (one line per muster per turn)
+      muster-abandon   191
+      muster-launch      5
+      formed            55   ordinary formations, unchanged path
+      refused         2194
+
+      mform = 433   mlaunch = 5 (1.2%)   mabandon = 191 (44.1%)
+      abandon reasons: home 155, worth 34, stall 2
+      held member counts: 1x337  2x54  3x27  4x20  5x12  6x1  7x5  8x1
+      high-water maximum: 8 members
+      odds > 0 on 18 of 457 held turns (3.9%)
+
+  Every transition fires and every counter reads, which is what
+  liveness had to show. **What it also shows is that the mechanism as
+  parameterised does not yet do its job**, and that is the honest
+  headline of this session: 337 of 457 held muster-turns hold ONE
+  blade, the pool reaches 8 exactly once in two games, and 81% of
+  abandons are the home-defence trigger. The one launch worth reading
+  went at odds **1.000** against a city with `def_n = 0` -- the rare
+  sane attack the doctrine describes, and the only kind this venue
+  offers -- but five of those in two games is a mechanism that is
+  gathering nothing.
+
+  Cause, priced rather than guessed: at `survival_target = 0.85` a
+  frontier staging city on a war venue essentially never spares its
+  best blade, so the muster is abandoned the turn after it forms. The
+  trigger is now behind `op_muster_home` **for exactly this reason**
+  -- see the commit -- and whether that is deep correctly refusing to
+  disarm a home front under real threat, or a cost side priced against
+  the wrong counterfactual, is not decided here and must not be
+  guessed at. It is the first thing the A/B has to separate.
+
+### Not attempted, deliberately
+
+No A/B of any kind (the box is owned by a derby and a batch tonight;
+the tech-50 arm wants >= 16 mirrored seeds and is tomorrow's machine
+work). No default moved. No tuning pass on `op_muster_stall`. No
+change to the odds model, the bar, the expansion gate or the sea
+clause -- all three priced dead by the probe.
