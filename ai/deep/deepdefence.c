@@ -4195,46 +4195,166 @@ static int deep_idle_ferries(struct ai_type *ait, struct player *pplayer)
   has carried this decomposition every phase since forever with only
   `.threat` ever read (00-context section 3).
 **************************************************************************/
+static bool deep_ferry_idle_here(struct ai_type *ait, struct player *pplayer,
+                                 struct unit *punit, Continent_id ocean)
+{
+  const struct unit_ai *ud = def_ai_unit_data(punit, ait);
+
+  if (!dai_is_ferry(punit, ait)
+      || get_transporter_occupancy(punit) > 0
+      || ud->passenger >= 0
+      || ud->task == AIUNIT_EXPLORE
+      || punit->ssa_controller == SSA_AUTOEXPLORE
+      || deep_op_claiming(pplayer, punit->id) >= 0) {
+    return FALSE;
+  }
+  if (ocean != 0) {
+    /* A hull IN PORT sits on the city's LAND tile, so matching the
+     * unit's own continent against an ocean id excluded exactly the
+     * boats that are idle -- the count came back ~0 and the damping
+     * never fired at all (the logged want was identical with it on
+     * and off). A boat belongs to the water it touches. */
+    bool touches = (tile_continent(unit_tile(punit)) == ocean);
+
+    if (!touches) {
+      adjc_iterate(&(wld.map), unit_tile(punit), atile) {
+        if (tile_continent(atile) == ocean) {
+          touches = TRUE;
+          break;
+        }
+      } adjc_iterate_end;
+    }
+    if (!touches) {
+      return FALSE;
+    }
+  }
+
+  return TRUE;
+}
+
 int deep_idle_ferries_on(struct ai_type *ait, struct player *pplayer,
                          Continent_id ocean)
 {
   int idle = 0;
 
   unit_list_iterate(pplayer->units, punit) {
-    const struct unit_ai *ud = def_ai_unit_data(punit, ait);
-
-    if (!dai_is_ferry(punit, ait)
-        || get_transporter_occupancy(punit) > 0
-        || ud->passenger >= 0
-        || ud->task == AIUNIT_EXPLORE
-        || punit->ssa_controller == SSA_AUTOEXPLORE
-        || deep_op_claiming(pplayer, punit->id) >= 0) {
-      continue;
+    if (deep_ferry_idle_here(ait, pplayer, punit, ocean)) {
+      idle++;
     }
-    if (ocean != 0) {
-      /* A hull IN PORT sits on the city's LAND tile, so matching the
-       * unit's own continent against an ocean id excluded exactly the
-       * boats that are idle -- the count came back ~0 and the damping
-       * never fired at all (the logged want was identical with it on
-       * and off). A boat belongs to the water it touches. */
-      bool touches = (tile_continent(unit_tile(punit)) == ocean);
-
-      if (!touches) {
-        adjc_iterate(&(wld.map), unit_tile(punit), atile) {
-          if (tile_continent(atile) == ocean) {
-            touches = TRUE;
-            break;
-          }
-        } adjc_iterate_end;
-      }
-      if (!touches) {
-        continue;
-      }
-    }
-    idle++;
   } unit_list_iterate_end;
 
   return idle;
+}
+
+/**********************************************************************//**
+  The founders -- and only the founders -- waiting to cross this water.
+
+  deep_ferry_demand_on() counts every unit waiting for a crossing, which
+  is the right denominator for a fleet but the wrong numerator for an
+  expansion decision: after t20 the home continent produces no legal
+  site at all on a settled venue (EXPANSION slice 1: 0.0 scored land
+  candidates per search from t20 on both seeds, 89% of refusals the
+  citymindist ring), so every founder want deep still has is an
+  OVERSEAS want and the lift is the only channel it has. What the
+  shipyard needs to know is how much of that queue is settlement.
+
+  Same waiting predicate as deep_ferry_demand_on(), plus two clauses:
+
+  * the unit can found a city -- ACTION_FOUND_CITY, the ruleset's own
+    answer, not a unit-type guess;
+  * no operation has claimed it. A claimed passenger is being served,
+    and this is the definition deep_wait_spells_update() already uses
+    to END a spell, so the gap and the wait estimate count the same
+    population. deep_ferry_demand_on() deliberately does NOT exclude
+    claimed units, because a hull's idleness is measured against
+    everyone aboard the queue; the divergence is intentional.
+**************************************************************************/
+int deep_founder_demand_on(struct ai_type *ait, struct player *pplayer,
+                           Continent_id ocean)
+{
+  const struct civ_map *nmap = &(wld.map);
+  int want = 0;
+
+  unit_list_iterate(pplayer->units, punit) {
+    bool touches = FALSE;
+
+    if (unit_transported(punit)
+        || def_ai_unit_data(punit, ait)->ferryboat >= 0
+        || punit->goto_tile == NULL
+        || tile_continent(unit_tile(punit))
+           == tile_continent(punit->goto_tile)
+        || !unit_can_do_action(punit, ACTION_FOUND_CITY)
+        || deep_op_claiming(pplayer, punit->id) >= 0) {
+      continue;
+    }
+    adjc_iterate(nmap, unit_tile(punit), atile) {
+      if (tile_continent(atile) == ocean) {
+        touches = TRUE;
+        break;
+      }
+    } adjc_iterate_end;
+    if (touches) {
+      want++;
+    }
+  } unit_list_iterate_end;
+
+  return want;
+}
+
+/**********************************************************************//**
+  Lift supply on this water, in BERTHS rather than hulls: the capacity
+  standing idle on it now, and (through `building`, when non-NULL) the
+  capacity our own cities on the same water are already producing.
+
+  Berths because the demand is passengers. A hull that carries four is
+  not one unit of supply against four waiting founders, and counting
+  hulls is what made every previous damping unable to name a target
+  ("fewer than now" is not a number).
+
+  The building term is what keeps a gap from being sold twice: every
+  coastal city on a water reads the same queue in the same turn, and
+  without it each of them would commission its own hull for the same
+  passengers. It counts orders, not deliveries -- a city that switches
+  production drops out of the count the same turn.
+**************************************************************************/
+int deep_lift_berths_on(struct ai_type *ait, struct player *pplayer,
+                        Continent_id ocean, int *building)
+{
+  const struct civ_map *nmap = &(wld.map);
+  int berths = 0;
+
+  unit_list_iterate(pplayer->units, punit) {
+    if (deep_ferry_idle_here(ait, pplayer, punit, ocean)) {
+      berths += get_transporter_capacity(punit);
+    }
+  } unit_list_iterate_end;
+
+  if (building != NULL) {
+    *building = 0;
+    city_list_iterate(pplayer->cities, pcity) {
+      const struct unit_type *ptype;
+      bool touches = FALSE;
+
+      if (VUT_UTYPE != pcity->production.kind) {
+        continue;
+      }
+      ptype = pcity->production.value.utype;
+      if (ptype->transport_capacity <= 0 || !deep_utype_is_sea(ptype)) {
+        continue;
+      }
+      adjc_iterate(nmap, city_tile(pcity), atile) {
+        if (tile_continent(atile) == ocean) {
+          touches = TRUE;
+          break;
+        }
+      } adjc_iterate_end;
+      if (touches) {
+        *building += ptype->transport_capacity;
+      }
+    } city_list_iterate_end;
+  }
+
+  return berths;
 }
 
 /* Observation only (ERA): one line per gate evaluation, in deep's

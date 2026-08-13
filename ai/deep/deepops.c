@@ -1462,6 +1462,112 @@ int deep_wait_expected(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Add every distinct body of water this tile touches to `seen`.
+**************************************************************************/
+static void deep_gap_add_waters(const struct tile *ptile, Continent_id *seen,
+                                int *nseen, int max)
+{
+  adjc_iterate(&(wld.map), ptile, atile) {
+    Continent_id oc = tile_continent(atile);
+    int si;
+
+    if (oc >= 0) {
+      continue;                 /* Land. */
+    }
+    for (si = 0; si < *nseen; si++) {
+      if (seen[si] == oc) {
+        break;
+      }
+    }
+    if (si < *nseen || *nseen >= max) {
+      continue;
+    }
+    seen[(*nseen)++] = oc;
+  } adjc_iterate_end;
+}
+
+/**********************************************************************//**
+  The DEMAND-SUPPLY GAP on each water this player touches, one line per
+  water per turn.
+
+  This is the instrument the commission mechanism answers to, and it
+  lands first on purpose (the project's own rule after two guessed
+  expansion fixes were reverted and the measured one won its cell).
+  The circle it is pointed at is measured on both sides already:
+
+  * EXPANSION slice 1 -- from t20 the land search returns no legal site
+    at all on a settled venue, so every founder want deep still forms
+    is an overseas want and the lift is the only expansion channel;
+  * W36 -- 57.4% of lift wait spells never enroll, and the fifth of
+    spells that run >= 5 turns hold 61.4% of all the waiting;
+  * W36-DIM -- 86% of the wait discount's firings land on `unit=0`,
+    the BUILD-SIDE founder want. The discount damps the very want whose
+    fulfilment would commission the hull that ends the wait.
+
+  So demand is damped by the queue, and the queue exists because demand
+  never commissions supply. The gap this line reports -- founders
+  waiting against berths idle plus berths building, on ONE water -- is
+  the quantity a shipyard could act on, and nothing has ever looked at
+  it. `wait` is deep_wait_expected() for the same water, i.e. what a
+  founder joining that queue should expect to pay in turns.
+
+  Observation only, and computed only when the metric log is on: two
+  unit-list walks and a city-list walk per water is a real cost and
+  buys nothing in a scoring run.
+**************************************************************************/
+static void deep_lift_gap_census(struct ai_type *ait, struct player *pplayer)
+{
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  Continent_id seen[16];
+  int nseen = 0, i;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+
+  /* The waters that can carry a founder off this continent: the ones
+   * our cities could launch a hull into, and the ones our waiting
+   * founders are actually standing beside. Both halves are needed --
+   * a queue on a water we hold no port on is exactly the case where
+   * the commission cannot fire, and it should be visible rather than
+   * absent. */
+  city_list_iterate(pplayer->cities, pcity) {
+    deep_gap_add_waters(city_tile(pcity), seen, &nseen,
+                        (int) ARRAY_SIZE(seen));
+  } city_list_iterate_end;
+  unit_list_iterate(pplayer->units, punit) {
+    if (deep_lift_wants_boat(ait, punit)
+        && tile_continent(unit_tile(punit))
+           != tile_continent(punit->goto_tile)) {
+      deep_gap_add_waters(unit_tile(punit), seen, &nseen,
+                          (int) ARRAY_SIZE(seen));
+    }
+  } unit_list_iterate_end;
+
+  for (i = 0; i < nseen; i++) {
+    Continent_id oc = seen[i];
+    int building = 0;
+    int founders = deep_founder_demand_on(ait, pplayer, oc);
+    int berths = deep_lift_berths_on(ait, pplayer, oc, &building);
+    int waiting = deep_ferry_demand_on(ait, pplayer, oc);
+    int idle = deep_idle_ferries_on(ait, pplayer, oc);
+
+    if (founders <= 0 && berths <= 0 && building <= 0) {
+      continue;                 /* Nothing happening on this water. */
+    }
+    log_base(deep_metric_log_level(),
+             "deep-liftgap turn=%d player=\"%s\" ocean=%d bridge=%d"
+             " founders=%d waiting=%d idle=%d berths=%d building=%d"
+             " gap=%d wait=%d colony=%d",
+             game.info.turn, player_name(pplayer), oc,
+             deep_water_bridges(oc) ? 1 : 0, founders, waiting, idle,
+             berths, building, founders - berths - building,
+             deep_wait_expected(ait, pplayer, oc),
+             (dp->colony_turn >= game.info.turn - 1 ? dp->colony_want : 0));
+  }
+}
+
+/**********************************************************************//**
   Where a boat and a passenger can physically meet: the passenger's own
   tile if the boat can float there (a coastal city -- the boat docks on
   top of the settler), otherwise the adjacent tile the boat can reach
@@ -2610,6 +2716,9 @@ void deep_manage_units(struct ai_type *ait, struct player *pplayer)
    * reads a queue refreshed this turn rather than last turn's. */
   deep_wait_spells_update(ait, pplayer);
   deep_wait_census(ait, pplayer);
+  /* And the same queue seen from the shipyard's side: how much of it
+   * is settlement, and what supply stands against it, per water. */
+  deep_lift_gap_census(ait, pplayer);
 
   unit_list_iterate(pplayer->units, punit) {
     struct unit_ai *unit_data = def_ai_unit_data(punit, ait);
