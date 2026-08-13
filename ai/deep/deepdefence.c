@@ -444,7 +444,7 @@ static unsigned int deep_boat_shadow_fear(const struct civ_map *nmap,
     }
     unit_list_iterate(aplayer->units, aunit) {
       if (unit_type_get(aunit)->transport_capacity > 0
-          && utype_move_type(unit_type_get(aunit)) == UMT_SEA) {
+          && deep_utype_is_sea(unit_type_get(aunit))) {
         return tune->boat_shadow_fear;
       }
     } unit_list_iterate_end;
@@ -607,7 +607,7 @@ int deep_reachable_free_land(const struct player *pplayer)
   unit_list_iterate(pplayer->units, punit) {
     const struct unit_type *ut = unit_type_get(punit);
 
-    if (ut->transport_capacity > 0 && utype_move_type(ut) == UMT_SEA) {
+    if (ut->transport_capacity > 0 && deep_utype_is_sea(ut)) {
       return dp->free_land_tiles;
     }
   } unit_list_iterate_end;
@@ -790,8 +790,7 @@ static unsigned int deep_density_fear(struct city *pcity)
           unit_list_iterate(aplayer->units, aunit) {
             const struct unit_type *at = unit_type_get(aunit);
 
-            if (at->transport_capacity > 0
-                && utype_move_type(at) == UMT_SEA) {
+            if (at->transport_capacity > 0 && deep_utype_is_sea(at)) {
               floats = 1;
               break;
             }
@@ -862,8 +861,7 @@ double deep_border_pressure_from(const struct player *pplayer,
           unit_list_iterate(aplayer->units, aunit) {
             const struct unit_type *at = unit_type_get(aunit);
 
-            if (at->transport_capacity > 0
-                && utype_move_type(at) == UMT_SEA) {
+            if (at->transport_capacity > 0 && deep_utype_is_sea(at)) {
               floats = 1;
               break;
             }
@@ -1319,16 +1317,25 @@ double deep_attacker_home_share(const struct player *pplayer)
   Can units of this class stand on water / on land? Asked of the
   ruleset's own terrain nativity, NOT of utype_move_type().
 
-  The derived move type is unusable for this question and the counter
-  is what proved it: in civ2civ3 `utype_move_type()` reports the
-  TRIREME class as UMT_LAND, so every test in this module written as
-  `transport_capacity > 0 && utype_move_type(ut) == UMT_SEA` misses the
-  ancient-era transport -- which is to say the entire early- and
-  mid-game landing threat, in the default ruleset of every cell this
-  project benchmarks. The sea class measured as never live across 20
-  island games, on a cell where every seat demonstrably builds
-  Triremes, and a `mt=` debug line on the transports themselves is
-  what produced the number above.
+  The derived move type is unusable for this question, and the
+  diagnosis first recorded here was far too narrow. It was written as
+  "civ2civ3 reports the TRIREME class as UMT_LAND", i.e. one class in
+  one ruleset. It is EVERY class, in EVERY ruleset, in every
+  server-side caller:
+
+    $ grep -rn "set_unit_move_type" --include=*.c .
+    common/unittype.c:2961:void set_unit_move_type(struct unit_class *)
+    client/packhand.c:3688:    set_unit_move_type(pclass);
+
+  `unit_class::move_type` is assigned in exactly one place and that
+  place is the CLIENT, on receipt of the ruleset packet. The server
+  never calls it, so the field keeps its zero-initialised value, which
+  is UMT_LAND (unittype.h:133, SPECENUM_VALUE0). A one-shot dump of
+  all nine civ2civ3 classes on a resumed save read move_type=0 for
+  every one of them, Sea and Air included
+  (findings/venues-2026-08-12.md section 0). So server-side no
+  `== UMT_SEA` test can ever be true and no `!= UMT_LAND` test can
+  ever be false, and there is no ruleset in which that is not so.
 
   Terrain nativity cannot drift that way: the Trireme class is
   `native_to` lake and ocean in both shipped rulesets, which is what
@@ -1355,6 +1362,54 @@ static bool deep_uclass_walks(const struct unit_class *pclass)
   } terrain_type_iterate_end;
 
   return FALSE;
+}
+
+/**********************************************************************//**
+  The two questions the rest of deep actually asked utype_move_type(),
+  answered from the same terrain nativity the two helpers above use.
+
+  WHY THE MAPPING IS EXACTLY THIS. set_unit_move_type() derives the
+  field from nativity and from nothing else: land_moving | sea_moving
+  -> UMT_LAND / UMT_SEA / UMT_BOTH, and the enum has only those three
+  values (unittype.h:133-137). THERE IS NO UMT_AIR: a ruleset spells
+  flight as a class native to both, which is why
+  deep_utype_is_airborne() below tests walks && swims. So
+
+      UMT_LAND  ==  walks && !swims
+      UMT_SEA   ==  swims && !walks
+      UMT_BOTH  ==  walks &&  swims   (flight)
+
+  and these two reproduce what the accessor WOULD have returned had
+  the server ever computed it, rather than substituting a looser test.
+  In particular a helicopter is neither sea nor land under either arm,
+  which is what the old `== UMT_SEA` / `!= UMT_LAND` code meant and
+  what its air-aware callers (the wave's flies_in arm, the carrier
+  test) already assume.
+
+  UNCONDITIONAL, and deliberately not behind a knob. The comparisons
+  these replace read an enum the server never sets; there is no
+  defensible "off" value for a field that is uninitialised, so there
+  is nothing for a switch to select between. Thirteen call sites move
+  at once and the branch is measured against its base before it
+  merges -- it is not assumed correct because it is correct in
+  principle.
+
+  NOT CACHED, deliberately. is_native_to_class() with no extras is a
+  single BV_ISSET, so each call is bounded by the terrain count (~14
+  in civ2civ3) of trivial tests with an early exit; a per-class memo
+  would need invalidation on ruleset reload and is not worth that risk
+  until a profile says so.
+**************************************************************************/
+bool deep_utype_is_sea(const struct unit_type *ut)
+{
+  return (deep_uclass_swims(utype_class(ut))
+          && !deep_uclass_walks(utype_class(ut)));
+}
+
+bool deep_utype_is_land(const struct unit_type *ut)
+{
+  return (deep_uclass_walks(utype_class(ut))
+          && !deep_uclass_swims(utype_class(ut)));
 }
 
 /**********************************************************************//**
@@ -2051,7 +2106,7 @@ static void deep_defensive_techwall(struct ai_type *ait,
 
     unit_type_iterate(ut) {
       if (ut->defense_strength <= 0
-          || utype_move_type(ut) != UMT_LAND) {
+          || !deep_utype_is_land(ut)) {
         continue;
       }
       if (can_city_build_unit_now(nmap, pcity, ut, RPT_CERTAIN)) {
@@ -2333,7 +2388,7 @@ static void deep_manage_convoys(struct ai_type *ait,
     int cargo, want;
 
     if (bt->transport_capacity <= 0
-        || utype_move_type(bt) != UMT_SEA) {
+        || !deep_utype_is_sea(bt)) {
       continue;
     }
     pcity = tile_city(unit_tile(boat));
@@ -2351,7 +2406,7 @@ static void deep_manage_convoys(struct ai_type *ait,
         struct unit_ai *wd = def_ai_unit_data(w, ait);
 
         if (unit_owner(w) == pplayer && w != boat
-            && utype_move_type(wt) == UMT_SEA
+            && deep_utype_is_sea(wt)
             && wt->transport_capacity == 0
             && wt->attack_strength > 0
             && wd->task == AIUNIT_NONE && wd->charge <= 0) {
@@ -2889,7 +2944,7 @@ static struct unit *deep_city_sparable_blade(struct ai_type *ait,
         || unit_has_type_flag(g, UTYF_CIVILIAN)
         || g->hp <= 0
         || adv_unit_def_rating_basic(g) <= 0
-        || utype_move_type(unit_type_get(g)) != UMT_LAND
+        || !deep_utype_is_land(unit_type_get(g))
         || def_ai_unit_data(g, ait)->charge > 0
         || deep_op_claiming(pplayer, g->id) >= 0) {
       continue;
@@ -3515,7 +3570,7 @@ static void deep_defend_counter_claims(struct ai_type *ait,
       if (u->hp <= 0
           || unit_has_type_flag(u, UTYF_CIVILIAN)
           || adv_unit_def_rating_basic(u) <= 0
-          || utype_move_type(unit_type_get(u)) != UMT_LAND
+          || !deep_utype_is_land(unit_type_get(u))
           || unit_transported(u)
           || tile_continent(unit_tile(u))
              != tile_continent(city_tile(pcity))
@@ -5340,8 +5395,7 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
         unit_list_iterate(pplayer->units, b) {
           const struct unit_type *btt = unit_type_get(b);
 
-          if (btt->transport_capacity > 0
-              && utype_move_type(btt) == UMT_SEA) {
+          if (btt->transport_capacity > 0 && deep_utype_is_sea(btt)) {
             berths += btt->transport_capacity;
           }
         } unit_list_iterate_end;
@@ -5775,7 +5829,7 @@ static void deep_assault_want(struct ai_type *ait,
       if (ut == punittype
           || ut->attack_strength <= 0
           || utype_has_flag(ut, UTYF_CIVILIAN)
-          || utype_move_type(ut) != UMT_LAND
+          || !deep_utype_is_land(ut)
           || !can_city_build_unit_now(nmap, pcity, ut, RPT_CERTAIN)) {
         continue;
       }

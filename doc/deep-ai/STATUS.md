@@ -12427,3 +12427,110 @@ interaction term is noise; the draft stays 0 and MUSTER (3b,
 S-ERA-3b-muster.md) builds against the c11 baseline. Even both-on
 loses -154/seed: the remaining gap belongs to 3b, the sortie lean,
 MOVETYPE's honest naval pricing, and the finale's fear recalibration.
+---
+
+## MOVETYPE — the dead accessor (2026-08-12)
+
+Branch `epic/movetype`, cut from `27cee96378`. **UNMERGED, PENDING
+MEASUREMENT** — see "Merge gate" below before doing anything with it.
+
+- [x] M.1 correct the mis-scoped move-type comment (1 commit, `8797b6016d`)
+- [x] M.2 ask terrain nativity for the move type (1 commit, `073b50341f`)
+      — 13 call sites, unconditional
+- [x] M.3 count how far the wave's sea arm reaches (1 commit, `c969e5c347`)
+      — `sea_far` + `sea_max_dist` in the deep-wave census
+- [x] M.4 record the classification and the measurement (doc + config)
+
+### What was wrong
+
+`utype_move_type()` is `UMT_LAND` for **every unit class on the
+server**: `set_unit_move_type()` is called only from
+`client/packhand.c:3688`, so `unit_class::move_type` keeps its
+zero-initialised value forever. Thirteen `ai/deep` call sites asked it
+a question and received a constant — eight sea branches that had never
+executed, one convoy loop that rejected every hull (so
+`deep_manage_convoys()` was dead entirely), and four land guards that
+had never rejected a warship. **None was benign.** Full site table:
+`findings/venues-2026-08-12.md` §5.3.
+
+### No knob, deliberately
+
+The first cut put all thirteen behind `movetype_honest`, defaulting to
+the status quo; that was overruled by the human and the reasoning is
+recorded in §5.1. A knob selects between two behaviours, and here one
+side is not a behaviour — it is an uninitialised field. Precedent: the
+credit-integrity fix earlier the same week. `tune-audit.py` therefore
+stays **CLEAN at 219**, unchanged.
+
+### Validation
+
+- Build `-Daimodules=classic,tex,baseline,deep` clean (pre-existing
+  warnings only); `meson test -C build` **5/5 OK**;
+  `tune-audit.py` **CLEAN 219/219/219/219**, before and after.
+- **Scope proof, 10 paired smoke seeds, `--arms deep,baseline`, jobs 2,
+  ports 7700/7740, 40 games, 0 failures, 0 pairing violations**
+  (`benchmark/results/movetype-identity/`), this binary against a
+  `git archive` build of `27cee96378`: the **`baseline` arm is 10/10
+  byte-identical in score**, so the change is inside `ai/deep` and
+  provably nowhere else. The `deep` arm differs on 5/10, aggregate
+  +0.6% — directional only, not a result.
+- **Liveness, `tech65sea-150`, 2 seeds, `--arms deep`, jobs 2**
+  (`benchmark/results/movetype-liveness/`), same maps both binaries:
+
+      deep-wave evaluations   4 676  ->  49 215
+      by_sea admissions           0  ->  309 594   (98.2% of all arms)
+      mean n_att               2.98  ->  6.40
+      mean surv               0.726  ->  0.398
+      deep-convoy lines           0  ->  1
+      wall clock, 2 games   124/171s ->  145/191s
+
+  `by_sea` was the counter this defect was found through, and it is
+  the acceptance bar `tech65sea-150` was declared unable to meet. It
+  is met.
+- **NO A/B.** Two seeds is not a result (rule 6). Score moved +13.8%
+  and +9.5% on those two seeds; that is recorded only as evidence that
+  a large regression would have been visible and was not.
+
+### Merge gate — READ THIS FIRST
+
+**The branch merges only on the overnight A/B**, this binary against
+the `27cee96378` archive build: `tech65sea-150`, `tech50war-200`, and
+a `contested` guard. The base build is left in the worktree at
+
+    .movetype-base/build/freeciv-server     (git archive of 27cee96378)
+
+so the comparison needs no rebuild. Nothing about this branch may be
+cited until that verdict exists.
+
+### What the A/B must be read against
+
+- **Fear-calibration debt.** Every fear constant in `struct tuning` was
+  tuned against a wave that could not see a warship and a menace term
+  that always applied `menace_overseas_weight`. They are now measured
+  against a different quantity. **That re-tune belongs to the MIL
+  finale**, not to this branch, and a flat or negative A/B on a naval
+  cell is at least as likely to be stale constants as a bad fix.
+- **The sea arm's distance bound is now the map.** `sea_max_dist`
+  pegged at 18 = `survival_horizon` 3 × a destroyer's 6, on a 32×32
+  torus 16 tiles across; `sea_far` was 288 699 of 309 594 admissions
+  (**93%**). The deferred-not-dead worry at the sea clause is live and
+  large. No bound was invented (rule 7) — the counters were added so
+  the population a bound would remove is a measured number first.
+
+### Downstream consumers, both to be re-read after the A/B
+
+1. **The `tech50war-200` NETTHREAT item-1 reading** was taken against a
+   warship-blind wave.
+2. **The sea-clause verdict** was deferred because the clause was dead.
+   It is not dead now, and `sea_far` is what the verdict should be
+   taken against.
+
+### One more thing the next session should know
+
+`benchmark/configs/tech65sea-150.conf`'s provenance comment said
+`by_sea` "IS STILL 0 HERE, AND ALWAYS WILL BE". That is corrected in
+place; every naval number in its calibration table is flagged as a
+**pre-fix** reading. The table is kept because what it argues for is
+the cell's geometry, which the fix does not touch. The edit changes
+the config's sha256 and therefore its result-cache key — which costs
+nothing, since a rebuilt binary already misses that cache.

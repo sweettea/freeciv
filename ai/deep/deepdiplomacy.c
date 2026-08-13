@@ -974,7 +974,7 @@ static bool deep_is_distant(const struct player *pplayer,
   unit_list_iterate(aplayer->units, aunit) {
     const struct unit_type *at = unit_type_get(aunit);
 
-    if (at->transport_capacity > 0 && utype_move_type(at) == UMT_SEA) {
+    if (at->transport_capacity > 0 && deep_utype_is_sea(at)) {
       return FALSE;
     }
   } unit_list_iterate_end;
