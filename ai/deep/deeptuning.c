@@ -137,6 +137,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .worker_guard_radius = 6,             /* PLACEHOLDER, untuned */
   .worker_danger_discount = 1.0,        /* PLACEHOLDER, untuned */
   .worker_cross_continent_discount = 1.0, /* PLACEHOLDER, untuned */
+  .worker_travel_discount = 0.0,       /* PLACEHOLDER, off by default */
   .upkeep_gold_weight = 0.125,          /* PLACEHOLDER, untuned */
   .upkeep_unit_weight = 0.5,            /* PLACEHOLDER, untuned */
   .rotation_power_ratio = 2.0,          /* PLACEHOLDER, untuned */
@@ -410,6 +411,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_INT(worker_guard_radius) \
   TUNE_DOUBLE(worker_danger_discount) \
   TUNE_DOUBLE(worker_cross_continent_discount) \
+  TUNE_DOUBLE(worker_travel_discount) \
   TUNE_DOUBLE(upkeep_gold_weight) \
   TUNE_DOUBLE(upkeep_unit_weight) \
   TUNE_DOUBLE(rotation_power_ratio) \

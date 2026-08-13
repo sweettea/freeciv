@@ -271,6 +271,15 @@ MAP = {
         "the cross=1 form of deep-idlework is emitted only on the "
         "cross-water fallback the discount prices "
         "(deepsettler.c:1194/1257)."),
+    "worker_travel_discount": (
+        "S3", "mag", "direct", [("deep-worklocal", "disc>0")],
+        "disc= counts primary-auction candidates deep_worker_travel_"
+        "price() actually discounted, which requires "
+        "worker_travel_discount > 0.0 and arrival > 0 "
+        "(deepsettler.c:2189). cand= counts every candidate offered "
+        "and fires at any knob value, so it does not evidence it; "
+        "meanwalk= is the behaviour metric, comparable across a "
+        "knobs-on and knobs-off run of the same seed."),
 
     # ---------------- Stage 1: economy / horizon / CM ---------------
     "horizon_capacity_weight": (

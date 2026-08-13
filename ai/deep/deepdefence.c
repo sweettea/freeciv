@@ -7802,6 +7802,7 @@ void deep_do_last_activities(struct ai_type *ait, struct player *pplayer)
    * chance (deepops.c, deep_hold_census). */
   deep_hold_census(ait, pplayer);
   deep_fort_census(pplayer);
+  deep_worker_travel_census(pplayer);
   /* Before the wipe: tech_want[] is cleared here and refilled by the
    * city loop BELOW the rates, so the only honest read of what
    * research is worth to this empire is last turn's array, taken now
