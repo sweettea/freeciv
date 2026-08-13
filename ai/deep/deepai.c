@@ -140,6 +140,7 @@ static void dpai_player_alloc(struct player *pplayer)
   /* Identity until the first phase resolves it: a zeroed stance is a
    * ratio nothing can be read from. */
   plr_data->stance = deep_stance_identity();
+  deep_tuning_player_init(pplayer);
   dai_data_init(deftype, pplayer);
 }
 
@@ -150,6 +151,7 @@ static void dpai_player_free(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
 
+  deep_tuning_player_free(pplayer);
   dai_player_free(deftype, pplayer);
 }
 
@@ -163,8 +165,10 @@ static void dpai_player_save_relations(struct player *pplayer,
                                       int plrno)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   dai_player_save_relations(deftype, "deep", pplayer, other, file, plrno);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -176,8 +180,10 @@ static void dpai_player_load_relations(struct player *pplayer,
                                       int plrno)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   dai_player_load_relations(deftype, "deep", pplayer, other, file, plrno);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -190,6 +196,7 @@ static void dpai_player_save(struct player *pplayer,
 {
   struct deep_plr *plr_data = deep_plr_data(pplayer);
   int oi, i;
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   secfile_insert_int(file, plr_data->dv_turns_logged,
                      "player%d.deep_state.dv_turns_logged", plrno);
@@ -284,6 +291,7 @@ static void dpai_player_save(struct player *pplayer,
                          plrno, oi, i);
     }
   }
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -295,6 +303,7 @@ static void dpai_player_load(struct player *pplayer,
 {
   struct deep_plr *plr_data = deep_plr_data(pplayer);
   int oi, i;
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   plr_data->dv_turns_logged
     = secfile_lookup_int_default(file, 0,
@@ -492,6 +501,7 @@ static void dpai_player_load(struct player *pplayer,
       plr_data->ops_reissue = TRUE;
     }
   }
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -500,8 +510,10 @@ static void dpai_player_load(struct player *pplayer,
 static void dpai_gained_control(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   dai_gained_control(deftype, pplayer);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -511,8 +523,10 @@ static void dpai_split_by_civil_war(struct player *original,
                                    struct player *created)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(original);
 
   dai_assess_danger_player(deftype, &(wld.map), original);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -522,8 +536,10 @@ static void dpai_created_by_civil_war(struct player *original,
                                      struct player *created)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(created);
 
   dai_player_copy(deftype, original, created);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -639,6 +655,7 @@ static void deep_impose_honest_info(struct player *pplayer)
 static void dpai_data_phase_begin(struct player *pplayer, bool is_new_phase)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   /* Before the forwarded phase, not after: dai_data_phase_begin()
    * refreshes the advisor data through adv_data_get(), and
@@ -685,16 +702,31 @@ static void dpai_data_phase_begin(struct player *pplayer, bool is_new_phase)
              research_get(pplayer)->techs_researched,
              pplayer->economic.science);
   }
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
   Call default ai with deep ai type as parameter.
+
+  Also reports the arena's coverage instrument. A scopeless read is a
+  tunable fetched with no seat in scope while seats hold DIFFERENT
+  values -- i.e. a decision taken on the base values instead of the
+  seat's. It cannot happen in the single-file case (every seat's
+  pointer is the base struct's), so the line only appears in an arena,
+  and a nonzero count there names a path no guard covers.
 **************************************************************************/
 static void dpai_data_phase_finished(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   dai_data_phase_finished(deftype, pplayer);
+  if (deep_tuning_arena_active()) {
+    log_normal("deep-arena turn=%d player=\"%s\" scopeless_reads=%d",
+               game.info.turn, player_name(pplayer),
+               deep_tuning_scopeless_reads());
+  }
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -703,8 +735,11 @@ static void dpai_data_phase_finished(struct player *pplayer)
 static void dpai_city_alloc(struct city *pcity)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(city_owner(pcity));
 
   dai_city_alloc(deftype, pcity);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -713,8 +748,11 @@ static void dpai_city_alloc(struct city *pcity)
 static void dpai_city_free(struct city *pcity)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(city_owner(pcity));
 
   dai_city_free(deftype, pcity);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -727,7 +765,10 @@ static void dpai_city_free(struct city *pcity)
 **************************************************************************/
 static void dpai_city_got(struct player *pplayer, struct city *pcity)
 {
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
+
   if (server_state() != S_S_RUNNING) {
+    deep_tuning_scope_restore(deep_scope);
     return;   /* Savegame load is not a founding. */
   }
   log_base(deep_metric_log_level(),
@@ -736,6 +777,7 @@ static void dpai_city_got(struct player *pplayer, struct city *pcity)
            game.info.turn, player_name(pplayer), pcity->id,
            city_size_get(pcity), pcity->turn_founded,
            TILE_XY(city_tile(pcity)));
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -743,7 +785,10 @@ static void dpai_city_got(struct player *pplayer, struct city *pcity)
 **************************************************************************/
 static void dpai_city_lost(struct player *pplayer, struct city *pcity)
 {
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
+
   if (server_state() != S_S_RUNNING) {
+    deep_tuning_scope_restore(deep_scope);
     return;   /* Game-end teardown frees every city through
                * remove_city(); that is not a defence failure.
                * (Smoke run 2026-07-31: founded == lost in every
@@ -755,6 +800,7 @@ static void dpai_city_lost(struct player *pplayer, struct city *pcity)
            game.info.turn, player_name(pplayer), pcity->id,
            city_size_get(pcity), pcity->turn_founded,
            TILE_XY(city_tile(pcity)));
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -764,8 +810,11 @@ static void dpai_city_save(struct section_file *file, const struct city *pcity,
                           const char *citystr)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(city_owner(pcity));
 
   dai_city_save(deftype, "deep", file, pcity, citystr);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -775,8 +824,11 @@ static void dpai_city_load(const struct section_file *file, struct city *pcity,
                           const char *citystr)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(city_owner(pcity));
 
   dai_city_load(deftype, "deep", file, pcity, citystr);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -785,8 +837,11 @@ static void dpai_city_load(const struct section_file *file, struct city *pcity,
 static void dpai_build_adv_override(struct city *pcity, struct adv_choice *choice)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(city_owner(pcity));
 
   dai_build_adv_override(deftype, pcity, choice);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -795,8 +850,10 @@ static void dpai_build_adv_override(struct city *pcity, struct adv_choice *choic
 static void dpai_wonder_city_distance(struct player *pplayer, struct adv_data *adv)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   dai_wonder_city_distance(deftype, pplayer, adv);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -805,8 +862,10 @@ static void dpai_wonder_city_distance(struct player *pplayer, struct adv_data *a
 static void dpai_build_adv_init(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   dai_build_adv_init(deftype, pplayer);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -816,6 +875,7 @@ static void dpai_build_adv_adjust(struct player *pplayer, struct city *wonder_ci
 {
   struct ai_type *deftype = deep_ai_get_self();
   bool hide = FALSE;
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   /* Charge the switch once. adjust_improvement_wants_by_effects()
    * (daicity.c:1899-1911) docks a building want for the shields a
@@ -844,6 +904,7 @@ static void dpai_build_adv_adjust(struct player *pplayer, struct city *wonder_ci
   if (hide) {
     BV_SET(*((bv_handicap *) pplayer->ai_common.handicaps), H_PRODCHGPEN);
   }
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -854,8 +915,10 @@ static void dpai_gov_value(struct player *pplayer, struct government *gov,
                           adv_want *val, bool *override)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   deep_gov_value(deftype, pplayer, gov, val, override);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -884,8 +947,11 @@ static void dpai_units_ruleset_close(void)
 static void dpai_unit_init(struct unit *punit)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(unit_owner(punit));
 
   dai_unit_init(deftype, punit);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -894,8 +960,11 @@ static void dpai_unit_init(struct unit *punit)
 static void dpai_unit_close(struct unit *punit)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(unit_owner(punit));
 
   dai_unit_close(deftype, punit);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -904,8 +973,11 @@ static void dpai_unit_close(struct unit *punit)
 static void dpai_ferry_init_ferry(struct unit *ferry)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(unit_owner(ferry));
 
   dai_ferry_init_ferry(deftype, ferry);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -914,8 +986,11 @@ static void dpai_ferry_init_ferry(struct unit *ferry)
 static void dpai_ferry_transformed(struct unit *ferry, const struct unit_type *old)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(unit_owner(ferry));
 
   dai_ferry_transformed(deftype, ferry, old);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -924,6 +999,8 @@ static void dpai_ferry_transformed(struct unit *ferry, const struct unit_type *o
 static void dpai_ferry_lost(struct unit *punit)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(unit_owner(punit));
 
   /* Loss-rate bookkeeping (benchmark/losses.py). The hook also fires
    * when a unit merely changes owner (capture, bribe); the server then
@@ -940,6 +1017,7 @@ static void dpai_ferry_lost(struct unit *punit)
            TILE_XY(unit_tile(punit)));
 
   dai_ferry_lost(deftype, punit);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -955,6 +1033,8 @@ static void dpai_unit_turn_end(struct unit *punit)
   struct ai_type *deftype = deep_ai_get_self();
   struct player *owner = unit_owner(punit);
   int oi = deep_op_claiming(owner, punit->id);
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(unit_owner(punit));
 
   if (oi >= 0 && punit->moves_left > 0) {
     const struct deep_operation *op = &deep_plr_data(owner)->ops[oi];
@@ -968,6 +1048,7 @@ static void dpai_unit_turn_end(struct unit *punit)
   }
 
   dai_unit_turn_end(deftype, punit);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -977,8 +1058,11 @@ static void dpai_unit_move_or_attack(struct unit *punit, struct tile *ptile,
                                     struct pf_path *path, int step)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(unit_owner(punit));
 
   dai_unit_move_or_attack(deftype, punit, ptile, path, step);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -988,8 +1072,11 @@ static void dpai_unit_new_adv_task(struct unit *punit, enum adv_unit_task task,
                                   struct tile *ptile)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(unit_owner(punit));
 
   dai_unit_new_adv_task(deftype, punit, task, ptile);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -999,8 +1086,11 @@ static void dpai_unit_save(struct section_file *file, const struct unit *punit,
                           const char *unitstr)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(unit_owner(punit));
 
   dai_unit_save(deftype, "deep_", file, punit, unitstr);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1010,8 +1100,11 @@ static void dpai_unit_load(const struct section_file *file, struct unit *punit,
                           const char *unitstr)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(unit_owner(punit));
 
   dai_unit_load(deftype, "deep_", file, punit, unitstr);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1020,8 +1113,10 @@ static void dpai_unit_load(const struct section_file *file, struct unit *punit,
 static void dpai_auto_settler_reset(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   dai_auto_settler_reset(deftype, pplayer);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1032,8 +1127,10 @@ static void dpai_auto_settler_run(struct player *pplayer,
                                  struct workermap *state)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   deep_auto_settler_run(deftype, &(wld.map), pplayer, punit, state);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1044,8 +1141,10 @@ static void dpai_auto_settler_cont(struct player *pplayer,
                                   struct workermap *state)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   dai_auto_settler_cont(deftype, &(wld.map), pplayer, punit, state);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1055,8 +1154,11 @@ static void dpai_switch_to_explore(struct unit *punit, struct tile *target,
                                   enum override_bool *allow)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(unit_owner(punit));
 
   dai_switch_to_explore(deftype, punit, target, allow);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1065,6 +1167,7 @@ static void dpai_switch_to_explore(struct unit *punit, struct tile *target,
 static void dpai_do_first_activities(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   /* Before anything touches a unit: stock's diplomat handling bribes,
    * defends, targets, walks and ACTS in one call, so the action choice
@@ -1075,6 +1178,7 @@ static void dpai_do_first_activities(struct player *pplayer)
   deep_do_first_activities(deftype, pplayer);
 
   pplayer->ai_phase_done = TRUE;
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1082,7 +1186,10 @@ static void dpai_do_first_activities(struct player *pplayer)
 **************************************************************************/
 static void dpai_restart_phase(struct player *pplayer)
 {
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
+
   pplayer->ai_phase_done = TRUE;
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1092,6 +1199,7 @@ static void dpai_diplomacy_actions(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
   struct deep_plr *dp = deep_plr_data(pplayer);
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   /* PEACE's pre-pass, and it must run BEFORE stock's pass: stock's
    * anti-spam gate skips the whole AI-AI branch for fc_rand(4)+3
@@ -1148,6 +1256,7 @@ static void dpai_diplomacy_actions(struct player *pplayer)
       } players_iterate_alive_end;
     }
   } players_iterate_alive_end;
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1156,8 +1265,10 @@ static void dpai_diplomacy_actions(struct player *pplayer)
 static void dpai_do_last_activities(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   deep_do_last_activities(deftype, pplayer);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1167,15 +1278,18 @@ static void dpai_treaty_evaluate(struct player *pplayer, struct player *aplayer,
                                 struct treaty *ptreaty)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   /* Deep claims only the treaty shapes it prices in full -- a lone
    * peace clause, or a treaty made of nothing but embassy clauses --
    * and forwards every other treaty untouched. */
   if (deep_treaty_evaluate(deftype, pplayer, aplayer, ptreaty)) {
+    deep_tuning_scope_restore(deep_scope);
     return;
   }
 
   dai_treaty_evaluate(deftype, pplayer, aplayer, ptreaty);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1185,8 +1299,10 @@ static void dpai_treaty_accepted(struct player *pplayer, struct player *aplayer,
                                 struct treaty *ptreaty)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   dai_treaty_accepted(deftype, pplayer, aplayer, ptreaty);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1196,8 +1312,10 @@ static void dpai_diplomacy_first_contact(struct player *pplayer,
                                         struct player *aplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   dai_diplomacy_first_contact(deftype, pplayer, aplayer);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1210,8 +1328,10 @@ static void dpai_incident(enum incident_type type,
                          struct player *violator, struct player *victim)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(receiver);
 
   dai_incident(deftype, type, scope, paction, receiver, violator, victim);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1220,8 +1340,11 @@ static void dpai_incident(enum incident_type type,
 static void dpai_city_log(char *buffer, int buflength, const struct city *pcity)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(city_owner(pcity));
 
   dai_city_log(deftype, buffer, buflength, pcity);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1230,8 +1353,11 @@ static void dpai_city_log(char *buffer, int buflength, const struct city *pcity)
 static void dpai_unit_log(char *buffer, int buflength, const struct unit *punit)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(unit_owner(punit));
 
   dai_unit_log(deftype, buffer, buflength, punit);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1241,8 +1367,10 @@ static void dpai_consider_plr_dangerous(struct player *plr1, struct player *plr2
                                        enum override_bool *result)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(plr1);
 
   dai_consider_plr_dangerous(deftype, plr1, plr2, result);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1252,8 +1380,11 @@ static void dpai_consider_tile_dangerous(struct tile *ptile, struct unit *punit,
                                         enum override_bool *result)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(unit_owner(punit));
 
   dai_consider_tile_dangerous(deftype, ptile, punit, result);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1262,8 +1393,11 @@ static void dpai_consider_tile_dangerous(struct tile *ptile, struct unit *punit,
 static void dpai_consider_wonder_city(struct city *pcity, bool *result)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope
+    = deep_tuning_scope_set(city_owner(pcity));
 
   dai_consider_wonder_city(deftype, pcity, result);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1272,8 +1406,10 @@ static void dpai_consider_wonder_city(struct city *pcity, bool *result)
 static void dpai_revolution_start(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   dai_revolution_start(deftype, pplayer);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**
@@ -1282,8 +1418,10 @@ static void dpai_revolution_start(struct player *pplayer)
 static void dpai_sanity_check(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   dai_sanity_check(deftype, pplayer);
+  deep_tuning_scope_restore(deep_scope);
 }
 
 /**********************************************************************//**

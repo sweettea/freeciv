@@ -2064,7 +2064,9 @@ static adv_want deep_base_want(const struct player *pplayer,
                                const struct extra_type *target,
                                struct tile *ptile)
 {
-  const struct deep_tuning *tune = deep_tuning_get();
+  /* Reached from the advisors' task-value hook, outside every deepai.c
+   * wrapper: name the seat rather than trust the ambient scope. */
+  const struct deep_tuning *tune = deep_tuning_for(pplayer);
   const struct civ_map *nmap = &(wld.map);
   struct player *owner = (struct player *) pplayer;
   int d_now, d_with;
@@ -2176,7 +2178,10 @@ adv_want deep_worker_task_value(const struct player *pplayer,
                                 const struct extra_type *target,
                                 struct tile *ptile, adv_want value)
 {
-  const struct deep_tuning *tune = deep_tuning_get();
+  /* Registered globally with the advisors, so it is reached without
+   * passing any of deepai.c's hook wrappers and has to name its own
+   * seat -- the explicit accessor rather than the ambient scope. */
+  const struct deep_tuning *tune = deep_tuning_for(pplayer);
   adv_want base = 0.0;
   bool exposed;
 

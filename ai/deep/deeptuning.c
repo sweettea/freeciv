@@ -16,10 +16,14 @@
 #endif
 
 #include <stdlib.h>
+#include <string.h>
 
 /* utility */
 #include "log.h"
 #include "registry.h"
+
+/* common */
+#include "player.h"
 
 #include "deeptuning.h"
 
@@ -276,6 +280,34 @@ static const struct deep_tuning deep_tuning_defaults = {
 static struct deep_tuning deep_tuning_active;
 static bool deep_tuning_loaded = FALSE;
 
+/* The per-seat layer (see the loading scheme in deeptuning.h). Every
+ * slot starts UNRESOLVED and resolves on its first read, because the
+ * player_alloc hook runs before the player has a name to key on.
+ * `resolved` is what tells "no arena entry for this seat" (points at
+ * the base values, deliberately) from "not looked up yet". */
+static const struct deep_tuning *deep_tuning_seat[MAX_NUM_PLAYER_SLOTS];
+static bool deep_tuning_seat_resolved[MAX_NUM_PLAYER_SLOTS];
+
+/* The seat whose decision is being made. Set by deepai.c's hook
+ * wrappers; NULL outside any of them, which is not an error in the
+ * single-file case (every seat's values ARE the base values) and is a
+ * counted coverage defect when an arena is configured. */
+static const struct deep_tuning *deep_tuning_scope = NULL;
+static int deep_tuning_scopeless = 0;
+
+/* Candidate files, cached by path: eight seats on one file share one
+ * struct rather than eight copies of it. */
+#define DEEP_ARENA_FILES_MAX 16
+static struct {
+  char path[512];
+  struct deep_tuning val;
+} deep_arena_file[DEEP_ARENA_FILES_MAX];
+static int deep_arena_files = 0;
+
+/* The manifest, loaded at most once per process. */
+static struct section_file *deep_arena_manifest = NULL;
+static bool deep_arena_manifest_tried = FALSE;
+
 /* Every tunable, once, in one list. The loader and the log line are
  * both generated from it: a knob that can be set from the file and
  * cannot be read back from the log is the exact hazard that cost
@@ -512,10 +544,50 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_INT(buy_per_gold) \
   TUNE_INT(honest_info)
 
+static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
+
 /**********************************************************************//**
-  Load tuning overrides from $FREECIV_DEEP_TUNING, if set. Called once
-  from module setup; unknown keys in the file are ignored by lookup,
-  absent keys keep their compiled defaults.
+  Load the BASE tuning from $FREECIV_DEEP_TUNING, if set, and reset the
+  per-seat layer. Called once from module setup; unknown keys in the
+  file are ignored by lookup, absent keys keep their compiled defaults.
+  The arena layer that can give individual seats their own files is
+  documented at the top of deeptuning.h and is inert unless
+  $FREECIV_DEEP_ARENA names a manifest.
+**************************************************************************/
+void deep_tuning_init(void)
+{
+  const char *path = getenv("FREECIV_DEEP_TUNING");
+  int i;
+
+  deep_tuning_active = deep_tuning_defaults;
+  deep_tuning_loaded = TRUE;
+
+  /* A reload (the L0 test reloads; a savegame load re-enters module
+   * setup) starts the per-seat layer over: pointers into the candidate
+   * cache must not outlive the cache. */
+  for (i = 0; i < MAX_NUM_PLAYER_SLOTS; i++) {
+    deep_tuning_seat[i] = NULL;
+    deep_tuning_seat_resolved[i] = FALSE;
+  }
+  deep_tuning_scope = NULL;
+  deep_tuning_scopeless = 0;
+  deep_arena_files = 0;
+  if (deep_arena_manifest != NULL) {
+    secfile_destroy(deep_arena_manifest);
+    deep_arena_manifest = NULL;
+  }
+  deep_arena_manifest_tried = FALSE;
+
+  if (path == NULL || path[0] == '\0') {
+    return;
+  }
+
+  deep_tuning_load_file(&deep_tuning_active, path);
+}
+
+/**********************************************************************//**
+  Overlay one tuning file's [tuning] keys onto values that already hold
+  the compiled defaults, and log every resulting value.
 
   Absent keys keep their compiled defaults EXACTLY, which is why the
   double path asks whether the entry exists before reading it.
@@ -529,18 +601,10 @@ static bool deep_tuning_loaded = FALSE;
   DOES set still go through the float lookup, so every archived ini
   under benchmark/tuning keeps the value it has always had.
 **************************************************************************/
-void deep_tuning_init(void)
+static void deep_tuning_load_file(struct deep_tuning *t, const char *path)
 {
-  const char *path = getenv("FREECIV_DEEP_TUNING");
   struct section_file *sf;
   char buf[8192];
-
-  deep_tuning_active = deep_tuning_defaults;
-  deep_tuning_loaded = TRUE;
-
-  if (path == NULL || path[0] == '\0') {
-    return;
-  }
 
   sf = secfile_load(path, FALSE);
   if (sf == NULL) {
@@ -551,12 +615,12 @@ void deep_tuning_init(void)
 
 #define TUNE_DOUBLE(field) \
   if (secfile_entry_lookup(sf, "tuning." #field) != NULL) { \
-    deep_tuning_active.field \
+    t->field \
       = secfile_lookup_float_default(sf, deep_tuning_defaults.field, \
                                      "tuning." #field); \
   }
 #define TUNE_INT(field) \
-  deep_tuning_active.field \
+  t->field \
     = secfile_lookup_int_default(sf, deep_tuning_defaults.field, \
                                  "tuning." #field);
   DEEP_TUNING_FIELDS
@@ -568,10 +632,10 @@ void deep_tuning_init(void)
   buf[0] = '\0';
 #define TUNE_DOUBLE(field) \
   cat_snprintf(buf, sizeof(buf), " %s=%g", #field, \
-               deep_tuning_active.field);
+               t->field);
 #define TUNE_INT(field) \
   cat_snprintf(buf, sizeof(buf), " %s=%d", #field, \
-               deep_tuning_active.field);
+               t->field);
   DEEP_TUNING_FIELDS
 #undef TUNE_DOUBLE
 #undef TUNE_INT
@@ -598,12 +662,191 @@ enum log_level deep_metric_log_level(void)
 }
 
 /**********************************************************************//**
-  The active tuning values.
+  The tuning file this seat is to run, from the arena manifest, or NULL
+  for the base values. Name first, slot second; see deeptuning.h.
+**************************************************************************/
+static const char *deep_arena_seat_file(const struct player *pplayer)
+{
+  const char *env = getenv("FREECIV_DEEP_ARENA");
+  const char *path;
+
+  if (env == NULL || env[0] == '\0') {
+    return NULL;
+  }
+  if (!deep_arena_manifest_tried) {
+    deep_arena_manifest_tried = TRUE;
+    deep_arena_manifest = secfile_load(env, FALSE);
+    if (deep_arena_manifest == NULL) {
+      log_error("deep: cannot load arena manifest \"%s\";"
+                " every seat keeps the base tuning", env);
+    }
+  }
+  if (deep_arena_manifest == NULL) {
+    return NULL;
+  }
+
+  path = secfile_lookup_str_default(deep_arena_manifest, NULL, "arena.%s",
+                                    player_name(pplayer));
+  if (path == NULL) {
+    path = secfile_lookup_str_default(deep_arena_manifest, NULL,
+                                      "arena.slot%d",
+                                      player_number(pplayer));
+  }
+
+  return path;
+}
+
+/**********************************************************************//**
+  The values behind one candidate file, loaded once and shared by every
+  seat that names it.
+**************************************************************************/
+static const struct deep_tuning *deep_arena_values(const char *path)
+{
+  int i;
+
+  for (i = 0; i < deep_arena_files; i++) {
+    if (strcmp(deep_arena_file[i].path, path) == 0) {
+      return &deep_arena_file[i].val;
+    }
+  }
+  if (deep_arena_files >= DEEP_ARENA_FILES_MAX) {
+    log_error("deep: more than %d arena tuning files; \"%s\" runs the"
+              " base values", DEEP_ARENA_FILES_MAX, path);
+    return &deep_tuning_active;
+  }
+
+  i = deep_arena_files++;
+  fc_snprintf(deep_arena_file[i].path, sizeof(deep_arena_file[i].path),
+              "%s", path);
+  deep_arena_file[i].val = deep_tuning_defaults;
+  deep_tuning_load_file(&deep_arena_file[i].val, path);
+
+  return &deep_arena_file[i].val;
+}
+
+/**********************************************************************//**
+  The tuning values of one seat. Resolves the seat's arena assignment on
+  first call (the alloc hook is too early to key on a name) and caches
+  the pointer, so every later read is an array index.
+**************************************************************************/
+const struct deep_tuning *deep_tuning_for(const struct player *pplayer)
+{
+  int idx;
+
+  if (!deep_tuning_loaded) {
+    deep_tuning_init();
+  }
+  if (pplayer == NULL) {
+    return &deep_tuning_active;
+  }
+
+  idx = player_index(pplayer);
+  fc_assert_ret_val(idx >= 0 && idx < MAX_NUM_PLAYER_SLOTS,
+                    &deep_tuning_active);
+
+  if (!deep_tuning_seat_resolved[idx]) {
+    const char *path = deep_arena_seat_file(pplayer);
+
+    deep_tuning_seat_resolved[idx] = TRUE;
+    if (path == NULL) {
+      deep_tuning_seat[idx] = &deep_tuning_active;
+    } else {
+      deep_tuning_seat[idx] = deep_arena_values(path);
+      log_normal("deep-arena seat=%s slot=%d file=\"%s\"",
+                 player_name(pplayer), player_number(pplayer), path);
+    }
+  }
+
+  return deep_tuning_seat[idx];
+}
+
+/**********************************************************************//**
+  Forget a seat's assignment. The slot can be reused by a later player
+  (civil war, reload), and that player is entitled to its own lookup.
+**************************************************************************/
+void deep_tuning_player_free(const struct player *pplayer)
+{
+  int idx;
+
+  if (pplayer == NULL) {
+    return;
+  }
+  idx = player_index(pplayer);
+  if (idx >= 0 && idx < MAX_NUM_PLAYER_SLOTS) {
+    deep_tuning_seat[idx] = NULL;
+    deep_tuning_seat_resolved[idx] = FALSE;
+  }
+}
+
+/**********************************************************************//**
+  Called from the player_alloc hook. The assignment itself resolves
+  lazily (deep_tuning_for), so this only guarantees a clean slot.
+**************************************************************************/
+void deep_tuning_player_init(const struct player *pplayer)
+{
+  if (!deep_tuning_loaded) {
+    deep_tuning_init();
+  }
+  deep_tuning_player_free(pplayer);
+}
+
+/**********************************************************************//**
+  Enter the scope of one seat, returning the scope to restore. Save and
+  restore rather than set and clear: hooks nest (a city hook inside a
+  phase hook), and a nested scope must give the outer one back.
+**************************************************************************/
+const struct deep_tuning *deep_tuning_scope_set(const struct player *pplayer)
+{
+  const struct deep_tuning *saved = deep_tuning_scope;
+
+  deep_tuning_scope = deep_tuning_for(pplayer);
+
+  return saved;
+}
+
+/**********************************************************************//**
+  Leave a scope entered by deep_tuning_scope_set().
+**************************************************************************/
+void deep_tuning_scope_restore(const struct deep_tuning *saved)
+{
+  deep_tuning_scope = saved;
+}
+
+/**********************************************************************//**
+  Whether any seat runs values of its own. False for every run this
+  project has ever measured, and for every run that does not set
+  $FREECIV_DEEP_ARENA.
+**************************************************************************/
+bool deep_tuning_arena_active(void)
+{
+  return deep_arena_files > 0;
+}
+
+/**********************************************************************//**
+  Reads that found no seat scope while an arena was configured -- the
+  coverage instrument for the hook guards. Zero is the only good value;
+  anything else names a path into deep that no guard covers, and it is
+  reported rather than smoothed over.
+**************************************************************************/
+int deep_tuning_scopeless_reads(void)
+{
+  return deep_tuning_scopeless;
+}
+
+/**********************************************************************//**
+  The tuning values of the seat whose decision is being made.
 **************************************************************************/
 const struct deep_tuning *deep_tuning_get(void)
 {
   if (!deep_tuning_loaded) {
     deep_tuning_init();
   }
+  if (deep_tuning_scope != NULL) {
+    return deep_tuning_scope;
+  }
+  if (deep_arena_files > 0) {
+    deep_tuning_scopeless++;
+  }
+
   return &deep_tuning_active;
 }
