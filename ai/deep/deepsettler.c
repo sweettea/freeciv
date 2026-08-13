@@ -441,6 +441,14 @@ static struct tile *deep_settler_serviceable_berth(struct unit *punit,
     destsea   the target can be landed at by hull at all
     berth     the nearest tile that does serve this crossing, and the
               turns to walk there
+    found     the passenger can found a city -- the ruleset's own
+              answer (ACTION_FOUND_CITY), and the same predicate
+              deep_founder_demand_on() counts the lift gap with, so
+              this line and slice 2's gap line describe one population.
+              A worker crossing to unimproved colony work reaches the
+              same code (deep_idle_cross_water) and is counted here
+              with found=0, because it is a different question with a
+              different owner (worker_cross_continent_discount).
 
   Cost: one pf map per founder-turn that needs a boat, so it is built
   only when the metric log is on, and (from the routing knob) only for
@@ -469,7 +477,7 @@ static void deep_settler_berth_census(struct player *pplayer,
   log_base(deep_metric_log_level(),
            "deep-berth turn=%d player=\"%s\" unit=%d at=(%d,%d)"
            " target=(%d,%d) coast=%d serves=%d bridge=%d destsea=%d"
-           " berth=(%d,%d) turns=%d",
+           " berth=(%d,%d) turns=%d found=%d",
            game.info.turn, player_name(pplayer), punit->id,
            TILE_XY(unit_tile(punit)), TILE_XY(dest),
            is_terrain_class_near_tile(nmap, unit_tile(punit),
@@ -477,7 +485,8 @@ static void deep_settler_berth_census(struct player *pplayer,
            serves ? 1 : 0,
            deep_city_water_bridges(unit_tile(punit)) ? 1 : 0,
            deep_city_water_bridges(dest) ? 1 : 0,
-           TILE_XY(berth), turns);
+           TILE_XY(berth), turns,
+           unit_can_do_action(punit, ACTION_FOUND_CITY) ? 1 : 0);
 }
 
 /**********************************************************************//**

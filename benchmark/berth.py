@@ -88,6 +88,8 @@ def main(argv):
           % frac(lambda r: r['coast'] == '0'))
     print("  destsea=0 (target unlandable)   %s"
           % frac(lambda r: r['destsea'] == '0'))
+    print("  found=1 (a founder, not a worker) %s"
+          % frac(lambda r: r.get('found') == '1'))
 
     stranded = [r for r in rows
                 if r['coast'] == '1' and r['serves'] == '0'
