@@ -4176,25 +4176,9 @@ static int deep_idle_ferries(struct ai_type *ait, struct player *pplayer)
   return deep_idle_ferries_on(ait, pplayer, 0);
 }
 
-/**********************************************************************//**
-  Idle hulls ON ONE BODY OF WATER (a negative continent id), or on all
-  of them when `ocean` is 0.
-
-  Counting the whole fleet was the wrong denominator, and the measured
-  reason is that the idle FRACTION does not move with fleet size:
-  quartering the boat want took the fleet 5.32 -> 4.57 hulls per
-  player-turn and left idleness at exactly 75% both times, while
-  deliveries fell. A fleet that is 75% idle at every size is not
-  overbuilt, it is badly DISTRIBUTED -- you need nine hulls to have one
-  where the demand is, because a boat on the wrong sea cannot serve any
-  of it.
-
-  So the damping asks the question a shipyard can actually act on: how
-  many idle hulls are already on MY water. A city on a crowded sea
-  stops building; a city on an empty one keeps going. `adv->oceans[]`
-  has carried this decomposition every phase since forever with only
-  `.threat` ever read (00-context section 3).
-**************************************************************************/
+/* The per-unit predicate behind both counters below, factored out so
+ * "how many hulls" and "how many berths" cannot form two opinions
+ * about which hull is idle on which water. */
 static bool deep_ferry_idle_here(struct ai_type *ait, struct player *pplayer,
                                  struct unit *punit, Continent_id ocean)
 {
@@ -4232,6 +4216,25 @@ static bool deep_ferry_idle_here(struct ai_type *ait, struct player *pplayer,
   return TRUE;
 }
 
+/**********************************************************************//**
+  Idle hulls ON ONE BODY OF WATER (a negative continent id), or on all
+  of them when `ocean` is 0.
+
+  Counting the whole fleet was the wrong denominator, and the measured
+  reason is that the idle FRACTION does not move with fleet size:
+  quartering the boat want took the fleet 5.32 -> 4.57 hulls per
+  player-turn and left idleness at exactly 75% both times, while
+  deliveries fell. A fleet that is 75% idle at every size is not
+  overbuilt, it is badly DISTRIBUTED -- you need nine hulls to have one
+  where the demand is, because a boat on the wrong sea cannot serve any
+  of it.
+
+  So the damping asks the question a shipyard can actually act on: how
+  many idle hulls are already on MY water. A city on a crowded sea
+  stops building; a city on an empty one keeps going. `adv->oceans[]`
+  has carried this decomposition every phase since forever with only
+  `.threat` ever read (00-context section 3).
+**************************************************************************/
 int deep_idle_ferries_on(struct ai_type *ait, struct player *pplayer,
                          Continent_id ocean)
 {
