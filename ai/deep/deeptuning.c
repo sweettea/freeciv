@@ -199,6 +199,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .raid_radius = 12,                    /* PLACEHOLDER, untuned */
   .hut_risk_radius = 5,                 /* PLACEHOLDER, untuned */
   .hut_risk_discount = 0.25,            /* PLACEHOLDER, untuned */
+  .hut_risk_honest = 0,                 /* Off: today's sign, pending A/B */
   .op_abort_floor = 0.35,               /* PLACEHOLDER, untuned */
   .barb_reinforce_rate = 0.0,           /* PLACEHOLDER; T160 observed 0 */
   .stance_forced = -1,                  /* FREE: what ships */
@@ -436,6 +437,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_INT(raid_radius) \
   TUNE_INT(hut_risk_radius) \
   TUNE_DOUBLE(hut_risk_discount) \
+  TUNE_INT(hut_risk_honest) \
   TUNE_DOUBLE(op_abort_floor) \
   TUNE_DOUBLE(barb_reinforce_rate) \
   TUNE_INT(stance_forced) \

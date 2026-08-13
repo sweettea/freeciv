@@ -100,15 +100,39 @@ static double deep_explore_prize(struct player *pplayer, double *hutw_out,
   Continent_id ours[64];
   int nours = 0, i;
 
-  /* Hut-risk awareness (task #18; human rule 2026-07-31: exploring
-   * away from home, the worst case is a lost explorer -- a fine
-   * trade for the tech and gold -- but a hut popped NEXT TO OUR
-   * CITIES can spawn the barbarians on our doorstep). Huts within
-   * hut_risk_radius of an own city count at hut_risk_discount, and
-   * only while the server can actually unleash hut barbarians (the
-   * exact gate barbarian.c uses: rate + onset). v3b's tuner priced
-   * around this blindly by zeroing hut value on classic; the code
-   * now knows why. */
+  /* Hut-risk awareness (task #18), in two forms, one of which is
+   * wrong and is the shipped default until an A/B says otherwise.
+   *
+   * The RADIUS form (hut_risk_radius > 0, honest == 0) implements the
+   * human rule of 2026-07-31: a hut popped next to our cities can
+   * spawn barbarians on our doorstep, so huts within hut_risk_radius
+   * of an OWN city count at hut_risk_discount.
+   *
+   * The server disagrees, and the server decides.
+   * _deflua_hut_get_barbarians (data/default/default.lua:106-129)
+   * refuses to unleash ANYTHING when the hut tile satisfies
+   * city_exists_within_max_city_map(true) -- any player's city within
+   * CITY_MAP_MAX_RADIUS. hut_get_limited (server/unittools.c:3321)
+   * carries the identical guard. So a hut near a city is the SAFE
+   * one, and the huts that unleash are the ones far from every city:
+   * the radius form discounts exactly the risk-free population and
+   * pays full value for the dangerous one. The HONEST form
+   * (hut_risk_honest > 0) uses the server's predicate and discounts
+   * the complementary set. Three mismatches, all fixed by using the
+   * server's own test: the sign, our-cities-only vs every player's,
+   * and real_map_distance vs the squared-radius city map.
+   *
+   * The gate is right either way: rate + onset, exactly what
+   * unleash_barbarians() tests (server/barbarian.c:283).
+   *
+   * DEFAULT 0 = the radius form, i.e. today's behaviour byte for
+   * byte. The correction is not free to switch on -- it moves an
+   * explore-value term on every hut map, and v3b's tuner has been
+   * pricing around the wrong-signed term by zeroing hut value on
+   * classic, so the interaction between this flip and
+   * explore_hut_value is a two-factor question, not a one-line fix.
+   * huts_disc / huts_unleash on deep-explore size both populations
+   * first. */
   hut_risk = BARBS_DISABLED != game.server.barbarianrate
              && game.info.turn >= game.server.onsetbarbarian;
 
@@ -164,6 +188,7 @@ static double deep_explore_prize(struct player *pplayer, double *hutw_out,
       unknown++;
     } else if (hut_on_tile(ptile)) {
       double w = 1.0;
+      bool unleashable;
 
       /* The server's own predicate, asked of every hut whether or not
        * the term in force reads it: a hut with no city of ANY player
@@ -172,11 +197,21 @@ static double deep_explore_prize(struct player *pplayer, double *hutw_out,
        * Counted before any gate so that "we never looked" and "we
        * looked and there were none" stay distinguishable -- the
        * lesson deep-fort's offers/evals split recorded. */
-      if (!city_exists_within_max_city_map(nmap, ptile, TRUE)) {
+      unleashable = !city_exists_within_max_city_map(nmap, ptile, TRUE);
+      if (unleashable) {
         huts_unleashable++;
       }
 
-      if (hut_risk && tune->hut_risk_radius > 0) {
+      if (hut_risk && tune->hut_risk_honest > 0) {
+        /* The honest form: discount the huts the server would let
+         * unleash, which are the ones NO city stands near. No radius
+         * knob participates -- the radius is the server's own
+         * CITY_MAP_MAX_RADIUS_SQ and is not ours to move. */
+        if (unleashable) {
+          w = tune->hut_risk_discount;
+          huts_discounted++;
+        }
+      } else if (hut_risk && tune->hut_risk_radius > 0) {
         city_list_iterate(pplayer->cities, hc) {
           if (real_map_distance(city_tile(hc), ptile)
               <= tune->hut_risk_radius) {

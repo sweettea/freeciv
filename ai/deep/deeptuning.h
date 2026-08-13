@@ -1247,6 +1247,27 @@ struct deep_tuning {
    * barbarian spawn at home is not). radius 0 disables. */
   int hut_risk_radius;
   double hut_risk_discount;
+  /* Which population hut_risk_discount is charged against.
+   *
+   * 0 = hut_risk_radius, own cities only: the shipped default, and
+   * the SIGN IS BACKWARDS against the server. The Lua that decides
+   * (data/default/default.lua:112, and hut_get_limited() at
+   * server/unittools.c:3321) refuses to unleash when ANY player's
+   * city lies within CITY_MAP_MAX_RADIUS of the hut, so huts near
+   * cities are the risk-free ones and the radius form discounts
+   * precisely those.
+   *
+   * 1 = the server's own predicate, discounting the huts that can
+   * actually unleash (none near any city). hut_risk_radius is then
+   * unread: the radius belongs to the server, not to us.
+   *
+   * Default 0 rather than 1 because the correction has never been
+   * measured -- it moves an explore-value term on every hut map, and
+   * the v3b tuner's habit of zeroing explore_hut_value on classic is
+   * a documented response to the wrong-signed term, so flipping the
+   * sign and re-pricing the hut are one factorial question. The
+   * populations are on deep-explore as huts_disc / huts_unleash. */
+  int hut_risk_honest;
   /* March re-gate (W33 commit 2): a marching wave re-prices the take
    * each turn at the remaining eta and turns back -- banking every
    * member -- when the odds fall below this floor. Set below
