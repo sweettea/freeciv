@@ -3354,10 +3354,14 @@ static bool deep_muster_worth(struct ai_type *ait, struct player *pplayer,
   double loss = 0.0, surv = 0.0;
 
   *worth_out = eff;
-  if (eff <= 0.0 || n < 1) {
+  if (eff <= 0.0) {
     return FALSE;
   }
-  if (!tune->op_net_value) {
+  if (!tune->op_net_value || n < 1) {
+    /* Nothing to price a loss with -- the collapse re-ask runs with an
+     * empty staging tile whenever the whole muster is still walking in
+     * -- so the gate is the bare worth test. Formation refuses an
+     * empty pool on its own account, one branch up. */
     return TRUE;
   }
   (void) deep_take_odds_cost(&(wld.map), target, pool, n, eta,
@@ -4553,6 +4557,86 @@ static int deep_muster_enroll(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
+  ERA 3b's three abandon triggers, in the brief's own order of kinds.
+  Returns the dissolve reason, or NULL to keep mustering.
+
+  A muster with no end is a unit sink, and the sink is the mechanism's
+  own worst case: blades that would have garrisoned or trickled into
+  stock's attacks instead stand in a yard forever. So the muster is
+  told, in three ways, when to stop.
+
+  1. STALL -- op_muster_stall turns without a new high-water member
+     count. Free to evaluate, and the only trigger that fires on a
+     muster nothing is wrong with except that it is not working.
+
+  2. WORTH -- the formation gate, re-asked. The target may have been
+     taken by somebody else, walled, or grown a garrison that turns
+     the take into a loss; the same arithmetic that admitted the
+     muster is what evicts it.
+
+  3. HOME -- the defence demand at the muster point spiking. Priced by
+     deep_cover_removal_cost(), whose header has named this consumer
+     since NETTHREAT: what the staging city keeps once the wave's best
+     defender leaves and the cheapest one-hop backfill arrives. Below
+     survival_target and the force is not free to march, so it is not
+     a wave -- it is a garrison holding a piece of paper.
+
+     ONE BLADE, not the whole wave: a proxy for a departure that has
+     not been decided and may never be, at the cost of one pricing
+     call per muster per turn. It understates the hole the launch
+     would open, which errs toward keeping the muster.
+
+  cover_removal moves trigger 3's cost side exactly as it moves the
+  garrison draft's; that overlap is a factorial fact, not an accident,
+  and the A/B design has to name which arms carry it.
+**************************************************************************/
+static const char *deep_muster_abandon(struct ai_type *ait,
+                                       struct player *pplayer,
+                                       const struct deep_operation *op,
+                                       struct city *target,
+                                       struct city *staging,
+                                       struct unit *const *here, int present)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
+  struct deep_cover_move cover;
+  struct unit *blade = NULL;
+  double worth = 0.0, surv_after;
+  int i;
+
+  if (game.info.turn - op->muster_grew >= tune->op_muster_stall) {
+    return "muster-stall";
+  }
+  if (!deep_muster_worth(ait, pplayer, target, here, present,
+                         deep_op_eta(pplayer, op, target),
+                         deep_op_assault_bar(pplayer, target, FALSE),
+                         &worth)) {
+    return "muster-worth";
+  }
+  if (tune->survival_target <= 0.0 || present < 1) {
+    return NULL;
+  }
+  for (i = 0; i < present; i++) {
+    if (blade == NULL
+        || adv_unit_def_rating_basic(here[i])
+           > adv_unit_def_rating_basic(blade)) {
+      blade = here[i];
+    }
+  }
+  surv_after
+    = deep_cover_removal_cost(ait, nmap, staging, blade, &cover)
+      ? cover.surv_after
+      : deep_city_stack_survival_without(nmap, staging,
+                                         tune->survival_horizon, blade,
+                                         NULL);
+  if (surv_after < tune->survival_target) {
+    return "muster-home";
+  }
+
+  return NULL;
+}
+
+/**********************************************************************//**
   Drive one live operation for a turn. MUSTER: walk members in, hold
   arrivals, launch at quorum (or half-quorum at the wait cap). A land
   launch enters MARCH: members go to the stock attack path while the
@@ -4596,6 +4680,7 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
     int present = 0;
     struct unit *here[DEEP_OP_MEMBERS];
     double odds_now = 0.0, surv_now = 0.0, loss_now = 0.0;
+    const char *abandon = NULL;
     int joined = 0;
     bool go;
 
@@ -4710,6 +4795,14 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
       go = !op->muster && present >= op->required;
     }
 
+    /* The three abandon triggers, asked only of a muster that is not
+     * launching this turn: a wave about to march is not a unit sink,
+     * whatever its stall clock says. */
+    if (op->muster && !go) {
+      abandon = deep_muster_abandon(ait, pplayer, op, target, staging,
+                                    here, present);
+    }
+
     if (go
         /* The half-quorum patience release is for a wave that formed
          * against a priced quorum. A muster never formed against one
@@ -4758,6 +4851,14 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
                op->march_eta, odds_now, surv_now,
                tune->op_launch_odds ? 1 : 0);
       /* Fall through: the first march turn re-gates immediately. */
+    } else if (abandon != NULL) {
+      /* Dissolve rather than retarget: a retarget is a fresh
+       * commitment at the FULL bar, which a muster by definition
+       * cannot clear, and laundering an abandoned muster into another
+       * one is how a unit sink hides from its own counters. Members
+       * are banked, as on every deliberate abort. */
+      deep_op_dissolve(op, oi, abandon, pplayer);
+      return;
     } else if (!op->muster
                && game.info.turn - op->formed_turn >= tune->op_muster_wait) {
       /* Wait cap without even half a quorum: before banking, see if
