@@ -903,9 +903,32 @@ static int deep_site_naval_connect_paid = 0;
 static double deep_site_naval_connect_want = 0.0;
 
 /* The same per-search census for the expected-wait discount: overseas
- * candidates actually discounted, and the turns of wait charged. */
+ * candidates actually discounted, and the turns of wait charged.
+ *
+ * Plus what the discount CHANGED, which the counts alone cannot say. A
+ * term that discounts a thousand candidates and still returns the tile
+ * it would have returned anyway has cost the search nothing; one that
+ * fires twice and moves the answer has cost it everything. The G2
+ * night-batch verdict could not tell those apart from the log
+ * (STATUS, W36-DIM), so the search now carries the counterfactual
+ * beside the answer:
+ *
+ *   deep_site_wait_best   the wait charged to the candidate that WON
+ *   deep_site_wait_alt_*  the candidate that would have won had the
+ *                         wait term not existed, among the candidates
+ *                         THIS search visited
+ *
+ * "Among the candidates this search visited" is the honest scope: the
+ * early-termination break below reads the discounted best, so a search
+ * under the discount may stop at a different point than the same
+ * search without it. The counterfactual answers "did the term move the
+ * choice among what was seen", not "what would a whole other search
+ * have found". */
 static int deep_site_wait_priced = 0;
 static int deep_site_wait_turns = 0;
+static int deep_site_wait_best = 0;
+static const struct tile *deep_site_wait_alt = NULL;
+static double deep_site_wait_alt_result = 0.0;
 
 /* THE REFUSAL LADDER (era-probe-evidence 2.  "Deep stops founding
  * because deep_contemplate_new_city() stops wanting cities, not because
@@ -1371,6 +1394,9 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
   deep_site_naval_connect_want = 0.0;
   deep_site_wait_priced = 0;
   deep_site_wait_turns = 0;
+  deep_site_wait_best = 0;
+  deep_site_wait_alt = NULL;
+  deep_site_wait_alt_result = 0.0;
   deep_site_contest_ours = 0;
   deep_site_contest_want = 0.0;
   deep_wait_memo_n = 0;
@@ -1393,6 +1419,8 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
   pfm = pf_map_new(parameter);
   pf_map_move_costs_iterate(pfm, ptile, move_cost, FALSE) {
     int turns;
+    int cand_wait = 0;
+    double undiscounted;
 
     deep_site_lad_seen++;
     if (boat_cost == 0 && pclass->adv.sea_move == MOVE_NONE
@@ -1461,6 +1489,12 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
       cr->result = amortize(cr->total, (int) (d * turns));
     }
 
+    /* This candidate's score with the wait term absent, captured
+     * before the term and carried through the same cost subtraction
+     * below, so the two are comparable at the point where the choice
+     * is made. */
+    undiscounted = (double) cr->result;
+
     /* The DELIVERY delay, for an overseas candidate (boat_cost > 0 is
      * the overseas leg; the on-continent search passes 0).
      *
@@ -1491,6 +1525,7 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
         cr->result
           = amortize(cr->result,
                      (int) (deep_tuning_get()->site_wait_discount * wait));
+        cand_wait = wait;
         deep_site_wait_priced++;
         deep_site_wait_turns += wait;
       }
@@ -1502,6 +1537,19 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
      * awkward enough to deserve the tuner rather than a literal. */
     cr->result -= cost * deep_tuning_get()->site_settler_cost_weight
                   + boat_cost * deep_tuning_get()->site_boat_cost_weight;
+    undiscounted -= cost * deep_tuning_get()->site_settler_cost_weight
+                    + boat_cost * deep_tuning_get()->site_boat_cost_weight;
+
+    /* The same "best" rule the real choice below uses, run on the
+     * undiscounted score: whoever leads this comparison is the site
+     * the search would have returned with the wait term switched off.
+     * Observation only -- nothing reads it but the census. */
+    if (undiscounted > 0.0
+        && (deep_site_wait_alt == NULL
+            || undiscounted > deep_site_wait_alt_result)) {
+      deep_site_wait_alt = ptile;
+      deep_site_wait_alt_result = undiscounted;
+    }
 
     /* The ladder's last rung, and the only one that is a VALUATION
      * verdict rather than a legality one: the site scored, and then the
@@ -1522,6 +1570,7 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
       best = cr;
       cr = NULL;
       best_turn = turns;
+      deep_site_wait_best = cand_wait;
     } else {
       cityresult_destroy(cr);
       cr = NULL;
@@ -1590,13 +1639,24 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
   /* The expected-wait census, on the same one-line-per-SEARCH contract.
    * `priced` is the counter that proves the discount executed at all --
    * a term that cannot be shown firing is not evidence -- and `turns`
-   * over `priced` is the average wait it charged. */
+   * over `priced` is the average wait it charged.
+   *
+   * `bestwait` is the wait charged to the site that WON, and `flip` is
+   * 1 when the site that would have won without the term is a
+   * different tile. Those two are the decision-level reading: 13 995
+   * candidates were discounted across the G2 batch's 20 games and the
+   * log could not say whether a single ANSWER moved (STATUS, W36-DIM).
+   * A discount that never flips is a discount that costs nothing,
+   * however many candidates it touches. */
   if (deep_site_wait_priced > 0) {
     log_base(deep_metric_log_level(),
              "deep-sitewait turn=%d player=\"%s\" unit=%d priced=%d"
-             " turns=%d best=(%d,%d)",
+             " turns=%d bestwait=%d flip=%d best=(%d,%d)",
              game.info.turn, player_name(pplayer), punit->id,
              deep_site_wait_priced, deep_site_wait_turns,
+             deep_site_wait_best,
+             (best != NULL && deep_site_wait_alt != NULL
+              && deep_site_wait_alt != best->tile) ? 1 : 0,
              best != NULL ? index_to_map_pos_x(tile_index(best->tile)) : -1,
              best != NULL ? index_to_map_pos_y(tile_index(best->tile)) : -1);
   }
