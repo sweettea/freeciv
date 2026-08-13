@@ -503,6 +503,11 @@ static void deep_settler_berth_census(struct player *pplayer,
 
   Three deliberate restrictions:
 
+  * Only a FOUNDER, by the ruleset's own ACTION_FOUND_CITY, which is
+    the population deep_founder_demand_on() counts the lift gap with
+    and therefore the only one this slice has evidence about. A worker
+    crossing to colony work reaches the same code and is left alone;
+    the census still counts it (found=0).
   * Only where the founder ALREADY touches water. An inland founder is
     not stranded: aiferry_gobyboat() walks it toward a real hull, and
     if there is none the mission is dropped and re-searched land-only
@@ -529,6 +534,7 @@ static bool deep_settler_berth_route(struct ai_type *ait,
   int turns = -1;
 
   if (deep_tuning_get()->founder_berth_route <= 0
+      || !unit_can_do_action(punit, ACTION_FOUND_CITY)
       || !is_terrain_class_near_tile(nmap, unit_tile(punit), TC_OCEAN)
       || deep_water_serves_crossing(unit_tile(punit), dest)) {
     return TRUE;
