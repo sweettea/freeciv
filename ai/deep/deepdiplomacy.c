@@ -620,6 +620,114 @@ static Tech_type_id deep_gift_tech_pick(const struct player *pplayer,
 }
 
 /**********************************************************************//**
+  WHICH RELATIONSHIP A GIFT WOULD SERVE.
+
+  CAMPAIGN-v4 section 11.4 is why this function exists. The love gift
+  measured as the largest single-lever self-play move in the project
+  (+8.28 contested, +8.92 lategame-80) and the mixed head-to-head said
+  it was a TRANSFER: deep +1.93 (t 0.72), counterparty +5.26 (t 2.15),
+  deep's margin over ai/default -3.34. The human's fold criterion is
+  that positive sum is not the defect -- "i don't mind multiple folks
+  getting better, but it _is_ more fun to get a wash as an alliance
+  benefit". Surplus INSIDE the alliance is a feature; surplus that
+  subsidises a rival is the failure mode that was measured.
+
+  So the gift needs to know who it is talking to, and every criterion
+  below is state deep already reads for other decisions:
+
+  - ALLY. The alliance and its CANDIDATES. Either the pact itself, or
+    a shared enemy (someone we are both at war with), or a common ally.
+    The candidates are the population this lever can actually act on:
+    an existing ally is past every bar the love gift can raise (its
+    own cap check refuses at req_love_for_alliance - 1, and the
+    pre-pass never calls it for an allied pair), so "surplus lands
+    inside the alliance" here means the players who would fight beside
+    us, financed while they still can be.
+
+  - INSTRUMENT. Not a friend, but their quiet is worth buying anyway:
+    we are ALREADY at war with somebody else, and this player presses
+    our border by the same lattice deep_top_menacer() ranks menacers
+    with. That is the second front deep cannot afford, priced rather
+    than assumed. It is the ONLY reason a non-friend is worth a
+    concession, and it is behind its own knob so the fold can price it
+    separately from friendship or turn it off entirely.
+
+  - RIVAL. Everyone else -- including anyone a deep operation is
+    already marching on (a wave in flight is what vetoes the peace
+    proposal in deep_peace_wanted(), and it vetoes friendship here for
+    the same reason) and anyone allied to a player we are at war with,
+    which is also the counterparty the tech-leak veto refuses.
+
+  The classes are ORDERED and exclusive: op target and enemy-ally
+  disqualify before anything can promote, so a player who both shares
+  an enemy with us and shields another of our enemies is a rival.
+**************************************************************************/
+enum deep_gift_rel {
+  DEEP_GIFT_ALLY = 0,           /* The alliance and its candidates */
+  DEEP_GIFT_INSTRUMENT,         /* A front we would rather not open */
+  DEEP_GIFT_RIVAL               /* Everyone else */
+};
+
+static enum deep_gift_rel deep_gift_rel_of(const struct player *pplayer,
+                                           const struct player *aplayer)
+{
+  bool war_elsewhere = FALSE, shared_enemy = FALSE, common_ally = FALSE;
+
+  if (deep_op_aims_at(pplayer, aplayer)) {
+    return DEEP_GIFT_RIVAL;
+  }
+  if (pplayers_allied(pplayer, aplayer)) {
+    return DEEP_GIFT_ALLY;
+  }
+  if (deep_allied_with_enemy(pplayer, aplayer) != nullptr) {
+    return DEEP_GIFT_RIVAL;
+  }
+
+  players_iterate_alive(third) {
+    if (third == pplayer || third == aplayer || is_barbarian(third)) {
+      continue;
+    }
+    if (player_diplstate_get(pplayer, third)->type == DS_WAR) {
+      war_elsewhere = TRUE;
+      if (player_diplstate_get(aplayer, third)->type == DS_WAR) {
+        shared_enemy = TRUE;
+      }
+    }
+    if (pplayers_allied(pplayer, third) && pplayers_allied(aplayer, third)) {
+      common_ally = TRUE;
+    }
+  } players_iterate_alive_end;
+
+  if (shared_enemy || common_ally) {
+    return DEEP_GIFT_ALLY;
+  }
+  if (war_elsewhere && deep_border_pressure_from(pplayer, aplayer) > 0.0) {
+    return DEEP_GIFT_INSTRUMENT;
+  }
+
+  return DEEP_GIFT_RIVAL;
+}
+
+/**********************************************************************//**
+  The class as a log word. Bare words rather than an integer because
+  the knob census reads these lines with a field predicate and a tag
+  that has to be greppable by hand as well.
+**************************************************************************/
+static const char *deep_gift_rel_name(enum deep_gift_rel rel)
+{
+  switch (rel) {
+  case DEEP_GIFT_ALLY:
+    return "ally";
+  case DEEP_GIFT_INSTRUMENT:
+    return "instr";
+  case DEEP_GIFT_RIVAL:
+    break;
+  }
+
+  return "rival";
+}
+
+/**********************************************************************//**
   The gift lever's census. One line per turn per pair deep is in a
   non-war, non-allied relationship with -- the exact population the
   two gift paths can act on -- carrying what the relationship is worth
@@ -666,11 +774,13 @@ static void deep_gift_probe(struct ai_type *ait, struct player *pplayer,
   gold = deep_gift_price_of_love(aplayer, shortfall);
 
   log_base(deep_metric_log_level(),
-           "deep-gift turn=%d plr=\"%s\" to=\"%s\" ds=%d worth=%.1f"
+           "deep-gift turn=%d plr=\"%s\" to=\"%s\" ds=%d rel=%s worth=%.1f"
            " trade=%.1f border=%.1f budget=%d theirlove=%d bar=%d"
            " short=%d price=%d clear=%d",
            game.info.turn, player_name(pplayer), player_name(aplayer),
-           (int) ds->type, worth, trade, border,
+           (int) ds->type, deep_gift_rel_name(deep_gift_rel_of(pplayer,
+                                                               aplayer)),
+           worth, trade, border,
            deep_gift_budget(pplayer), love, bar, shortfall, gold,
            /* What the SAME shortfall costs as a treaty balance rather
             * than as love: greed() charges the square of it over ten
