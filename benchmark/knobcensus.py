@@ -327,12 +327,24 @@ MAP = {
         "actually played, so the discovery term is disabled pending W04 "
         "and the knob multiplies nothing."),
     "hut_risk_radius": (
-        "S1", "mag", "-", None,
-        "the discounted-hut subset is folded into hut_weight and never "
-        "logged (deepexplore.c:133). Needs: huts_discounted= on "
-        "deep-explore."),
+        "S1", "mag", "direct", [("deep-explore", "huts_disc>=1")],
+        "huts_disc= is the count of huts the radius form discounted, "
+        "logged on every deep-explore line (deepexplore.c). Nonzero "
+        "only while barbs_armed=1 (the server's rate+onset gate) and "
+        "hut_risk_honest=0, which is the shipped default."),
     "hut_risk_discount": (
-        "S1", "mag", "-", None, "as hut_risk_radius; same line, same need."),
+        "S1", "mag", "direct", [("deep-explore", "huts_disc>=1")],
+        "as hut_risk_radius: huts_disc= counts exactly the huts this "
+        "weight is applied to, under whichever form is selected."),
+    "hut_risk_honest": (
+        "S1", "gate", "direct", [("deep-explore", "huts_unleash>=1")],
+        "the sign correction: charge hut_risk_discount against the "
+        "huts the SERVER would let unleash (no city of any player "
+        "within CITY_MAP_MAX_RADIUS, default.lua:112) instead of the "
+        "huts near an own city. huts_unleash= counts that population "
+        "on every deep-explore line whether the knob is on or off, so "
+        "the flip's live surface is measured at the compiled default "
+        "of 0; huts_disc= then reports which set was actually charged."),
     "rates_science_gain": (
         "S1", "mag", "direct", [("deep-rates", "vsci>0")],
         "deep-rates logs vsci, the science valuation this gain scales "
@@ -759,6 +771,15 @@ MAP = {
         "paid= counts candidates that kept a nonzero "
         "deep_site_naval_bonus() term (deepsite.c:1089); requires this "
         "weight > 0 to ever be nonzero at all."),
+    "site_naval_connect_weight": (
+        "S3", "mag", "direct", [("deep-sitenaval", "connect>=1")],
+        "connect= counts candidates paid the additive connectivity "
+        "half of the split premium -- coastal AND on water that "
+        "bridges to another continent -- and connectwant= is the score "
+        "it added. Both are structurally zero at the compiled 0.0 "
+        "default, which is the OFF arm of the split's A/B; the "
+        "population they will price is already visible as "
+        "paid= minus refused= on the same line."),
 
     # ---------------- Explorer fleet saturation (S1) -------------------
     "explore_explorer_claim": (
