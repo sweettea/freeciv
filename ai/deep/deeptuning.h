@@ -145,8 +145,37 @@ struct deep_tuning {
    * water, one of the largest single terms in site scoring, never
    * measured by anyone. PLACEHOLDER 20.0 reproduces stock operation
    * for operation; the knob exists so the magnitude can be tuned
-   * where stock had a constant. 0 removes the premium. */
+   * where stock had a constant. 0 removes the premium.
+   *
+   * This half is coastal YIELD: paid on any workable water, dead lake
+   * included, because a Harbour feeds ocean tiles whether or not the
+   * sea leads anywhere. See site_naval_connect_weight for the other
+   * half. */
   double site_naval_weight;
+
+  /* The OTHER half of the maritime premium: additive option value for
+   * water that leads off this continent, again as a percentage of the
+   * site's own value, paid only where deep_city_water_bridges() says
+   * the water goes somewhere.
+   *
+   * Stock had one number for both halves and no way to separate them.
+   * site_naval_gate tested the VETO form of the same distinction --
+   * all of the premium or none -- and measured -11.68 (se 8.02,
+   * t -1.46, 7/20) on isolated-150, because a veto withholds coastal
+   * yield from closed water that genuinely yields. The distinction
+   * survives that result; the veto does not. A city on a useful lake
+   * IS slightly more useful than one on a dead lake: it can lay a
+   * keel that reaches somewhere, launch a colony lift, and reach the
+   * intercontinental trade tier.
+   *
+   * PLACEHOLDER 0.0 = OFF, so the shipped premium stays exactly
+   * today's 20% of yield. The design the human sized on 2026-08-05 is
+   * a SPLIT of that 20 -- most of it yield, a small additive connect
+   * term -- and choosing where to cut it is an A/B on isolated-150,
+   * whose refusal census already counts the population the connect
+   * term prices. Shipping the split un-measured would move site
+   * scoring on every coastal map on the strength of an argument. */
+  double site_naval_connect_weight;
 
   /* Founders to keep alive per SITE the unclaimed land could still
    * hold (deep_remaining_sites()) before Join City may dissolve one. A

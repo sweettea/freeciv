@@ -894,6 +894,14 @@ static int deep_site_naval_paid = 0;
 static int deep_site_naval_refused = 0;
 static double deep_site_naval_refused_want = 0.0;
 
+/* And the same again for the connectivity term, which is the other
+ * half of the split premium: candidates paid it, and the score it
+ * added. Separate counters because "coastal" and "coastal on water
+ * that goes somewhere" are different populations and the split exists
+ * precisely to tell them apart. */
+static int deep_site_naval_connect_paid = 0;
+static double deep_site_naval_connect_want = 0.0;
+
 /* The same per-search census for the expected-wait discount: overseas
  * candidates actually discounted, and the turns of wait charged. */
 static int deep_site_wait_priced = 0;
@@ -1062,7 +1070,7 @@ static adv_want deep_site_defence_bonus(struct player *pplayer,
 }
 
 /**********************************************************************//**
-  What coastal access is worth at a candidate site: site_naval_weight
+  What coastal YIELD is worth at a candidate site: site_naval_weight
   percent of the site's own value, replacing stock's compile-time
   NAVAL_EMPHASIS (naval_bonus(), daisettler.c).
 
@@ -1072,6 +1080,14 @@ static adv_want deep_site_defence_bonus(struct player *pplayer,
   that the number can now be MOVED: a maritime premium of a fifth of a
   site's whole value is one of the largest single terms in site
   scoring and has never been measured, in stock or here.
+
+  YIELD, not option value: this term is paid on ANY workable water. A
+  dead lake still feeds a Harbour, carries food specials and is tiles
+  worked, which is why the D3 isolation measured the navigability VETO
+  at -11.68 (se 8.02, t -1.46) -- gating a yield term on where the
+  water goes prices out real food. The option value that veto was
+  reaching for is priced additively by
+  deep_site_naval_connect_bonus() instead.
 **************************************************************************/
 static adv_want deep_site_naval_bonus(const struct cityresult *result)
 {
@@ -1080,6 +1096,46 @@ static adv_want deep_site_naval_bonus(const struct cityresult *result)
   }
 
   return (result->total * (adv_want) deep_tuning_get()->site_naval_weight)
+         / 100.0f;
+}
+
+/**********************************************************************//**
+  What NAVIGABILITY is additionally worth: site_naval_connect_weight
+  percent of the site's own value, paid only where the water this site
+  touches leads off its own continent.
+
+  Stock had one 20% WAG for both halves of a maritime site and no way
+  to tell them apart. D3's `site_naval_gate` tested only the VETO form
+  of the distinction -- pay the whole premium or none of it -- and the
+  veto measured negative, because it withheld coastal yield from
+  closed water that genuinely yields. The finding was that the
+  distinction is real and the veto was the wrong instrument for it.
+
+  So: additive option value, on the same free geometry the build-side
+  hull gate uses (deep_city_water_bridges -> get_lake_surrounder, kept
+  current by assign_continent_numbers()). A city on a useful lake IS
+  slightly more useful than one on a dead lake -- it can lay a keel
+  that reaches somewhere, launch a colony lift, and reach the
+  intercontinental trade tier -- and that "slightly" is a term to be
+  sized, not a veto to be applied.
+
+  0.0 by default, so the shipped premium is exactly today's 20% of
+  yield and nothing else; the graded shape is an A/B arm, not a
+  shipped behaviour change.
+**************************************************************************/
+static adv_want deep_site_naval_connect_bonus(const struct cityresult *result)
+{
+  if (deep_tuning_get()->site_naval_connect_weight <= 0.0) {
+    return 0;   /* Off (the shipped default): skip the geometry too. */
+  }
+
+  if (!is_terrain_class_near_tile(&(wld.map), result->tile, TC_OCEAN)
+      || !deep_city_water_bridges(result->tile)) {
+    return 0;
+  }
+
+  return (result->total
+          * (adv_want) deep_tuning_get()->site_naval_connect_weight)
          / 100.0f;
 }
 
@@ -1192,6 +1248,10 @@ static struct cityresult *deep_city_desirability(struct ai_type *ait,
    * stock hard-codes as NAVAL_EMPHASIS and nothing has ever measured. */
   {
     adv_want naval = deep_site_naval_bonus(cr);
+    /* Read off the SAME cr->total the yield term read, before either
+     * is added: the two terms are a split of one premium, so they
+     * must share a base or the split is not a split. */
+    adv_want connect = deep_site_naval_connect_bonus(cr);
 
     if (naval > 0) {
       if (deep_tuning_get()->site_naval_gate > 0
@@ -1204,6 +1264,15 @@ static struct cityresult *deep_city_desirability(struct ai_type *ait,
       }
     }
     cr->total += naval;
+
+    /* Added separately, and only when it is nonzero, so that the
+     * default (weight 0) leaves this arithmetic untouched rather than
+     * adding a zero to it. */
+    if (connect > 0) {
+      deep_site_naval_connect_paid++;
+      deep_site_naval_connect_want += (double) connect;
+      cr->total += connect;
+    }
   }
 
   /* Add remaining points, which is our potential (always 0 here --
@@ -1235,6 +1304,8 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
   deep_site_naval_paid = 0;
   deep_site_naval_refused = 0;
   deep_site_naval_refused_want = 0.0;
+  deep_site_naval_connect_paid = 0;
+  deep_site_naval_connect_want = 0.0;
   deep_site_wait_priced = 0;
   deep_site_wait_turns = 0;
   deep_site_contest_ours = 0;
@@ -1384,10 +1455,12 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
   if (deep_site_naval_paid > 0 || deep_site_naval_refused > 0) {
     log_base(deep_metric_log_level(),
              "deep-sitenaval turn=%d player=\"%s\" unit=%d paid=%d"
-             " refused=%d withheld=%.1f best=(%d,%d)",
+             " refused=%d withheld=%.1f connect=%d connectwant=%.1f"
+             " best=(%d,%d)",
              game.info.turn, player_name(pplayer), punit->id,
              deep_site_naval_paid, deep_site_naval_refused,
              deep_site_naval_refused_want,
+             deep_site_naval_connect_paid, deep_site_naval_connect_want,
              best != NULL ? index_to_map_pos_x(tile_index(best->tile)) : -1,
              best != NULL ? index_to_map_pos_y(tile_index(best->tile)) : -1);
   }

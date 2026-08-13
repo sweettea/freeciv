@@ -37,6 +37,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .site_naval_gate = 0,                 /* MEASURED off: D3 isolated-150 */
   .site_wait_discount = 0.0,            /* PLACEHOLDER = off */
   .site_naval_weight = 20.0,            /* PLACEHOLDER = NAVAL_EMPHASIS */
+  .site_naval_connect_weight = 0.0,     /* PLACEHOLDER off: the split's A/B */
   .founder_pool_per_site = 0.06,        /* PLACEHOLDER, see deeptuning.h */
   .committed_fear_mult = 1.0,           /* PLACEHOLDER = no effect */
   .incoming_defence_eta_weight = 0.5,   /* PLACEHOLDER, untuned */
@@ -282,6 +283,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_INT(site_naval_gate) \
   TUNE_DOUBLE(site_wait_discount) \
   TUNE_DOUBLE(site_naval_weight) \
+  TUNE_DOUBLE(site_naval_connect_weight) \
   TUNE_DOUBLE(founder_pool_per_site) \
   TUNE_DOUBLE(committed_fear_mult) \
   TUNE_DOUBLE(incoming_defence_eta_weight) \
