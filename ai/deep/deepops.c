@@ -4510,6 +4510,49 @@ static void deep_op_drive_strike(struct ai_type *ait,
 }
 
 /**********************************************************************//**
+  ERA 3b: grow a muster. Every free attacker standing on the staging
+  city's continent that no live operation has claimed joins it, up to
+  the storage bound.
+
+  This is the memoryless half of 3a's falsification answered. Formation
+  ran 0.88 times per player-turn, each pass asking "can I win NOW",
+  each pass leaving nothing behind -- so the pool a target faced was
+  whatever happened to be idle that instant, mean 2.69 against a
+  requirement of 8-15. A muster keeps what it gathered and adds to it,
+  which is the only way a force that big is ever standing in one place
+  on this venue.
+
+  The selector is deep_op_collect_pool() unchanged, so a muster claims
+  exactly what a formation would have claimed and nothing more:
+  military, attack-rated, not bodyguarding, NOT AIUNIT_DEFEND_HOME, and
+  not already claimed -- members of this op included, since a claim is
+  a claim. Garrisons are never conscripted here; the only path from the
+  walls into a muster is the draft's own release test.
+
+  Returns how many joined.
+**************************************************************************/
+static int deep_muster_enroll(struct ai_type *ait, struct player *pplayer,
+                              struct deep_operation *op,
+                              struct city *staging)
+{
+  struct unit *pool[DEEP_OP_MEMBERS];
+  int n, i, joined = 0;
+
+  if (op->n_members >= DEEP_OP_MEMBERS) {
+    return 0;
+  }
+  n = deep_op_collect_pool(ait, pplayer,
+                           tile_continent(city_tile(staging)),
+                           pool, DEEP_OP_MEMBERS);
+  for (i = 0; i < n && op->n_members < DEEP_OP_MEMBERS; i++) {
+    op->members[op->n_members++] = pool[i]->id;
+    joined++;
+  }
+
+  return joined;
+}
+
+/**********************************************************************//**
   Drive one live operation for a turn. MUSTER: walk members in, hold
   arrivals, launch at quorum (or half-quorum at the wait cap). A land
   launch enters MARCH: members go to the stock attack path while the
@@ -4553,7 +4596,28 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
     int present = 0;
     struct unit *here[DEEP_OP_MEMBERS];
     double odds_now = 0.0, surv_now = 0.0, loss_now = 0.0;
+    int joined = 0;
     bool go;
+
+    if (op->muster) {
+      joined = deep_muster_enroll(ait, pplayer, op, staging);
+      /* The stall clock measures GROWTH, and growth means a new
+       * high-water mark. A muster that loses two blades to the
+       * counter-claim and enrolls two more has not grown -- it has
+       * held station, and holding station is exactly the state the
+       * clock exists to end. */
+      if (op->n_members > op->muster_best) {
+        op->muster_best = op->n_members;
+        op->muster_grew = game.info.turn;
+      }
+      if (joined > 0) {
+        log_base(deep_metric_log_level(),
+                 "deep-op turn=%d player=\"%s\" op=%d grow target=%d"
+                 " joined=%d members=%d best=%d",
+                 game.info.turn, player_name(pplayer), oi, op->target_city,
+                 joined, op->n_members, op->muster_best);
+      }
+    }
 
     for (i = 0; i < op->n_members; i++) {
       struct unit *m = game_unit_by_number(op->members[i]);
