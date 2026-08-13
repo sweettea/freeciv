@@ -297,6 +297,12 @@ MAP = {
     "cm_grow_food": ("S1", "mag", "-", None, "CM parameters: deepcm.c emits no log line at all."),
     "cm_grow_shield": ("S1", "mag", "-", None, "CM parameters: deepcm.c emits no log line at all."),
     "cm_grow_trade": ("S1", "mag", "-", None, "CM parameters: deepcm.c emits no log line at all."),
+    "cm_founder_food": (
+        "S1", "mag", "direct",
+        [("deep-cmfound", "floor>=1")],
+        "the founder food floor (deepcm.c). The line is written only on "
+        "the branch the knob gates, and `floor` is ceil(knob x upkeep), "
+        "so a nonzero count is the knob's own arithmetic executing."),
     "cm_trade_quality_slope": (
         "S1", "mag", "-", None,
         "CM trade-quality reweight (deepcm.c:284); no line, and the "

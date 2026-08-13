@@ -162,6 +162,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .cm_grow_food = 16,                   /* PLACEHOLDER, untuned */
   .cm_grow_shield = 4,                  /* PLACEHOLDER, untuned */
   .cm_grow_trade = 4,                   /* PLACEHOLDER, untuned */
+  .cm_founder_food = 0.0,               /* PLACEHOLDER = off */
   .cm_trade_quality_slope = 0.5,        /* PLACEHOLDER, untuned */
   .cm_grow_price_blend = 0.0,           /* PLACEHOLDER, 0 = off */
   .cm_specialist_gold_gain = 0.0,       /* PLACEHOLDER, 0 = off */
@@ -306,6 +307,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_INT(cm_grow_food) \
   TUNE_INT(cm_grow_shield) \
   TUNE_INT(cm_grow_trade) \
+  TUNE_DOUBLE(cm_founder_food) \
   TUNE_DOUBLE(cm_trade_quality_slope) \
   TUNE_DOUBLE(cm_grow_price_blend) \
   TUNE_DOUBLE(cm_specialist_gold_gain) \
