@@ -5,6 +5,11 @@
 #   run-game.sh --config FILE --seed N --arm AITYPE --out DIR
 #               [--server BIN] [--port N]
 #
+# Environment: TUNING names one tuning ini for every deep seat; ARENA
+# names a manifest that additionally gives individual seats their own
+# inis (benchmark/arena.py writes it); DEEP_QUIET demotes deep's metric
+# lines; KEEP_SAVES keeps every Nth autosave.
+#
 # Parallel invocations must use distinct --port values: every server
 # binds a TCP port and simultaneous binds to the same one fail.
 #
@@ -146,6 +151,19 @@ OUT=$(readlink -f "$OUT")
   else
     echo "tuning=none sha256=none"
   fi
+  if [ -n "${ARENA:-}" ]; then
+    echo "arena=$(readlink -f "$ARENA")" \
+         "sha256=$(sha256sum "$(readlink -f "$ARENA")" | cut -d' ' -f1)"
+    # The manifest's own hash does not cover the candidate files it
+    # names, and those are the values the game actually played.
+    sed -n 's/^[A-Za-z0-9_]* *= *"\{0,1\}\([^"]*\)"\{0,1\} *$/\1/p' \
+        "$(readlink -f "$ARENA")" | sort -u | while read -r cand; do
+      [ -f "$cand" ] || continue
+      echo "arena-file=$cand sha256=$(sha256sum "$cand" | cut -d' ' -f1)"
+    done
+  else
+    echo "arena=none sha256=none"
+  fi
   echo "runner=$(readlink -f "$0") sha256=$(sha256sum "$0" | cut -d' ' -f1)"
   echo "arm=$ARM seed=$SEED"
 } > "$OUT/provenance.txt"
@@ -161,6 +179,14 @@ if [ -n "${DEEP_QUIET:-}" ]; then
 fi
 if [ -n "${TUNING:-}" ]; then
   export FREECIV_DEEP_TUNING=$(readlink -f "$TUNING")
+fi
+# ARENA names a manifest that gives individual deep seats their own
+# tuning files -- several candidates judged inside ONE game (the arena
+# tier, findings/tuning-venues-2026-08-06.md section 6a). TUNING still
+# sets the values every unnamed seat runs, so the two compose: a base
+# plus per-seat overrides. benchmark/arena.py writes the manifest.
+if [ -n "${ARENA:-}" ]; then
+  export FREECIV_DEEP_ARENA=$(readlink -f "$ARENA")
 fi
 if ! (cd "$OUT" \
       && timeout "$TIMEOUT_S" "$SERVER" -A none -e -p "$PORT" \
