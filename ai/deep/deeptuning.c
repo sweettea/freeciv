@@ -191,6 +191,8 @@ static const struct deep_tuning deep_tuning_defaults = {
   .op_take_target = 0.7,                /* PLACEHOLDER, untuned */
   .op_muster_wait = 10,                 /* PLACEHOLDER, untuned */
   .op_draft_marginal = 0,               /* 0 = the absolute floor */
+  .op_muster = 0,                       /* 0 = odds gate formation (ERA 3b) */
+  .op_muster_stall = 10,                /* PLACEHOLDER, = op_muster_wait */
   .op_launch_odds = 1,                  /* the bar, not a magnitude */
   .op_net_value = 1,                    /* human call 2026-08-06 */
   .op_hold_survivors = 1.0,             /* PLACEHOLDER, untuned */
@@ -435,6 +437,8 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(op_take_target) \
   TUNE_INT(op_muster_wait) \
   TUNE_INT(op_draft_marginal) \
+  TUNE_INT(op_muster) \
+  TUNE_INT(op_muster_stall) \
   TUNE_INT(op_launch_odds) \
   TUNE_INT(op_net_value) \
   TUNE_DOUBLE(op_hold_survivors) \

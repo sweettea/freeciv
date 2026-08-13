@@ -1242,6 +1242,54 @@ struct deep_tuning {
    *
    * 0 = the absolute survival_target floor, exactly as before. */
   int op_draft_marginal;
+  /* MUSTER (ERA 3b; findings/era-probe-evidence-2026-08-12.md section
+   * 6 sub-mechanism 3b, sessions/S-ERA-3b-muster.md).
+   *
+   * 3a falsified the incremental route. The take-odds curve is FLAT AT
+   * ZERO until pool 6-8 (P(odds > 0) is 5.4% at pool 1; the mean at
+   * pool 8 is 0.065 against a 0.65 bar), so no decision that asks each
+   * blade to justify itself -- absolute floor or marginal comparison,
+   * it makes no difference -- can bootstrap across that flat region: a
+   * SET of eight blades is worth having while every increment in it is
+   * worth exactly nothing. Formation is memoryless besides (0.88
+   * attempts per player-turn, each asking "can I win NOW", each
+   * leaving no state behind), so the pool never accumulates across
+   * turns either. Two independent reasons nothing masses.
+   *
+   * 1 lets a slot whose target clears the WORTH gate enter MUSTER with
+   * the odds REFUSED, accumulate members across turns, and launch iff
+   * the odds AT THE CURRENT POOL clear the same bar. op_take_target
+   * becomes the launch gate it already pretends to be, and the force
+   * is valued at the SET level when it launches rather than one blade
+   * at a time when it forms. Requires op_launch_odds: a muster
+   * released by a head count is the trickle the muster discipline
+   * exists to prevent, so the mechanism declines to form without it.
+   *
+   * NOT here to attack more often (human doctrine 2026-08-12: "at
+   * gunpowder era it's generally insane to do attacks" -- deep's
+   * refusal at parity is CORRECT and the odds model is honest). Here
+   * to make the RARE sane attack possible against a weak or
+   * overextended target. Its success metrics are kill-exchange ratio,
+   * cities held and score; formation counts are not evidence for it
+   * and may legitimately fall.
+   *
+   * 0 = the odds test is the formation gate, exactly as shipped. */
+  int op_muster;
+  /* How many turns a muster may go without GROWING before it is
+   * abandoned -- turns since the high-water member count last rose,
+   * not turns since formation: a muster that keeps gaining blades is
+   * doing its job however long it takes. One of three abandon
+   * triggers, beside the target's worth collapsing and the home
+   * defence demand spiking.
+   *
+   * PLACEHOLDER, untuned. The brief asks for an observed cadence and
+   * there is none to be had: nothing in deep has ever accumulated a
+   * force across turns, so there is no measurement of accumulation to
+   * read a stall off. Shipped equal to op_muster_wait -- itself
+   * PLACEHOLDER -- so that a muster is not granted more patience than
+   * a formed wave by fiat, and flagged in STATUS.md for the tuning
+   * pass. Only read when op_muster is on. */
+  int op_muster_stall;
   /* Launch on odds, not on a head count (combat E2): a mustered wave
    * is released when the force STANDING at the staging city clears
    * the same bar formation used, re-priced against the garrison as it
