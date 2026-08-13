@@ -19,6 +19,9 @@
 #   scorelog.txt   SCORELOG2 per-turn statistics for every player
 #   maphash.txt    sha256 of the turn-1 autosave's terrain rows
 #   commands.serv  the exact server commands used
+#   provenance.txt sha256 of the server binary, config, tuning and this
+#                  runner -- what any later pairing of two result dirs
+#                  has to agree on to be a single-variable comparison
 #   DONE           written last; presence marks a completed run
 #   saves/         turn-1 + final savegames (intermediates pruned)
 
@@ -121,6 +124,31 @@ OUT=$(readlink -f "$OUT")
   echo "set mapseed $SEED"
   echo "start"
 } > "$OUT/commands.serv"
+
+# What produced this game, beside the game. run.sh writes the same
+# components into key.txt for the dirs IT names, but a driver that
+# names its own arm directories (a night batch, an ad-hoc probe) writes
+# no key at all, and then two result dirs can be paired months later
+# with nothing on disk saying whether they shared a binary.
+#
+# That is not hypothetical: the G2 wait-discount verdict of 2026-08-12
+# paired an arm built at 17:21 against a control run the previous
+# night, 32 ai/deep commits earlier, and the confound was invisible
+# until the games were re-read tile by tile (STATUS, W36-DIM). One
+# sha256 per game costs nothing next to a game and makes the question
+# answerable from the artefacts.
+{
+  echo "server=$SERVER sha256=$(sha256sum "$SERVER" | cut -d' ' -f1)"
+  echo "config=$(readlink -f "$CONFIG") sha256=$(sha256sum "$(readlink -f "$CONFIG")" | cut -d' ' -f1)"
+  if [ -n "${TUNING:-}" ]; then
+    echo "tuning=$(readlink -f "$TUNING")" \
+         "sha256=$(sha256sum "$(readlink -f "$TUNING")" | cut -d' ' -f1)"
+  else
+    echo "tuning=none sha256=none"
+  fi
+  echo "runner=$(readlink -f "$0") sha256=$(sha256sum "$0" | cut -d' ' -f1)"
+  echo "arm=$ARM seed=$SEED"
+} > "$OUT/provenance.txt"
 
 # scorefile is written relative to the server's cwd; run from OUT so
 # parallel games never share files. The uninstalled server finds its
