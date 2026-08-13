@@ -219,8 +219,16 @@ signs off per block. Partial folds by block are allowed; no value lands
 
 1. Stage-3 pinning: expansion knobs under a pinned corner (which?) or
    unpinned as drafted?
-2. Is M2 (naval slice 3) in or out of the gates? Out = convoy knobs
-   excluded this campaign (drafted as out).
+2. ~~Is M2 (naval slice 3) in or out of the gates?~~ **MOOT (2026-08-12,
+   M2 session): M2 is not schedulable work — it landed 2026-07-31 and
+   closed as task #16 on 2026-08-01**, before this document was written.
+   The question that survives it is narrower: the convoy pair's
+   exclusion rested on a census reading taken while
+   `deep_manage_convoys()` was dead for an unrelated reason (the
+   `utype_move_type()` defect, fixed on `epic/movetype`). **Re-census
+   `convoy_min_load` / `convoy_wait_radius` on `tech65sea-150` before
+   freeze**, and let the number decide, not the receipt. See
+   `findings/knob-coverage.md` §convoy CORRECTION.
 3. Do E34.4 / W35 E35.1 land before freeze (adding their knob families)
    or explicitly after (drafted: after — excluded from v4)?
 4. Parallel stages on both boxes vs sequential on one (cost vs calendar).
