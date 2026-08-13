@@ -151,6 +151,27 @@ struct deep_operation {
    * target, and the two can orbit each other for the whole muster. A
    * fixed tile makes the rendezvous a convergence instead. */
   int rendezvous;               /* tile index to meet on, -1 if none */
+  /* MUSTER (ERA 3b). A slot that entered MUSTER on the WORTH gate with
+   * the odds REFUSED carries `muster = 1` for its whole life, and it is
+   * a different object from an ordinary formed wave: it has no
+   * `required` quorum (no prefix of the pool ever cleared the bar), it
+   * accumulates members every turn, it is never released by a head
+   * count, and it is abandoned rather than launched when its target
+   * stops being worth taking, its home front needs the force, or it
+   * stops growing for op_muster_stall turns.
+   *
+   * `muster_worth` is the conquest worth at entry, kept for the log so
+   * a collapse is legible beside the value that justified the muster.
+   * `muster_best` is the high-water member count and `muster_grew` the
+   * turn it last rose -- the stall clock's two fields, and the reason
+   * the clock measures growth rather than elapsed time.
+   *
+   * Saved with the rest of the slot, defaulting to 0: a save written
+   * before this epic loads as an ordinary wave, which is what it was. */
+  int muster;
+  int muster_worth;
+  int muster_best;
+  int muster_grew;
   int n_members;
   int members[DEEP_OP_MEMBERS]; /* unit ids */
 };

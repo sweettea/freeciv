@@ -265,6 +265,17 @@ static void dpai_player_save(struct player *pplayer,
                        "player%d.deep_state.op%d.beachhead", plrno, oi);
     secfile_insert_int(file, op->rendezvous,
                        "player%d.deep_state.op%d.rendezvous", plrno, oi);
+    /* MUSTER (ERA 3b): a muster that dissolved on reload would hand
+     * its accumulated force back to ordinary management, which is the
+     * one thing the mechanism exists to prevent. */
+    secfile_insert_int(file, op->muster,
+                       "player%d.deep_state.op%d.muster", plrno, oi);
+    secfile_insert_int(file, op->muster_worth,
+                       "player%d.deep_state.op%d.muster_worth", plrno, oi);
+    secfile_insert_int(file, op->muster_best,
+                       "player%d.deep_state.op%d.muster_best", plrno, oi);
+    secfile_insert_int(file, op->muster_grew,
+                       "player%d.deep_state.op%d.muster_grew", plrno, oi);
     secfile_insert_int(file, op->n_members,
                        "player%d.deep_state.op%d.n_members", plrno, oi);
     for (i = 0; i < op->n_members; i++) {
@@ -434,6 +445,28 @@ static void dpai_player_load(struct player *pplayer,
     op->rendezvous
       = secfile_lookup_int_default(file, -1,
                                    "player%d.deep_state.op%d.rendezvous",
+                                   plrno, oi);
+    /* Saves written before ERA 3b default to 0: not a muster, which is
+     * exactly what an op formed under the odds gate was. */
+    op->muster
+      = secfile_lookup_int_default(file, 0,
+                                   "player%d.deep_state.op%d.muster",
+                                   plrno, oi);
+    op->muster_worth
+      = secfile_lookup_int_default(file, 0,
+                                   "player%d.deep_state.op%d.muster_worth",
+                                   plrno, oi);
+    op->muster_best
+      = secfile_lookup_int_default(file, 0,
+                                   "player%d.deep_state.op%d.muster_best",
+                                   plrno, oi);
+    /* An absent key defaults to the load turn rather than to 0, so a
+     * pre-3b save cannot present a muster that has stalled since turn
+     * zero. A save that carries the field keeps it: turn numbering is
+     * continuous across a reload of the same game. */
+    op->muster_grew
+      = secfile_lookup_int_default(file, game.info.turn,
+                                   "player%d.deep_state.op%d.muster_grew",
                                    plrno, oi);
     n = secfile_lookup_int_default(file, 0,
                                    "player%d.deep_state.op%d.n_members",

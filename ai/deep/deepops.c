@@ -2932,6 +2932,13 @@ static void deep_op_dissolve(struct deep_operation *op, int oi,
   /* Cleared here as well as set at formation, so a slot reused by an
    * assault can never hand a stale meeting point to a later lift. */
   op->rendezvous = -1;
+  /* Same contract for the muster fields (ERA 3b): a slot reused by an
+   * ordinary wave, a raid or a lift must not inherit the previous
+   * occupant's muster flag or its stall clock. */
+  op->muster = 0;
+  op->muster_worth = 0;
+  op->muster_best = 0;
+  op->muster_grew = 0;
 }
 
 /**********************************************************************//**
