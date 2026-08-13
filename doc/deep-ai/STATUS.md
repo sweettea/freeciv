@@ -13914,3 +13914,233 @@ claims**. Claims stay with run.sh's paired protocol on held-out seeds.
   nations actually differ (`smoke-traits.conf`, or the derby map).
 - Candidate-vs-incumbent tables when stock goes stale as a yardstick
   (§2a) are unblocked by the same plumbing.
+## EXPANSION slice 2: the lift queue is not short of hulls (2026-08-13)
+
+Branch `epic/expansion-lifts`, cut from `epic/w03-horizon-content` at
+`304e36af41`. Seven commits: two counters, two knobs (both
+default-off) and the correction the first knob arm earned, one
+benchmark kit, plus this entry. Machine budget jobs 2, ports 7100+,
+**no A/B** — the arms are queued for the daytime machine.
+
+- `da2d8f84e0` `ai/deep: count the founders and the berths waiting on each water`
+- `770517e991` `ai/deep: count the dead missions a lift muster is holding`
+- `faf92ecfd7` `ai/deep: let overseas founder demand commission a hull`
+- `968805ed31` `ai/deep: let the muster release a passenger whose target died`
+- `73bbfefbd0` `benchmark: add the lift-commission arm and its gap reader`
+- `85e19278fa` `ai/deep: charge the commission for the hulls it ordered this turn`
+- `b0f0b022b1` `ai/deep: keep the idle-hull doc comment with its function`
+
+### Why this slice
+
+Three measurements pointed at one circle. Slice 1: from t20 the land
+search scores **0.0** candidates per search on a settled venue (89% of
+refusals the citymindist ring), so every founder want deep still forms
+is an overseas want and the lift is the only expansion channel. W36:
+57.4% of wait spells never enroll, and the fifth running ≥ 5 turns
+holds 61.4% of all waiting. W36-DIM: **86%** of the wait discount's
+firings land on the build-side founder want — the want whose
+fulfilment would commission the hull whose absence is the wait.
+
+Demand damped by the queue; the queue there because demand never
+commissions supply. The instrument landed first (rule: two guessed
+expansion fixes were reverted, the measured one won its cell).
+
+### What the gap counter showed — and it is not a supply shortage
+
+`deep-liftgap`, one line per water per player-turn: founders waiting
+(ACTION_FOUND_CITY, unclaimed — the same population whose spells the
+wait estimator reads) against berths idle and berths building on that
+water, with `deep_wait_expected()` beside it. Two isolated-150 games
+at defaults, 632 water-turns, turns 53–150 (the line is written only
+when something is happening on that water, and **before t53 no water
+this player touches holds a waiting founder, an idle berth or a hull
+in production**):
+
+    field       >0 of 632    max     mean
+    founders          123      3     0.23
+    waiting           183     15     0.45
+    idle hulls        496     15     3.90
+    idle berths       496     30     7.82
+    building          188     20     1.20
+    wait               67     12     0.44
+
+    gap = founders - berths - building  > 0 on  67/632  (10.6%)
+    ... of those, on water that BRIDGES to another continent:  7 (1.1%)
+    ... wait > 0 with founders == 0:                           0/67
+
+**The empire is hull-rich and founder-poor on the water that matters.**
+Where founders wait on a bridging water, deep is already carrying ~3.9
+idle hulls (7.8 berths) against a mean 0.23 waiting founders. Sixty of
+the sixty-seven positive gaps sit on water that closes on its own
+continent — a founder queued beside a dead-end sea, where
+`boat_water_gate` refuses the keel and is right to. The long waits are
+there too: the 12-turn spells are all on `bridge=0` water with zero
+hulls and zero production, while the bridging water one tile away
+holds 4–16 idle berths.
+
+So on this venue the queue is a **distribution and geometry** problem,
+not a supply problem — which is exactly what the fleet census said
+from the other side (idle fraction pinned at 75% across five
+interventions and every fleet size: "not overbuilt, badly
+distributed"). The commission ships because the population it acts on
+is real, but it is **7 water-turns in 632**, and nobody should expect
+a large A/B from it on isolated-150.
+
+Two more readings worth keeping:
+
+- **Every wait > 0 has a founder behind it (67/67).** The wait
+  estimator's population is settlement, which confirms W36-DIM's seam
+  from the supply side rather than by inference.
+- **4 of the 7 serviceable gaps carried no fresh `colony_want`.** The
+  colony-lift want can only bid on turns a lift-limited settler search
+  published a score; on those four turns the queue was dry and the
+  shipyard silent. That is the hole the commission fills.
+
+### What shipped
+
+**`hull_commission_weight`** (double, default **0.0** = off, the 229th
+tunable). In the coastal build decision, per water this city touches:
+
+    want = amortize(w x n x (value - amortize(value, wait)), build)
+
+`n` = MIN(gap, hull capacity), both ruleset facts; `value` =
+`colony_want`, deep's own overseas site score, **aged by amortize()**
+rather than cut off by a freshness window — a site is not worth nothing
+because the probe ran three turns ago, and amortize is the discounter
+every other delay in that file pays; `wait` = `deep_wait_expected()`
+for the same water, so the term is zero exactly where that estimator
+declines to claim a wait. The weight is the only constant. It honours
+`boat_water_gate` **per water** (the census says that gate is
+load-bearing here, not decorative) and pays the stance expansion gate
+like the colony demand beside it.
+
+**`lift_muster_release`** (int 0/1, default **0**). D-E's
+re-validation has asked `city_can_be_built_here()` on every MARCH turn
+since `0d6440e194`; the MUSTER is just as held, lasts
+`lift_gather_turns`, and never asked. Counted first: **10 march, 2
+muster** invalidations in the two default games, so the population is
+about a fifth the size of the marching one. At 1 the gather drops the
+dead mission, re-aims if it was the beachhead, and aborts with nobody
+left, through the same `deep_lift_revalidate()` — the cheapest end to
+do it at, since the hull has not sailed and the released founder still
+has its own legs on its own continent.
+
+**The multiplication the first knob arm caught.** On turn 88 of seed
+2, **eight** coastal cities on ocean -2 priced the same gap of two
+founders and **five** beat their incumbent choice: five hulls for two
+passengers, because `building` is a once-a-turn photograph. The gap now
+also subtracts berths this player has ordered this turn
+(`commission_berths`), the same orders-not-deliveries accounting
+extended to the current turn, and `ordered` is in the log.
+
+### Validation
+
+- `meson test -C build` **5/5** after every commit; `tune-audit.py`
+  **CLEAN at 230 fields** (228 + `hull_commission_weight` +
+  `lift_muster_release`, each in `deeptuning.h`, a `TUNE_*` macro,
+  `tuning-params.ini`, and the ALL + X/ECON blocks); `knobcensus.py`
+  MAP entries added for both, grade **direct** on `deep-commission
+  gap>=1` and `deep-lift-invalid phase=muster`; the census reads
+  `hull_commission_weight` **LIVE** (23 firings) and
+  `lift_muster_release` MODE-with-population (2) on the knob cell.
+- Built `-Daimodules=classic,tex,baseline,deep` in this epic's own
+  worktree with its own `build/`, ports 7100+. The runner **pins the
+  binary by copying it** (with `libfreeciv.so`, which the `$ORIGIN`
+  runpath then finds) before a game starts — an epic that alternates
+  edit, build and look is exactly where a run gets rebuilt under
+  itself, and it happened once here before the pin existed; that run
+  was discarded.
+- **Liveness at defaults**, 2 × isolated-150 (`benchmark/results/
+  explifts-live/`): 632 `deep-liftgap` water-turns, 10 + 2
+  `deep-lift-invalid`, **0** `deep-commission` (knob off, and the
+  block is not entered).
+- **Knob liveness**, 2 × isolated-150 with `expansion-lifts.ini`
+  (`hull_commission_weight = 1.0`, `lift_muster_release = 1`,
+  `benchmark/results/explifts-knob/`): **23 `deep-commission` firings,
+  4 of which beat the running military choice**, mean gap 2.00, mean
+  wait 3.91 turns, mean want 32.8. Both arms of the muster counter
+  fire (8 march, 2 muster).
+- **...and BOTH knobs are inert on these two seeds. The knob arm's
+  scorelogs are byte-identical to the default arm's, seed for seed.**
+  Two separate reasons, both worth keeping:
+  - The commission's want is **too small to win a build**: mean 32.8
+    against the colony-lift want's mean 197 / median 146 / max 492 in
+    the same games (240 bids). The four "beat" flags are the running
+    military choice at that instant, not the city's final production.
+    At weight 1.0 this term cannot act, so **an A/B at 1.0 on
+    isolated-150 would measure nothing**. The registered range 0–5 does
+    reach parity (5 × 32.8 = 164 against the 146 median); the sweep is
+    the tuner's, and 1.0 is a PLACEHOLDER, not a recommendation.
+  - The muster release changes **when inside the turn**, not what: at
+    both firings the op sailed in the same drive pass, so the MARCH
+    re-validation caught the dead mission on the same turn and
+    dissolved the same operation. The eight `lift-invalid`
+    dissolutions are identical line for line between the arms. It can
+    only pay where a gather spans turns without boarding.
+- **Off-switch proof: 10/10 paired smoke seeds BYTE-IDENTICAL**, 0
+  differ, 0 missing, against a `git archive` build of base
+  `304e36af41`, `identity.ini` both sides, jobs 2, ports 7120/7140
+  (`benchmark/results/explifts-identity/`). Both counters run
+  unconditionally, so this is what proves them inert.
+- Runner: `benchmark/expansion-lifts.sh {live|knob|identity}`; reader:
+  `benchmark/liftgap.py`.
+
+### Corrections to the plan, recorded
+
+1. **`expansion-logistics.md` §3.5 is half stale.** The MARCH-phase
+   re-validation it proposes shipped on 2026-08-05 (`0d6440e194`,
+   `deep_lift_revalidate`), unconditionally. Only the MUSTER phase was
+   still open, and that is what this slice measured and gated. Read the
+   code before scoping from that document's §3.
+2. **"Demand never commissions supply" is too strong.** `colony_want`
+   does reach the shipyard — but only on turns a lift-limited settler
+   search published a score, and the census caught the queue dry and
+   the shipyard silent together on 4 of the 7 serviceable gaps. The
+   circular dependency is real; the break in it is narrower than the
+   hand-off assumed.
+3. **The size of the prize is 1.1% of water-turns on isolated-150**,
+   and anyone planning further hull-supply work should read
+   `deep-liftgap` on their own venue before spending an epic on it —
+   that is one run and one grep (`liftgap.py`). Sixty of the
+   sixty-seven positive gaps this venue produced are on water that
+   bridges nowhere.
+4. **`deep-liftgap`'s `colony` field prints the FRESH publication
+   only** (`colony_turn >= turn-1`), while the mechanism uses the aged
+   value. To see what the term actually priced, read `value` and `age`
+   on `deep-commission`, not `colony` on the gap line.
+
+### For whoever runs the A/B
+
+- **Do not run the commission arm at 1.0.** Measured above: at 1.0 the
+  term's mean want is 32.8 against a colony-lift want of 146–197 for
+  the same hull, and two isolated-150 games came out byte-identical to
+  the off arm. Whatever weight the arm runs at has to be one the term
+  can act at; the registered range reaches parity around 5.
+- **One knob at a time**, both arms on ONE binary with
+  `provenance.txt` on both sides — the rule W36-DIM earned.
+  `lift_muster_release` is a separate, much smaller arm (~1 firing per
+  game, and inert on these seeds) and should not be folded into the
+  same cell.
+- **Pick the venue with the counter, not with intuition.** The arm can
+  only pay where founders queue on water a hull may legally serve.
+  isolated-150 offers 7 such water-turns per 2 games; run 2 liveness
+  games on any candidate venue and count `gap>0 & bridge=1` before
+  committing seeds to it.
+- **Watch `ordered` and `beat` together.** The failure mode this
+  mechanism has already shown once is multiplication across coastal
+  cities in one turn; `ordered` is the correction and `beat` counts
+  the orders it did not stop.
+- **1.0 is a PLACEHOLDER** flagged for `benchmark/tune.py` — the
+  identity scaling of a term whose other factors are measured. It has
+  never been tuned and no A/B has been run on it.
+
+### What the next slice should be, on this evidence
+
+Not more hulls. Sixty of sixty-seven positive gaps are founders queued
+beside a sea that closes on its own continent, while the bridging water
+one tile away holds 4–16 idle berths — the fleet is badly distributed
+and the passenger is standing in the wrong port. Nothing in deep moves
+a waiting founder to a coast a hull can reach, and nothing prices that
+walk against the wait it would end. That is a demand-side mechanism on
+the same seam, it is measurable with the counter that now exists, and
+it is where the mass is.

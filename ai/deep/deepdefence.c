@@ -4176,6 +4176,46 @@ static int deep_idle_ferries(struct ai_type *ait, struct player *pplayer)
   return deep_idle_ferries_on(ait, pplayer, 0);
 }
 
+/* The per-unit predicate behind both counters below, factored out so
+ * "how many hulls" and "how many berths" cannot form two opinions
+ * about which hull is idle on which water. */
+static bool deep_ferry_idle_here(struct ai_type *ait, struct player *pplayer,
+                                 struct unit *punit, Continent_id ocean)
+{
+  const struct unit_ai *ud = def_ai_unit_data(punit, ait);
+
+  if (!dai_is_ferry(punit, ait)
+      || get_transporter_occupancy(punit) > 0
+      || ud->passenger >= 0
+      || ud->task == AIUNIT_EXPLORE
+      || punit->ssa_controller == SSA_AUTOEXPLORE
+      || deep_op_claiming(pplayer, punit->id) >= 0) {
+    return FALSE;
+  }
+  if (ocean != 0) {
+    /* A hull IN PORT sits on the city's LAND tile, so matching the
+     * unit's own continent against an ocean id excluded exactly the
+     * boats that are idle -- the count came back ~0 and the damping
+     * never fired at all (the logged want was identical with it on
+     * and off). A boat belongs to the water it touches. */
+    bool touches = (tile_continent(unit_tile(punit)) == ocean);
+
+    if (!touches) {
+      adjc_iterate(&(wld.map), unit_tile(punit), atile) {
+        if (tile_continent(atile) == ocean) {
+          touches = TRUE;
+          break;
+        }
+      } adjc_iterate_end;
+    }
+    if (!touches) {
+      return FALSE;
+    }
+  }
+
+  return TRUE;
+}
+
 /**********************************************************************//**
   Idle hulls ON ONE BODY OF WATER (a negative continent id), or on all
   of them when `ocean` is 0.
@@ -4201,40 +4241,123 @@ int deep_idle_ferries_on(struct ai_type *ait, struct player *pplayer,
   int idle = 0;
 
   unit_list_iterate(pplayer->units, punit) {
-    const struct unit_ai *ud = def_ai_unit_data(punit, ait);
-
-    if (!dai_is_ferry(punit, ait)
-        || get_transporter_occupancy(punit) > 0
-        || ud->passenger >= 0
-        || ud->task == AIUNIT_EXPLORE
-        || punit->ssa_controller == SSA_AUTOEXPLORE
-        || deep_op_claiming(pplayer, punit->id) >= 0) {
-      continue;
+    if (deep_ferry_idle_here(ait, pplayer, punit, ocean)) {
+      idle++;
     }
-    if (ocean != 0) {
-      /* A hull IN PORT sits on the city's LAND tile, so matching the
-       * unit's own continent against an ocean id excluded exactly the
-       * boats that are idle -- the count came back ~0 and the damping
-       * never fired at all (the logged want was identical with it on
-       * and off). A boat belongs to the water it touches. */
-      bool touches = (tile_continent(unit_tile(punit)) == ocean);
-
-      if (!touches) {
-        adjc_iterate(&(wld.map), unit_tile(punit), atile) {
-          if (tile_continent(atile) == ocean) {
-            touches = TRUE;
-            break;
-          }
-        } adjc_iterate_end;
-      }
-      if (!touches) {
-        continue;
-      }
-    }
-    idle++;
   } unit_list_iterate_end;
 
   return idle;
+}
+
+/**********************************************************************//**
+  The founders -- and only the founders -- waiting to cross this water.
+
+  deep_ferry_demand_on() counts every unit waiting for a crossing, which
+  is the right denominator for a fleet but the wrong numerator for an
+  expansion decision: after t20 the home continent produces no legal
+  site at all on a settled venue (EXPANSION slice 1: 0.0 scored land
+  candidates per search from t20 on both seeds, 89% of refusals the
+  citymindist ring), so every founder want deep still has is an
+  OVERSEAS want and the lift is the only channel it has. What the
+  shipyard needs to know is how much of that queue is settlement.
+
+  Same waiting predicate as deep_ferry_demand_on(), plus two clauses:
+
+  * the unit can found a city -- ACTION_FOUND_CITY, the ruleset's own
+    answer, not a unit-type guess;
+  * no operation has claimed it. A claimed passenger is being served,
+    and this is the definition deep_wait_spells_update() already uses
+    to END a spell, so the gap and the wait estimate count the same
+    population. deep_ferry_demand_on() deliberately does NOT exclude
+    claimed units, because a hull's idleness is measured against
+    everyone aboard the queue; the divergence is intentional.
+**************************************************************************/
+int deep_founder_demand_on(struct ai_type *ait, struct player *pplayer,
+                           Continent_id ocean)
+{
+  const struct civ_map *nmap = &(wld.map);
+  int want = 0;
+
+  unit_list_iterate(pplayer->units, punit) {
+    bool touches = FALSE;
+
+    if (unit_transported(punit)
+        || def_ai_unit_data(punit, ait)->ferryboat >= 0
+        || punit->goto_tile == NULL
+        || tile_continent(unit_tile(punit))
+           == tile_continent(punit->goto_tile)
+        || !unit_can_do_action(punit, ACTION_FOUND_CITY)
+        || deep_op_claiming(pplayer, punit->id) >= 0) {
+      continue;
+    }
+    adjc_iterate(nmap, unit_tile(punit), atile) {
+      if (tile_continent(atile) == ocean) {
+        touches = TRUE;
+        break;
+      }
+    } adjc_iterate_end;
+    if (touches) {
+      want++;
+    }
+  } unit_list_iterate_end;
+
+  return want;
+}
+
+/**********************************************************************//**
+  Lift supply on this water, in BERTHS rather than hulls: the capacity
+  standing idle on it now, and (through `building`, when non-NULL) the
+  capacity our own cities on the same water are already producing.
+
+  Berths because the demand is passengers. A hull that carries four is
+  not one unit of supply against four waiting founders, and counting
+  hulls is what made every previous damping unable to name a target
+  ("fewer than now" is not a number).
+
+  The building term is what keeps a gap from being sold twice: every
+  coastal city on a water reads the same queue in the same turn, and
+  without it each of them would commission its own hull for the same
+  passengers. It counts orders, not deliveries -- a city that switches
+  production drops out of the count the same turn.
+**************************************************************************/
+int deep_lift_berths_on(struct ai_type *ait, struct player *pplayer,
+                        Continent_id ocean, int *building)
+{
+  const struct civ_map *nmap = &(wld.map);
+  int berths = 0;
+
+  unit_list_iterate(pplayer->units, punit) {
+    if (deep_ferry_idle_here(ait, pplayer, punit, ocean)) {
+      berths += get_transporter_capacity(punit);
+    }
+  } unit_list_iterate_end;
+
+  if (building != NULL) {
+    *building = 0;
+    city_list_iterate(pplayer->cities, pcity) {
+      const struct unit_type *ptype;
+      bool touches = FALSE;
+
+      if (VUT_UTYPE != pcity->production.kind) {
+        continue;
+      }
+      ptype = pcity->production.value.utype;
+      if (ptype->transport_capacity <= 0 || !deep_utype_is_sea(ptype)) {
+        continue;
+      }
+      adjc_iterate(nmap, city_tile(pcity), atile) {
+        if (tile_continent(atile) == ocean) {
+          touches = TRUE;
+          break;
+        }
+      } adjc_iterate_end;
+      if (touches) {
+        *building += ptype->transport_capacity;
+      }
+    } city_list_iterate_end;
+  }
+
+  return berths;
 }
 
 /* Observation only (ERA): one line per gate evaluation, in deep's
@@ -5405,6 +5528,148 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
         if (berths < needed) {
           lift_demand = MAX(lift_demand, worth);
         }
+      }
+    }
+
+    /* THE COMMISSION (EXPANSION slice 2). The want above is a site
+     * SCORE damped by a surplus: it says "somewhere overseas is worth
+     * having, and the fleet is not obviously idle". It cannot say how
+     * many founders are standing on the quay, and it exists only on
+     * the turns a lift-limited settler search happened to publish
+     * colony_want -- which is why the queue can be dry and the
+     * shipyard silent in the same turn (measured: 4 of 7 water-turns
+     * with a positive gap on serviceable water carried no fresh
+     * publication at all).
+     *
+     * The circle this breaks, all three legs measured:
+     *   - slice 1: from t20 the land search scores nothing, so every
+     *     founder want left is overseas and the lift is the channel;
+     *   - W36: the overseas candidate is discounted by the wait its
+     *     water is holding;
+     *   - W36-DIM: 86% of that discount's firings land on the
+     *     build-side founder want. Demand is damped by the queue, and
+     *     the queue exists because demand never commissions supply.
+     *
+     * So price the hull by what it UNBLOCKS: the settlements already
+     * queued behind the shortage, times the delay it takes off them.
+     * Every term comes from something already computed --
+     *
+     *   value   dp->colony_want, deep's own overseas site score, AGED
+     *           by amortize() rather than cut off by a freshness
+     *           window. A site does not stop being worth what it was
+     *           worth because the probe ran three turns ago, and the
+     *           same discounter prices every other delay in this file.
+     *   n       berths the gap can fill: MIN(gap, this hull's
+     *           capacity), both ruleset facts.
+     *   gain    value - amortize(value, wait): the delay the hull
+     *           removes, in the currency of the thing delayed. Zero
+     *           when the water has shown no queue, which is exactly
+     *           when deep_wait_expected() refuses to claim a wait.
+     *
+     * Nothing here is a constant except the weight, which is the
+     * on/off switch and defaults to 0.
+     *
+     * The gate is load-bearing rather than decorative here. The gap
+     * census reads 65 positive gaps in 600 water-turns on
+     * isolated-150 and only 7 of them on water that BRIDGES: the rest
+     * are founders queued beside a sea that closes on its own
+     * continent, where no hull can help and boat_water_gate refuses
+     * the keel. With the gate off this term would commission for
+     * those queues. */
+    if (deep_tuning_get()->hull_commission_weight > 0.0
+        && dp->colony_want > 0
+        && is_terrain_class_near_tile(nmap, ptile, TC_OCEAN)) {
+      struct unit_type *boattype
+        = best_role_unit_for_player(pplayer, L_FERRYBOAT);
+      bool gated = (deep_tuning_get()->boat_gate_at_bid > 0
+                    && deep_tuning_get()->boat_water_gate > 0);
+      Continent_id seen[8];
+      int nseen = 0;
+
+      if (boattype != NULL
+          && boattype->transport_capacity > 0
+          && can_city_build_unit_now(nmap, pcity, boattype, RPT_CERTAIN)) {
+        adjc_iterate(nmap, ptile, atile) {
+          Continent_id oc = tile_continent(atile);
+          int si, building = 0, founders, berths, gap, wait, n;
+          adv_want value, gain, cw;
+          int bt;
+
+          if (oc >= 0) {
+            continue;                   /* Land. */
+          }
+          for (si = 0; si < nseen; si++) {
+            if (seen[si] == oc) {
+              break;
+            }
+          }
+          if (si < nseen || nseen >= (int) ARRAY_SIZE(seen)) {
+            continue;
+          }
+          seen[nseen++] = oc;
+          if (gated && !deep_water_bridges(oc)) {
+            continue;           /* A keel here reaches no other shore. */
+          }
+          founders = deep_founder_demand_on(ait, pplayer, oc);
+          berths = deep_lift_berths_on(ait, pplayer, oc, &building);
+          /* ... and the orders taken since the queue was counted.
+           * Production is a once-a-turn photograph: every coastal city
+           * on this water evaluates against the same gap in the same
+           * turn, and a hull ordered one city ago is invisible to
+           * `building` until next turn. Measured on the first liveness
+           * arm: 8 cities priced one gap of 2 on turn 88 and 5 of them
+           * beat their incumbent choice. Orders and not deliveries, so
+           * a choice later overridden is still charged -- the
+           * conservative direction for a term that multiplies. */
+          if (dp->commission_turn != game.info.turn) {
+            dp->commission_turn = game.info.turn;
+            dp->commission_berths = 0;
+          }
+          gap = founders - berths - building - dp->commission_berths;
+          if (gap <= 0) {
+            continue;           /* The queue is already covered. */
+          }
+          wait = deep_wait_expected(ait, pplayer, oc);
+          if (wait <= 0) {
+            continue;           /* No queue observed: no delay to buy off. */
+          }
+          value = amortize(dp->colony_want,
+                           MAX(0, game.info.turn - dp->colony_turn));
+          n = MIN(gap, boattype->transport_capacity);
+          gain = value - amortize(value, wait);
+          bt = utype_build_shield_cost(pcity, NULL, boattype)
+               / MAX(pcity->surplus[O_SHIELD], 1);
+          cw = amortize(deep_tuning_get()->hull_commission_weight * n * gain,
+                        MAX(1, bt));
+          {
+            /* The same appetite gate the colony demand pays: a
+             * settler that cannot cross is not an expansion, and the
+             * hull it needs is expansion spending. */
+            double emult = deep_stance_expand_mult(pplayer);
+
+            if (emult != 1.0 && cw > 0) {
+              cw = cw * emult;
+              dp->stance_expand_gated++;
+            }
+          }
+          log_base(deep_metric_log_level(),
+                   "deep-commission turn=%d player=\"%s\" city=%d"
+                   " ocean=%d founders=%d berths=%d building=%d"
+                   " ordered=%d gap=%d"
+                   " wait=%d age=%d value=" ADV_WANT_PRINTF
+                   " n=%d want=" ADV_WANT_PRINTF " beat=%d",
+                   game.info.turn, player_name(pplayer), pcity->id, oc,
+                   founders, berths, building, dp->commission_berths, gap,
+                   wait, MAX(0, game.info.turn - dp->colony_turn), value, n,
+                   cw, cw > choice->want ? 1 : 0);
+          if (cw > choice->want) {
+            choice->value.utype = boattype;
+            choice->want = cw;
+            choice->type = CT_ATTACKER;
+            adv_choice_set_use(choice, "hull commission");
+            dp->commission_berths += boattype->transport_capacity;
+          }
+        } adjc_iterate_end;
       }
     }
 

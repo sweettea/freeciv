@@ -135,6 +135,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .boat_gate_at_bid = 1,                /* filter before the choice */
   .lift_drop_radius = 12,               /* human: two boat moves */
   .lift_hitch_wait_min = 1,             /* PLACEHOLDER, untuned */
+  .lift_muster_release = 0,             /* off; A/B switch */
   .lift_wait_tail_pct = 80,             /* measured: 20% of spells, 60%
                                          * of waiting */
   .worker_flee_radius = 3,              /* PLACEHOLDER, untuned */
@@ -203,6 +204,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .op_hold_survivors = 1.0,             /* PLACEHOLDER, untuned */
   .satisfied_fear_discount = 0.0,       /* PLACEHOLDER, untuned */
   .colony_lift_weight = 0.5,            /* PLACEHOLDER, untuned */
+  .hull_commission_weight = 0.0,        /* off; A/B switch */
   .invasion_reinforce_rate = 0.34,      /* PLACEHOLDER, untuned */
   .op_wave_window = 6,                  /* PLACEHOLDER, untuned */
   .raid_radius = 12,                    /* PLACEHOLDER, untuned */
@@ -437,6 +439,7 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(boat_gate_at_bid) \
   TUNE_INT(lift_drop_radius) \
   TUNE_INT(lift_hitch_wait_min) \
+  TUNE_INT(lift_muster_release) \
   TUNE_INT(lift_wait_tail_pct) \
   TUNE_INT(worker_flee_radius) \
   TUNE_INT(worker_guard_radius) \
@@ -478,6 +481,7 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(op_hold_survivors) \
   TUNE_DOUBLE(satisfied_fear_discount) \
   TUNE_DOUBLE(colony_lift_weight) \
+  TUNE_DOUBLE(hull_commission_weight) \
   TUNE_DOUBLE(invasion_reinforce_rate) \
   TUNE_INT(op_wave_window) \
   TUNE_INT(raid_radius) \

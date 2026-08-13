@@ -826,6 +826,17 @@ struct deep_tuning {
    * loaded boat for a timeout.
    * PLACEHOLDER -- flagged in STATUS.md for a tuning pass. */
   int lift_hitch_wait_min;
+  /* Re-validate a lift passenger's mission during the MUSTER as well
+   * as the crossing (0/1, not a magnitude). The op-hold sits above
+   * the settler path's own city_can_be_built_here() check, so a held
+   * passenger never re-examines its target -- deep_lift_revalidate()
+   * has asked for it on every MARCH turn since 0d6440e194, and the
+   * gather, which is just as held and lasts lift_gather_turns, never
+   * did. 1 drops a member whose target died before the hull sails,
+   * re-aims if that target was the beachhead, and aborts a lift with
+   * nobody left to deliver. At 0 the muster only COUNTS them
+   * (deep-lift-invalid phase=muster), which is what shipped first. */
+  int lift_muster_release;
   /* Which point of the live wait-spell distribution deep_wait_expected()
    * reports, as a percentile: 100 is the longest spell that water is
    * holding, 50 the median.
@@ -1404,6 +1415,23 @@ struct deep_tuning {
    * site score converted into a transport build want in coastal
    * cities, amortized over the boat's build time. <= 0 disables. */
   double colony_lift_weight;
+  /* Hull commission (EXPANSION slice 2): weight on the excess of
+   * overseas FOUNDER demand over lift supply on one of this city's
+   * waters, priced as the settlements that excess is holding times
+   * the delay a hull takes off them --
+   *
+   *   want = amortize(w x n x (value - amortize(value, wait)), build)
+   *
+   * with n = MIN(gap, hull capacity), value = colony_want aged by
+   * amortize(), wait = deep_wait_expected() for the same water. Every
+   * term is measured or a ruleset fact; this weight is the whole
+   * constant, and 0 = off is today's behaviour exactly.
+   *
+   * Distinct from colony_lift_weight, which prices a site SCORE
+   * damped by fleet surplus and only on turns a probe published one.
+   * This one prices the QUEUE, and it fires where that want is
+   * silent. */
+  double hull_commission_weight;
   /* Naval slice 3: virtual defenders per turn of sail time added to
    * a target's garrison when pricing an amphibious take -- travel
    * time is the defender's budget. 0 prices arrival like adjacency. */

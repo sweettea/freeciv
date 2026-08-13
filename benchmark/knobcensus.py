@@ -607,6 +607,25 @@ MAP = {
         "the lift= form of deep-colony is the colony-lift want being "
         "raised (deepdefence.c:2938). The demand= form is the settler "
         "side's probe and does NOT prove this weight applied."),
+    "lift_muster_release": (
+        "S3", "mode", "direct", [("deep-lift-invalid", "phase=muster")],
+        "the muster-phase half of D-E's mission re-validation "
+        "(deepops.c, deep_op_drive_lift). 0/1 switch. The muster form "
+        "of deep-lift-invalid is written in BOTH arms -- counting at "
+        "0, releasing at 1 -- so it proves the population exists, not "
+        "that the release ran; the op's `lift-invalid` dissolution and "
+        "`reaim` are what separate the arms."),
+    "hull_commission_weight": (
+        "S3", "mag", "direct", [("deep-commission", "gap>=1")],
+        "EXPANSION slice 2's commission (deepdefence.c, the colony "
+        "lift block): overseas founder demand beyond the berths idle "
+        "and building on one water, priced as the settlements the gap "
+        "holds times the delay a hull removes. deep-commission is "
+        "written only on the branch the knob gates and carries the gap "
+        "and the want, so a nonzero count is this arithmetic running. "
+        "Population is small by measurement -- 7 positive gaps on "
+        "bridging water in 600 water-turns of isolated-150 "
+        "(deep-liftgap) -- so read `beat` before reading firings."),
     "boat_idle_damping": (
         "S3", "mag", "direct", [("deep-hull", "")],
         "deep-hull logs want before -> after the idle damping "

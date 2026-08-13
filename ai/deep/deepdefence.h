@@ -100,6 +100,15 @@ int deep_idle_ferries_on(struct ai_type *ait, struct player *pplayer,
                          Continent_id ocean);
 int deep_ferry_demand_on(struct ai_type *ait, struct player *pplayer,
                          Continent_id ocean);
+/* The SETTLEMENT half of that demand -- founders waiting to cross this
+ * water, unclaimed by any operation -- and the supply against it in
+ * BERTHS: idle capacity now, plus (out) capacity our own cities on the
+ * same water already have in production. The pair the demand-supply
+ * gap is computed from. */
+int deep_founder_demand_on(struct ai_type *ait, struct player *pplayer,
+                           Continent_id ocean);
+int deep_lift_berths_on(struct ai_type *ait, struct player *pplayer,
+                        Continent_id ocean, int *building);
 /* The same demand with the distance to its nearest unit, for the hull
  * census: on an island map one ocean can be the whole world sea. */
 int deep_ferry_demand_near(struct ai_type *ait, struct player *pplayer,
