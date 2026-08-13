@@ -13761,3 +13761,148 @@ geometry.
   no-op on its own venue (the misdirected discount it corrects was
   being spent on huts that changed no outcomes). Knob stays 0,
   correctness noted, priority floor. Batch 2 complete 00:11.
+
+## PERPLAYER: one game, several tunings (2026-08-13, task #44)
+
+Pre-v4 plumbing, gated on byte-identity. The constraint the derby-4 kit
+work hit — `FREECIV_DEEP_TUNING` loads exactly ONE ini per server
+process into one global `struct deep_tuning`, so candidate-vs-candidate
+inside a single game was impossible — is gone. Each deep seat now has
+its own tuning struct, and `benchmark/arena.py` seats different
+candidate files at one table. Branch `epic/perplayer`, 5 commits.
+No policy and NO new knobs: tune-audit CLEAN at the same 228 fields,
+`meson test` 5/5.
+
+This is the plumbing half of the arena tier
+(`findings/tuning-venues-2026-08-06.md` §6a). The tier's *risk* half is
+answered below; its *value* half (rank-based fitness over many tables,
+the balance experiment) is now runnable and unrun.
+
+### The loading scheme (full text at the top of `ai/deep/deeptuning.h`)
+
+1. **Base, unchanged** — compiled defaults overlaid by
+   `$FREECIV_DEEP_TUNING`'s `[tuning]` section. One file, every deep
+   seat. With no arena this is the whole scheme.
+2. **Arena, opt-in** — `$FREECIV_DEEP_ARENA` names a manifest:
+
+       [arena]
+       P1 = "benchmark/tuning/candidate-a.ini"
+       P2 = "benchmark/tuning/candidate-b.ini"
+
+   Seats resolve by player NAME first, then by `slot<n>`. Each named
+   file loads exactly the way the base file does (defaults, then its
+   keys) and is cached by path, so eight seats on one file share one
+   struct. A seat named by neither keeps the base values.
+
+The layers compose at **seat** level, not key level: a named seat runs
+its own file from the compiled defaults, NOT the base plus a delta. One
+semantics for every tuning file this project has written beats the
+convenience of an overlay, and every archived ini is already a whole
+file.
+
+Assignment resolves on a seat's **first read**, not in the alloc hook:
+`server_create_player()` runs before `server_player_set_name()`
+(`server/stdinhand.c:908` vs `:939`), so at alloc time there is no name
+to key on.
+
+### Reading the values — and why the mechanical swap was NOT done
+
+The brief said to swap `deep_tuning_get()`'s 229 call sites for a
+per-player accessor. That was deliberately not done, and the reason is
+the failure mode §6a gates this work on. 72 of the 229 sit in functions
+with no player argument at all, and many of the rest carry TWO players
+(the deciding seat and its target), so a mechanical swap *invents* a
+seat binding at every site — and a wrong binding is invisible to the
+identity gate, because under one file every seat holds the same values.
+A gate that cannot see the defect it exists to catch is not a gate.
+
+What landed instead is the design §6a itself points at: a phase-scoped
+active pointer. AI phases are strictly sequential per player, so the
+pointer has no concurrent reader by construction. `deepai.c`'s 49 hook
+wrappers enter the scope of the seat they serve and RESTORE the previous
+one on the way out — save/restore, not set/clear, because hooks nest
+across seats (`city_lost` fires for the victim inside the attacker's
+phase). The single path that reaches deep without passing a wrapper,
+`deep_worker_task_value()` / `deep_base_want()` (registered directly
+with the advisors' `aw_set_task_value_hook()`), names its seat
+explicitly with `deep_tuning_for(pplayer)`. Entry-point inventory is
+complete: the vtable, `fc_ai_deep_setup()`, and that one hook are the
+only ways in (nothing outside `ai/deep` references a deep symbol
+except `server/aiiface.c:217`).
+
+Coverage is measured, not asserted. `deep_tuning_scopeless_reads()`
+counts reads that found no scope while an arena was configured, and
+`dpai_data_phase_finished()` logs it. It cannot fire in a single-file
+run (every seat's pointer IS the base struct's address); in an arena a
+nonzero count names a path no guard covers.
+
+### Gate 1 — byte identity: 11/11, PASSED
+
+smoke (4p/32×32/T100), `git archive` build of the base commit
+`304e36af41` vs the branch build, same runner, same config, same seeds,
+`DEEP_QUIET=1`. Scorelogs compared byte for byte:
+
+| arm | seeds | identical |
+|---|---|---|
+| deep | 201–210 | **10 / 10** |
+| mixed_dc (deep vs ai/default in one game) | 201 | **1 / 1** |
+
+Map hashes matched on all 11. Base binary verified to be the base tree
+(`strings | grep -c deep-arena` = 0 against 2 for the branch), per the
+box quirk that `meson setup` with no source argument configures the
+caller's cwd.
+
+A 12th game re-ran seed 201 on the *rebuilt* binary after the one
+comment-only commit that followed the tested build, and came back
+identical too — so the gate covers the tree as it stands, not just the
+binary it was taken on.
+
+### Gate 2 — per-seat attribution: exact, and scopeless_reads = 0
+
+Two arena smoke games, `benchmark/arena.py`, candidates dealt
+round-robin and rotated by `seed % seats`:
+
+- **demo-201**, `identity.ini` vs `arena-demo-traits.ini`
+  (`stance_source = 1`). The game's own log settles attribution
+  independently of the harness: P1/P3 print `src=traits econ=0.833
+  mil=0.833`, P2/P4 print `src=identity econ=1.000 mil=1.000`, held
+  from turn 1 through turn 50. Per-seat scores: P1 55, P2 112, P3 87,
+  P4 85 — identical to the plain all-identity game on the same seed,
+  because smoke's traits are FIXED at 50 and every stance gate reports
+  0 executions. Attribution proven; the candidate is inert on this cell.
+- **demo-202**, `identity.ini` vs a one-key `garrison_floor = 0` file,
+  chosen because it must bite. Scores P1 81, P2 100, P3 53, P4 61
+  against the plain game's 119/84/38/89 — the seats diverge from the
+  single-file run, so the per-seat values reach decisions and not just
+  the log.
+- `scopeless_reads=0` on every phase of **both** games: the 49 guards
+  covered every tunable read that happened.
+
+### Harness
+
+`benchmark/run-game.sh` takes `ARENA` (→ `FREECIV_DEEP_ARENA`) and
+records the manifest *and* every candidate file it names in
+`provenance.txt` — the manifest's own hash does not cover the values
+played. `benchmark/arena.py` deals seats, writes the manifest, runs the
+game, and reports per-seat score keyed by candidate plus per-candidate
+mean rank over several games. It re-implements run.sh's three
+tuning-file checks per candidate (no `[tuning]` header; unknown key;
+float written without a decimal point), because an arena multiplies each
+of those 40-game-A/B losses by the population.
+
+Stated in the file, and worth repeating here: arena fitness is
+population-dependent and can cycle, so the tier **triages, it never
+claims**. Claims stay with run.sh's paired protocol on held-out seeds.
+
+### Next
+
+- `tune.py` has no `--arena` mode; `arena.py` is the callable unit and a
+  campaign wrapper is the next step (rank-based stage 0 of §6e's racing
+  ladder).
+- The balance experiment (§6a: round-robin the personality corners
+  within the shipped `stance_trait_span`, require **no perpetual
+  winner**) is now runnable. Note demo-201's finding in advance: on
+  smoke the traits are fixed, so that experiment needs a venue whose
+  nations actually differ (`smoke-traits.conf`, or the derby map).
+- Candidate-vs-incumbent tables when stock goes stale as a yardstick
+  (§2a) are unblocked by the same plumbing.
