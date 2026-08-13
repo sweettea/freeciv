@@ -13198,3 +13198,13 @@ pv2 should carry `gift_love_gain = 0` instead.
 
 Not attempted, deliberately: no A/B of any kind tonight, no default
 change, and no vision pricing (item (b)'s seam is a comment).
+
+- G3 gov guard: pv2+gov_valuation=1 on lategame-80 holdout -36.5 vs
+  pv2 -10.1 — paired **-26.4, t -2.92, 16/20 worse: significantly
+  harmful as shipped.** Knob stays 0. The liveness read (all four
+  players to Monarchy by T101 vs stock's Tribal) says the machinery
+  works and the PRICING is wrong — suspects: the upkeep charge
+  dominating (Communism 34 vs Democracy 216 on the same army pushes
+  toward cheap-and-poor governments), the dropped effect-sum's blind
+  spot (veteran/HP/bribe), or revolution timing. Diagnosis session
+  owed before any sweep.
