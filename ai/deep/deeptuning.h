@@ -1345,6 +1345,23 @@ struct deep_tuning {
    * site score converted into a transport build want in coastal
    * cities, amortized over the boat's build time. <= 0 disables. */
   double colony_lift_weight;
+  /* Hull commission (EXPANSION slice 2): weight on the excess of
+   * overseas FOUNDER demand over lift supply on one of this city's
+   * waters, priced as the settlements that excess is holding times
+   * the delay a hull takes off them --
+   *
+   *   want = amortize(w x n x (value - amortize(value, wait)), build)
+   *
+   * with n = MIN(gap, hull capacity), value = colony_want aged by
+   * amortize(), wait = deep_wait_expected() for the same water. Every
+   * term is measured or a ruleset fact; this weight is the whole
+   * constant, and 0 = off is today's behaviour exactly.
+   *
+   * Distinct from colony_lift_weight, which prices a site SCORE
+   * damped by fleet surplus and only on turns a probe published one.
+   * This one prices the QUEUE, and it fires where that want is
+   * silent. */
+  double hull_commission_weight;
   /* Naval slice 3: virtual defenders per turn of sail time added to
    * a target's garrison when pricing an amphibious take -- travel
    * time is the defender's budget. 0 prices arrival like adjacency. */

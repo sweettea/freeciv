@@ -607,6 +607,17 @@ MAP = {
         "the lift= form of deep-colony is the colony-lift want being "
         "raised (deepdefence.c:2938). The demand= form is the settler "
         "side's probe and does NOT prove this weight applied."),
+    "hull_commission_weight": (
+        "S3", "mag", "direct", [("deep-commission", "gap>=1")],
+        "EXPANSION slice 2's commission (deepdefence.c, the colony "
+        "lift block): overseas founder demand beyond the berths idle "
+        "and building on one water, priced as the settlements the gap "
+        "holds times the delay a hull removes. deep-commission is "
+        "written only on the branch the knob gates and carries the gap "
+        "and the want, so a nonzero count is this arithmetic running. "
+        "Population is small by measurement -- 7 positive gaps on "
+        "bridging water in 600 water-turns of isolated-150 "
+        "(deep-liftgap) -- so read `beat` before reading firings."),
     "boat_idle_damping": (
         "S3", "mag", "direct", [("deep-hull", "")],
         "deep-hull logs want before -> after the idle damping "

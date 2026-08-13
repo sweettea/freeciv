@@ -5528,6 +5528,133 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
       }
     }
 
+    /* THE COMMISSION (EXPANSION slice 2). The want above is a site
+     * SCORE damped by a surplus: it says "somewhere overseas is worth
+     * having, and the fleet is not obviously idle". It cannot say how
+     * many founders are standing on the quay, and it exists only on
+     * the turns a lift-limited settler search happened to publish
+     * colony_want -- which is why the queue can be dry and the
+     * shipyard silent in the same turn (measured: 4 of 7 water-turns
+     * with a positive gap on serviceable water carried no fresh
+     * publication at all).
+     *
+     * The circle this breaks, all three legs measured:
+     *   - slice 1: from t20 the land search scores nothing, so every
+     *     founder want left is overseas and the lift is the channel;
+     *   - W36: the overseas candidate is discounted by the wait its
+     *     water is holding;
+     *   - W36-DIM: 86% of that discount's firings land on the
+     *     build-side founder want. Demand is damped by the queue, and
+     *     the queue exists because demand never commissions supply.
+     *
+     * So price the hull by what it UNBLOCKS: the settlements already
+     * queued behind the shortage, times the delay it takes off them.
+     * Every term comes from something already computed --
+     *
+     *   value   dp->colony_want, deep's own overseas site score, AGED
+     *           by amortize() rather than cut off by a freshness
+     *           window. A site does not stop being worth what it was
+     *           worth because the probe ran three turns ago, and the
+     *           same discounter prices every other delay in this file.
+     *   n       berths the gap can fill: MIN(gap, this hull's
+     *           capacity), both ruleset facts.
+     *   gain    value - amortize(value, wait): the delay the hull
+     *           removes, in the currency of the thing delayed. Zero
+     *           when the water has shown no queue, which is exactly
+     *           when deep_wait_expected() refuses to claim a wait.
+     *
+     * Nothing here is a constant except the weight, which is the
+     * on/off switch and defaults to 0.
+     *
+     * The gate is load-bearing rather than decorative here. The gap
+     * census reads 65 positive gaps in 600 water-turns on
+     * isolated-150 and only 7 of them on water that BRIDGES: the rest
+     * are founders queued beside a sea that closes on its own
+     * continent, where no hull can help and boat_water_gate refuses
+     * the keel. With the gate off this term would commission for
+     * those queues. */
+    if (deep_tuning_get()->hull_commission_weight > 0.0
+        && dp->colony_want > 0
+        && is_terrain_class_near_tile(nmap, ptile, TC_OCEAN)) {
+      struct unit_type *boattype
+        = best_role_unit_for_player(pplayer, L_FERRYBOAT);
+      bool gated = (deep_tuning_get()->boat_gate_at_bid > 0
+                    && deep_tuning_get()->boat_water_gate > 0);
+      Continent_id seen[8];
+      int nseen = 0;
+
+      if (boattype != NULL
+          && boattype->transport_capacity > 0
+          && can_city_build_unit_now(nmap, pcity, boattype, RPT_CERTAIN)) {
+        adjc_iterate(nmap, ptile, atile) {
+          Continent_id oc = tile_continent(atile);
+          int si, building = 0, founders, berths, gap, wait, n;
+          adv_want value, gain, cw;
+          int bt;
+
+          if (oc >= 0) {
+            continue;                   /* Land. */
+          }
+          for (si = 0; si < nseen; si++) {
+            if (seen[si] == oc) {
+              break;
+            }
+          }
+          if (si < nseen || nseen >= (int) ARRAY_SIZE(seen)) {
+            continue;
+          }
+          seen[nseen++] = oc;
+          if (gated && !deep_water_bridges(oc)) {
+            continue;           /* A keel here reaches no other shore. */
+          }
+          founders = deep_founder_demand_on(ait, pplayer, oc);
+          berths = deep_lift_berths_on(ait, pplayer, oc, &building);
+          gap = founders - berths - building;
+          if (gap <= 0) {
+            continue;           /* The queue is already covered. */
+          }
+          wait = deep_wait_expected(ait, pplayer, oc);
+          if (wait <= 0) {
+            continue;           /* No queue observed: no delay to buy off. */
+          }
+          value = amortize(dp->colony_want,
+                           MAX(0, game.info.turn - dp->colony_turn));
+          n = MIN(gap, boattype->transport_capacity);
+          gain = value - amortize(value, wait);
+          bt = utype_build_shield_cost(pcity, NULL, boattype)
+               / MAX(pcity->surplus[O_SHIELD], 1);
+          cw = amortize(deep_tuning_get()->hull_commission_weight * n * gain,
+                        MAX(1, bt));
+          {
+            /* The same appetite gate the colony demand pays: a
+             * settler that cannot cross is not an expansion, and the
+             * hull it needs is expansion spending. */
+            double emult = deep_stance_expand_mult(pplayer);
+
+            if (emult != 1.0 && cw > 0) {
+              cw = cw * emult;
+              dp->stance_expand_gated++;
+            }
+          }
+          log_base(deep_metric_log_level(),
+                   "deep-commission turn=%d player=\"%s\" city=%d"
+                   " ocean=%d founders=%d berths=%d building=%d gap=%d"
+                   " wait=%d age=%d value=" ADV_WANT_PRINTF
+                   " n=%d want=" ADV_WANT_PRINTF " beat=%d",
+                   game.info.turn, player_name(pplayer), pcity->id, oc,
+                   founders, berths, building, gap, wait,
+                   MAX(0, game.info.turn - dp->colony_turn), value, n, cw,
+                   cw > choice->want ? 1 : 0);
+          if (cw > choice->want) {
+            choice->value.utype = boattype;
+            choice->want = cw;
+            choice->type = CT_ATTACKER;
+            adv_choice_set_use(choice, "hull commission");
+          }
+        } adjc_iterate_end;
+      }
+    }
+
     /* "Am I coastal" (is_terrain_class_near_tile) is the wrong
      * question and always was: a hull is useful only if its water
      * touches the demand as well as this city. Asking WHICH water

@@ -199,6 +199,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .op_hold_survivors = 1.0,             /* PLACEHOLDER, untuned */
   .satisfied_fear_discount = 0.0,       /* PLACEHOLDER, untuned */
   .colony_lift_weight = 0.5,            /* PLACEHOLDER, untuned */
+  .hull_commission_weight = 0.0,        /* off; A/B switch */
   .invasion_reinforce_rate = 0.34,      /* PLACEHOLDER, untuned */
   .op_wave_window = 6,                  /* PLACEHOLDER, untuned */
   .raid_radius = 12,                    /* PLACEHOLDER, untuned */
@@ -446,6 +447,7 @@ static bool deep_tuning_loaded = FALSE;
   TUNE_DOUBLE(op_hold_survivors) \
   TUNE_DOUBLE(satisfied_fear_discount) \
   TUNE_DOUBLE(colony_lift_weight) \
+  TUNE_DOUBLE(hull_commission_weight) \
   TUNE_DOUBLE(invasion_reinforce_rate) \
   TUNE_INT(op_wave_window) \
   TUNE_INT(raid_radius) \
