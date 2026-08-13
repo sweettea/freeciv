@@ -12534,3 +12534,15 @@ place; every naval number in its calibration table is flagged as a
 the cell's geometry, which the fix does not touch. The edit changes
 the config's sha256 and therefore its result-cache key — which costs
 nothing, since a rebuilt binary already misses that cache.
+
+## MOVETYPE merged on its A/B (2026-08-12 evening)
+
+Merge gate read out: tech50war fix −250.6 vs base −250.2 (neutral,
+naval pricing doesn't bind there); contested guard +36.9 vs +43.1
+known (−6, noise); naval tech65sea fix−base −34.3/seed paired,
+t −1.25, ns — read as FEAR-CALIBRATION DEBT (survival 0.73→0.40 under
+honest sea threat, constants tuned warship-blind), owned by the MIL
+finale's naval-fear family sweep on tech65sea-150. Human call: merge.
+pv2 on tech50war measured −250 vs the pv1 family's −293 on the same
+seeds — ECON tuning travels to the war venue (~+43, pairing pending
+G5). by_sea live: 0 → 309,594.
