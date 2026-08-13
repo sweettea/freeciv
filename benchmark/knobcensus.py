@@ -529,9 +529,16 @@ MAP = {
         "<= 0 (deepops.c:2451); deep-raid is the drive "
         "(deepops.c:2518)."),
     "invasion_reinforce_rate": (
-        "S2", "mag", "direct", [("deep-invade", "")],
+        "S2", "mag", "direct",
+        [("deep-invade", ""), ("deep-kill", "eta>=1")],
         "deep-invade's p= is deep_take_odds_at_arrival(), whose "
-        "reinforcement model this rate is (deepcombat.c:438)."),
+        "reinforcement model this rate is (deepcombat.c:438). The "
+        "second probe is the BUILD side of the same law: every "
+        "deep-kill line with eta>=1 priced its odds against a garrison "
+        "this rate reinforced, and it is orders of magnitude more "
+        "populous than the crossing seam, which needs an operation "
+        "actually mid-sail. sea=1 on that line separates the invasion "
+        "wants from the land ones."),
     "barb_reinforce_rate": (
         "S2", "mag", "proxy", [("deep-kill", "barb>0")],
         "the barbarian branch of deep_take_odds_at_arrival() "
