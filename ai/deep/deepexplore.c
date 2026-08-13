@@ -19,6 +19,7 @@
 #include "log.h"
 
 /* common */
+#include "city.h"
 #include "extras.h"
 #include "game.h"
 #include "map.h"
@@ -42,6 +43,21 @@
  * explorer built: exploration happens only as an AIUNIT_NONE fallback,
  * and dai_spend_gold() disbands explorers that come home. In hut games
  * that forfeits one of the strongest early investments. */
+
+/* What the hut-risk term actually looked at, for the census line.
+ * `unleashable` is the population the SERVER would let spawn
+ * barbarians (no city of ANY player within the max city map --
+ * default.lua:112 and hut_get_limited(), server/unittools.c:3321);
+ * `discounted` is the population the code in force actually charged
+ * for. The two are separate on purpose: they are not the same set,
+ * and the whole point of the census is to show by how much
+ * (findings/knob-coverage.md lists both hut_risk_* knobs
+ * NO-INSTRUMENT, needing exactly this). */
+struct deep_hut_census {
+  int discounted;
+  int unleashable;
+  bool armed;                 /* the server's rate+onset gate is open */
+};
 
 /**********************************************************************//**
   The visible prize an explorer fleet exists to collect, as a SUM OF
@@ -72,10 +88,13 @@
   prize, so there is exactly one place where the terms are added.
 **************************************************************************/
 static double deep_explore_prize(struct player *pplayer, double *hutw_out,
-                                 int *unknown_out, int *huts_out)
+                                 int *unknown_out, int *huts_out,
+                                 struct deep_hut_census *census)
 {
   const struct deep_tuning *tune = deep_tuning_get();
+  const struct civ_map *nmap = &(wld.map);
   int huts_visible = 0, unknown = 0;
+  int huts_discounted = 0, huts_unleashable = 0;
   double hut_weight = 0.0;
   bool hut_risk;
   Continent_id ours[64];
@@ -146,11 +165,23 @@ static double deep_explore_prize(struct player *pplayer, double *hutw_out,
     } else if (hut_on_tile(ptile)) {
       double w = 1.0;
 
+      /* The server's own predicate, asked of every hut whether or not
+       * the term in force reads it: a hut with no city of ANY player
+       * within CITY_MAP_MAX_RADIUS_SQ is one the server would let
+       * unleash a horde, and every other hut is one it refuses to.
+       * Counted before any gate so that "we never looked" and "we
+       * looked and there were none" stay distinguishable -- the
+       * lesson deep-fort's offers/evals split recorded. */
+      if (!city_exists_within_max_city_map(nmap, ptile, TRUE)) {
+        huts_unleashable++;
+      }
+
       if (hut_risk && tune->hut_risk_radius > 0) {
         city_list_iterate(pplayer->cities, hc) {
           if (real_map_distance(city_tile(hc), ptile)
               <= tune->hut_risk_radius) {
             w = tune->hut_risk_discount;
+            huts_discounted++;
             break;
           }
         } city_list_iterate_end;
@@ -180,6 +211,9 @@ static double deep_explore_prize(struct player *pplayer, double *hutw_out,
   *hutw_out = hut_weight;
   *unknown_out = unknown;
   *huts_out = huts_visible;
+  census->discounted = huts_discounted;
+  census->unleashable = huts_unleashable;
+  census->armed = hut_risk;
 
   /* The sum. One line per purpose; a fourth purpose is a fourth line. */
   return hut_weight * tune->explore_hut_value          /* huts */
@@ -197,13 +231,15 @@ adv_want deep_explore_want(struct player *pplayer, int queued)
   const struct deep_tuning *tune = deep_tuning_get();
   int huts_visible = 0, unknown = 0, explorers = 0;
   double hut_weight = 0.0, prize;
+  struct deep_hut_census hutc = { 0, 0, FALSE };
   adv_want want;
 
   if (wld.map.server.huts <= 0) {
     return 0;
   }
 
-  prize = deep_explore_prize(pplayer, &hut_weight, &unknown, &huts_visible);
+  prize = deep_explore_prize(pplayer, &hut_weight, &unknown, &huts_visible,
+                             &hutc);
 
   unit_list_iterate(pplayer->units, punit) {
     if (unit_has_type_role(punit, L_EXPLORER)) {
@@ -265,10 +301,12 @@ adv_want deep_explore_want(struct player *pplayer, int queued)
     log_base(deep_metric_log_level(),
              "deep-explore turn=%d player=\"%s\" want=%d huts_vis=%d"
              " unknown=%d explorers=%d queued=%d hutw=%.2f prize=%.2f"
-             " claimed=%.2f saturated=%d",
+             " claimed=%.2f saturated=%d huts_disc=%d huts_unleash=%d"
+             " barbs_armed=%d",
              game.info.turn, player_name(pplayer), (int) want,
              huts_visible, unknown, explorers, queued, hut_weight,
-             prize, claimed, left <= 0.0 ? 1 : 0);
+             prize, claimed, left <= 0.0 ? 1 : 0,
+             hutc.discounted, hutc.unleashable, hutc.armed ? 1 : 0);
   }
 
   return want;
@@ -306,6 +344,7 @@ int deep_explore_surplus(struct player *pplayer)
   const struct deep_tuning *tune = deep_tuning_get();
   int huts_visible = 0, unknown = 0, explorers = 0;
   double hut_weight = 0.0, employable;
+  struct deep_hut_census hutc = { 0, 0, FALSE };
   int surplus;
 
   if (wld.map.server.huts <= 0
@@ -328,7 +367,7 @@ int deep_explore_surplus(struct player *pplayer)
    * deemed to collect. A dormant term waking up raises this and the
    * salvage stops, with no second formula to keep in step. */
   employable = deep_explore_prize(pplayer, &hut_weight, &unknown,
-                                  &huts_visible)
+                                  &huts_visible, &hutc)
                / (tune->explore_explorer_claim * tune->explore_hut_value);
 
   surplus = explorers - (int) (employable + tune->explore_salvage_gap);
