@@ -76,13 +76,22 @@ bool auto_workers_speculate_can_act_at(const struct unit *punit,
  * candidate tile and the computed value, and returns the value to
  * use. Registered by AI modules that want e.g. danger-aware task
  * selection, or a want for an extra whose worth is not tile output;
- * MUST return the value unchanged for players it does not manage. */
+ * MUST return the value unchanged for players it does not manage.
+ *
+ * 'old_tile_value' is the same tile valued WITHOUT the candidate
+ * improvement, and 'arrival' is the number of turns before this worker
+ * could begin work there. Neither is derivable from the rest: a
+ * consumer that wants to reason about the improvement rather than the
+ * resulting total needs the first, and one that wants to price the
+ * walk needs the second, which only the caller's pathfinding knows. */
 typedef adv_want (*aw_task_value_fn)(const struct player *pplayer,
                                      const struct unit *punit,
                                      enum unit_activity act,
                                      const struct extra_type *target,
                                      struct tile *ptile,
-                                     adv_want value);
+                                     adv_want value,
+                                     adv_want old_tile_value,
+                                     int arrival);
 void aw_set_task_value_hook(aw_task_value_fn fn);
 
 extern action_id aw_actions_transform[MAX_NUM_ACTIONS];

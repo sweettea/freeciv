@@ -2174,7 +2174,8 @@ adv_want deep_worker_task_value(const struct player *pplayer,
                                 const struct unit *punit,
                                 enum unit_activity act,
                                 const struct extra_type *target,
-                                struct tile *ptile, adv_want value)
+                                struct tile *ptile, adv_want value,
+                                adv_want old_tile_value, int arrival)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   adv_want base = 0.0;

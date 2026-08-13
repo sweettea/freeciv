@@ -356,9 +356,14 @@ static void consider_worker_action(const struct player *pplayer,
      * all -- adv_calc_extra() sums food/shield/trade only, so a base
      * changes nothing it can see and its want is structurally zero.
      * A consumer that wants to say otherwise has to know WHICH extra
-     * is on the table. Still inert with no hook registered. */
+     * is on the table. The tile's value without the improvement and
+     * the turns until this worker could start travel with them for the
+     * same reason: neither can be recovered from the candidate value,
+     * and the arrival count exists only inside the caller's own
+     * pathfinding. Still inert with no hook registered. */
     new_tile_value = aw_task_value_hook(pplayer, punit, act, target,
-                                        ptile, new_tile_value);
+                                        ptile, new_tile_value,
+                                        old_tile_value, arrival);
   }
   adv_want total_value = 0;
   adv_want base_value = 0;
