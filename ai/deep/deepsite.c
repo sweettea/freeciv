@@ -924,6 +924,24 @@ static int deep_site_lad_neg = 0;     /* scored, then <= 0 after costs */
 static double deep_site_lad_best_raw = 0.0;  /* best cr->total seen */
 static double deep_site_lad_best_net = 0.0;  /* best cr->result seen */
 
+/* `nofound` is the ladder's largest bucket by an order of magnitude and
+ * on its own it says nothing, because city_can_be_built_here() folds
+ * four unrelated refusals into one FALSE: terrain that takes no city
+ * (every ocean tile the overseas leg's overlap map walks over), the
+ * citymindist ring around a REAL city, the fog under H_MAP, and the
+ * native/foreign action tests. "The sea is large" and "our own cities
+ * already cover the continent" are the same answer there, and they are
+ * opposite findings.
+ *
+ * The split costs a citymindist square_iterate on refused tiles, so it
+ * is computed only when the metric level is on -- the deep-sitedef
+ * pattern. Under FREECIV_DEEP_QUIET these stay zero, which is correct:
+ * a tuning run must not pay for a census. */
+static int deep_site_lad_noterr = 0;  /* TER_NO_CITIES (incl. all water) */
+static int deep_site_lad_nomin = 0;   /* citymindist vs an existing city */
+static int deep_site_lad_nomap = 0;   /* unknown to us under H_MAP */
+static int deep_site_lad_nolegal = 0; /* native/foreign action refusals */
+
 /* Per-search memo for deep_wait_expected(), which walks the unit list
  * twice per body of water. Demand and supply cannot move DURING a
  * search, so one answer per water per search is exact, and without it
@@ -1128,6 +1146,18 @@ static struct cityresult *deep_city_desirability(struct ai_type *ait,
       || (has_handicap(pplayer, H_MAP)
           && !map_is_known(ptile, pplayer))) {
     deep_site_lad_nofound++;
+    if (log_do_output_for_level(deep_metric_log_level())) {
+      if (terrain_has_flag(tile_terrain(ptile), TER_NO_CITIES)) {
+        deep_site_lad_noterr++;
+      } else if (citymindist_prevents_city_on_tile(nmap, ptile)) {
+        deep_site_lad_nomin++;
+      } else if (has_handicap(pplayer, H_MAP)
+                 && !map_is_known(ptile, pplayer)) {
+        deep_site_lad_nomap++;
+      } else {
+        deep_site_lad_nolegal++;
+      }
+    }
     return NULL;
   }
 
@@ -1284,6 +1314,10 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
   deep_site_lad_neg = 0;
   deep_site_lad_best_raw = 0.0;
   deep_site_lad_best_net = 0.0;
+  deep_site_lad_noterr = 0;
+  deep_site_lad_nomin = 0;
+  deep_site_lad_nomap = 0;
+  deep_site_lad_nolegal = 0;
 
   pfm = pf_map_new(parameter);
   pf_map_move_costs_iterate(pfm, ptile, move_cost, FALSE) {
@@ -1453,14 +1487,16 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
              "deep-siteladder turn=%d player=\"%s\" unit=%d boat=%d"
              " seen=%d off=%d nofound=%d mindist=%d danger=%d taken=%d"
              " starve=%d scored=%d neg=%d best_raw=%.1f best_net=%.1f"
-             " found=%d",
+             " found=%d noterr=%d nomin=%d nomap=%d nolegal=%d",
              game.info.turn, player_name(pplayer), punit->id, boat_cost,
              deep_site_lad_seen, deep_site_lad_off, deep_site_lad_nofound,
              deep_site_lad_mindist, deep_site_lad_danger,
              deep_site_lad_taken, deep_site_lad_starve,
              deep_site_lad_scored, deep_site_lad_neg,
              deep_site_lad_best_raw, deep_site_lad_best_net,
-             best != NULL ? 1 : 0);
+             best != NULL ? 1 : 0,
+             deep_site_lad_noterr, deep_site_lad_nomin,
+             deep_site_lad_nomap, deep_site_lad_nolegal);
   }
 
   /* One census line per SEARCH -- a few hundred a game, against the
