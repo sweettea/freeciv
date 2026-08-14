@@ -44,6 +44,23 @@ interrupted run resumes.
 Discipline: refuses to optimise against the holdout seed file. Report
 final numbers with --report-holdout TUNINGFILE, which evaluates a fixed
 tuning (no optimisation) on the holdout seeds.
+
+    tune.py --arena MANIFEST [--config FILE] [--count N] ...
+
+--arena drives the server's own per-seat tuning layer (PERPLAYER,
+ai/deep/deeptuning.c): MANIFEST is a file in the format that loader
+already parses -- an [arena] section whose keys are seat names (P1)
+or slotN fallbacks, each naming one whole tuning ini -- and every
+game runs all-deep with FREECIV_DEEP_ARENA pointing at it, so
+different seats in the SAME game play different tunings. The report
+is per seat: each seat's final score and in-game rank, keyed by the
+file it played, confirmed against the server's own deep-arena log
+line, plus the per-file mean score and mean rank over all games.
+Results are cached like every other mode, under a key that hashes
+the WHOLE manifest content and every candidate file it names --
+editing any of them misses the cache. Arena fitness is population-
+dependent; it triages candidates, it does not replace the paired
+protocol (see benchmark/arena.py's header).
 """
 
 import argparse
@@ -149,10 +166,14 @@ def mixed_sides(scorelog, arm):
 
 
 def run_game(config, args, arm, seed, outdir, port, tuning=None,
-             mixed=False):
+             mixed=False, arena=None):
     outdir.mkdir(parents=True, exist_ok=True)
     if not (outdir / "DONE").exists():
-        env = dict(TUNING=str(tuning)) if tuning else {}
+        env = {}
+        if tuning:
+            env["TUNING"] = str(tuning)
+        if arena:
+            env["ARENA"] = str(arena)
         import os
         cmd = [str(HERE / "run-game.sh"), "--config", config,
                "--seed", str(seed), "--arm", arm, "--out", str(outdir),
@@ -285,6 +306,132 @@ def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
     return best
 
 
+def parse_arena_manifest(path):
+    """[(key, ini path)] from a manifest in the server's OWN format
+    (ai/deep/deeptuning.c): an [arena] section whose keys are seat
+    names (P1) or slotN fallbacks, each = one tuning ini. This parses
+    the subset secfile_load() accepts for that shape; it deliberately
+    defines no second format."""
+    entries, section = [], None
+    for raw in Path(path).read_text().split("\n"):
+        line = raw.split(";", 1)[0].strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("["):
+            section = line.strip("[] \t")
+            continue
+        if section != "arena":
+            continue
+        key, eq, val = line.partition("=")
+        if not eq:
+            sys.exit(f"{path}: not a key = value line: {raw!r}")
+        entries.append((key.strip(), val.strip().strip('"')))
+    if not entries:
+        sys.exit(f"{path}: no [arena] entries; the server would keep"
+                 " every seat on the base tuning")
+    return entries
+
+
+def arena_key(manifest, files):
+    """Content key for the result cache: the manifest's bytes and every
+    named candidate file's bytes. Editing ANY of them must miss."""
+    h = hashlib.sha256()
+    h.update(Path(manifest).read_bytes())
+    for p in files:
+        h.update(b"\0" + str(p).encode() + b"\0")
+        h.update(Path(p).read_bytes())
+    return h.hexdigest()[:12]
+
+
+def arena_log_loads(gamedir):
+    """{seat name: (slot, file)} from the game's own deep-arena log
+    lines -- the server saying which file each seat actually loaded."""
+    rx = re.compile(r'deep-arena seat=(\S+) slot=(\d+) file="([^"]+)"')
+    out = {}
+    for line in open(Path(gamedir) / "game.log", errors="replace"):
+        m = rx.search(line)
+        if m:
+            out[m.group(1)] = (int(m.group(2)), m.group(3))
+    return out
+
+
+def run_arena(args, seeds, out):
+    from arena import seat_scores, validate_tuning
+
+    manifest = Path(args.arena).resolve()
+    entries = parse_arena_manifest(manifest)
+    files = sorted({p for _, p in entries})
+    for p in files:
+        # The server loads candidate paths verbatim from ITS cwd (the
+        # game dir), so a relative path would silently run the compiled
+        # defaults and still produce a plausible game.
+        if not Path(p).is_absolute():
+            sys.exit(f"manifest names a relative candidate path: {p}")
+        if not Path(p).is_file():
+            sys.exit(f"manifest names a missing candidate file: {p}")
+        validate_tuning(p)
+    expect = dict(entries)
+    key = arena_key(manifest, files)
+    base = out / f"arena-{key}"
+    print(f"arena {manifest} key {key}: {len(entries)} seat entries,"
+          f" {len(files)} candidate files", flush=True)
+
+    with concurrent.futures.ThreadPoolExecutor(args.jobs) as ex:
+        futs, port = {}, args.portbase
+        for c, config in enumerate(args.configs):
+            for s in seeds:
+                d = base / f"cfg{c}" / f"seed-{s}"
+                futs[ex.submit(run_game, config, args, "deep", s, d,
+                               port, None, False, manifest)] = (c, s, d)
+                port += 1
+        done = []
+        for f in concurrent.futures.as_completed(futs):
+            c, s, d = futs[f]
+            try:
+                f.result()
+                done.append((c, s, d))
+            except Exception as exc:                      # noqa: BLE001
+                print(f"  LOST GAME cfg={c} seed={s}: {exc}", flush=True)
+
+    per_file = {}
+    for c, s, d in sorted(done):
+        rows = seat_scores(d)
+        loaded = arena_log_loads(d)
+        rank_of = {n: i + 1 for i, (n, _)
+                   in enumerate(sorted(rows, key=lambda r: -r[1]))}
+        print(f"== arena cfg{c} seed {s}  ({d})")
+        print("   %-6s %8s %5s  %-9s %s"
+              % ("seat", "score", "rank", "confirmed", "file"))
+        for name, score in sorted(rows):
+            got = loaded.get(name)
+            want = expect.get(name)
+            if want is None and got is not None:
+                want = expect.get("slot%d" % got[0])
+            if got is None and want is None:
+                confirm, path = "base", "-"
+            elif got is not None and want == got[1]:
+                confirm, path = "yes", got[1]
+            else:
+                # The manifest and the game disagree about this seat;
+                # that is the failure this column exists to catch.
+                confirm = "MISMATCH"
+                path = "manifest=%s log=%s" % (want, got and got[1])
+            print("   %-6s %8d %5d  %-9s %s"
+                  % (name, score, rank_of[name], confirm, path))
+            per_file.setdefault(path if confirm == "yes" else confirm,
+                                []).append((score, rank_of[name]))
+    if done:
+        print(f"\n== per-file over {len(done)} game(s)")
+        print("   %-6s %10s %9s  %s" % ("seats", "mean score",
+                                        "mean rank", "file"))
+        for path, sr in sorted(per_file.items()):
+            print("   %-6d %10.1f %9.2f  %s"
+                  % (len(sr), sum(s for s, _ in sr) / len(sr),
+                     sum(r for _, r in sr) / len(sr), path))
+    else:
+        sys.exit("no arena game finished")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=str(HERE / "configs/smoke.conf"))
@@ -319,6 +466,10 @@ def main():
     ap.add_argument("--mixed", action="store_true",
                     help="head-to-head seat-mirrored games; objective is"
                          " within-game deep-side minus baseline-side")
+    ap.add_argument("--arena", metavar="MANIFEST",
+                    help="run all-deep games under this per-seat tuning"
+                         " manifest (the server's FREECIV_DEEP_ARENA"
+                         " format) and report per-seat objectives")
     args = ap.parse_args()
 
     if args.report_holdout:
@@ -343,6 +494,12 @@ def main():
         params = allp
 
     args.configs = args.config.split(",")
+
+    # Arena games carry their opponents inside themselves: no baseline
+    # arm, no optimiser, and the report is per seat.
+    if args.arena:
+        run_arena(args, seeds, out)
+        return
 
     # Baseline arm once per (config, seed) - tuning-independent. In
     # mixed mode the opponent lives inside every game, so there is no
