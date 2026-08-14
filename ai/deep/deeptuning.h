@@ -2442,6 +2442,50 @@ struct deep_tuning {
    * deepstance.h declares inert. It is deliberately NOT wired here. */
   double horizon_culture_weight;
 
+  /* DECAY slice 2 -- the turn-scheduled exponential duration discount
+   * (sessions/S-DECAY2-schedule.md; slice 1's census, STATUS
+   * 2026-08-14, is the evidence it is worth buying: 28.1% of domestic
+   * argmaxes flip at the measured late-game rate, and even at the
+   * rectangle's own timescale 5.4% of decisions are decided by the
+   * window SHAPE rather than the timescale).
+   *
+   * Every duration credit in deephorizon.c -- and the same MORT-24
+   * rectangle standing in deepgov.c's government payoff and
+   * deepdefence.c's unit-lifetime upkeep charge -- counts a per-turn
+   * value FLAT across the planning window and hard-zero after it. A
+   * hard window is itself a decay function (a step) with its timescale
+   * frozen at MORT and untunable because it is a shape, not a knob.
+   *
+   * horizon_decay_gate = 1 re-prices the DURATION of every such
+   * stream as a truncated geometric: an instalment arriving t turns
+   * after the first is worth (1-r)^t of it, summed only over
+   * instalments that land before the scored bell (slice 1 measured
+   * why the truncation is not optional: untruncated, phantom value
+   * past the end of game doubles the low-rate flip share). Delay
+   * discounting stays where it is (amortize() at the credit sites);
+   * only the flat window changes, through one shared helper --
+   * deep_decay_duration() -- at all three sites, so there is no
+   * per-site drift. 0 = off = every site keeps the legacy rectangle
+   * byte-identically.
+   *
+   * The rate is a per-turn hazard-plus-growth figure and it is
+   * SCHEDULED, not constant, because the measured world rate is not
+   * constant: benchmark/decay-anchors.py read ~0.037/turn before T50
+   * collapsing ~20x to ~0.002/turn after T100 (98-scorelog corpus,
+   * 2026-08-13), so a single rate would be wrong in one phase or the
+   * other by construction. horizon_decay_early applies through
+   * horizon_decay_break_start, horizon_decay_late from
+   * horizon_decay_break_end, linear interpolation in turn number
+   * between them. The rate defaults are PLACEHOLDER 0 (a zero rate
+   * keeps the legacy window even with the gate on, so no compiled
+   * rate constant exists to invent); the 50/100 break defaults are
+   * the census's measured phase boundaries, not invented values. */
+  int horizon_decay_gate;
+  double horizon_decay_early;
+  double horizon_decay_late;
+  int horizon_decay_break_start;
+  int horizon_decay_break_end;
+
   /* DARKFX -- the rush-buy policy, the audit's third ranked
    * opportunity and the one that costs no new valuation at all.
    *
