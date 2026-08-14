@@ -14681,3 +14681,49 @@ delivers.
    `neg = 0`), not short of hulls (slice 2: hull-rich, founder-poor),
    and not short of serviceable coasts once routed (this slice). The
    binding constraint is somewhere the lift census cannot see.
+
+## 2026-08-13 — LEAN-LATTICE A/B banked: consistent gain, mechanism recalibrated
+
+pv3 vs pv3-lean (the four derby zeros: floor_interior_weight,
+garrison_floor_danger, boat_shadow_fear, density_fear_value), one
+pinned binary (7c503cbe71 + libfreeciv.so — a pin without the lib
+fails at exec; first attempt burned on this), 16 seeds per venue.
+
+    venue                     lean-ctl /seat   t      seeds up
+    tech50war-200 mixed         +8.2 (sem 9.4) +0.88  10/16
+    isolated-150 paired        +10.4 (sem 6.1) +1.71  10/16
+
+Human call (2026-08-13): BANKED as directional; the per-knob and
+conditional work goes to the MIL-finale lattice sweep. pv3 remains
+the baseline; no fold.
+
+What the deep analysis of the war games established (29-30 games/arm):
+
+1. **Lean halves the era-slide slope, does not reverse it.** Mean
+   deep-stock score by turn — ctl: +2.2/-8.8/-19.1/-25.1 at
+   T50/100/150/200; lean: +4.6/-4.6/-8.8/-13.9. Same crossover
+   timing, half the slope. Another co-cause with the same T100
+   signature is still operating (see the DECAY brief's measured
+   discount table: the world's rate collapses at exactly T100).
+2. **No retention cost, different settlements.** Deep city losses
+   identical (4.1 vs 4.0/game); lean founds 1.4 fewer cities/game
+   with the expansion gate blocking LESS (17.0% -> 12.7%) — a chosen
+   denser empire, not a fear clamp. Military bids -11%.
+3. **The gain runs through starving the rival.** Deep's own finals
+   barely move; stock's techs/mfg fall against lean and deep's
+   exchange ratio improves 0.67 -> 0.71 while building 7% fewer
+   units.
+4. **The 86% danger-0 figure was a derby-map artifact.** On
+   tech50war only 21.4% of unit production is at danger=0, unchanged
+   by the zeros (21.2%). The floor tax scales with SAFE INTERIOR
+   OWNED — big on Europe (+670 swing), modest here (+8). Therefore
+   the finale sweep should treat interior-vs-frontier as the axis
+   (the conditional structure floor_interior_weight gestures at),
+   not global on/off. War-venue per-seed spread (+77 to -47)
+   is the same fact: the effect is map-conditional.
+
+Fold candidates for the finale, explicitly NOT folded now: the war
+effect is heterogeneous and unsigned at n=16; the econ effect
+(+10.4, t +1.71) is the flat-tax half and is the strongest single
+argument that the eventual tuned floor family lands well below
+today's defaults.
