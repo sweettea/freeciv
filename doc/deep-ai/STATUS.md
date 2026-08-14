@@ -14485,3 +14485,106 @@ on tech65sea-150, 16 mirrored seeds, pv3 vs pv3 + founder_berth_route=1
 
 Retention: verdict banked; berth-naval saves/ and game.logs pruned per
 policy (scorelogs, DONE, provenance kept).
+
+## NETTHREAT item 2 — the flat garrison-pin discount, live and a wash (2026-08-14)
+
+Branch `epic/netthreat2-pin`, based on `epic/w03-horizon-content` at
+`1844e16efc`, per `sessions/S-NETTHREAT2-pin-discount.md`. Two code
+commits:
+
+- `e03ca158ad` `ai/deep: add presence-weighted attackers to the duel
+  substrate` — `deep_stack_survival_wfull()`: att_w[j] = P(attacker j
+  takes part), mixed as (1-w)*skip + w*fight per attacker. The DP
+  transition is linear in the state, so this is the EXACT expectation
+  over independent presence draws, not an approximation; w=1 is
+  IEEE-bit-identical to the unweighted walk (unit-tested as `==`).
+- `e6c765025b` `ai/deep: discount home-pinned enemy mass in the
+  survival wave` — knob `threat_pin_discount` (double, default 0):
+  an attacker the pin tracker currently classifies as home-pinned
+  (live tag, never seen off its home tile) enters the wave at
+  presence (1 - discount), at the single admission seam in
+  `deep_city_survival_core()`. Deep's own cities only; the assault
+  pricer's enemy-city reads keep full weight. Tracker classification
+  untouched; its gates now also arm when the knob is on, because a
+  FREECIV_DEEP_QUIET tuning run would otherwise sweep a knob reading
+  an EMPTY tracker.
+
+**Derivation of the on-arm value (measured, not chosen).** The probe
+funnel (`cae6c6d5af`: 65 deep seats, 8 mirrored tech50war-200 seeds,
+18,538 resolved windows) read 3.22% reach / 68.67% never-left /
+28.11% sortied-but-never-arrived. The flat discount takes the
+never-left share ONLY: 0.687, weight 0.313 = P(ever sorties). Not
+1-0.0322 — the sortied-but-slow mass is survival_pf_reach's
+population and must not be spent twice. `benchmark/tuning/
+pv3-pindisc.ini` = pv3 + that one key.
+
+**Doc regression found:** the pin-probe STATUS entry exists only in
+`cae6c6d5af`'s version of this file; the `ee61b90394` merge's conflict
+resolution dropped it. The funnel numbers above are re-quoted from
+that commit.
+
+### Byte-identity at default 0: 20/20, plus provenance both ways
+
+git-archive build of `1844e16efc` (sha `446816f26742c688`, 0
+`deep-pindisc` strings) vs branch build (sha `440e9aad426f5a82`, 1),
+smoke, DEEP_QUIET=1, tuning none, jobs 5, ports 7705/7726:
+
+    deep      scorelogs IDENTICAL 10/10
+    mixed_dc  scorelogs IDENTICAL 10/10   (map hashes equal on all 20)
+
+### The seam reaches the population (the brief's ship-gate)
+
+Full T200 tech50war-200 game, knob 0.687, exit 0, no assertions.
+Final `deep-pindisc` per deep seat: share of ALL admitted wave mass
+discounted 0.242 / 0.243 / 0.251 / 0.469; e.g. P3 mass 2,326,266 of
+wave 6,581,294 across 54,822 discounted admissions, 10,555 of 14,664
+evaluations touched. Not ~0 by three orders of magnitude.
+
+### A/B: tech50war-200 mixed, 16 mirrored seeds, one binary — WASH
+
+Arms mixed_dc + mixed_cd per seed, ONE pinned binary
+(`440e9aad426f5a82`, server + libfreeciv.so staged in `.pindisc-bin`),
+control TUNING=pv3.ini vs on TUNING=pv3-pindisc.ini;
+survival_pf_reach at its pv3 value (0) in BOTH arms. 64/64 games, 0
+pairing violations; one control game (mixed_cd seed 11) ended T186 by
+allied victory — verified genuine, kept. Deep seats, mirrored pair
+averaged per seed:
+
+    metric            OFF        ON     delta      se      t   wins
+    score          195.38    194.34     -1.05    3.40  -0.31   8/16
+    cities           4.94      4.89     -0.05    0.16  -0.30   7/16
+    techs           54.82     54.66     -0.16    0.15  -1.05   4/16
+    pop             29.62     29.01     -0.62    1.02  -0.61   7/16
+    munits          17.79     17.71     -0.08    0.66  -0.12   8/16
+    unitsbuilt      87.47     88.49     +1.02    1.83  +0.56   8/16
+    unitslost       61.89     64.05     +2.16    1.64  +1.32   9/16
+    unitskilled     40.19     41.14     +0.95    1.82  +0.52   8/16
+    cities_lost      0.98      0.95     -0.03    0.13  -0.24   7/16
+    garr_ndef        2.35      2.39     +0.04    0.10  +0.43   8/16
+    pindisc share (ON): 0.357 of all wave mass; ~103,700
+    discounted admissions per game
+
+Classic seats: score -1.27, se 3.76, t -0.34 — the head-to-head
+margin is unchanged too.
+
+### Verdict, and what the wash teaches
+
+- **Default stays 0 in pv3.** The knob is registered (struct tuning,
+  params 0..1 float, blocks ALL+MIL, knobcensus predicate
+  `deep-pindisc share>0`, tune-audit CLEAN at 237) and **flagged for
+  the tuning pass** the brief mandates.
+- The risk mode did NOT appear: cities_lost and garrisons are flat at
+  a discount that removes 36% of the danger mass. Deep was not
+  under-defending-fragile here.
+- But neither did freed shields appear: garr_ndef unchanged says the
+  danger-side discount barely moved the BUILD side on this venue —
+  consistent with survival consumers acting only near their
+  thresholds, and with the garrison floor binding below them. A
+  smaller/complementary lever (or the tuner finding a non-0.687
+  optimum) is where remaining value would be.
+- Per the brief, the posture-conditional variant needed the flat one
+  to move something. It did not: -1.05 +/- 3.40. That slice should
+  not be built on this evidence.
+
+Retention: both cells under `benchmark/results/netthreat2/`
+(tech50war-200-86943cb3ce0f = pv3, -8846b69d19c1 = pv3-pindisc).
