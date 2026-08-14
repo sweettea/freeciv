@@ -72,6 +72,41 @@ static int deep_horizon_clamped = 0;
 static int deep_horizon_missed = 0;
 
 /**********************************************************************//**
+  DECAY slice 1 (2026-08-13): the shape census, log lines only.
+
+  Every duration credit in this file is a rectangle: a per-instalment
+  value counted flat across the MORT window and discounted once for the
+  delay. A hard window IS a decay function (a step) with its timescale
+  frozen at MORT, so before buying a decay-rate knob the census logs
+  each stream's SHAPE -- per-instalment value `b` (weight included),
+  first-payment `delay`, instalment count `steps` and `spacing` -- and
+  the flip-vs-rate curve is computed offline from one corpus pass
+  (benchmark/decay-census.py). No credit is changed here.
+
+  `cap` classifies the count: -1 means it is horizon-derived (the MORT
+  window was standing in for a discount, so an exponential model prices
+  the perpetuity); > 0 is a structural payment cap (effect amount, the
+  endgame bell) that survives any pricing; lumps are steps=1 cap=1 and
+  price the same under every model.
+
+  Validation invariant, every line: credit == b * steps * (23/24)^delay.
+**************************************************************************/
+static void deep_decay_shape(const struct city *pcity,
+                             const struct impr_type *pimprove,
+                             const char *fam, double b, int delay,
+                             double steps, int spacing, int cap,
+                             double credit)
+{
+  log_base(deep_metric_log_level(),
+           "deep-decay turn=%d player=\"%s\" city=%d impr=\"%s\""
+           " fam=%s b=%.4f delay=%d steps=%.3f spacing=%d cap=%d"
+           " credit=%.3f",
+           game.info.turn, player_name(city_owner(pcity)), pcity->id,
+           pimprove != NULL ? improvement_rule_name(pimprove) : "*",
+           fam, b, delay, steps, spacing, cap, credit);
+}
+
+/**********************************************************************//**
   Turns of play left after this one.
 
   `game.server.end_turn` is plain readable game state, and before this
@@ -388,6 +423,13 @@ static adv_want deep_capacity_credit(struct city *pcity,
     per_citizen = deep_unworked_tile_value(pcity, adv, 3, NULL);
     credit = amortize(per_citizen * steps * tune->horizon_capacity_weight,
                       ttg);
+    if (credit > 0) {
+      /* Once per capped city; the sum line's capadd field says which
+       * improvements this shape attaches to. */
+      deep_decay_shape(pcity, NULL, "capacity",
+                       per_citizen * tune->horizon_capacity_weight,
+                       ttg, steps, ttg, -1, credit);
+    }
   }
 
   log_base(deep_metric_log_level(),
@@ -462,7 +504,7 @@ static adv_want deep_content_credit(struct city *pcity,
 {
   const struct deep_tuning *tune = deep_tuning_get();
   int amount, load, ttg, arriving, freed;
-  adv_want per_citizen;
+  adv_want per_citizen, credit;
 
   if (get_city_bonus(pcity, EFT_NO_UNHAPPY) > 0) {
     /* Nothing to pacify, now or ever. */
@@ -502,8 +544,18 @@ static adv_want deep_content_credit(struct city *pcity,
 
   /* Immediate if the load is already there; otherwise it starts paying
    * when the city next grows. */
-  return amortize(freed * per_citizen * tune->horizon_content_weight,
-                  load > 0 ? 0 : ttg);
+  credit = amortize(freed * per_citizen * tune->horizon_content_weight,
+                    load > 0 ? 0 : ttg);
+  if (credit > 0) {
+    /* The instalments past `load` are the arriving citizens, one per
+     * growth cycle; `amount` is the structural cap on how many the
+     * building can ever convert. */
+    deep_decay_shape(pcity, pimprove, "content",
+                     per_citizen * tune->horizon_content_weight,
+                     load > 0 ? 0 : ttg, freed, ttg > 0 ? ttg : 1,
+                     amount, credit);
+  }
+  return credit;
 }
 
 /**********************************************************************//**
@@ -527,7 +579,7 @@ static adv_want deep_growth_credit(struct city *pcity,
 {
   const struct deep_tuning *tune = deep_tuning_get();
   int pct, ttg, steps;
-  adv_want per_citizen, extra;
+  adv_want per_citizen, extra, credit;
 
   pct = deep_potential_improvement_bonus(pimprove, pcity, EFT_GROWTH_FOOD,
                                          RPT_CERTAIN, FALSE);
@@ -557,7 +609,16 @@ static adv_want deep_growth_credit(struct city *pcity,
   extra = (adv_want) steps * pct / 100.0;
   per_citizen = deep_unworked_tile_value(pcity, adv, 3, NULL);
 
-  return amortize(extra * per_citizen * tune->horizon_growth_weight, ttg);
+  credit = amortize(extra * per_citizen * tune->horizon_growth_weight,
+                    ttg);
+  if (credit > 0) {
+    /* One instalment per growth cycle, each worth pct% of a citizen. */
+    deep_decay_shape(pcity, pimprove, "growth",
+                     (double) pct / 100.0 * per_citizen
+                     * tune->horizon_growth_weight,
+                     ttg, steps, ttg, -1, credit);
+  }
+  return credit;
 }
 
 /**********************************************************************//**
@@ -709,7 +770,19 @@ static adv_want deep_multiplier_credit(struct city *pcity,
     return 0;
   }
 
-  return amortize(credit * tune->horizon_multiplier_weight, ttg);
+  {
+    adv_want total = amortize(credit * tune->horizon_multiplier_weight,
+                              ttg);
+
+    if (total > 0) {
+      /* One instalment per arriving citizen, each worth that citizen's
+       * bonused output. */
+      deep_decay_shape(pcity, pimprove, "multiplier",
+                       credit * tune->horizon_multiplier_weight
+                       / arriving, ttg, arriving, ttg, -1, total);
+    }
+    return total;
+  }
 }
 
 /**********************************************************************//**
@@ -780,6 +853,13 @@ static adv_want deep_bundle_credit(struct city *pcity,
     } effect_list_iterate_end;
   }
 
+  if (credit > 0) {
+    /* No time dimension at all: a flat joint-effect value. A lump,
+     * invariant under any pricing, logged so decision totals
+     * reconstruct. */
+    deep_decay_shape(pcity, pimprove, "bundle", credit, 0, 1, 0, 1,
+                     credit);
+  }
   return credit;
 }
 
@@ -1018,6 +1098,11 @@ static adv_want deep_gov_center_credit(struct city *pcity,
   deep_govcenter_cities++;
   deep_govcenter_paid += credit;
 
+  /* Per-turn stream from the day the building stands. */
+  deep_decay_shape(pcity, pimprove, "govcenter",
+                   credit / deep_horizon_turns(), 0,
+                   deep_horizon_turns(), 1, -1, credit);
+
   return credit;
 }
 
@@ -1155,6 +1240,11 @@ static adv_want deep_upkeep_free_credit(struct city *pcity,
   credit *= deep_horizon_turns() * tune->horizon_upkeepfree_weight;
   deep_upkeepfree_cands++;
   deep_upkeepfree_paid += credit;
+
+  /* Per-turn stream from the day the building stands. */
+  deep_decay_shape(pcity, pimprove, "upkeepfree",
+                   credit / deep_horizon_turns(), 0,
+                   deep_horizon_turns(), 1, -1, credit);
 
   return credit;
 }
@@ -1297,6 +1387,9 @@ static adv_want deep_heal_stream_credit(struct city *pcity,
   deep_heal_cands++;
   deep_heal_paid += credit;
 
+  /* A lump: turns-of-the-line already standing here, not a stream. */
+  deep_decay_shape(pcity, pimprove, "heal", credit, 0, 1, 0, 1, credit);
+
   return credit;
 }
 
@@ -1404,6 +1497,14 @@ static adv_want deep_veteran_stream_credit(struct city *pcity,
   deep_vet_cands++;
   deep_vet_paid += credit;
 
+  /* One instalment per unit commissioned, every ttb turns. The code
+   * gives the first unit no delay discount; the shape logs what the
+   * code does (delay 0). */
+  deep_decay_shape(pcity, pimprove, "veteran",
+                   margin * utype_build_shield_cost_base(best)
+                   * SHIELD_WEIGHTING * tune->veteran_stream_gain,
+                   0, per_horizon, ttb, -1, credit);
+
   return credit;
 }
 
@@ -1486,6 +1587,10 @@ static adv_want deep_pop_insurance_credit(struct city *pcity,
   deep_popins_cands++;
   deep_popins_paid += credit;
 
+  /* A lump: expected hits over the survival horizon, not a stream. */
+  deep_decay_shape(pcity, pimprove, "popins", credit, 0, 1, 0, 1,
+                   credit);
+
   return credit;
 }
 
@@ -1547,6 +1652,13 @@ static adv_want deep_culture_credit(struct city *pcity,
 
   deep_culture_cands++;
   deep_culture_paid += credit;
+
+  /* Per-turn stream to the bell; the bell is a structural cap, not a
+   * horizon standing in for a discount. b is the mean per-turn value
+   * so the invariant holds under history_interest_pml compounding
+   * too. */
+  deep_decay_shape(pcity, pimprove, "culture", credit / hor, 0, hor, 1,
+                   (left >= DEEP_NO_END_TURN) ? -1 : hor, credit);
 
   return credit;
 }
@@ -1795,6 +1907,11 @@ void deep_adjust_building_wants(struct ai_type *ait,
     adv_want tr_health = 0;
     const struct impr_type *tr_top = NULL;
     int tr_n = 0;
+    /* DECAY census (log-only): the best want among improvements the
+     * ladder did NOT credit -- the competitor an offline re-pricing
+     * has to beat, invariant under any pricing of deep's credits. */
+    adv_want dk_bestun = 0;
+    const struct impr_type *dk_bestun_impr = NULL;
 
     /* "Threatened" means the city would probably FALL, not that an
      * enemy is nearby. Stock's urgency and grave_danger are presence
@@ -1868,6 +1985,12 @@ void deep_adjust_building_wants(struct ai_type *ait,
     improvement_iterate(pimprove) {
       Impr_type_id id = improvement_number(pimprove);
       adv_want add = 0;
+      /* DECAY census bookkeeping (log-only): the component sum before
+       * the modifiers, and the modifiers themselves, so the offline
+       * re-pricing can replay them on a re-priced sum. */
+      adv_want dk_capadd = 0, dk_raw = 0;
+      double dk_upk = 0.0, dk_keep = 1.0;
+      int dk_ob = -1;
 
       if (!can_city_build_improvement_now(pcity, pimprove, RPT_CERTAIN)) {
         /* The credit cannot buy a tech-gated building, but it CAN buy
@@ -1912,6 +2035,7 @@ void deep_adjust_building_wants(struct ai_type *ait,
           && (building_has_effect(pimprove, EFT_SIZE_ADJ)
               || building_has_effect(pimprove, EFT_SIZE_UNLIMIT))) {
         add += cap_credit;
+        dk_capadd = cap_credit;
       }
       if (!threatened) {
         add += deep_bundle_credit(pcity, pimprove, adv);
@@ -2010,9 +2134,18 @@ void deep_adjust_building_wants(struct ai_type *ait,
 
             add += hcred;
             tr_health += hcred;
+            if (hcred > 0) {
+              /* Per-turn stream: the risk runs from today. */
+              deep_decay_shape(pcity, pimprove, "health",
+                               hcred / deep_horizon_turns(), 0,
+                               deep_horizon_turns(), 1, -1,
+                               (double) hcred);
+            }
           }
         }
       }
+
+      dk_raw = add;
 
       if (add > 0 && gmult != 1.0) {
         adv_want scaled = add * gmult;
@@ -2048,6 +2181,8 @@ void deep_adjust_building_wants(struct ai_type *ait,
          * does not smuggle a 24x tightening into the round's A/B;
          * the knob now means "gold per turn against the horizon" and
          * owes the tuning pile a value. */
+        dk_upk = (double) city_improvement_upkeep(pcity, pimprove)
+                 * deep_tuning_get()->upkeep_gold_weight;
         add -= city_improvement_upkeep(pcity, pimprove)
                * deep_horizon_turns()
                * deep_tuning_get()->upkeep_gold_weight;
@@ -2079,6 +2214,8 @@ void deep_adjust_building_wants(struct ai_type *ait,
           double keep = 1.0 - deep_tuning_get()->expiry_building_gain
                               * (1.0 - share);
 
+          dk_ob = ob;
+          dk_keep = MAX(keep, 0.0);
           log_base(deep_metric_log_level(),
                    "deep-expiry turn=%d player=\"%s\" city=%d"
                    " impr=\"%s\" eta=%d horizon=%.1f share=%.3f"
@@ -2088,6 +2225,41 @@ void deep_adjust_building_wants(struct ai_type *ait,
                    (double) add, keep);
           add = (adv_want) (add * MAX(keep, 0.0));
         }
+      } else if (dk_raw > 0
+                 && deep_tuning_get()->expiry_building_gain > 0.0) {
+        /* DECAY census only: the upkeep bill zeroed the rectangle
+         * credit, but a re-priced credit may survive it and would
+         * still be truncated by obsolescence -- record the factor
+         * without applying anything. Pure read; no behaviour. */
+        int ob = deep_impr_obsolete_eta(pplayer, pimprove);
+
+        if (ob >= 0) {
+          double horizon = MAX(1.0, deep_horizon_turns());
+          double share = MIN(1.0, ob / horizon);
+
+          dk_ob = ob;
+          dk_keep = MAX(1.0 - deep_tuning_get()->expiry_building_gain
+                              * (1.0 - share), 0.0);
+        }
+      }
+      if (dk_raw > 0) {
+        /* DECAY census: everything the offline re-pricing needs to
+         * rebuild this improvement's final credit from its component
+         * shapes: pre is stock's array value (not yet touched), raw
+         * the component sum the modifiers act on, capadd the share of
+         * raw that came from the city's capacity shape line, then the
+         * modifiers in application order. */
+        log_base(deep_metric_log_level(),
+                 "deep-decay-sum turn=%d player=\"%s\" city=%d"
+                 " impr=\"%s\" pre=%.3f raw=%.3f capadd=%.3f"
+                 " gmult=%.4f thr=%d upk=%.4f ob=%d keep=%.4f"
+                 " add=%.3f",
+                 game.info.turn, player_name(pplayer), pcity->id,
+                 improvement_rule_name(pimprove),
+                 (double) pcity->server.adv->building_want[id],
+                 (double) dk_raw, (double) dk_capadd, gmult,
+                 threatened ? 1 : 0, dk_upk, dk_ob, dk_keep,
+                 add > 0 ? (double) add : 0.0);
       }
       if (add > 0) {
         adv_want pre = pcity->server.adv->building_want[id];
@@ -2108,10 +2280,28 @@ void deep_adjust_building_wants(struct ai_type *ait,
                  "deep-horizon city=%d impr=\"%s\" credit=%.1f",
                  pcity->id, improvement_rule_name(pimprove),
                  (double) add);
+      } else {
+        adv_want w = pcity->server.adv->building_want[id];
+
+        /* DECAY census: an uncredited improvement is still a
+         * competitor in the auction, and its want carries no time
+         * shape -- only the best of them matters to the argmax. */
+        if (w > dk_bestun) {
+          dk_bestun = w;
+          dk_bestun_impr = pimprove;
+        }
       }
     } improvement_iterate_end;
 
     if (tr_n > 0) {
+      /* DECAY census: the decision's uncredited competitor. */
+      log_base(deep_metric_log_level(),
+               "deep-decay-city turn=%d player=\"%s\" city=%d ncred=%d"
+               " bestun=\"%s\" bwant=%.3f",
+               game.info.turn, player_name(pplayer), pcity->id, tr_n,
+               dk_bestun_impr != NULL
+               ? improvement_rule_name(dk_bestun_impr) : "-",
+               (double) dk_bestun);
       log_base(deep_metric_log_level(),
                "deep-credit turn=%d player=\"%s\" city=%d size=%d n=%d"
                " pre=%.1f add=%.1f post=%.1f top=\"%s\" toppre=%.1f"
