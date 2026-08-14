@@ -1,3 +1,0 @@
-generated-by: make-positions.sh
-server: 
-settings: 32x32, 6 players, hard, seed 42, turn 30 (min cross-owner city distance 3.16)

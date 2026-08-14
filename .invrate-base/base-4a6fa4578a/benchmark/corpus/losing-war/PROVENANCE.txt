@@ -1,3 +1,0 @@
-generated-by: make-positions.sh
-server: 
-settings: 32x32, 4 players, hard, seed 1, turn 140 (2 captured cities, 7 war pairs)

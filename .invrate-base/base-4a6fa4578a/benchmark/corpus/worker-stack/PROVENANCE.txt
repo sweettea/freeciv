@@ -1,8 +1,0 @@
-generated-by: manual playout (smoke settings, saveturns 1)
-settings: 32x32, 4 players (aifill, classic default), hard, seed 1;
-  position is the turn-55 autosave
-observed at generation: no stacked worker tile at T55; first stack
-  forms at T61 (player 3, two workers at native (0,14)) and persists
-  through T66, with a second player stacking at T65. The 8-turn window
-  asserts the stack forms after load; the pre-check asserts it was not
-  carried in with the position.
