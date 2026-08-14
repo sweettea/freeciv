@@ -16,6 +16,7 @@
 #endif
 
 #include <stdlib.h>
+#include <string.h>
 
 /* common */
 #include "city.h"
@@ -36,6 +37,7 @@
 /* server/advisors */
 #include "advgoto.h"
 
+#include "deepai.h"
 #include "deepdefence.h"
 #include "deepodds.h"
 #include "deepops.h"
@@ -546,6 +548,371 @@ static void deep_wave_log(const struct city *pcity, int horizon,
            n_def > 0 ? def[0].rating : 0, surv);
 }
 
+/* THE GARRISON-PIN PROBE (NETTHREAT item 2's cheaper probe).
+ *
+ * Item 2 wants to DISCOUNT the wave by the enemy units that are
+ * pinned at home: "units whose own city would fall without them are
+ * unlikely wave members". That claim is falsifiable without writing
+ * the discount, and this is the falsifier. Every enemy unit that
+ * qualifies for a wave while standing in one of its OWNER's cities is
+ * tagged, and the following `horizon` turns are watched: does it ever
+ * leave, does it ever enter our borders, does it ever reach a tile
+ * from which it could hit one of our cities?
+ *
+ * NO BEHAVIOUR. Nothing reads a tag; the whole probe is gated on the
+ * metric log level, so a tuning run under FREECIV_DEEP_QUIET does not
+ * allocate a byte. The only output is the `deep-pin` line.
+ *
+ * WHAT "ATTACKED US" IS MEASURED AS, and why the substitution is the
+ * conservative one. There is no combat seam in the AI vtable -- no
+ * hook fires when a foreign unit attacks us, only `unit_move_seen`
+ * when one moves -- so a literal attack count is not observable from
+ * inside `ai/deep`. What IS observable is arrival: a tagged unit seen
+ * within one tile of a city of the tagging player is a unit that can
+ * hit that city on its next move, which is precisely what wave
+ * membership asserts. Arrival is a SUPERSET of attacking (a unit may
+ * arrive and not strike), so it can only overstate the pin rate --
+ * and the verdict this probe exists to give is "the discount is
+ * honest if the rate is LOW". A superset that reads low is a real
+ * answer; a superset that reads high refuses the discount on the
+ * strictest available reading. The error is in the safe direction
+ * either way, which is the only reason a proxy is acceptable here.
+ *
+ * Two observation points, because one is not enough. The per-turn
+ * poll at phase begin sees where each tagged unit stands; the
+ * `unit_move_seen` hook catches the units that sortie, act and die
+ * inside a single foreign phase, which the poll would score as "never
+ * left home". Together they miss only a unit that attacks from a tile
+ * it was already standing on and never moves -- and that unit is
+ * inside our reach radius already, so its `near` flag was set when it
+ * arrived there.
+ *
+ * ONE TAG PER UNIT AT A TIME, first observer keeps it, re-taggable
+ * once its window closes. That makes the sample a set of independent
+ * (unit, window) observations rather than a count weighted by how
+ * many of our cities happened to fear the same unit. */
+
+#define DEEP_PIN_BUCKETS 512
+
+struct deep_pin_tag {
+  int unit_id;
+  int next;             /* bucket chain and free list; -1 ends both */
+  int observer;         /* player slot of the city owner that tagged */
+  int city_id;
+  int home_tile;        /* the city tile it garrisoned when tagged */
+  int tag_turn;
+  int horizon;
+  bool live;
+  bool best;            /* it was that city's best defender */
+  bool alone;           /* it was that city's ONLY military unit */
+  bool left;            /* seen off its home tile */
+  bool terr;            /* seen inside the observer's borders */
+  bool near;            /* seen within one tile of an observer city */
+};
+
+/* Per observer, cumulative over the game. `res` is the denominator of
+ * every rate; `near` is the pin-rate numerator. */
+struct deep_pin_count {
+  int tagged, res, left, terr, near, home, dead;
+  int best, best_near, alone, alone_near;
+};
+
+static struct deep_pin_tag *deep_pin_tags = NULL;
+static int deep_pin_n = 0, deep_pin_cap = 0;
+static int deep_pin_bucket[DEEP_PIN_BUCKETS];
+static int deep_pin_free = -1;
+static bool deep_pin_ready = FALSE;
+static struct deep_pin_count deep_pin_stat[MAX_NUM_PLAYER_SLOTS];
+
+/**********************************************************************//**
+  Drop every tag and every count. Called when the game is freed, so a
+  second game in the same server process never reads the first one's
+  units -- unit ids are recycled and a stale tag would be attached to
+  whatever inherited the number.
+**************************************************************************/
+void deep_pin_reset(void)
+{
+  free(deep_pin_tags);
+  deep_pin_tags = NULL;
+  deep_pin_n = 0;
+  deep_pin_cap = 0;
+  deep_pin_free = -1;
+  deep_pin_ready = FALSE;
+  memset(deep_pin_stat, 0, sizeof(deep_pin_stat));
+}
+
+/**********************************************************************//**
+  The open tag for this unit, or NULL. O(1): the bucket chain is what
+  keeps the per-attacker test in the hottest routine deep has from
+  being a scan over every open tag.
+**************************************************************************/
+static struct deep_pin_tag *deep_pin_find(int unit_id)
+{
+  int i;
+
+  if (!deep_pin_ready) {
+    return NULL;
+  }
+  for (i = deep_pin_bucket[unit_id & (DEEP_PIN_BUCKETS - 1)];
+       i >= 0; i = deep_pin_tags[i].next) {
+    if (deep_pin_tags[i].unit_id == unit_id) {
+      return &deep_pin_tags[i];
+    }
+  }
+
+  return NULL;
+}
+
+/**********************************************************************//**
+  Record where a tagged unit was seen. Called from the per-turn poll
+  and from every move the server reports, and idempotent in both --
+  the flags only ever go from false to true, so the two observers
+  cannot double-count.
+**************************************************************************/
+static void deep_pin_observe(struct deep_pin_tag *t,
+                             const struct unit *punit)
+{
+  struct tile *ptile = unit_tile(punit);
+  const struct player *obs = player_by_number(t->observer);
+
+  if (obs == NULL || ptile == NULL) {
+    return;
+  }
+  if (tile_index(ptile) != t->home_tile) {
+    t->left = TRUE;
+  }
+  if (tile_owner(ptile) == obs) {
+    t->terr = TRUE;
+  }
+  if (!t->near) {
+    square_iterate(&(wld.map), ptile, 1, atile) {
+      const struct city *acity = tile_city(atile);
+
+      if (acity != NULL && city_owner(acity) == obs) {
+        t->near = TRUE;
+      }
+    } square_iterate_end;
+  }
+}
+
+/**********************************************************************//**
+  Close a tag: fold it into its observer's counts and return the slot
+  to the free list. `dead` means the unit was gone from the game
+  before its window expired -- counted apart, because a unit that died
+  at home is evidence for the pin and a unit that died attacking is
+  evidence against it, and the flags say which.
+**************************************************************************/
+static void deep_pin_resolve(int idx, bool dead)
+{
+  struct deep_pin_tag *t = &deep_pin_tags[idx];
+  struct deep_pin_count *c = &deep_pin_stat[t->observer];
+  int b = t->unit_id & (DEEP_PIN_BUCKETS - 1);
+  int i, prev = -1;
+
+  c->res++;
+  if (dead) {
+    c->dead++;
+  }
+  if (t->left) {
+    c->left++;
+  } else {
+    c->home++;
+  }
+  if (t->terr) {
+    c->terr++;
+  }
+  if (t->near) {
+    c->near++;
+  }
+  if (t->best) {
+    c->best++;
+    if (t->near) {
+      c->best_near++;
+    }
+  }
+  if (t->alone) {
+    c->alone++;
+    if (t->near) {
+      c->alone_near++;
+    }
+  }
+
+  for (i = deep_pin_bucket[b]; i >= 0; i = deep_pin_tags[i].next) {
+    if (i == idx) {
+      if (prev < 0) {
+        deep_pin_bucket[b] = t->next;
+      } else {
+        deep_pin_tags[prev].next = t->next;
+      }
+      break;
+    }
+    prev = i;
+  }
+  t->live = FALSE;
+  t->unit_id = 0;
+  t->next = deep_pin_free;
+  deep_pin_free = idx;
+}
+
+/**********************************************************************//**
+  Tag one qualifying attacker that is standing in a city of its own.
+
+  Cost, because this sits in the wave-assembly loop: one bucket lookup
+  per garrisoning attacker per evaluation, and the rest of the work
+  only on the evaluation that opens the window. The `best` / `alone`
+  pass over the city tile is therefore paid once per unit per horizon,
+  not once per evaluation.
+**************************************************************************/
+static void deep_pin_open(struct player *observer, const struct city *pcity,
+                          struct unit *aunit, const struct city *acity,
+                          int horizon)
+{
+  struct deep_pin_tag *t;
+  int rating = adv_unit_def_rating_basic(aunit);
+  int idx, others = 0, stronger = 0;
+
+  if (rating <= 0 || deep_pin_find(aunit->id) != NULL) {
+    /* Not a would-be defender, or already inside an open window. */
+    return;
+  }
+  if (!deep_pin_ready) {
+    int b;
+
+    for (b = 0; b < DEEP_PIN_BUCKETS; b++) {
+      deep_pin_bucket[b] = -1;
+    }
+    deep_pin_ready = TRUE;
+  }
+  if (deep_pin_free >= 0) {
+    idx = deep_pin_free;
+    deep_pin_free = deep_pin_tags[idx].next;
+  } else {
+    if (deep_pin_n >= deep_pin_cap) {
+      deep_pin_cap = MAX(256, deep_pin_cap * 2);
+      deep_pin_tags = fc_realloc(deep_pin_tags,
+                                 deep_pin_cap * sizeof(*deep_pin_tags));
+    }
+    idx = deep_pin_n++;
+  }
+
+  unit_list_iterate(city_tile(acity)->units, ounit) {
+    if (ounit == aunit
+        || unit_owner(ounit) != city_owner(acity)
+        || unit_has_type_flag(ounit, UTYF_CIVILIAN)
+        || ounit->hp <= 0) {
+      continue;
+    }
+    others++;
+    if (adv_unit_def_rating_basic(ounit) >= rating) {
+      stronger++;
+    }
+  } unit_list_iterate_end;
+
+  t = &deep_pin_tags[idx];
+  t->unit_id = aunit->id;
+  t->observer = player_index(observer);
+  t->city_id = pcity->id;
+  t->home_tile = tile_index(unit_tile(aunit));
+  t->tag_turn = game.info.turn;
+  t->horizon = horizon;
+  t->live = TRUE;
+  t->best = (stronger == 0);
+  t->alone = (others == 0);
+  t->left = FALSE;
+  t->terr = FALSE;
+  t->near = FALSE;
+  t->next = deep_pin_bucket[t->unit_id & (DEEP_PIN_BUCKETS - 1)];
+  deep_pin_bucket[t->unit_id & (DEEP_PIN_BUCKETS - 1)] = idx;
+  deep_pin_stat[t->observer].tagged++;
+}
+
+/**********************************************************************//**
+  A unit moved somewhere the server could see. The second observation
+  point: a garrison that sorties, strikes and dies inside one foreign
+  phase never appears away from home in any poll, and without this it
+  would be counted as a unit that never left.
+**************************************************************************/
+void deep_pin_note_move(struct unit *punit)
+{
+  struct deep_pin_tag *t;
+
+  if (deep_pin_n == 0
+      || !log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+  t = deep_pin_find(punit->id);
+  if (t != NULL && t->live) {
+    deep_pin_observe(t, punit);
+  }
+}
+
+/**********************************************************************//**
+  This player's turn to look at its own tags: observe every one that
+  is still open, close the ones whose horizon has run out, and report
+  the running funnel.
+
+  `deep-pin` reads tagged -> left -> terr -> near, each a strictly
+  weaker claim than the last about whether a garrisoning enemy turned
+  out to be a wave member. `rate` is near/res: the fraction of units
+  that were garrisoning when we sized a garrison against them and that
+  did reach a position to hit one of our cities inside the horizon we
+  sized for. THAT number decides whether item 2's discount is honest.
+**************************************************************************/
+void deep_pin_poll(struct player *pplayer)
+{
+  const struct deep_pin_count *c;
+  int slot = player_index(pplayer);
+  int i, open = 0;
+
+  if (deep_pin_n == 0
+      || !log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+  for (i = 0; i < deep_pin_n; i++) {
+    struct deep_pin_tag *t = &deep_pin_tags[i];
+    struct unit *punit;
+
+    if (!t->live) {
+      continue;
+    }
+    if (t->observer != slot) {
+      const struct player *owner = player_by_number(t->observer);
+
+      /* A dead observer will never poll again, and its unresolved
+       * tags would block those units from ever being tagged by
+       * anyone else. Close them where they stand. */
+      if (owner == NULL || !owner->is_alive) {
+        deep_pin_resolve(i, FALSE);
+      }
+      continue;
+    }
+    punit = game_unit_by_number(t->unit_id);
+    if (punit == NULL) {
+      deep_pin_resolve(i, TRUE);
+      continue;
+    }
+    deep_pin_observe(t, punit);
+    if (game.info.turn - t->tag_turn >= t->horizon) {
+      deep_pin_resolve(i, FALSE);
+    } else {
+      open++;
+    }
+  }
+
+  c = &deep_pin_stat[slot];
+  if (c->tagged <= 0) {
+    return;
+  }
+  log_base(deep_metric_log_level(),
+           "deep-pin turn=%d player=\"%s\" tagged=%d open=%d res=%d"
+           " left=%d terr=%d near=%d home=%d dead=%d"
+           " best=%d best_near=%d alone=%d alone_near=%d rate=%.3f",
+           game.info.turn, player_name(pplayer), c->tagged, open, c->res,
+           c->left, c->terr, c->near, c->home, c->dead,
+           c->best, c->best_near, c->alone, c->alone_near,
+           c->res > 0 ? (double) c->near / c->res : 0.0);
+}
+
 /**********************************************************************//**
   As deep_city_stack_survival(), with one garrison unit left out of
   the stack -- what the night costs if that blade sorties or is lent.
@@ -576,6 +943,12 @@ static double deep_city_survival_core(const struct civ_map *nmap,
                                        DEEP_OPS_MAX, FALSE);
   int n_marching = deep_op_live_targets(pplayer, op_marching,
                                         DEEP_OPS_MAX, TRUE);
+  /* NETTHREAT item 2's probe, hoisted out of the loop: one log-level
+   * test and one ai-type test per evaluation rather than per
+   * attacker. False in every tuning run, which is what keeps the
+   * probe free where the hot path is hottest. */
+  bool pin_probe = (pplayer->ai == deep_ai_get_self()
+                    && log_do_output_for_level(deep_metric_log_level()));
 
   if (wave_out != NULL) {
     *wave_out = 0;
@@ -707,6 +1080,21 @@ static double deep_city_survival_core(const struct civ_map *nmap,
               break;
             }
           }
+        }
+      }
+      /* THE GARRISON PIN (NETTHREAT item 2), measured only. This
+       * qualifying attacker is standing in one of its OWNER's cities,
+       * so item 2 would call it a poor wave member and discount it.
+       * Open a window on it instead and let the next `horizon` turns
+       * say whether it ever comes. Only a deep player's own city
+       * tags: the core also prices ENEMY cities for the assault
+       * pricer (deepops.c), and an observer that is not us would put
+       * the funnel on the wrong side of the war. */
+      if (pin_probe) {
+        const struct city *acity = tile_city(unit_tile(aunit));
+
+        if (acity != NULL && city_owner(acity) == aplayer) {
+          deep_pin_open(pplayer, pcity, aunit, acity, horizon);
         }
       }
       census.max_dist = MAX(census.max_dist, dist);

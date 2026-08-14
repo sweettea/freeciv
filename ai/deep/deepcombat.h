@@ -58,6 +58,14 @@ double deep_city_stack_survival_swap(const struct civ_map *nmap,
                                      const struct unit *except,
                                      struct unit *const *extra, int n_extra,
                                      int *wave_out);
+/* NETTHREAT item 2's cheaper probe: the garrison-pin counter. Tagging
+ * happens inside the wave assembly; these three are the lifecycle the
+ * rest of the module owes it. Counter-only -- nothing here is read by
+ * a decision, and all of it is gated on the metric log level. */
+void deep_pin_poll(struct player *pplayer);
+void deep_pin_note_move(struct unit *punit);
+void deep_pin_reset(void);
+
 double deep_take_odds(const struct civ_map *nmap, struct city *acity,
                       struct unit *const *stream, int n_stream);
 double deep_take_odds_at_arrival(const struct civ_map *nmap,
