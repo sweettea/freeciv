@@ -314,6 +314,17 @@ void deep_techcensus_turn_report(void)
     const struct ai_plr *plr_data;
     const struct research *presearch;
     double total = 0.0, mil = 0.0, neg = 0.0;
+    /* Want-weighted distance. dai_select_tech() does not choose the
+     * advance with the largest want -- it spreads each want over the
+     * advances on the path to it, DIVIDED BY THE STEP COUNT, and then
+     * takes the argmax among advances that are gettable right now
+     * (daitech.c:116-131). So a want of 1000 four steps away puts 250
+     * on each prerequisite and loses to a want of 300 sitting on a
+     * gettable tech. Appetite and direction are therefore different
+     * quantities, and this is the one that decides direction. */
+    double milsteps = 0.0, econsteps = 0.0;
+    double milpos = 0.0, econpos = 0.0;
+    double milnow = 0.0, econnow = 0.0;
     int advs = 0;
     bool deep_seat;
 
@@ -341,15 +352,41 @@ void deep_techcensus_turn_report(void)
       if (advance_is_military(i)) {
         mil += w;
       }
+      if (w > 0.0 && presearch != NULL) {
+        /* Distance stats over POSITIVE want only: a negative want does
+         * not "sit" anywhere, it cancels one that does. */
+        int steps = research_goal_unknown_techs(presearch, i);
+
+        if (steps > 0) {
+          if (advance_is_military(i)) {
+            milpos += w;
+            milsteps += w * steps;
+            if (steps == 1) {
+              milnow += w;
+            }
+          } else {
+            econpos += w;
+            econsteps += w * steps;
+            if (steps == 1) {
+              econnow += w;
+            }
+          }
+        }
+      }
     } advance_index_iterate_end;
 
     log_base(deep_metric_log_level(),
              "deep-techwant turn=%d player=\"%s\" side=\"%s\""
              " total=%.1f mil=%.1f econ=%.1f neg=%.1f advs=%d"
+             " milsteps=%.2f econsteps=%.2f milnow=%.1f econnow=%.1f"
              " res=\"%s\" resmil=%d goal=\"%s\" goalmil=%d",
              game.info.turn, player_name(pplayer),
              deep_seat ? "deep" : "stock",
              total, mil, total - mil, neg, advs,
+             milpos > 0.0 ? milsteps / milpos : 0.0,
+             econpos > 0.0 ? econsteps / econpos : 0.0,
+             milpos > 0.0 ? 100.0 * milnow / milpos : 0.0,
+             econpos > 0.0 ? 100.0 * econnow / econpos : 0.0,
              presearch == NULL ? "-" : goal_name(presearch->researching),
              presearch == NULL ? -1 : goal_military(presearch->researching),
              presearch == NULL ? "-" : goal_name(presearch->tech_goal),

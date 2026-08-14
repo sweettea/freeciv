@@ -31,7 +31,9 @@ import sys
 WANT = re.compile(
     r'deep-techwant turn=(\d+) player="([^"]*)" side="(\w+)" '
     r'total=([-\d.]+) mil=([-\d.]+) econ=([-\d.]+) neg=([-\d.]+) '
-    r'advs=(\d+) res="([^"]*)" resmil=(-?\d+) '
+    r'advs=(\d+) milsteps=([-\d.]+) econsteps=([-\d.]+) '
+    r'milnow=([-\d.]+) econnow=([-\d.]+) '
+    r'res="([^"]*)" resmil=(-?\d+) '
     r'goal="([^"]*)" goalmil=(-?\d+)')
 
 SITE = re.compile(
@@ -96,6 +98,11 @@ class Acc:
         self.goal = collections.defaultdict(lambda: collections.Counter())
         # site -> [total, mil, writes, turnsfired, turnsseen]
         self.site = collections.defaultdict(lambda: [0.0, 0.0, 0, 0, 0])
+        # side -> want-weighted distance of the want to its target
+        self.steps = collections.defaultdict(list)
+        self.now = collections.defaultdict(list)
+        self.esteps = collections.defaultdict(list)
+        self.enow = collections.defaultdict(list)
         self.games = 0
         self.seeds = set()
 
@@ -115,7 +122,14 @@ def scan(paths, acc):
                     if not m:
                         continue
                     (_t, plr, side, total, mil, _econ, _neg, _advs,
+                     milsteps, econsteps, milnow, econnow,
                      _res, resmil, _goal, goalmil) = m.groups()
+                    if float(mil) > 0:
+                        acc.steps[side].append(float(milsteps))
+                        acc.now[side].append(float(milnow))
+                    if float(_econ) > 0:
+                        acc.esteps[side].append(float(econsteps))
+                        acc.enow[side].append(float(econnow))
                     acc.side_total[side] += float(total)
                     acc.side_mil[side] += float(mil)
                     acc.side_rows[side] += 1
@@ -208,6 +222,23 @@ def main():
     if sm and st and dt:
         print("  ratio of military SHARES (deep/stock) = %.3f" %
               ((dm / dt) / (sm / st)))
+    print()
+
+    print("(b2) WHERE THE WANT SITS -- dai_select_tech() spreads each")
+    print("     want over the path to it DIVIDED BY STEPS, then takes")
+    print("     the argmax among gettable techs. Distance, not size,")
+    print("     is what converts appetite into direction.")
+    print()
+    print("  %-8s %14s %14s %14s %14s" %
+          ("side", "mil steps", "mil on-deck%", "econ steps", "econ on-deck%"))
+    for side in ("deep", "stock"):
+        if not acc.steps[side]:
+            continue
+        print("  %-8s %14.2f %13.1f%% %14.2f %13.1f%%" %
+              (side, statistics.mean(acc.steps[side]),
+               statistics.mean(acc.now[side]),
+               statistics.mean(acc.esteps[side]) if acc.esteps[side] else 0.0,
+               statistics.mean(acc.enow[side]) if acc.enow[side] else 0.0))
     print()
 
     print("(c) CHOSEN RESEARCH -- military share of what each side is")

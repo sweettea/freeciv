@@ -117,9 +117,18 @@ echo "=== STAGE 1c: scorelog identity assertion ($(date)) ==="
 same=0
 diff_n=0
 missing=0
+# The NEWEST key dir per side, not a glob. A rebuilt binary changes the
+# key, so a re-run leaves the previous run's dir sitting beside the new
+# one and a bare `smoke-*` expands to two paths -- which reads as
+# MISSING for every seed and fails the assertion for the wrong reason.
+# That happened once; this is the fix.
+basedir=$(ls -td "$OUT"/base/smoke-*/ 2>/dev/null | head -1)
+headdir=$(ls -td "$OUT"/head/smoke-*/ 2>/dev/null | head -1)
+echo "base dir: $basedir"
+echo "head dir: $headdir"
 for seed in $(grep -E '^[0-9]+$' benchmark/seeds/train.txt | head -n "$SEEDS"); do
-  a=$(echo "$OUT"/base/smoke-*/deep/seed-"$seed"/scorelog.txt)
-  b=$(echo "$OUT"/head/smoke-*/deep/seed-"$seed"/scorelog.txt)
+  a=$basedir/deep/seed-$seed/scorelog.txt
+  b=$headdir/deep/seed-$seed/scorelog.txt
   if [ ! -r "$a" ] || [ ! -r "$b" ]; then
     echo "seed $seed: MISSING scorelog"
     missing=$((missing + 1))
