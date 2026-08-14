@@ -14457,3 +14457,31 @@ deep's does not.
 
 Retention: verdict banked; saves/ and game.logs pruned per policy
 (scorelogs kept, derby-6 final save kept for replay).
+
+## 2026-08-14 — BERTH A/B on the naval venue: mechanism causal, population absent, score NULL
+
+EXPANSION slice 3's open question — does routing stranded founders to
+a serviceable berth pay where overseas founding has value — answered
+on tech65sea-150, 16 mirrored seeds, pv3 vs pv3 + founder_berth_route=1
+(one binary c063a63dcb, pinned .berth2-bin with lib).
+
+- Score: mean paired diff +0.14/seat, sem 0.67, t +0.21 — NULL.
+- Attribution is exact: 13/16 seed pairs are score-IDENTICAL, and the
+  three divergent seeds are exactly the three where deep-berthroute
+  fired (once each): +5.5, +4.4, −7.6 per seat. Fires → game moves;
+  doesn't fire → byte-identical. Free in-vivo off-path identity proof.
+- Why it barely fires: the deep-berth census logged 1,213 boat-needing
+  founder events in the berth arm; only 7 (0.6%) were the stranded
+  class (coast=1 serves=0) and only 3 had a reachable serviceable
+  berth. Slice 2's 60/67-gap population is CLOSED-WATER geometry
+  (founders beside idle bridging berths on lakes/inlets); tech65sea is
+  open ocean, where water almost always serves the crossing.
+- Verdict: knob stays 0 in pv3. The mechanism is live, causal, and
+  costs nothing off-path, but its defect population does not exist on
+  open-sea venues and n=3 firings (net ~0) cannot price it. The venue
+  where it lives is the Europe derby map — candidate rider for
+  derby-7 alongside the fence and the lean zeros (exhibition evidence
+  only, not a tunable verdict).
+
+Retention: verdict banked; berth-naval saves/ and game.logs pruned per
+policy (scorelogs, DONE, provenance kept).
