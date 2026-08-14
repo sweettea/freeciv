@@ -14681,3 +14681,225 @@ delivers.
    `neg = 0`), not short of hulls (slice 2: hull-rich, founder-poor),
    and not short of serviceable coasts once routed (this slice). The
    binding constraint is somewhere the lift census cannot see.
+
+## TECHMIL slice 1: the military writers are all alive, and deep still researches military less (2026-08-13)
+
+Brief: `sessions/S-TECHMIL-writer-census.md`. A CENSUS, not a
+mechanism. The suspicion it was built to test: deep replaced stock's
+military advisor, the military `tech_want[]` writers live inside it,
+and deep registers no tech hook — so deep may have **less military
+tech appetite than stock by accident**.
+
+**The suspicion as stated is falsified. Something real is left
+standing behind it, and it is not appetite.**
+
+### What landed (5 commits on `epic/techmil`, based at `4a6fa4578a`)
+
+- `ai/deep/deeptechcensus.{c,h}` — read-only. Rule 2 forbids a log line
+  at any writer in `ai/default`, so attribution is done from deep's
+  side: a per-player snapshot of the whole array, diffed at phase
+  boundaries deep already owns. `deep_techcensus_mark()` charges
+  everything written since the previous mark to a named site; marks go
+  in **pairs** around each stock call deep makes. Nesting needs no
+  stack — an inner pair flushes before the outer pair closes.
+- Marks at **12 sites** in `deepdefence.c`, `deepsettler.c`. Three
+  calls were hoisted out of an `if` condition into a `bool` so the mark
+  fires on both arms; no condition and no order changed.
+- Stock seats are read the only way they can be: `deep_techcensus_turn_report()`
+  runs from a deep player's `phase_finished`, which `end_phase()`
+  reaches only after `last_activities` has run for **every** player
+  (`srv_main.c:1526` then `:1598`), and reads each player's own AI slot
+  — legal because `dai_player_alloc()` runs for every player under
+  every registered module. **Per-site attribution for a stock seat is
+  unattributable by construction and is reported as such.**
+- Runner `benchmark/techmil-probe.sh`, reader `benchmark/techcensus.py`.
+
+### Validation
+
+- `meson test -C build` **5/5**.
+- **Identity: 10/10 paired smoke seeds BYTE-IDENTICAL**, 0 differ, 0
+  missing, against a `git archive` build of `4a6fa4578a`,
+  `identity.ini` both sides, ports 7700/7720. Proven **twice** — once
+  for the census, once again after the distance fields were added.
+  The base arm emits **0** `deep-tech` lines and the head arm 56 000,
+  so the proof cannot pass by both sides being HEAD.
+- Corpus: **tech50war-200, 8 mirrored seeds, `mixed_dc` + `mixed_cd`,
+  16/16 games, 0 pairing violations.** 4 deep + 4 stock at one table,
+  seats swapped between arms.
+- **`other = 0`.** Every want a deep seat wrote in 16 games is
+  attributed to a named site. No writer escaped the census, and the
+  site totals sum to 136 226 372 against an end-of-turn array total of
+  136 225 486 — the two independent accountings agree to 9e-6.
+- The whole census reproduced **digit for digit** across the two runs,
+  which is what the identity proof predicts and a second check that
+  the added fields are inert.
+
+### (a) Which writers are dead for deep seats
+
+| site | reaches | want | mil-want | writes | fired |
+|---|---|---|---|---|---|
+| `stock_assess` | daitech.c:507 via `assess_danger()` | 3 485 883 | 3 485 883 | 49 820 | **86.7%** |
+| `stock_defender` | daimilitary.c:1203 | 35 518 788 | 35 518 788 | 266 681 | **84.8%** |
+| `stock_attacker` | daimilitary.c:1460 via `kill_something_with()` | 2 900 142 | 2 900 142 | 4 426 | 8.7% |
+| `stock_diplomat` | daidiplomat.c:150 | 0 | 0 | 0 | 0% |
+| `stock_paradrop` | daiparadrop.c:419/431 | 0 | 0 | 0 | 0% |
+| `deep_techwall` | deepdefence.c:2141 | 0 | 0 | 0 | 0% |
+| `stock_domestic` | daitech.c:602 via `domestic_advisor_choose_build()` | 325 427 | 119 622 | 5 087 | 12.8% |
+| `stock_building` | daicity.c:142 via `building_advisor()` | 84 212 303 | 34 209 217 | 67 519 | 60.1% |
+| `stock_gov` | daihand.c:736 | 2 043 884 | 0 | 6 576 | 51.9% |
+| `stock_effects` | daitech.c:325 via `dai_manage_tech()` | 7 739 945 | 6 845 780 | 36 915 | **97.6%** |
+| `deep_horizon` | deephorizon.c:1895 | 0 | 0 | 0 | 0% |
+| `deep_settler` | deepsettler.c:1014 | 0 | 0 | 0 | 0% |
+| `other` | — | **0** | 0 | 0 | 0% |
+
+**Not one of the four military writers the brief names is dead.** Deep
+calls all four directly — `dai_process_defender_want()` from three
+sites, `kill_something_with()` from two, `assess_danger()` from one,
+`domestic_advisor_choose_build()` from two — and the two big ones fire
+on **85–87% of turns**. The premise that deep bypasses them is wrong
+about the code.
+
+The five zeros are all explained, and **none of them is a lost
+military writer**:
+
+- `deep_techwall` is **switched off**, not dead: `defensive_techwall_weight
+  = 0.0` is its compiled default.
+- `stock_diplomat`, `deep_horizon`, `deep_settler` are **venue-silent**.
+  Each wrote on the smoke cell (477 000 / 5 601 / 0 over 10 games) and
+  writes nothing here because tech50war-200 starts at techlevel 50: the
+  diplomat's enabling advance, the `SIZE_ADJ` gating advances and a
+  ferry role unit are all already available at turn 1.
+- `stock_paradrop` writes `+= 2` per advance and needs a paratrooper
+  role; it never fired on either cell.
+- `find_best_city_placement()` (daisettler.c:879) **is** dead for deep,
+  which replaced it — but deep's own `deep_find_best_city_placement()`
+  carries the equivalent write at deepsettler.c:1014. Replaced, not
+  lost.
+
+### (b) The deep:stock ratio of military tech_want
+
+Classified by the **advance** written to (military = gates a
+non-civilian unit type), the only classification computable on a stock
+seat.
+
+| side | want | mil-want | mil share | per-seat mil share |
+|---|---|---|---|---|
+| deep | 136 225 486 | 83 078 788 | **61.0%** | 62.3% |
+| stock | 135 024 545 | 76 269 591 | **56.5%** | 60.1% |
+
+- **deep:stock military tech_want = 1.089**
+- deep:stock total tech_want = 1.009
+- ratio of military *shares* = 1.080
+
+**Deep does not have less military tech appetite. It has ~9% more, and
+a more military-weighted array, on the same total.**
+
+### (c) Military share of chosen research — and the contradiction
+
+| side | researching | goal |
+|---|---|---|
+| deep | **47.5%** | 64.8% |
+| stock | **68.4%** | 70.8% |
+
+Deep's array is *more* military and the advance it is actually
+researching is military *far less often* — a **21-point gap in the
+opposite direction from the appetite**. It is not a transient and it is
+not deep lagging on the tree:
+
+| turns | deep res-mil | stock res-mil | deep goal-mil | stock goal-mil | deep mil on-deck | stock mil on-deck |
+|---|---|---|---|---|---|---|
+| 1–50 | 44.1% | 68.7% | 68.2% | 79.5% | 5.8% | 13.1% |
+| 51–100 | 49.9% | 66.0% | 61.5% | 65.4% | 13.9% | 17.0% |
+| 101–150 | 50.3% | 66.5% | 63.8% | 68.5% | 20.7% | 24.9% |
+| 151–200 | 45.8% | 72.5% | 65.9% | 69.8% | 20.2% | 26.2% |
+
+Confounds checked and rejected: **techs known 55.03 vs 54.95** (deep is
+not behind), **researching == goal on 33.9% vs 34.5% of turns** (deep
+does not pick more distant goals), science rate 57.2 vs 60.6.
+
+### (b2) Where the want sits — the mechanism the census located
+
+`dai_select_tech()` (daitech.c:116–131) does **not** pick the largest
+want. It spreads each want over every advance on the path to it
+**divided by the step count**, then takes the argmax among advances
+gettable *right now*. A want of 1000 four steps away puts 250 on each
+prerequisite and loses to a want of 300 sitting on a gettable tech.
+**Appetite and direction are different quantities, and distance is what
+converts one into the other.**
+
+| side | mil steps | mil on-deck | econ steps | econ on-deck |
+|---|---|---|---|---|
+| deep | 7.76 | **15.2%** | 8.14 | 21.6% |
+| stock | 7.03 | **20.2%** | 8.55 | 23.4% |
+
+Deep's military want sits **farther** from researchable and **25%
+relatively less** of it is on deck, while deep's economic want sits
+**closer** than stock's. Both displacements push the argmax the same
+way, the on-deck gap is present in every band, and it is **widest
+exactly where the research gap is widest** (turns 1–50: 5.8% vs 13.1%
+on deck, 44.1% vs 68.7% researched).
+
+**Stated honestly: this is a contributing mechanism, not a proven
+complete explanation.** On-deck *composition* comes out near 52%
+military on both sides, which does not by itself account for a
+21-point gap; `newtech` is an argmax, so the top of the distribution
+can matter more than its mean, and this census does not resolve that.
+
+### Reading it: is the military-tech-appetite gap real?
+
+**The gap the brief hypothesised is not real. A different gap is.**
+
+1. **No military writer is dead for deep.** The brief's premise — that
+   deep bypasses the machinery the military writers live in — is wrong
+   about the call graph. Deep calls every one of them.
+2. **Deep's military appetite is higher, not lower** (ratio 1.089,
+   share 61.0% vs 56.5%). Any design that starts from "deep needs more
+   military tech want" would be adding to the side that already has
+   more.
+3. **Deep's realised military research is substantially lower** (47.5%
+   vs 68.4%, stable over 200 turns, at equal tech counts). That is a
+   real, large, reproducible deep-vs-stock difference in tech
+   direction — and the census says it lives **downstream of the
+   writers**, in the conversion from want to direction, where placement
+   on the tree decides.
+4. **So the design conversation's premise should move.** Whatever gets
+   built should be aimed at *where deep's military want lands on the
+   tech tree*, not at *how much of it there is*. The `want_t` seam and
+   the era/parity terms are still plausible; "push more military tech
+   want" is not, because the want is already there and is losing the
+   argmax on distance.
+
+**Not in scope and not done:** no direction override, no new valuation,
+no knob, no behaviour change. Rule 7 respected — no constant invented.
+
+### What slice 2 should measure, if there is one
+
+1. **Which advances the on-deck gap is made of.** The census has
+   want-weighted distance in aggregate; it does not name the advances.
+   Logging the top-N `values[i]` among gettable techs per side, per
+   turn, is a reader-sized job and would say whether deep loses the
+   argmax to one recurring economic tech or to a diffuse field.
+2. **Whether the gap survives a from-scratch cell.** tech50war-200
+   starts at techlevel 50, which is why four writers are venue-silent
+   here and wrote on smoke. A `primary-120` census would weight the
+   sites completely differently and is the obvious generalisation
+   check before any design is priced.
+3. **Not another writer census.** `other = 0` closes that question.
+
+### One harness trap, worth not repeating
+
+**`pkill` from a tool call cannot see the benchmark's processes.** The
+sandbox has its own PID namespace, so `ps`/`pkill` list only the
+current call's own shell; a probe "killed" that way keeps running. Two
+probe runs then raced, the survivor kept writing into a result dir
+under the *old* binary's key and interleaved its output into the log
+file the new run had truncated — which is why the log carries a
+spurious `completed: 4/10`. Nothing was mis-measured (the
+content-addressed cache put the two runs in different key dirs, and
+the stale dir was deleted), but two lessons stand: **use
+`dangerouslyDisableSandbox` to see the real process table before
+concluding anything is stopped**, and **a re-run after a rebuild
+leaves the previous key dir beside the new one, so an identity
+assertion must select the newest dir rather than glob `smoke-*`** —
+the bare glob expands to two paths and fails as MISSING for the wrong
+reason. Both fixed in `techmil-probe.sh`.
