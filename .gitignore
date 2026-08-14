@@ -15,3 +15,5 @@
 /freeciv-CI.log
 /.era-probe
 /.techmil-probe
+/.invrate-base/
+/.invrate-pin/

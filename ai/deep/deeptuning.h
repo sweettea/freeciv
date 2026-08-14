@@ -1473,6 +1473,42 @@ struct deep_tuning {
    * a target's garrison when pricing an amphibious take -- travel
    * time is the defender's budget. 0 prices arrival like adjacency. */
   double invasion_reinforce_rate;
+  /* INVASION-RATE: the SLOPE on the same law. invasion_reinforce_rate
+   * above is flat -- every city on the map reinforces at one rate,
+   * whether it is a four-shield frontier town or a war-economy
+   * capital. This weights the rate that city can measurably sustain,
+   *
+   *   defenders/turn = surplus[O_SHIELD] / cost(best buildable defender)
+   *
+   * and the model charges rate + slope x that. 0 = the flat model
+   * exactly, byte for byte, which is what shipped; 1.0 = take the
+   * observed production rate at face value on top of the flat term.
+   * Sweeping the pair spans "all cities reinforce alike" through
+   * "reinforcement IS production" without assuming either.
+   *
+   * A floor on the production channel, not an estimate of all
+   * reinforcement: gold-bought defenders and units walking in from a
+   * neighbour are invisible to it and both push the true rate up.
+   * That gap is what a tuned slope > 1 would be pricing.
+   *
+   * Civilised targets only -- the barbarian branch stays flat at
+   * barb_reinforce_rate, because T160 measured barb cities not
+   * garrisoning regardless of what they could afford. */
+  double invasion_reinforce_slope;
+  /* Naval slice 3: the fixed turns an overseas eta pays on top of the
+   * sail itself -- board the hull at this end, come ashore at the
+   * other. Charged by the four seams that price an OVERSEAS arrival
+   * (deep_assault_want()'s main eta and its per-type sweep, the pool
+   * reach test, and deep_op_form_assault()'s required-force pricing),
+   * and by none of the land ones.
+   *
+   * 2 is what those seams shipped as a bare literal from naval slice
+   * 3 (2026-07-31) until this field; it is registered at that value,
+   * so the default is byte-identical and the tuner can finally reach
+   * it. NOT charged by deep_op_eta(), the march re-gate's own clock
+   * -- see STATUS's INVASION-RATE note; making the two agree is a
+   * behaviour change and is not this knob. */
+  int invasion_embark_turns;
   /* Second waves (E7): for this many turns after a strike launches,
    * the reserve gets first claim on the next operation against the
    * same target -- reinforce while the garrison is softened, or let

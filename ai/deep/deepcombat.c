@@ -1270,14 +1270,128 @@ double deep_take_odds(const struct civ_map *nmap, struct city *acity,
 }
 
 /**********************************************************************//**
+  The strongest defender the target could put on the queue right now.
+  This is both the unit the reinforcement model copies into the city
+  and the denominator of the observed build rate, so the two agree by
+  construction rather than by coincidence.
+
+  Omniscient, like everything else this file reads off an enemy city
+  (see the assumption list on deep_take_odds_cost() and
+  findings/omniscience-census-2026-08-11.md S5). W04's estimator
+  replaces the read; the arithmetic on top of it survives that swap.
+**************************************************************************/
+static const struct unit_type *
+deep_best_buildable_defender(const struct civ_map *nmap,
+                             const struct city *acity)
+{
+  const struct unit_type *best = NULL;
+
+  unit_type_iterate(ut) {
+    if (ut->defense_strength > 0
+        && can_city_build_unit_now(nmap, acity, ut, RPT_CERTAIN)
+        && (best == NULL
+            || ut->defense_strength > best->defense_strength)) {
+      best = ut;
+    }
+  } unit_type_iterate_end;
+
+  return best;
+}
+
+/**********************************************************************//**
+  The rate the target city can ACTUALLY replace defenders at, in
+  defenders per turn: its shield surplus divided by what the defender
+  the model would place costs. Both halves are facts about that city
+  on this turn, not constants -- which is the whole point. A
+  four-shield frontier town and a war-economy capital have never been
+  distinguishable to the reinforcement model, and they differ by an
+  order of magnitude.
+
+  Returns 0 when the city cannot build a defender at all, when it runs
+  a shield deficit, or when the best defender is free -- all three of
+  which mean "this term has nothing to say", never "reinforce fast".
+
+  NOT the whole signal, and the omissions are deliberate: a defender
+  BOUGHT with gold arrives in one turn regardless of surplus (the
+  buy-response argument in findings/tuning-first-principles), and
+  units walking in from a neighbouring city are reinforcement this
+  never sees. Both push the true rate up, so the term is a floor on
+  the production channel rather than an estimate of all reinforcement,
+  and it is registered as a slope precisely so a tuner can price that
+  gap instead of a comment guessing at it.
+**************************************************************************/
+double deep_reinforce_observed(const struct civ_map *nmap,
+                               const struct city *acity)
+{
+  const struct unit_type *best = deep_best_buildable_defender(nmap, acity);
+  int cost;
+
+  if (best == NULL) {
+    return 0.0;
+  }
+  cost = utype_build_shield_cost_base(best);
+  if (cost <= 0) {
+    return 0.0;
+  }
+
+  return (double) MAX(acity->surplus[O_SHIELD], 0) / cost;
+}
+
+/**********************************************************************//**
+  Defenders per turn of our travel time that the target is modelled as
+  adding. Two terms:
+
+    invasion_reinforce_rate            a flat rate, the same for every
+                                       city on the map
+  + invasion_reinforce_slope x observed   what THIS city can build
+
+  invasion_reinforce_slope defaults to 0, which is the flat model this
+  shipped with, byte for byte. At 1.0 the observed production rate is
+  taken at face value on top of the flat term, so a sweep of the pair
+  spans "all cities reinforce alike" through "reinforcement is
+  production" without either being assumed.
+
+  The slope rides on the civilised branch only. Barbarians take
+  barb_reinforce_rate flat and no slope: T160 forensics found 47 of 52
+  barb-held cities garrisonless for ~40 turns, so a barbarian city's
+  shield surplus demonstrably does not become defenders, and sloping
+  on it would rebuild exactly the phantom-Musketeer wall that knob
+  exists to tear down.
+**************************************************************************/
+double deep_reinforce_rate(const struct civ_map *nmap,
+                           const struct city *acity)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+
+  /* Barbarians lean against defending their takes (human doctrine
+   * + T160 forensics: 47 of 52 barb-held cities garrisonless for
+   * ~40 turns while an 87-unit horde raged in the field). Pricing
+   * them with the civilised reactive-build model walls off the
+   * whole reconquest pool behind phantom Musketeers. */
+  if (is_barbarian(city_owner(acity))) {
+    return tune->barb_reinforce_rate;
+  }
+
+  if (tune->invasion_reinforce_slope <= 0.0) {
+    /* The flat model, and not one extra unit_type_iterate per odds
+     * call to compute a term that is about to be multiplied by 0. */
+    return tune->invasion_reinforce_rate;
+  }
+
+  return tune->invasion_reinforce_rate
+         + tune->invasion_reinforce_slope
+           * deep_reinforce_observed(nmap, acity);
+}
+
+/**********************************************************************//**
   Take odds against the garrison AS IT WILL BE when we arrive: travel
   time is the defender's budget (naval design, human refinement
   2026-07-30 -- a 12-turn sail must clear a much higher bar than a
   2-turn hop, which is exactly why long-range desultory attacks fail
   while looking winnable on paper). eta turns of sailing add
-  eta x invasion_reinforce_rate virtual copies of the best defender
-  the target could build, placed in the city so walls and terrain
-  count. eta 0 is the plain current-garrison read.
+  eta x deep_reinforce_rate() virtual copies of the best defender the
+  target could build, placed in the city so walls and terrain count.
+  eta 0 is the plain current-garrison read.
 **************************************************************************/
 double deep_take_odds_at_arrival(const struct civ_map *nmap,
                                  struct city *acity,
@@ -1340,30 +1454,13 @@ double deep_take_odds_cost(const struct civ_map *nmap, struct city *acity,
   n_def = deep_collect_defenders(acity, def, NULL);
 
   if (eta > 0) {
-    const struct deep_tuning *tune = deep_tuning_get();
-    /* Barbarians lean against defending their takes (human doctrine
-     * + T160 forensics: 47 of 52 barb-held cities garrisonless for
-     * ~40 turns while an 87-unit horde raged in the field). Pricing
-     * them with the civilised reactive-build model walls off the
-     * whole reconquest pool behind phantom Musketeers. */
-    double rrate = is_barbarian(city_owner(acity))
-                   ? tune->barb_reinforce_rate
-                   : tune->invasion_reinforce_rate;
-
-    reinforce = (int) (eta * rrate + 0.5);
+    reinforce = (int) (eta * deep_reinforce_rate(nmap, acity) + 0.5);
   }
   if (reinforce > 0) {
     struct player *owner = city_owner(acity);
-    const struct unit_type *best = NULL;
+    const struct unit_type *best
+      = deep_best_buildable_defender(nmap, acity);
 
-    unit_type_iterate(ut) {
-      if (ut->defense_strength > 0
-          && can_city_build_unit_now(nmap, acity, ut, RPT_CERTAIN)
-          && (best == NULL
-              || ut->defense_strength > best->defense_strength)) {
-        best = ut;
-      }
-    } unit_type_iterate_end;
     while (best != NULL && n_virt < reinforce
            && n_def + n_virt < DEEP_STACK_MAX
            && n_virt < DEEP_STACK_MAX) {

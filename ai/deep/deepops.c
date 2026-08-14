@@ -3765,7 +3765,8 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
       }
     }
     eta = (real_map_distance(city_tile(staging), city_tile(target))
-           * SINGLE_MOVE + rate - 1) / rate + (overseas ? 2 : 0);
+           * SINGLE_MOVE + rate - 1) / rate
+          + (overseas ? tune->invasion_embark_turns : 0);
   }
   n = deep_op_collect_pool(ait, pplayer,
                            tile_continent(city_tile(home_city)),

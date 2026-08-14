@@ -66,6 +66,15 @@ void deep_pin_poll(struct player *pplayer);
 void deep_pin_note_move(struct unit *punit);
 void deep_pin_reset(void);
 
+/* The reinforcement model behind the arrival odds: what the target
+ * can actually build per turn (deep_reinforce_observed) and what the
+ * model charges per turn of our travel (deep_reinforce_rate, the flat
+ * rate plus invasion_reinforce_slope times the observed one). Exported
+ * so the build side can log the same numbers the pricing used. */
+double deep_reinforce_observed(const struct civ_map *nmap,
+                               const struct city *acity);
+double deep_reinforce_rate(const struct civ_map *nmap,
+                           const struct city *acity);
 double deep_take_odds(const struct civ_map *nmap, struct city *acity,
                       struct unit *const *stream, int n_stream);
 double deep_take_odds_at_arrival(const struct civ_map *nmap,
