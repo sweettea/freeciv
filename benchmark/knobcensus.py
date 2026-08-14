@@ -238,6 +238,17 @@ MAP = {
         "deep-wave's far_dist/far_turns/pf_turns fields are its "
         "instrument, and the nonzero-wave row count is its footprint "
         "(45,034 -> 31,802 when on). Factorial arm, 2026-08-12."),
+    "threat_pin_discount": (
+        "S3", "mag", "direct", [("deep-pindisc", "share>0")],
+        "NETTHREAT item 2's flat garrison-pin discount "
+        "(deepcombat.c, deep_city_survival_core): a home-pinned "
+        "enemy unit (pin tracker: open window, never left) enters "
+        "the wave at presence 1-x. deep-pindisc lines appear only "
+        "when it is nonzero, and share>0 is the proof the seam "
+        "reached the tracker's population; share~0 with the knob on "
+        "means the discount is priced on untagged units and must "
+        "not ship. Measured first cut 0.687 = the probe's "
+        "never-left share (18,538 windows)."),
     "attacker_garrison_gain": (
         "S3", "mag", "direct", [("deep-agc", "")],
         "NETTHREAT item 3 (deepunit want seam): credit an attacker's "

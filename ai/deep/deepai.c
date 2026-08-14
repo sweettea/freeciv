@@ -128,6 +128,7 @@ static void dpai_game_free(void)
   /* Unit ids are recycled between games in one server process, so a
    * tag that outlived its game would be read against a stranger. */
   deep_pin_reset();
+  deep_pindisc_reset();
 }
 
 /**********************************************************************//**
@@ -700,6 +701,10 @@ static void dpai_data_phase_begin(struct player *pplayer, bool is_new_phase)
      * of them ever come? Same placement and the same reason: a tag
      * opened last turn is scored on where its unit slept. */
     deep_pin_poll(pplayer);
+    /* Beside it, the discount's own ledger: how much wave mass the
+     * pin classification weighed down for this player so far. Silent
+     * until threat_pin_discount arms the seam. */
+    deep_pindisc_log(pplayer);
 
     plr_data->dv_turns_logged++;
     log_base(LOG_VERBOSE,

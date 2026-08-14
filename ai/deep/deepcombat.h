@@ -58,13 +58,20 @@ double deep_city_stack_survival_swap(const struct civ_map *nmap,
                                      const struct unit *except,
                                      struct unit *const *extra, int n_extra,
                                      int *wave_out);
-/* NETTHREAT item 2's cheaper probe: the garrison-pin counter. Tagging
- * happens inside the wave assembly; these three are the lifecycle the
- * rest of the module owes it. Counter-only -- nothing here is read by
- * a decision, and all of it is gated on the metric log level. */
+/* NETTHREAT item 2's probe: the garrison-pin tracker. Tagging happens
+ * inside the wave assembly; these three are the lifecycle the rest of
+ * the module owes it. Runs when the metric log level is emitted OR
+ * when threat_pin_discount arms the wave discount that reads its
+ * tags (deep_pin_track_active in deepcombat.c). */
 void deep_pin_poll(struct player *pplayer);
 void deep_pin_note_move(struct unit *punit);
 void deep_pin_reset(void);
+
+/* The discount's ledger (`deep-pindisc`): units weighed down, mass
+ * before and after, and the share of all wave mass removed -- the
+ * proof the seam reached the tracker's population. Counter-only. */
+void deep_pindisc_log(struct player *pplayer);
+void deep_pindisc_reset(void);
 
 /* The reinforcement model behind the arrival odds: what the target
  * can actually build per turn (deep_reinforce_observed) and what the

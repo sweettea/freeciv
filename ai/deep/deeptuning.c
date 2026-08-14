@@ -180,6 +180,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .survival_fear_value = 20.0,          /* PLACEHOLDER, untuned */
   .survival_horizon = 3,                /* PLACEHOLDER, untuned */
   .survival_pf_reach = 0,               /* 0 = straight-line reach */
+  .threat_pin_discount = 0.0,           /* 0 = off; measured 0.687 */
   .tired_attack_floor = 0.9,            /* PLACEHOLDER, untuned */
   .attack_value_weight = 1.0,           /* PLACEHOLDER, untuned */
   .attack_loss_gain = 1.0,              /* PLACEHOLDER, untuned */
@@ -463,6 +464,7 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(survival_fear_value) \
   TUNE_INT(survival_horizon) \
   TUNE_INT(survival_pf_reach) \
+  TUNE_DOUBLE(threat_pin_discount) \
   TUNE_DOUBLE(tired_attack_floor) \
   TUNE_DOUBLE(attack_value_weight) \
   TUNE_DOUBLE(attack_loss_gain) \
