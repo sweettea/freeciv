@@ -1757,6 +1757,17 @@ test('deeptuning',
                                       include_directories('ai/deep')],
                 link_with: common_lib,
                 install: false))
+# The nativity helpers iterate real terrain/class structures, so this
+# one links libfreeciv too.
+test('deepnativity',
+     executable('deepnativity_test',
+                'tests/deepnativity_test.c',
+                'ai/deep/deepnativity.c',
+                sources: [verhdr, specenum],
+                include_directories: [common_inc,
+                                      include_directories('ai/deep')],
+                link_with: common_lib,
+                install: false))
 endif
 
 endif
