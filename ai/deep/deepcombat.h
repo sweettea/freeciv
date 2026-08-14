@@ -58,6 +58,15 @@ double deep_city_stack_survival_swap(const struct civ_map *nmap,
                                      const struct unit *except,
                                      struct unit *const *extra, int n_extra,
                                      int *wave_out);
+/* The reinforcement model behind the arrival odds: what the target
+ * can actually build per turn (deep_reinforce_observed) and what the
+ * model charges per turn of our travel (deep_reinforce_rate, the flat
+ * rate plus invasion_reinforce_slope times the observed one). Exported
+ * so the build side can log the same numbers the pricing used. */
+double deep_reinforce_observed(const struct civ_map *nmap,
+                               const struct city *acity);
+double deep_reinforce_rate(const struct civ_map *nmap,
+                           const struct city *acity);
 double deep_take_odds(const struct civ_map *nmap, struct city *acity,
                       struct unit *const *stream, int n_stream);
 double deep_take_odds_at_arrival(const struct civ_map *nmap,
