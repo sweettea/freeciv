@@ -344,15 +344,37 @@ def arena_key(manifest, files):
 
 
 def arena_log_loads(gamedir):
-    """{seat name: (slot, file)} from the game's own deep-arena log
-    lines -- the server saying which file each seat actually loaded."""
-    rx = re.compile(r'deep-arena seat=(\S+) slot=(\d+) file="([^"]+)"')
-    out = {}
+    """(seats, loaded, failed) read from the game's own log.
+
+    seats:  {seat name: (slot, file)} from the deep-arena seat lines --
+            which file the server ASSIGNED each seat.
+    loaded: {file} from the deep-tuning lines -- files whose values
+            were actually parsed and applied.
+    failed: {file} the loader refused ("cannot load tuning file"; the
+            seat then plays the compiled defaults).
+
+    Both sides are needed: the seat line is written after assignment
+    whether or not the file parsed, so on a load failure it names a
+    file whose values are NOT in play (seen live with a duplicate-key
+    ini, 2026-08-14)."""
+    rx_seat = re.compile(r'deep-arena seat=(\S+) slot=(\d+) file="([^"]+)"')
+    rx_load = re.compile(r'deep-tuning file="([^"]+)"')
+    rx_fail = re.compile(r'cannot load (?:arena manifest|tuning file)'
+                         r' "([^"]+)"')
+    seats, loaded, failed = {}, set(), set()
     for line in open(Path(gamedir) / "game.log", errors="replace"):
-        m = rx.search(line)
+        m = rx_seat.search(line)
         if m:
-            out[m.group(1)] = (int(m.group(2)), m.group(3))
-    return out
+            seats[m.group(1)] = (int(m.group(2)), m.group(3))
+            continue
+        m = rx_load.search(line)
+        if m:
+            loaded.add(m.group(1))
+            continue
+        m = rx_fail.search(line)
+        if m:
+            failed.add(m.group(1))
+    return seats, loaded, failed
 
 
 def run_arena(args, seeds, out):
@@ -396,21 +418,28 @@ def run_arena(args, seeds, out):
     per_file = {}
     for c, s, d in sorted(done):
         rows = seat_scores(d)
-        loaded = arena_log_loads(d)
+        seats, loads, fails = arena_log_loads(d)
         rank_of = {n: i + 1 for i, (n, _)
                    in enumerate(sorted(rows, key=lambda r: -r[1]))}
         print(f"== arena cfg{c} seed {s}  ({d})")
         print("   %-6s %8s %5s  %-9s %s"
               % ("seat", "score", "rank", "confirmed", "file"))
         for name, score in sorted(rows):
-            got = loaded.get(name)
+            got = seats.get(name)
             want = expect.get(name)
             if want is None and got is not None:
                 want = expect.get("slot%d" % got[0])
             if got is None and want is None:
                 confirm, path = "base", "-"
             elif got is not None and want == got[1]:
-                confirm, path = "yes", got[1]
+                # Assigned as the manifest says -- but assignment is
+                # not application: the seat line is written even when
+                # the file itself was refused, and then the seat plays
+                # the compiled defaults.
+                if got[1] in fails or got[1] not in loads:
+                    confirm, path = "LOADFAIL", got[1]
+                else:
+                    confirm, path = "yes", got[1]
             else:
                 # The manifest and the game disagree about this seat;
                 # that is the failure this column exists to catch.

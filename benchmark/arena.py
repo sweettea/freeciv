@@ -66,6 +66,7 @@ def validate_tuning(path):
         raise SystemExit("%s has no [tuning] section, so NOTHING in it"
                          " would be applied" % path)
     reg = params_registry()
+    seen = set()
     for line in text.split("\n"):
         m = re.match(r"\s*([a-z_0-9]+)\s*=\s*(\S+)", line)
         if not m:
@@ -78,6 +79,18 @@ def validate_tuning(path):
             raise SystemExit("%s writes float tunable %s with no decimal"
                              " point, which the loader SILENTLY ignores"
                              % (path, key))
+        # A fourth check, found live 2026-08-14: secfile_load() REFUSES
+        # a file with a duplicate key ("Tried to insert same value
+        # twice"), the loader logs one error line and the seat plays
+        # the COMPILED DEFAULTS. derby-lean.ini and pv3-lean.ini both
+        # shipped with floor_interior_weight twice and were silently
+        # unloadable the whole time.
+        if key in seen:
+            raise SystemExit("%s sets %s twice; secfile_load() refuses"
+                             " the WHOLE file over a duplicate key and"
+                             " the server falls back to the compiled"
+                             " defaults" % (path, key))
+        seen.add(key)
 
 
 def config_path(name):
