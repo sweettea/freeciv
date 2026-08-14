@@ -5,6 +5,7 @@
 #   ./benchmark/invrate.sh live      # 2 tech65sea-150, counters on
 #   ./benchmark/invrate.sh identity  # 10 paired smoke seeds vs base
 #   ./benchmark/invrate.sh ab        # 16 tech65sea-150 seeds, flat vs measured
+#   ./benchmark/invrate.sh census D  # robs=/rrate= distribution of a corpus
 #
 # Machine budget for this epic: ports 7500-7599, jobs 2-3, nice.
 #
@@ -20,10 +21,14 @@
 # shipped) against tuning/invrate-measured.ini (rate 0, slope 1 --
 # reinforcement IS production). tech65sea-150 is the venue because it
 # is the only cell where invasions happen at all (see the config's
-# header). The arm choice is the PROBE's, not the plan's: robs= sits
-# entirely below the flat 0.34 on both instrumented cells, so
-# slope-on-top-of-flat would only have asked "does deep fear
-# garrisons more" -- the reasoning is in the tuning file.
+# header). The arm choice is the PROBE's, not the plan's: the shipped
+# flat 0.34 is ~1.7x the median observed rate and over-charges ~86% of
+# the time, so slope-on-top-of-flat would only have asked "does deep
+# fear garrisons more" -- the reasoning, and a correction to a first
+# reading taken off unfinished games, is in the tuning file.
+#
+# `census` prints that distribution from any result dir; it needs no
+# games of its own, only a corpus with the fields.
 
 set -eu
 
@@ -89,7 +94,7 @@ identity)
       base) bin=$BASE_SERVER; port=7520;;
       head) bin=$SERVER;      port=7540;;
     esac
-    nice -n 5 ./benchmark/run.sh --count "$SEEDS" --arms deep,baseline \
+    nice -n 5 ./benchmark/run.sh --count "$SEEDS" --arms deep \
       --config benchmark/configs/smoke.conf \
       --server "$bin" --jobs "$JOBS" --portbase "$port" \
       --out "$OUT/$side"
@@ -98,7 +103,7 @@ identity)
 
   echo "=== identity stage c: scorelog assertion ==="
   same=0; diff_n=0; missing=0; total=0
-  for arm in deep baseline; do
+  for arm in deep; do
     for seed in $(grep -E '^[0-9]+$' benchmark/seeds/train.txt \
                   | head -n "$SEEDS"); do
       total=$((total + 1))
@@ -143,6 +148,11 @@ ab)
     --pat 'op-strike=deep-op turn=\S+ player="[^"]+" op=\d+ strike'
   ;;
 
+census)
+  shift
+  ./benchmark/reinforce.py "$@"
+  ;;
+
 *)
-  echo "usage: $0 {live|identity|ab}" >&2; exit 1;;
+  echo "usage: $0 {live|identity|ab|census DIR...}" >&2; exit 1;;
 esac
