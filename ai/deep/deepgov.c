@@ -494,7 +494,7 @@ void deep_gov_value(struct ai_type *ait, struct player *pplayer,
   struct government *now;
   double base, cand, value;
   double anarchy_turns = 0.0, charge = 0.0, upkeep = 0.0;
-  double ceiling = 0.0;
+  double ceiling = 0.0, dur;
   int horizon;
 
   if (tune->gov_valuation == 0) {
@@ -534,6 +534,15 @@ void deep_gov_value(struct ai_type *ait, struct player *pplayer,
 
   cand = deep_gov_output(pplayer, adv, gov, &upkeep);
   horizon = deep_horizon_turns();
+  /* DECAY slice 2: the same MORT rectangle the growth ladder counts
+   * over, priced through the same shared helper -- a per-turn output
+   * delta from the day the government stands, horizon-derived (the
+   * window stood in for a discount), so gate-on it runs to the scored
+   * bell as a truncated geometric. dur == horizon with the gate off
+   * (int-to-double is exact), so the product below is bit-identical
+   * at defaults. The anarchy charge is NOT repriced: it is a finite
+   * upfront bill over anarchy_turns, not a horizon window. */
+  dur = deep_decay_duration(horizon, 0, 1, -1);
 
   /* The candidate government is the one set right now, which is what
    * makes this its ceiling and not the incumbent's. */
@@ -544,7 +553,7 @@ void deep_gov_value(struct ai_type *ait, struct player *pplayer,
     }
   }
 
-  value = (cand - base) * horizon - charge + ceiling;
+  value = (cand - base) * dur - charge + ceiling;
 
   *val = amortize(value, deep_gov_tech_distance(pplayer, gov));
   deep_plr_data(pplayer)->gov_valued++;
@@ -552,12 +561,13 @@ void deep_gov_value(struct ai_type *ait, struct player *pplayer,
   log_base(deep_metric_log_level(),
            "deep-gov turn=%d player=\"%s\" gov=\"%s\" now=\"%s\""
            " base=%.1f out=%.1f upk=%.1f delta=%.1f horizon=%d anturns=%.1f"
-           " ancost=%.1f ceil=%.1f dist=%d val=%.1f",
+           " ancost=%.1f ceil=%.1f dist=%d val=%.1f dur=%.3f rate=%.5f",
            game.info.turn, player_name(pplayer),
            government_rule_name(gov), government_rule_name(now),
            base, cand, upkeep, cand - base, horizon, anarchy_turns, charge,
            ceiling,
-           deep_gov_tech_distance(pplayer, gov), (double) *val);
+           deep_gov_tech_distance(pplayer, gov), (double) *val, dur,
+           deep_decay_rate_now());
 
   *override = TRUE;
 }
