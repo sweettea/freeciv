@@ -14485,3 +14485,97 @@ on tech65sea-150, 16 mirrored seeds, pv3 vs pv3 + founder_berth_route=1
 
 Retention: verdict banked; berth-naval saves/ and game.logs pruned per
 policy (scorelogs, DONE, provenance kept).
+
+## 2026-08-14 — DECAY slice 1: the shape census — flips are DENSE at the measured rates; the knob is load-bearing
+
+Brief: `sessions/S-DECAY-one-discount.md`. Branch `epic/decay-census`,
+three commits: `f6edd45e1b` (deep-decay shape lines in deephorizon.c,
+log-only), `a60735801a` (corpus driver + offline flip-curve analysis),
+`225cb67633` (bell-aware exponential model + exact validation).
+
+**Byte-neutrality proven at the play level**, not argued: tech50war-200
+seed 1 run on the pre-census and census binaries (.pin-base
+853f61cad06a vs .pin-census 0edb3997e8ad) — scorelogs byte-identical
+including headers, maphash identical, and the T201 final saves hash
+identical after normalizing only wall-clock fields (event timestamps,
+phase_seconds, last_turn_change_time).
+
+Corpus: 12 train seeds, mixed_db on tech50war-200, pv3 tuning —
+305,579 census lines, 39,493 build-pass decisions with >=2 candidates,
+132,611 credited improvements. The offline rectangle replay reproduces
+the code's own credits EXACTLY (0 of 132,611 off by >2%), so the
+flip shares below are model-vs-model, not reconstruction noise.
+
+Flip-vs-rate: share of decisions whose domestic argmax differs from
+the MORT-24 rectangle when the same logged shapes are priced as
+`sum b(t) q^t` (delay = leading zeros, horizon-derived counts run to
+the scored bell as a truncated geometric; structural caps kept; lumps
+invariant; the upkeep bill re-priced as the same per-turn stream):
+
+    rate     | T1-50   T51-100  T101+  |  all
+    0.001    | 56.5%   27.3%    15.8%  | 29.3%
+    0.002    | 53.7%   26.5%    15.4%  | 28.1%   <- measured late (T100+) rate
+    0.005    | 45.9%   24.0%    14.5%  | 25.1%
+    0.011    | 32.6%   19.7%    12.6%  | 19.7%   <- measured overall rate
+    0.02     | 21.8%   14.2%     9.6%  | 14.0%
+    0.037    | 10.2%    5.2%     5.4%  |  6.5%   <- measured T1-50 rate
+    0.0417   |  8.4%    3.6%     4.9%  |  5.4%   <- 1/MORT, the anchor
+    0.06     | 10.0%    5.5%     7.3%  |  7.4%
+    0.08     | 14.9%    8.7%    10.5%  | 11.1%
+    0.12     | 22.7%   13.8%    16.4%  | 17.2%
+    (n = 9,653 / 12,098 / 17,742 decisions per phase)
+
+Anchor comparison. The curve bottoms at 1/MORT, as it must — but the
+floor is 5.4%, not zero: even at the rectangle's own timescale, one
+decision in nineteen is decided by the WINDOW SHAPE rather than the
+timescale (instalment streams discount as q^ttg/(1-q^ttg), the window
+as steps*q^ttg — same rate, different curvature). At the measured
+early rate (0.037) the rectangle is nearly right: 6.5%. At the
+measured overall rate (0.011) one decision in five flips; at the
+measured late-game rate (0.002), 28% overall — and 15.4% of the
+T101+ decisions themselves, which is the era-collapse myopia priced
+per-decision. The steepest gradient sits exactly in the plausible
+band 0.011–0.037. Per the brief's rule: flips are dense near
+plausible rates, NOT sparse-and-extreme — slice 2 is worth buying.
+
+By family (dominant credit of the rect winner, at 0.002): content
+53%, uncredited-winner 41% (a deep stream overtakes stock's own
+winner), bundle 29%, popins 22%, health 22%, veteran 5%, capacity 1%.
+At high rates the flippers invert to the perpetuity families
+(upkeepfree 50%, veteran 27%, capacity 16% at 0.12). The modelling
+claim localizes: patient pricing mostly reorders content-vs-arrivals
+and stream-vs-stock decisions, not the cap-lifter ladder.
+
+Sensitivity: WITHOUT bell truncation (pure perpetuities) the low-rate
+flips inflate to 88/58/38% by phase at 0.002 (56.5% overall) — i.e.
+at late-game rates, payments past the scored end dominate the ranking
+unless the discount is bell-truncated. **Slice 4 (the closed-form
+geometric tail) is therefore not an optional companion to slice 2 at
+low rates; ship them together or the knob misprices the endgame.**
+
+Census limitations (recorded, not hidden): the argmax is over the
+domestic building auction only — the building-vs-unit seam and the
+techwall routing into tech_want are not censused; pv3 zeroes
+horizon_multiplier/govcenter/culture weights, so those families do
+not appear in this corpus; and deepgov.c:536 (government payoff) and
+deepdefence.c:7092 (unit lifetime) count the same MORT rectangle in
+OTHER auctions, outside slice 1's scope but inside any eventual
+one-discount unification.
+
+What slice 2 should do differently given the data: (1) the knob's
+byte-identity-at-0 contract stands, and the search range wants to be
+per-phase from the start — a single global rate can only reproduce
+the rectangle near 1/MORT, and the early game is the most
+rate-sensitive phase (53.7% of T1-50 decisions flip under the late
+rate), so the two-piece schedule (slice 2b) is not a refinement of
+the flat knob, it is the first honest arm; (2) implement the
+duration sum bell-truncated from day one (fold slice 4 in); (3) the
+retune-invalidation guard in the brief is real — at plausible rates
+this reorders a fifth of the ladder, so it lands only where the
+brief schedules it (before the extensive-tuning finale).
+
+Retention: verdict banked; raw shape census kept compressed per seed
+(benchmark/results/decay-census/census-s*.decay.zst, ~250KB each,
+analysis verified to reproduce from extracts exactly); census-s2..12
+game.logs pruned per policy; seed-1 pair (base + census) kept whole
+as the identity evidence; scorelogs, DONE, provenance kept.
