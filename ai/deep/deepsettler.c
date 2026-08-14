@@ -62,6 +62,7 @@
 #include "deepdefence.h"
 #include "deepodds.h"
 #include "deepsite.h"
+#include "deeptechcensus.h"
 #include "deeptrunk.h"
 #include "deeptuning.h"
 
@@ -1010,6 +1011,7 @@ struct cityresult *deep_find_best_city_placement(struct ai_type *ait,
         if (NULL != boattype) {
           struct ai_plr *plr_data = def_ai_player_data(pplayer, ait);
 
+          deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
           unit_tech_reqs_iterate(boattype, padv) {
             plr_data->tech_want[advance_index(padv)]
               += FERRY_TECH_WANT;
@@ -1018,6 +1020,7 @@ struct cityresult *deep_find_best_city_placement(struct ai_type *ait,
                      FERRY_TECH_WANT,
                      utype_rule_name(boattype));
           } unit_tech_reqs_iterate_end;
+          deep_techcensus_mark(ait, pplayer, DEEP_TC_DEEP_SETTLER);
         }
 
         /* Return the result from the search on our current continent */
