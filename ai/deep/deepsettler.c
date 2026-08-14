@@ -1665,6 +1665,201 @@ static bool deep_settler_join_city(struct ai_type *ait,
 }
 
 /**********************************************************************//**
+  Slice 1's travel discount, as a pure function of the gain: amortize()
+  over worker_travel_discount turns per turn of walking. Extracted so
+  the beyond-ceiling task source and the hook's
+  deep_worker_travel_price() price a walk with the SAME shape and the
+  SAME knob -- one discount, two callers -- rather than the source
+  inventing a second one. Returns the gain unchanged when the knob is
+  off, the walk is zero, or the gain is not positive (amortize()
+  shrinks toward zero, so discounting a negative would flatter it).
+**************************************************************************/
+static adv_want deep_worker_travel_amortized(adv_want gain, int arrival)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+
+  if (tune->worker_travel_discount <= 0.0 || arrival <= 0 || gain <= 0) {
+    return gain;
+  }
+
+  return amortize(gain, (int) (tune->worker_travel_discount * arrival));
+}
+
+/**********************************************************************//**
+  W12 slice 2: source worker tasks from the trunk corridor tiles the
+  advisor's enumeration ceiling hides.
+
+  worker_evaluate_improvements() offers exactly the tiles inside some
+  own city's radius (autoworkers.c:586), so a corridor tile between two
+  distant cities is never a candidate at all -- slice 1's want could
+  re-rank the near-city end of a link but never dispatch a worker into
+  the gap (STATUS "W12 slice 1" sections 2 and 7). This is the task
+  SOURCE that ceiling calls for: deep's own scan over
+  deep_trunk_beyond_tiles(), competing against the auction's champion
+  on the auction's own scale.
+
+  Pricing is parity with what the hook path would say if the advisor
+  could see the tile. The want is deep_trunk_source_want() -- the same
+  deep_trunk_price() the hook uses -- scaled by trunk_source_gain
+  (0 = today's ceiling exactly, 1 = a beyond-ceiling corridor tile is
+  worth what the same corridor is worth inside a radius), discounted
+  for the walk by slice 1's own deep_worker_travel_amortized(), then
+  amortized over completion turns exactly as the advisor amortizes its
+  not-yet-worked champion (autoworkers.c:941; WORKER_FACTOR cancels
+  through amortize(), which is a pure multiplication). No danger
+  discount, deliberately: the hook adds the trunk want after the danger
+  term rather than through it, and this prices the same want from the
+  same reasoning. adv_worker_safe_tile() still refuses genuinely
+  dangerous ground, and the on-tile worker check plus
+  auto_worker_setup_work()'s displacement keep the source from piling
+  onto one tile, the same two guards deep_idle_scan() relies on.
+
+  Locality stays the arbiter: a distant corridor tile must survive both
+  the walk discount and the completion amortize to outbid work at home,
+  so a complete demand set is what this adds, not commuting.
+
+  On a win, replaces the champion in *best_act/*best_target/*best_tile,
+  rewrites *path from the source's own pf map, and returns the new
+  value; otherwise returns best_impr untouched.
+**************************************************************************/
+static adv_want deep_trunk_source_task(const struct civ_map *nmap,
+                                       struct player *pplayer,
+                                       struct unit *punit,
+                                       adv_want best_impr,
+                                       enum unit_activity *best_act,
+                                       struct extra_type **best_target,
+                                       struct tile **best_tile,
+                                       struct pf_path **path,
+                                       int *completion_time)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct pf_parameter parameter;
+  struct pf_map *pfm;
+  struct pf_position pos;
+  const int *beyond;
+  int nbeyond, i;
+  struct tile *pick_tile = NULL;
+  struct extra_type *pick_target = NULL;
+  enum unit_activity pick_act = ACTIVITY_LAST;
+  adv_want pick_value = best_impr;
+  int pick_dist = 0;
+
+  if (tune->trunk_source_gain <= 0.0 || tune->trunk_road_gain <= 0.0) {
+    return best_impr;
+  }
+
+  nbeyond = deep_trunk_beyond_tiles(pplayer, &beyond);
+  if (nbeyond <= 0) {
+    return best_impr;
+  }
+
+  pft_fill_unit_parameter(&parameter, nmap, punit);
+  parameter.omniscience = !has_handicap(pplayer, H_MAP);
+  parameter.get_TB = deep_settler_tile_behavior;
+  pfm = pf_map_new(&parameter);
+
+  for (i = 0; i < nbeyond; i++) {
+    struct tile *ptile = index_to_tile(nmap, beyond[i]);
+    bool taken = FALSE;
+
+    if (ptile == NULL
+        || !adv_worker_safe_tile(nmap, pplayer, punit, ptile)) {
+      continue;
+    }
+
+    /* Same guard as deep_idle_scan(): the enroute reservation lives in
+     * the advisors' opaque workermap, so the on-tile check here plus
+     * auto_worker_setup_work()'s displacement is what keeps a pool of
+     * workers from converging on one corridor tile. */
+    unit_list_iterate(ptile->units, aunit) {
+      if (unit_owner(aunit) == pplayer && aunit->id != punit->id
+          && unit_has_type_flag(aunit, UTYF_WORKERS)) {
+        taken = TRUE;
+        break;
+      }
+    } unit_list_iterate_end;
+    if (taken || !pf_map_position(pfm, ptile, &pos)) {
+      continue;
+    }
+
+    aw_extra_action_iterate(act) {
+      enum unit_activity activity = action_id_get_activity(act);
+      struct extra_type *target;
+      adv_want want, value;
+      int arrival, delay;
+
+      if (activity_to_extra_cause(activity) != EC_ROAD) {
+        continue;
+      }
+      target = next_extra_for_tile(ptile, EC_ROAD, pplayer, punit);
+      if (target == NULL
+          || !action_prob_possible(
+               action_speculate_unit_on_tile(nmap, act, punit,
+                                             unit_home(punit), ptile,
+                                             parameter.omniscience,
+                                             ptile, target))) {
+        continue;
+      }
+
+      want = deep_trunk_source_want(pplayer, target, ptile);
+      if (want <= 0.0) {
+        continue;
+      }
+      want *= tune->trunk_source_gain;
+
+      arrival = pos.turn + (pos.moves_left == 0 ? 1 : 0);
+      want = deep_worker_travel_amortized(want, arrival);
+
+      delay = pos.turn + get_turns_for_activity_at(punit, activity,
+                                                   ptile, target);
+      if (pos.moves_left == 0) {
+        delay++;
+      }
+      value = amortize(want, delay);
+
+      if (value > pick_value) {
+        pick_value = value;
+        pick_tile = ptile;
+        pick_target = target;
+        pick_act = activity;
+        pick_dist = real_map_distance(unit_tile(punit), ptile);
+      }
+    } aw_extra_action_iterate_end;
+  }
+
+  if (pick_tile == NULL) {
+    pf_map_destroy(pfm);
+    return best_impr;
+  }
+
+  if (*path != NULL) {
+    pf_path_destroy(*path);
+  }
+  *path = pf_map_path(pfm, pick_tile);
+  pf_map_destroy(pfm);
+  if (*path == NULL) {
+    /* Cannot happen for a tile pf_map_position() just priced, but a
+     * champion without a path must not replace one with. */
+    return best_impr;
+  }
+
+  *completion_time = pf_path_last_position(*path)->turn;
+  *best_act = pick_act;
+  *best_target = pick_target;
+  *best_tile = pick_tile;
+
+  deep_trunk_source_pick(pplayer, pick_dist);
+  log_base(deep_metric_log_level(),
+           "deep-trunkpick turn=%d player=\"%s\" unit=%d at=(%d,%d)"
+           " tile=(%d,%d) dist=%d value=%.2f beat=" ADV_WANT_PRINTF,
+           game.info.turn, player_name(pplayer), punit->id,
+           TILE_XY(unit_tile(punit)), TILE_XY(pick_tile), pick_dist,
+           (double) pick_value, best_impr);
+
+  return pick_value;
+}
+
+/**********************************************************************//**
   Auto settler that can also build cities. Derived from
   dai_auto_settler_run() in daisettler.c; the differences are that city
   placements come from the risk-aware search above and that the debug
@@ -1894,6 +2089,13 @@ FIND_WORK:
       if (path != NULL) {
         completion_time = pf_path_last_position(path)->turn;
       }
+      /* W12 slice 2: the corridor tiles outside every city radius,
+       * which the auction above structurally cannot offer, compete
+       * here on the auction's own scale. Inert at the knob's 0. */
+      best_impr = deep_trunk_source_task(nmap, pplayer, punit, best_impr,
+                                         &best_act, &best_target,
+                                         &best_tile, &path,
+                                         &completion_time);
     }
     UNIT_LOG(LOG_DEBUG, punit, "impr want " ADV_WANT_PRINTF, best_impr);
     TIMING_LOG(AIT_WORKERS, TIMER_STOP);
@@ -2417,8 +2619,7 @@ static adv_want deep_worker_travel_price(const struct player *pplayer,
     return want;
   }
 
-  priced = old_tile_value
-    + amortize(gain, (int) (tune->worker_travel_discount * arrival));
+  priced = old_tile_value + deep_worker_travel_amortized(gain, arrival);
 
   deep_local_disc[pn]++;
   deep_local_turns[pn] += arrival;

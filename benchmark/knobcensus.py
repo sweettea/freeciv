@@ -299,6 +299,17 @@ MAP = {
         "the road candidates the want actually reached, and "
         "maxwant= is a monotone multiple of the gain. links>0 with "
         "hits=0 is the radius ceiling, not a dead knob."),
+    "trunk_source_gain": (
+        "S3", "mag", "direct", [("deep-trunksrc", "picked>0")],
+        "deep_trunk_source_task() returns before scanning when "
+        "trunk_source_gain <= 0.0 (deepsettler.c), so offered= and "
+        "picked= on the deep-trunksrc line require the gate open (and "
+        "trunk_road_gain > 0 for a plan to exist). beyond= is the "
+        "demand the radius ceiling hides and fires at any knob value "
+        "once a plan exists, so it does not evidence this knob; "
+        "picked= counts the beyond-ceiling tasks actually assigned, "
+        "each also a deep-trunkpick line, with hist= their "
+        "map-distance histogram."),
 
     # ---------------- Stage 1: economy / horizon / CM ---------------
     "horizon_capacity_weight": (
