@@ -7069,8 +7069,8 @@ static adv_want deep_unit_upkeep_charge(struct player *pplayer,
   const struct deep_tuning *tune = deep_tuning_get();
   struct universal target;
   const struct unit_type *ut;
-  int life, eta, up_shield, up_gold, up_food;
-  double charge;
+  int life, eta, up_shield, up_gold, up_food, cap;
+  double charge, dur;
   adv_want debit;
 
   if (tune->unit_upkeep_charge <= 0.0
@@ -7091,12 +7091,22 @@ static adv_want deep_unit_upkeep_charge(struct player *pplayer,
 
   life = deep_horizon_turns();
   eta = deep_utype_successor_eta(pplayer, ut, NULL);
+  cap = -1;
   if (eta >= 0 && eta < life) {
+    /* Obsolescence is a STRUCTURAL cap on the stream -- the rotation
+     * melts the unit at the ETA whatever the discount says -- where
+     * the plain horizon was a window standing in for one. */
     life = eta;
+    cap = life;
   }
   if (life <= 0) {
     return 0;
   }
+  /* DECAY slice 2: the unit's upkeep bill is the same per-turn stream
+   * the building side prices, discounted through the same shared
+   * helper. dur == life with the gate off (int-to-double is exact),
+   * so the charge below is bit-identical at defaults. */
+  dur = deep_decay_duration(life, 0, 1, cap);
 
   /* Gold and FOOD are summed as one recurring bill and charged at
    * upkeep_gold_weight. That 1:1 gold-food equivalence is not minted
@@ -7106,8 +7116,8 @@ static adv_want deep_unit_upkeep_charge(struct player *pplayer,
    * single weight. Reusing the module's existing equivalence is rule
    * 3; inventing a second one would be rule 7. A tuner should know
    * the two outputs ride one knob. */
-  charge = (double) up_shield * life * SHIELD_WEIGHTING
-           + (double) (up_gold + up_food) * life
+  charge = (double) up_shield * dur * SHIELD_WEIGHTING
+           + (double) (up_gold + up_food) * dur
              * tune->upkeep_gold_weight;
   debit = (adv_want) (charge * tune->unit_upkeep_charge);
   if (debit <= 0) {
@@ -7120,10 +7130,11 @@ static adv_want deep_unit_upkeep_charge(struct player *pplayer,
            "deep-upcharge turn=%d player=\"%s\" city=%d who=\"%s\""
            " pick=\"%s\" life=%d eta=%d ups=%d upg=%d upf=%d"
            " debit=" ADV_WANT_PRINTF " want=" ADV_WANT_PRINTF
-           " left=" ADV_WANT_PRINTF,
+           " left=" ADV_WANT_PRINTF " dur=%.3f rate=%.5f",
            game.info.turn, player_name(pplayer), pcity->id, who,
            adv_choice_rule_name(choice), life, eta, up_shield, up_gold,
-           up_food, debit, choice->want, MAX(choice->want - debit, 0));
+           up_food, debit, choice->want, MAX(choice->want - debit, 0),
+           dur, deep_decay_rate_now());
 
   choice->want = MAX(choice->want - debit, 0);
 
