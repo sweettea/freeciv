@@ -113,6 +113,10 @@ SERVER=$(readlink -f "$SERVER")
 [ -x "$SERVER" ] || { echo "server not found or not executable: $SERVER" >&2; exit 1; }
 
 # derby-4's tuning file, reused verbatim (pv2 base, stance_source=1).
+# DERBY-7+ (human call 2026-08-13): add diplo_deep_only_pacts = 1 to the deep
+# tuning file — the fence REJECTED on benchmark mixed (it cancels the peace
+# dividend, task #63) but the derby is team-vs-team where blocking cross-team
+# peace is the intent. Pair it with the lean floor zeros (derby-6 winner).
 TUNING="${TUNING:-$REPO/derby4/tuning-derby4-personality.ini}"
 [ -f "$TUNING" ] || { echo "tuning file not found: $TUNING" >&2; exit 1; }
 
