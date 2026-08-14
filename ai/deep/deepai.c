@@ -124,6 +124,9 @@ static void dpai_module_close(void)
 static void dpai_game_free(void)
 {
   deep_site_free();
+  /* Unit ids are recycled between games in one server process, so a
+   * tag that outlived its game would be read against a stranger. */
+  deep_pin_reset();
 }
 
 /**********************************************************************//**
@@ -691,6 +694,12 @@ static void dpai_data_phase_begin(struct player *pplayer, bool is_new_phase)
      * counted where it slept (NETTHREAT item 3's cadence). */
     deep_cadence_sample(pplayer);
 
+    /* And the mirror question about THEIR units (NETTHREAT item 2's
+     * probe): the enemy garrisons we sized a wave against -- did any
+     * of them ever come? Same placement and the same reason: a tag
+     * opened last turn is scored on where its unit slept. */
+    deep_pin_poll(pplayer);
+
     plr_data->dv_turns_logged++;
     log_base(LOG_VERBOSE,
              "deep-dv turn=%d player=\"%s\" cities=%d units=%d gold=%d"
@@ -1063,6 +1072,22 @@ static void dpai_unit_move_or_attack(struct unit *punit, struct tile *ptile,
 
   dai_unit_move_or_attack(deftype, punit, ptile, path, step);
   deep_tuning_scope_restore(deep_scope);
+}
+
+/**********************************************************************//**
+  Every move the server completed, ours and everyone else's -- the
+  hook is CALL_FUNC_EACH_AI, so this fires for units belonging to
+  players running other modules, which is exactly what the
+  garrison-pin probe needs (NETTHREAT item 2).
+
+  Read-only and gated: it looks a tagged unit up and records where it
+  now stands. Deep took this hook for the first time here; it was NULL
+  before, and it forwards nothing because `ai/default` never claimed
+  it either.
+**************************************************************************/
+static void dpai_unit_move_seen(struct unit *punit)
+{
+  deep_pin_note_move(punit);
 }
 
 /**********************************************************************//**
@@ -1505,7 +1530,7 @@ bool fc_ai_deep_setup(struct ai_type *ai)
 
   ai->funcs.unit_turn_end = dpai_unit_turn_end;
   ai->funcs.unit_move = dpai_unit_move_or_attack;
-  /* ai->funcs.unit_move_seen = NULL; */
+  ai->funcs.unit_move_seen = dpai_unit_move_seen;
   ai->funcs.unit_task = dpai_unit_new_adv_task;
 
   ai->funcs.unit_save = dpai_unit_save;
