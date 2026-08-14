@@ -2007,6 +2007,52 @@ struct deep_tuning {
    * 0.0 restores stock's bar exactly. PLACEHOLDER. */
   double peace_seek_gain;
 
+  /* FENCE -- who deep's cooperative dividend is for.
+   *
+   * Human ask 2026-08-13: "deep's alliance abilities should only
+   * really benefit its fellow deeps". CAMPAIGN-v4 section 11.4's
+   * refinement made ally-directed surplus a FEATURE -- gifts, shared
+   * vision, coordinated stances are what deep's diplomacy buys -- and
+   * the measured failure mode of the love gift was that the surplus
+   * landed on a RIVAL (deep +1.93, counterparty +5.26). The gift
+   * classes narrowed WHO gets paid; this knob narrows who deep will
+   * be in a pact with at all.
+   *
+   * When 1, a treaty partner who is an AI and is NOT running ai/deep
+   * gets nothing at peace or above: deep neither proposes nor accepts
+   * a treaty carrying CLAUSE_PEACE or CLAUSE_ALLIANCE, and anything
+   * bundled with such a clause (embassy, shared vision) dies with the
+   * treaty it rode in on. Cease-fire is deliberately left open --
+   * PEACE's cease-fire-trap pricing is the instrument the whole
+   * diplomacy line was built on, and a fence that closed the
+   * cease-fire would take that instrument away.
+   *
+   * Fellow-deep is `aplayer->ai == pplayer->ai`, which is how the
+   * module already identifies itself (deepsettler.c:2313). No new
+   * state, and mixed games have worked since Phase 0.
+   *
+   * HUMANS ARE EXEMPT, on purpose: `is_ai(aplayer)` guards the test.
+   * The fence is a policy about which SOFTWARE deep shares a dividend
+   * with; refusing peace to a human would just be deep playing worse
+   * against the only opponent that can be surprised by it.
+   *
+   * EXISTING TREATIES ARE NOT TORN UP. The gate covers new agreements
+   * only, because it lives on the proposal and evaluation paths and
+   * nothing walks the standing diplstates. A knob flipped mid-game
+   * therefore stops the next pact, not the last one.
+   *
+   * THE SIDE EFFECT IS THE COST, and it must be reported beside the
+   * score: refusing peace means longer wars, and a fence that wins on
+   * score by bleeding a frontier seat is a real result that has to be
+   * visible. wars-active and cities-lost are read alongside every
+   * arm of this knob's A/B.
+   *
+   * 0 = off = deep's diplomacy exactly as measured to date =
+   * byte-identical. STRUCTURAL POLICY FLAG, not an optimiser knob:
+   * the range is degenerate and the tuner must never sweep it.
+   * PLACEHOLDER. */
+  int diplo_deep_only_pacts;
+
   /* BALANCE -- the exchange rate between the density lattice's units
    * and gold, and the switch that turns the gift census on.
    *

@@ -1123,6 +1123,16 @@ MAP = {
         "deep_peace_seek() and the treaty-side accept both run only "
         "when peace_seek_gain > 0.0 (deepdiplomacy.c:1446/1376); "
         "bar= on deep-peaceseek is req_love_for_peace * (1 - gain)."),
+    "diplo_deep_only_pacts": (
+        "S1", "mode", "direct", [("deep-fence", "refused>=1")],
+        "A STRUCTURAL POLICY FLAG (see its own comment, deeptuning.h), "
+        "not an optimiser knob. deep-fence is emitted only from inside "
+        "deep_fence_blocks()'s true branch, which requires "
+        "diplo_deep_only_pacts > 0 (deepdiplomacy.c); refused= is "
+        "dp->fence_refused, a per-player running count of pacts "
+        "declined, so refused>=1 on any line means the fence actually "
+        "intercepted. would=1 on a line is the honesty field: deep's "
+        "own valuation said it would have signed."),
     "embassy_price_gain": (
         "S1", "mag", "direct", [("deep-embassy", "")],
         "deep_embassy_offer() and the treaty-side clause pricing both "

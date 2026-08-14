@@ -14727,3 +14727,167 @@ effect is heterogeneous and unsigned at n=16; the econ effect
 (+10.4, t +1.71) is the flat-tax half and is the strongest single
 argument that the eventual tuned floor family lands well below
 today's defaults.
+||||||| 1bcf470d5a
+## FENCE (2026-08-13) — task #63: deep-only peace-or-more. **Knob stays 0.**
+
+Human ask: "can we invent a knob to disallow cross-ai peace-or-more? I
+feel deep's alliance abilities should only really benefit its fellow
+deeps." Brief: `sessions/S-FENCE-deep-only-pacts.md`. Branch
+`epic/fence`, 3 commits. `meson test` 5/5, tune-audit CLEAN at 233
+fields.
+
+**The mechanism was built, it is emphatically live, and it makes deep
+worse.** No default moved.
+
+### What landed
+
+`diplo_deep_only_pacts` (int, 0 = off, ALL block, structural policy
+flag — the tuner must not sweep it). At 1, a treaty partner who is an
+AI and is not running `ai/deep` gets nothing at peace or above.
+
+Two gates, because there are exactly two ways deep can reach a pact:
+
+- `deep_peace_seek()` — the pre-pass proposal. The fence intercepts
+  *after* `deep_peace_wanted()` has already said yes, so the honesty
+  field on a propose line is exact: it is the decision the fence
+  overrode.
+- `deep_treaty_evaluate()`, first, as a veto. Claiming the treaty
+  (returning TRUE) is what stops `ai/default` ruling on it in deep's
+  stead, and it is also what covers clauses bundled with a pact — an
+  embassy or shared-vision clause dies with the treaty it rode in on.
+  A treaty concludes only when **both** accept flags are set
+  (`diplhand.c:314`), so this one veto also refuses the alliances
+  stock's forwarded pass proposes *from a deep seat*. No `ai/default`
+  change (rule 2).
+
+Cease-fire is deliberately left open: PEACE's cease-fire-trap pricing
+is the instrument the whole diplomacy line was built on. Humans are
+exempt (`is_ai()` is the first test). Existing treaties are not torn
+up — both sites see agreements being *made*.
+
+### Off-switch proof — 12/12 byte-identical
+
+smoke (4p/32x32/T100), `git archive` build of the base commit
+`1bcf470d5a` vs the branch build, same runner, same seeds, scorelogs
+compared byte for byte:
+
+| arm | tuning | seeds | identical |
+|---|---|---|---|
+| deep | identity.ini (compiled defaults) | train 1–10 | **10 / 10** |
+| mixed_dc (deep vs ai/default in one game) | pv3.ini | train 1–2 | **2 / 2** |
+
+Provenance checked both ways: `strings` on the base binary finds
+`deep-fence` **0** times against 1 for the branch, and all four result
+cells resolved distinct.
+
+### The A/B — tech50war-200 mixed, 16 mirrored holdout seeds, one binary
+
+Control pv3 (the composed baseline) vs pv3 + the knob; `tune.py
+--report-holdout --mixed`, 64 games, 0 lost, all on one pinned
+`.fence-pin2` binary (sha `736230c363b0…`). Read with the new
+`benchmark/fencecmp.py`, which reproduces the published MUSTER table
+exactly on that batch's own trees. Each row is a per-seed total over
+the two seat mirrors; divide `margin` by 8 for the score/seed column
+earlier tables use.
+
+    metric               OFF        ON     delta      se      t   wins
+    margin           -239.81   -372.50   -132.69   78.45  -1.69   7/16
+    deep             1543.00   1467.50    -75.50   36.65  -2.06   5/16
+    stock            1782.81   1840.00    +57.19   47.67  +1.20  10/16
+    cityratio           1.01      0.76     -0.25    0.16  -1.59   7/16
+    wars               34.94     42.06     +7.12    0.92  +7.77  16/16
+    citieslost           5.44      7.62     +2.19    1.59  +1.37  10/16
+    fencerefused        0.00    144.94  +144.94    8.88 +16.33  16/16
+    fencewould          0.00    140.12  +140.12    8.85 +15.84  16/16
+    fencelive           0.00     19.94   +19.94    1.07 +18.56  16/16
+
+**Verdict: reject. `diplo_deep_only_pacts` stays 0.** The brief's
+success criterion was "deep side score/cities improve". Cities go the
+other way and not marginally — the deep:stock city ratio falls from
+**parity (1.01) to 0.76** — and deep's own score falls with t -2.06
+while the counterparty's rises. The margin's own t is -1.69, which on
+its own would be "not significant", but the mechanism story underneath
+it is not ambiguous, and it is the one the brief told us to watch for:
+
+**wars-active rises in 16 seeds out of 16, t +7.77.** Refusing peace
+means longer wars, the brief said to report it beside the score, and
+it turns out not to be a side effect but *the* effect. Cities lost
+rise with it (+2.19/seed). The fence does not reserve a cooperative
+dividend for the deep team; it cancels deep's own peace dividend and
+hands the counterparty a quieter game.
+
+### The honesty check passes — this is not an A/B of noise
+
+Every new path carries the `deep-fence` counter the brief specified.
+Over the 32 arm-B games, 2319 refusals:
+
+| | count | share |
+|---|---|---|
+| `side=propose` (deep's own pre-pass, stopped) | 1768 | 76.2% |
+| `side=accept` (treaty vetoed) | 551 | 23.8% |
+| `would=1` — deep's own valuation *would have signed* | **2242** | **96.7%** |
+| `would=0` | 77 | 3.3% |
+| `would=-1` (shape deep cannot price) | **0** | 0% |
+| `live=1` — counterparty had already signed | 319 | 57.9% of accepts |
+
+Two things worth keeping:
+
+- **`would` was exact on every line.** It is defined never to
+  overclaim (`-1` where deep has no valuation for the shape), and it
+  never had to use that escape: every refusal was the lone-peace-clause
+  shape deep prices itself.
+- **All 2319 refusals were `level=peace` at `ds=2` (DS_CEASEFIRE).**
+  Not one alliance clause ever reached deep's evaluator in 32 games.
+  The alliance leg of the gate is written and correct but **unexercised
+  by this venue** — if the alliance path ever matters it needs a cell
+  where stock actually proposes one.
+
+The lever's footprint on the peace machinery, same 32 games each arm:
+
+| | OFF | ON |
+|---|---|---|
+| cease-fire windows evaluated | 1538 | **3587** |
+| peace proposals sent | 547 | 222 |
+| peace clauses deep accepted | 711 | 371 |
+
+The window count more than doubles because the pairs never graduate
+out of cease-fire, so the same window re-opens turn after turn — a
+clean confirmation the fence is doing exactly what it says and nothing
+else.
+
+### What the next session must know
+
+- **A knob costing a box-hour to reject is the pipeline working.**
+  Four of the last five candidate folds have been stopped by
+  measurement. Nothing about the *alliance doctrine* is refuted here:
+  §11.4's finding was about who receives a **gift**, and pv3's gift
+  classes already fixed that. This was about who deep will be at
+  **peace** with, and peace turns out to be worth more to deep than
+  exclusivity is.
+- **If the idea is revisited, the fence should be narrowed, not
+  retuned.** The measured cost is entirely the extra war. A version
+  that fenced only *alliance* (and left peace alone) would keep the
+  peace dividend and still reserve the co-ordination one — but on this
+  venue it would be inert, because stock never proposed an alliance in
+  32 games, so it needs a different cell before it is worth writing.
+- **BOX QUIRK, banked to memory, and it cost this session a wrong
+  diagnosis.** A batch launched with `nohup … &` *inside* a tool call
+  is reaped the moment that call returns. Four batches froze at the
+  exact second of their launching call's return (15:10:12, 15:41:36,
+  15:39:06, 15:42:08) with the load average back at 1.0 and the games
+  sitting mid-turn. It does not look like a kill, it looks like a
+  performance cliff: pv3 was measured "150x slower than fact-c01 on
+  tech50war-200" and briefly replaced as the A/B control on that
+  evidence, before the timestamps were lined up. pv3 is fine — it runs
+  this venue at ~6 min/game like everything else. Use the harness's own
+  tracked background, and note it also caps a task at 60 minutes, so a
+  64-game batch needs two or three resumes (the DONE cache makes that
+  free; this run took three).
+- `benchmark/fencecmp.py` is new and general: it reads any `tune.py
+  --mixed` tree, pairs by seed over both seat mirrors, and reports
+  margin / deep / stock / city ratio / wars-active / cities-lost and
+  the fence counters. `paircmp.py` cannot do this shape — it needs
+  `metrics.csv`, which `tune.py` does not write, and it averages one
+  arm's seats where a mixed game wants the difference between the two
+  sides of one table. Validated against the MUSTER batch, which it
+  reproduces to the digit.

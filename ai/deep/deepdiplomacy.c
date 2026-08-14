@@ -326,6 +326,84 @@ static bool deep_peace_wanted(struct ai_type *ait, struct player *pplayer,
 }
 
 /**********************************************************************//**
+  THE FENCE. Is `aplayer` an AI that is not running ai/deep, with
+  diplo_deep_only_pacts up?
+
+  "Fellow deep" is the ai_type pointer comparison the module already
+  uses to recognise itself (deepsettler.c:2313). No new state, no name
+  matching, and it survives save/load because `player->ai` does.
+
+  Humans are exempt by construction: `is_ai()` is the first thing
+  asked. The fence is a policy about which software deep shares its
+  cooperative dividend with, and declining peace to a human would only
+  be deep playing worse against the one opponent that could be
+  surprised by it.
+**************************************************************************/
+static bool deep_fenced_partner(const struct player *pplayer,
+                                const struct player *aplayer)
+{
+  return deep_tuning_get()->diplo_deep_only_pacts > 0
+         && is_ai(aplayer)
+         && aplayer->ai != pplayer->ai;
+}
+
+/**********************************************************************//**
+  Has the counterparty already signed the treaty deep is refusing?
+
+  A treaty executes when BOTH accept flags are set (diplhand.c:314), so
+  a refusal taken while the other side has already accepted is a pact
+  that only deep's answer is standing between.
+**************************************************************************/
+static bool deep_treaty_other_signed(const struct player *pplayer,
+                                     const struct treaty *ptreaty)
+{
+  return ptreaty->plr0 == pplayer ? ptreaty->accept1 : ptreaty->accept0;
+}
+
+/**********************************************************************//**
+  Record one fence refusal.
+
+  `would` is the honesty field, and it is defined so that it can never
+  overclaim:
+
+     1  deep's OWN valuation says it would have signed. The fence
+        certainly intercepted a pact.
+     0  deep's own valuation says no.
+    -1  deep has no valuation for this treaty shape at all.
+
+  A 0 or a -1 is NOT evidence the fence changed nothing. Without the
+  fence those treaties fall through to ai/default, and ai/default's
+  verdict cannot be read without letting it act: dai_treaty_evaluate()
+  publishes only by calling handle_diplomacy_accept_treaty_req(), and
+  a treaty the counterparty has already signed EXECUTES inside that
+  call. There is no way to ask and then decline.
+
+  So `live` carries the model-free half of the same question -- the
+  counterparty had already accepted -- and the pair reads: `would=1`
+  counts certain interceptions, `live=1` counts treaties that were one
+  signature from concluding.
+**************************************************************************/
+static void deep_fence_log(struct player *pplayer, struct player *aplayer,
+                           const char *side, const char *level,
+                           int would, bool live)
+{
+  struct deep_plr *dp = deep_plr_data(pplayer);
+
+  dp->fence_refused++;
+  if (would > 0) {
+    dp->fence_wouldhave++;
+  }
+
+  log_base(deep_metric_log_level(),
+           "deep-fence turn=%d plr=\"%s\" to=\"%s\" side=%s level=%s"
+           " ds=%d would=%d live=%d refused=%d wouldhave=%d",
+           game.info.turn, player_name(pplayer), player_name(aplayer),
+           side, level,
+           (int) player_diplstate_get(pplayer, aplayer)->type,
+           would, live ? 1 : 0, dp->fence_refused, dp->fence_wouldhave);
+}
+
+/**********************************************************************//**
   What a non-war relationship with `aplayer` is worth to `pplayer`,
   in GOLD -- the currency every treaty clause is already denominated
   in, so a valuation and a price can be compared without a second
@@ -432,6 +510,16 @@ static void deep_peace_seek(struct ai_type *ait, struct player *pplayer,
 
   dp->peace_windows++;
   wanted = deep_peace_wanted(ait, pplayer, aplayer, &love, &bar, &why);
+
+  if (wanted && deep_fenced_partner(pplayer, aplayer)) {
+    /* The proposal deep decided to make, and did not. `would` is
+     * exact on this path: deep_peace_wanted() IS the decision the
+     * fence just overrode, so every propose-side line counts a real
+     * interception. */
+    deep_fence_log(pplayer, aplayer, "propose", "peace", 1, FALSE);
+    wanted = FALSE;
+    why = "fenced";
+  }
 
   if (wanted) {
     dp->peace_proposed++;
@@ -1516,6 +1604,55 @@ bool deep_treaty_evaluate(struct ai_type *ait, struct player *pplayer,
   struct deep_plr *dp = deep_plr_data(pplayer);
   int n = 0, peace = 0, embassy = 0;
   double balance = 0.0;
+
+  /* THE FENCE, and it is first because it is a veto: nothing below it
+   * may sign, and claiming the treaty (returning TRUE) is what keeps
+   * ai/default from ruling on it either. Every clause bundled with the
+   * pact -- embassy, shared vision, gold -- dies with the treaty it
+   * rode in on, which is exactly the brief's "and what rides on them".
+   *
+   * CLAUSE_CEASEFIRE is deliberately not looked for. A cease-fire is
+   * not a clinch, PEACE's cease-fire-trap pricing is the instrument
+   * the whole diplomacy line was built on, and closing it here would
+   * take that instrument away for nothing.
+   *
+   * Existing treaties are untouched: this path sees only agreements
+   * being made. */
+  if (deep_fenced_partner(pplayer, aplayer)) {
+    bool ally = FALSE, pact = FALSE;
+    int nc = 0, npeace = 0;
+
+    clause_list_iterate(ptreaty->clauses, pclause) {
+      nc++;
+      if (pclause->type == CLAUSE_ALLIANCE) {
+        ally = TRUE;
+        pact = TRUE;
+      } else if (pclause->type == CLAUSE_PEACE) {
+        npeace++;
+        pact = TRUE;
+      }
+    } clause_list_iterate_end;
+
+    if (pact) {
+      int love, bar, would = -1;
+      const char *why;
+
+      /* Deep prices exactly one pact shape itself -- a lone peace
+       * clause, and only while peace_seek_gain is up -- so that is the
+       * one shape where the honesty field can be exact. Anything else
+       * would have gone to ai/default and is logged as unknown rather
+       * than guessed. */
+      if (nc == 1 && npeace == 1 && !ally && t->peace_seek_gain > 0.0) {
+        would = deep_peace_wanted(ait, pplayer, aplayer, &love, &bar, &why)
+                ? 1 : 0;
+      }
+      deep_fence_log(pplayer, aplayer, "accept",
+                     ally ? "alliance" : "peace", would,
+                     deep_treaty_other_signed(pplayer, ptreaty));
+
+      return TRUE;
+    }
+  }
 
   /* Our own offer, mid-construction. ai/default's valuation of GIVING
    * a tech away is a refusal by design (compute_tech_sell_price is

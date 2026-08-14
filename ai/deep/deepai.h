@@ -260,6 +260,14 @@ struct deep_plr {
   int peace_windows;            /* pre-pass evaluations inside a window */
   int peace_proposed;           /* ... that sent a peace clause */
   int peace_taken;              /* peace clauses deep's evaluate accepted */
+  /* FENCE. Pacts at peace or above declined because the counterparty
+   * is an AI running some other module, and how many of those deep's
+   * own valuation says it would otherwise have signed. The second
+   * counter is the honesty check: a fence that never intercepts a
+   * would-be pact is inert, and an A/B of an inert mechanism is an
+   * A/B of noise. */
+  int fence_refused;
+  int fence_wouldhave;
   int embassy_priced;           /* embassy clauses deep priced itself */
   int embassy_cleared;          /* ... treaties that cleared on deep's sums */
   /* BALANCE. The treaty deep is CONSTRUCTING right now, so that deep's
