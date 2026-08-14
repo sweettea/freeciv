@@ -49,6 +49,22 @@ int deep_turns_left(void);
 int deep_horizon_turns(void);
 bool deep_arrives_in_time(int delay);
 
+/* DECAY slice 2 (2026-08-14): the ONE shared duration-discount helper
+ * behind `horizon_decay_gate`, called at every MORT-rectangle site --
+ * deephorizon.c's growth ladder, deepgov.c's government payoff,
+ * deepdefence.c's unit-lifetime upkeep charge -- so the discount
+ * cannot drift per site. deep_decay_duration() maps a flat instalment
+ * count to its truncated-geometric equivalent at the turn-scheduled
+ * rate, truncated at the scored bell; it returns `steps` unchanged
+ * with the gate off or the scheduled rate at zero. `cap` is the shape
+ * census's convention: -1 = horizon-derived count (the window was
+ * standing in for a discount; the discounted stream runs to the
+ * bell), > 0 = structural payment cap that survives any pricing.
+ * deep_decay_rate_now() is the schedule itself, 0.0 with the gate
+ * off; it is also each instrument line's liveness field. */
+double deep_decay_rate_now(void);
+double deep_decay_duration(double steps, int delay, int spacing, int cap);
+
 /* The score mode's window test and its finishability test, exported
  * for the second seam (the merge in deepdefence.c). Both are FALSE
  * with `endgame_window` off. */

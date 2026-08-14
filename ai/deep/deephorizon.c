@@ -183,6 +183,125 @@ bool deep_arrives_in_time(int delay)
 }
 
 /**********************************************************************//**
+  DECAY slice 2: the scheduled per-turn discount rate at the current
+  turn.
+
+  The measured world rate is not constant -- benchmark/decay-anchors.py
+  read ~0.037/turn before T50 collapsing ~20x to ~0.002/turn after
+  T100 -- so the rate is a two-piece schedule: `horizon_decay_early`
+  through `horizon_decay_break_start`, `horizon_decay_late` from
+  `horizon_decay_break_end`, linear interpolation in turn number
+  inside the band. The 50/100 break defaults are the census's measured
+  phase boundaries; the rates default to 0 (PLACEHOLDER -- a zero rate
+  keeps the legacy window even with the gate on, so no compiled rate
+  constant exists to invent).
+
+  Returns 0.0 with the gate off, so it doubles as the census lines'
+  liveness field: rate > 0 on a logged line means the discount was
+  really in force when the line was written.
+**************************************************************************/
+double deep_decay_rate_now(void)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int turn = game.info.turn;
+  int bs = tune->horizon_decay_break_start;
+  int be = tune->horizon_decay_break_end;
+
+  if (tune->horizon_decay_gate <= 0) {
+    return 0.0;
+  }
+  if (turn <= bs) {
+    return tune->horizon_decay_early;
+  }
+  if (turn >= be || be <= bs) {
+    return tune->horizon_decay_late;
+  }
+  return tune->horizon_decay_early
+         + (tune->horizon_decay_late - tune->horizon_decay_early)
+           * ((double) (turn - bs) / (double) (be - bs));
+}
+
+/**********************************************************************//**
+  DECAY slice 2: the ONE duration-discount helper every rectangle site
+  calls -- deephorizon.c's growth ladder, deepgov.c's government payoff
+  and deepdefence.c's unit-lifetime upkeep charge -- so there is no
+  per-site drift.
+
+  The rectangle prices an instalment stream as a flat count: `steps`
+  payments, full value each, hard zero after. With the gate on the
+  same stream is priced as a truncated geometric in the instalment's
+  ARRIVAL time relative to the first payment: instalment i (spaced
+  `spacing` turns apart) is worth q^(i*spacing) of the first, q = 1 -
+  rate, summed in closed form. Delay discounting is deliberately NOT
+  here -- every call site already discounts once for the delay via
+  amortize(), and this helper replacing only the flat window is what
+  keeps that a single discount rather than a double one. `delay` is
+  taken solely to truncate: an instalment that would arrive after the
+  scored bell pays nothing.
+
+  `cap` follows the shape census's convention: -1 means the count is
+  horizon-derived (the MORT window was standing in for a discount, so
+  the discounted stream runs to the scored bell, or to perpetuity
+  1/(1-q^spacing) when the game has no bell); cap > 0 is a structural
+  payment cap (effect amount, obsolescence ETA, the bell itself) that
+  survives any pricing. A lump (steps <= 1, cap == 1) is invariant by
+  construction. This is exactly the model the slice-1 census validated
+  offline (benchmark/decay-census.py exp_value(), minus its q^delay
+  lead, which amortize() owns in-engine); the bell truncation ships
+  with it from day one because slice 1 measured the alternative:
+  untruncated, phantom value past the scored end doubles the low-rate
+  flip share (56.5% at rate 0.002).
+
+  Returns the effective instalment count to use in place of `steps`.
+  Gate off, or a scheduled rate of zero, returns `steps` unchanged --
+  the legacy rectangle, byte-identically.
+**************************************************************************/
+double deep_decay_duration(double steps, int delay, int spacing, int cap)
+{
+  double rate, q, ratio, n;
+  int left;
+
+  if (deep_tuning_get()->horizon_decay_gate <= 0) {
+    return steps;
+  }
+  rate = deep_decay_rate_now();
+  if (rate <= 0.0 || rate >= 1.0) {
+    /* PLACEHOLDER rates (and out-of-registry input): legacy window. */
+    return steps;
+  }
+  if (steps <= 1.0 && cap == 1) {
+    /* Lump: one payment prices the same under every model. */
+    return steps;
+  }
+  if (spacing <= 0) {
+    spacing = 1;
+  }
+  q = 1.0 - rate;
+  ratio = pow(q, spacing);
+
+  n = (cap > 0) ? (double) cap : -1.0;
+  left = deep_turns_left();
+  if (left < DEEP_NO_END_TURN) {
+    double nbell;
+
+    if (delay > left) {
+      /* First instalment lands after the bell: the stream never
+       * pays. deep_arrives_in_time() refuses this case separately
+       * when the endgame clamp is on; the truncation does not depend
+       * on that knob. */
+      return 0.0;
+    }
+    nbell = (double) ((left - delay) / spacing) + 1.0;
+    n = (n < 0.0) ? nbell : MIN(n, nbell);
+  }
+  if (n < 0.0) {
+    /* Horizon-derived stream, no bell: the geometric perpetuity. */
+    return 1.0 / (1.0 - ratio);
+  }
+  return (1.0 - pow(ratio, n)) / (1.0 - ratio);
+}
+
+/**********************************************************************//**
   Whether the game is inside its final `endgame_window` turns.
 
   This is a different question from the horizon clamp's, and the two
