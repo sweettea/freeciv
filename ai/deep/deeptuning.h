@@ -2469,6 +2469,37 @@ struct deep_tuning {
    * measured rather than argued. 0 = off = every measurement ever
    * taken. STRUCTURAL EXPERIMENT FLAG, not a tuning target. */
   int honest_info;
+
+  /* TECHMIL slice 2 -- deep's own research-goal selection (deeptech.c).
+   *
+   * Slice 1's census (STATUS 2026-08-13) falsified the dead-writer
+   * hypothesis: deep WRITES ~9% more military tech_want than stock
+   * (61.0% vs 56.5% share) yet RESEARCHES military advances on 47.5%
+   * of turns against stock's 68.4%. The conversion from appetite to
+   * direction is stock's `dai_select_tech()` (daitech.c:70), which
+   * divides by tech distance twice -- each want is spread over its
+   * goal's prerequisites at want/steps, and the goal argmax divides
+   * the accumulated path mass by steps again -- and deep's military
+   * want sits farther out (7.76 vs 7.03 steps, 25% relatively less
+   * on-deck), so the nearer econ mass wins round after round.
+   *
+   * techgoal_deep = 0 (default): deep does not touch research
+   * selection; `dai_manage_tech()` runs exactly as today and the
+   * build is byte-identical. != 0: after stock has committed its
+   * choice (kept as the counter's honesty field), deep re-runs the
+   * same selection over the same tech_want[] mass with the distance
+   * divisions raised to techgoal_distance_power, in double precision,
+   * and re-sets both the researching tech (behind stock's own
+   * switching-penalty guard) and the goal. Counter: deep-techgoal. */
+  int techgoal_deep;
+
+  /* The exponent on both of dai_select_tech()'s distance divisions
+   * when techgoal_deep is on; read nowhere else. 1.0 is stock's shape
+   * (up to stock's integer truncation, which deep does not copy);
+   * smaller is longer-sighted, 0.0 ignores distance entirely, larger
+   * is more near-sighted than stock. PLACEHOLDER -- the value is the
+   * tuning pile's, not a choice. */
+  double techgoal_distance_power;
 };
 
 void deep_tuning_init(void);

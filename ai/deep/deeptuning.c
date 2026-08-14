@@ -283,6 +283,9 @@ static const struct deep_tuning deep_tuning_defaults = {
   .horizon_culture_weight = 0.0,        /* PLACEHOLDER, 0 = off */
   .buy_per_gold = 0,                    /* PLACEHOLDER, 0 = off */
   .honest_info = 0,                     /* 0 = off = omniscient, as shipped */
+  .techgoal_deep = 0,                   /* 0 = stock selection, byte-identical */
+  .techgoal_distance_power = 1.0,       /* PLACEHOLDER, stock's shape; only
+                                         * read when techgoal_deep != 0 */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -558,7 +561,9 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(horizon_upkeepfree_weight) \
   TUNE_DOUBLE(horizon_culture_weight) \
   TUNE_INT(buy_per_gold) \
-  TUNE_INT(honest_info)
+  TUNE_INT(honest_info) \
+  TUNE_INT(techgoal_deep) \
+  TUNE_DOUBLE(techgoal_distance_power)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 
