@@ -69,4 +69,27 @@ double deep_stack_survival_full(int n_att, const int *att_hp,
                                 double *att_death /* [n_att] or NULL */,
                                 double *def_death /* or NULL */);
 
+/* The same walk with a PRESENCE WEIGHT per attacker: att_w[j] is the
+ * probability that attacker j takes part in the wave at all (NULL, or
+ * an entry outside [0,1] clamped, means certain presence -- the
+ * unweighted walk, bit for bit). Because the DP transition for one
+ * attacker is linear in the state distribution, mixing it as
+ * (1-w) * skip + w * fight computes the EXACT expectation of every
+ * output over independent Bernoulli(att_w[j]) presence draws, with the
+ * stream order preserved -- not an approximation. att_death[j] is the
+ * unconditional P(attacker j fights and dies), so it already carries
+ * its own weight.
+ *
+ * What it is for: a threat model that has measured evidence that some
+ * attackers (e.g. enemy garrisons pinned at home, NETTHREAT item 2)
+ * only show up a fraction of the time can price them at that fraction
+ * instead of at certainty, in the substrate's own probability space
+ * rather than by scaling a rating that only orders the wave. */
+double deep_stack_survival_wfull(int n_att, const int *att_hp,
+                                 const double *att_w /* [n_att] or NULL */,
+                                 int n_def, const int *def_hp,
+                                 const struct deep_duel *pair,
+                                 double *att_death /* [n_att] or NULL */,
+                                 double *def_death /* or NULL */);
+
 #endif /* FC__DEEPODDS_H */
