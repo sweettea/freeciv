@@ -608,6 +608,17 @@ MAP = {
         "same line is the number this knob shifts. Registered at its "
         "shipped literal 2, so the off arm is every arm until a "
         "sweep moves it."),
+    "invasion_reinforce_slope": (
+        "S2", "mag", "direct", [("deep-kill", "robs>0")],
+        "INVASION-RATE. robs= on deep-kill is the target's measured "
+        "defenders-per-turn (surplus / best-buildable-defender cost), "
+        "the term this slope multiplies; robs>0 is exactly the "
+        "population where a nonzero slope can move anything. It is "
+        "written in BOTH arms, so it proves the distribution exists "
+        "rather than that the slope acted -- what separates the arms "
+        "is rrate= on the same line drifting off "
+        "invasion_reinforce_rate (deepcombat.c, "
+        "deep_reinforce_rate())."),
     "barb_reinforce_rate": (
         "S2", "mag", "proxy", [("deep-kill", "barb>0")],
         "the barbarian branch of deep_take_odds_at_arrival() "

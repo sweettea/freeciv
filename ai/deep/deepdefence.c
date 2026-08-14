@@ -6258,10 +6258,26 @@ static void deep_assault_want(struct ai_type *ait,
    * been priced (overseas targets joined the menu with naval slice 3)
    * and has never been separable on the line from a land want, which is
    * the evidence gap the convoy family's excluded-dead verdict rests
-   * on. Both are facts already computed above; nothing is decided here. */
+   * on. Both are facts already computed above; nothing is decided here.
+   *
+   * robs= and rrate= are the reinforcement model this want's odds were
+   * priced against, reported at the seam that consumed them:
+   *
+   *   robs   what the target can measurably build per turn --
+   *          surplus / cost(best buildable defender). Written in every
+   *          arm, so it is the DISTRIBUTION the slope would ride on
+   *          and it can be read off an archived corpus before any
+   *          sweep is spent.
+   *   rrate  what the model actually charged per turn of eta. At
+   *          invasion_reinforce_slope 0 this is the flat knob on every
+   *          line and rrate - invasion_reinforce_rate is identically
+   *          zero; the gap opening up IS the slope acting.
+   *
+   * Both are pure reads. eta x rrate, rounded, is the virtual garrison
+   * inside p0 and p1 above -- the same call, not a second model. */
   log_base(deep_metric_log_level(),
            "deep-kill turn=%d player=\"%s\" city=%d target=%d barb=%d"
-           " sea=%d eta=%d"
+           " sea=%d eta=%d robs=%.3f rrate=%.3f"
            " worth=" ADV_WANT_PRINTF " eworth=" ADV_WANT_PRINTF
            " pool=%d elsewhere=%d far=%d p0=%.3f"
            " p1=%.3f ck=%d type=\"%s\" gross=" ADV_WANT_PRINTF
@@ -6269,6 +6285,8 @@ static void deep_assault_want(struct ai_type *ait,
            game.info.turn, player_name(pplayer), pcity->id, target->id,
            is_barbarian(city_owner(target)) ? 1 : 0,
            overseas ? 1 : 0, eta,
+           deep_reinforce_observed(nmap, target),
+           deep_reinforce_rate(nmap, target),
            raw_worth, tworth, n_pool, n_elsewhere, n_far, p0, p1,
            csize,
            utype_rule_name(punittype), gross, loss, want);
