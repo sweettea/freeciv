@@ -352,6 +352,7 @@ else
       'ai/deep/deepexplore.c',
       'ai/deep/deepgov.c',
       'ai/deep/deephorizon.c',
+      'ai/deep/deepnativity.c',
       'ai/deep/deepodds.c',
       'ai/deep/deepops.c',
       'ai/deep/deeprates.c',

@@ -46,6 +46,7 @@
 
 #include "deepai.h"
 #include "deepdefence.h"
+#include "deepnativity.h"
 #include "deepops.h"
 #include "deeptrade.h"
 #include "deeptuning.h"
