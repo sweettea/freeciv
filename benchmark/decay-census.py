@@ -61,8 +61,14 @@ def rect_value(b, delay, steps):
     return b * steps * (QM ** delay)
 
 
-def exp_value(b, delay, steps, spacing, cap, rate):
-    """Exponential price of the same instalment stream."""
+def exp_value(b, delay, steps, spacing, cap, rate, left):
+    """Exponential price of the same instalment stream.
+
+    `left` truncates every stream at the scored end of the game (the
+    brief's unified form: delay = leading zeros, the endgame clamp a
+    truncated geometric tail).  Pass None for the pure-perpetuity
+    variant (--no-bell).
+    """
     q = 1.0 - rate
     if steps <= 1.0 and cap == 1:
         # Lump: invariant by construction.
@@ -71,11 +77,16 @@ def exp_value(b, delay, steps, spacing, cap, rate):
         spacing = 1
     ratio = q ** spacing
     lead = q ** delay
-    if cap < 0:
-        # Horizon-derived count: the window was standing in for a
-        # discount, so the exponential model prices the perpetuity.
+    # Structural payment cap (effect amount, the bell the culture term
+    # already counted); -1 = horizon-derived, no structural cap.
+    n = cap if cap > 0 else None
+    if left is not None:
+        if delay > left:
+            return 0.0
+        nbell = (left - delay) // spacing + 1
+        n = nbell if n is None else min(n, nbell)
+    if n is None:
         return b * lead / (1.0 - ratio)
-    n = cap
     return b * lead * (1.0 - ratio ** n) / (1.0 - ratio)
 
 
@@ -108,6 +119,9 @@ def main():
     ap.add_argument('--window', type=int, default=8,
                     help='drop decisions in the last N turns (endgame bias)')
     ap.add_argument('--csv', default=None)
+    ap.add_argument('--no-bell', action='store_true',
+                    help='price cap=-1 streams as pure perpetuities '
+                    'instead of truncating at the scored end')
     ap.add_argument('logs', nargs='+')
     args = ap.parse_args()
     rates = [float(r) for r in args.rates.split(',')]
@@ -149,10 +163,11 @@ def main():
                     if kv['bestun'] != '-':
                         d['bestun'] = (kv['bestun'], float(kv['bwant']))
 
-    def reprice(entry, caps, rate):
+    def reprice(entry, caps, rate, turn):
         """Final add under pricing; rate=None -> rectangle."""
         s = entry['sum']
         capadd = float(s['capadd'])
+        left = args.endturn - turn
         total = 0.0
         creds = list(entry['creds'])
         if capadd > 0:
@@ -162,7 +177,8 @@ def main():
                 total += rect_value(c.b, c.delay, c.steps)
             else:
                 total += exp_value(c.b, c.delay, c.steps, c.spacing,
-                                   c.cap, rate)
+                                   c.cap, rate,
+                                   None if args.no_bell else left)
         gmult = float(s['gmult'])
         thr = s['thr'] == '1'
         if total > 0 and gmult != 1.0:
@@ -170,9 +186,13 @@ def main():
         upk = float(s['upk'])
         if total > 0:
             if rate is None:
-                total -= upk * MORT
+                # The code charges the bill over deep_horizon_turns(),
+                # which pv3's endgame_horizon clamps to the turns left
+                # inside the final MORT window.
+                total -= upk * min(MORT, left)
             else:
-                total -= upk / rate
+                total -= exp_value(upk, 0, MORT, 1, -1, rate,
+                                   None if args.no_bell else left)
             total = max(total, 0.0)
         keep = float(s['keep'])
         if total > 0 and int(s['ob']) >= 0:
@@ -197,7 +217,7 @@ def main():
             s = e['sum']
             pre = float(s['pre'])
             logged_add = float(s['add'])
-            recon = reprice(e, d['caps'], None)
+            recon = reprice(e, d['caps'], None, key[1])
             val_n += 1
             denom = max(abs(logged_add), 1.0)
             err = abs(recon - logged_add) / denom
@@ -220,7 +240,8 @@ def main():
             for name in cands:
                 if name in imprs:
                     ew[name] = (float(imprs[name]['sum']['pre'])
-                                + reprice(imprs[name], d['caps'], r))
+                                + reprice(imprs[name], d['caps'], r,
+                                          key[1]))
                 else:
                     ew[name] = cands[name]
             ewin = max(ew, key=lambda n: ew[n])
