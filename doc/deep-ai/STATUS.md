@@ -14681,3 +14681,68 @@ margin is unchanged too.
 
 Retention: both cells under `benchmark/results/netthreat2/`
 (tech50war-200-86943cb3ce0f = pv3, -8846b69d19c1 = pv3-pindisc).
+
+## Chores round: tune.py --arena + the owed nativity L0 (2026-08-14, tasks #44, #58)
+
+Branch `epic/chores-arena-nativity`, 5 commits off `50b55eab00`. HYGIENE
+round: no gameplay behaviour change anywhere; `meson test` 6/6 (new
+suite `deepnativity`); tune-audit CLEAN and unchanged at 237.
+
+### 1. tune.py --arena (PERPLAYER follow-on) — DONE
+
+`tune.py --arena MANIFEST` drives the server's own FREECIV_DEEP_ARENA
+layer: the manifest is read in `deeptuning.c`'s own format (no second
+format defined), games run all-deep, and the report is per seat --
+final score and in-game rank keyed by the file the seat played, plus
+per-file means over all games. Cache dir is `arena-<key12>` where the
+key hashes the WHOLE manifest content plus every named candidate
+file's content: manifest edit moved the key `8c180b7c3c33 ->
+6ba639b9b4a5` (miss, fresh games); an identical rerun completed from
+cache in 0.6s. Smoke (hutrisk-80, seeds 1-2, ports 7900-7901, pinned
+`stage-chores/` binary), pv3 vs identity on seats P1/P2:
+
+    seat   score rank confirmed file        (seed 1 / seed 2)
+    P1      53/46  4/4   yes    pv3.ini
+    P2      69/73  3/3   yes    identity.ini
+    per-file: identity mean 71.0 rank 3.00; pv3 mean 49.5 rank 4.00
+
+2 games = mechanism proof, not a tuning claim (and hutrisk-80 is a
+weird venue; do not read the pv3-vs-identity ordering as anything).
+
+### 2. FOUND LIVE, needs human adjudication: derby-lean.ini and pv3-lean.ini have NEVER loaded
+
+Both files (added 2026-08-13) set `floor_interior_weight` twice
+(derby-lean lines 95 and 235). `secfile_load()` refuses the whole file
+over a duplicate key, deep logs `cannot load tuning file ...; using
+defaults`, and the seat plays the COMPILED DEFAULTS -- while the
+deep-arena seat line still names the file. Sweep of all 96 archived
+inis: exactly these two fail. **Any lean-arm games since 2026-08-13
+(the lean-lattice A/B, the lean-army derby arm) actually ran the
+defaults.** The archived inis were left untouched (they are artefacts);
+guards added instead: `validate_tuning()` (arena.py, used by tune.py
+--arena) refuses duplicate keys upfront, and the --arena report's
+`confirmed` column requires the file's own deep-tuning log line,
+reporting LOADFAIL when assignment happened but application did not.
+NOTE: run.sh's TUNING pre-checks do NOT yet catch duplicate keys --
+same defect class, not touched in this round.
+
+### 3. Nativity helpers: moved to deepnativity.c + the owed L0 test — DONE
+
+Pure move (verbatim) of deep_uclass_swims/walks +
+deep_utype_is_sea/is_land/is_airborne/air_reach out of deepdefence.c
+so they link against common/ alone. New suite `deepnativity` pins:
+land/sea/both-native/lake-only classification from terrain CLASS, and
+the UMT_SEA boundary from both sides -- the server-side move_type
+field really is zero-init UMT_LAND for a floating class, and poisoning
+it changes nothing. Mutation-verified: an is_sea that reads move_type
+fails 5 checks. deep_utype_is_airborne left uncovered on purpose
+(action-enabler subsystem has no L0 fixture); its nativity half is
+pinned via the BOTH class.
+
+### 4. Also found: game.log truncates the deep-tuning read-back line at 1024
+
+`server/console.c` MAX_LEN_CONSOLE_LINE=1024 truncates every log line;
+the deep-tuning line at 237 knobs is ~4.9KB, so only the first ~40
+knobs are readable back from a game log. The hazard the line exists to
+prevent (deeptuning.c's own comment) is only partly prevented. Flagged,
+not fixed (out of scope for a chores round).
