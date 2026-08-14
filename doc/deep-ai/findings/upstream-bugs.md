@@ -414,3 +414,23 @@ exhausted). Not fixed in place per rule 2's spirit for common/.
     courtesy report rather than a project dependency. Deep's
     `deep_revolen_expected()` (`deepgov.c`, the gov epic) guards it with
     `MAX(1, len - 1)` and does not reproduce it. Found 2026-08-12.
+49. **`dai_select_tech()`'s immediate choice can select a tech the
+    switch then silently refuses** — the newtech argmax admits any
+    advance passing `research_invention_gettable(presearch, i, TRUE)`
+    (`daitech.c:172`), which with `allow_holes = TRUE` tests only
+    `root_reqs_known` (`common/research.c:704`), but `choose_tech()`
+    returns without effect unless the tech is `TECH_PREREQS_KNOWN`
+    (`server/techtools.c:1021`). When the argmax lands on a
+    holes-gettable-but-not-researchable advance, `dai_manage_tech()`
+    "changes research" into a no-op every turn: the penalty guard is
+    evaluated, the TECH_LOG line claims a new research, and nothing
+    happens. Measured on tech50war-200 (TECHMIL slice 2 liveness, gate
+    mirroring stock at power 1.0): the attempted-but-refused switch
+    fires on 33% of deep player-turns. Harmless per attempt (the
+    refusal has no side effects), but it means the AI's realised
+    research direction follows `research_goal_step()` — the goal path
+    — far more often than `dai_manage_tech()`'s own logs suggest.
+    Deep's `deep_reselect_research()` (deeptech.c) reproduces the
+    attempt for shape fidelity at power 1.0 and reports honestly
+    (`switched=` is the post-call state change, not the attempt).
+    Found 2026-08-14.

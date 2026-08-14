@@ -223,8 +223,15 @@ static void deep_reselect_research(struct ai_type *ait,
             <= research_total_bulbs_required(presearch,
                                              presearch->researching,
                                              FALSE))) {
+      Tech_type_id before = presearch->researching;
+
       choose_tech(presearch, newtech);
-      switched = TRUE;
+      /* choose_tech() silently refuses a tech that is not
+       * TECH_PREREQS_KNOWN (techtools.c:1021), and the argmax admits
+       * such techs -- its gettable(TRUE) test is only root_reqs_known.
+       * Stock trips the same no-op (upstream-bugs.md); switched=
+       * reports what actually MOVED, not what was attempted. */
+      switched = (presearch->researching != before);
     }
   }
 
