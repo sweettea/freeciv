@@ -4,7 +4,7 @@
 #
 #   ./benchmark/invrate.sh live      # 2 tech65sea-150, counters on
 #   ./benchmark/invrate.sh identity  # 10 paired smoke seeds vs base
-#   ./benchmark/invrate.sh ab        # 16 tech65sea-150 seeds, slope 0 vs 1
+#   ./benchmark/invrate.sh ab        # 16 tech65sea-150 seeds, flat vs measured
 #
 # Machine budget for this epic: ports 7500-7599, jobs 2-3, nice.
 #
@@ -15,12 +15,15 @@
 # byte-identical seed by seed. Anything less than 10/10 means the two
 # new counters or a default-off knob moved the game.
 #
-# The A/B is a ONE-KEY comparison on ONE binary: both arms are this
-# head build, the control is tuning/identity.ini (every compiled
-# default, invasion_reinforce_slope 0 = the flat model that shipped)
-# and the test arm is tuning/invrate-slope.ini, which sets that one
-# key and nothing else. tech65sea-150 is the venue because it is the
-# only cell where invasions happen at all (see the config's header).
+# The A/B runs ONE binary and contrasts two whole reinforcement
+# models, control tuning/identity.ini (rate 0.34, slope 0 -- flat, as
+# shipped) against tuning/invrate-measured.ini (rate 0, slope 1 --
+# reinforcement IS production). tech65sea-150 is the venue because it
+# is the only cell where invasions happen at all (see the config's
+# header). The arm choice is the PROBE's, not the plan's: robs= sits
+# entirely below the flat 0.34 on both instrumented cells, so
+# slope-on-top-of-flat would only have asked "does deep fear
+# garrisons more" -- the reasoning is in the tuning file.
 
 set -eu
 
@@ -119,10 +122,10 @@ ab)
   SEEDS=${SEEDS:-16}
   pin_server ab
   echo "=== A/B: $SEEDS tech65sea-150 seeds, one binary, one key ==="
-  for arm in flat slope; do
+  for arm in flat measured; do
     case $arm in
-      flat)  tf=$ROOT/benchmark/tuning/identity.ini;     port=7560;;
-      slope) tf=$ROOT/benchmark/tuning/invrate-slope.ini; port=7580;;
+      flat)     tf=$ROOT/benchmark/tuning/identity.ini;        port=7560;;
+      measured) tf=$ROOT/benchmark/tuning/invrate-measured.ini; port=7580;;
     esac
     TUNING=$tf nice -n 5 ./benchmark/run.sh --count "$SEEDS" --arms deep \
       --config benchmark/configs/tech65sea-150.conf \
@@ -131,7 +134,13 @@ ab)
   done
   echo "=== paired comparison ==="
   ./benchmark/paircmp.py "$OUT"/flat/tech65sea-150-* \
-                         "$OUT"/slope/tech65sea-150-* --arm deep
+                         "$OUT"/measured/tech65sea-150-* --arm deep \
+    --pat 'kill-evals=deep-kill turn=' \
+    --pat 'kill-sea=deep-kill turn=.* sea=1 ' \
+    --pat 'invade-go=deep-invade turn=\S+ player="[^"]+" go' \
+    --pat 'invade-hold=deep-invade turn=\S+ player="[^"]+" hold' \
+    --pat 'op-form=deep-op turn=\S+ player="[^"]+" op=\d+ form' \
+    --pat 'op-strike=deep-op turn=\S+ player="[^"]+" op=\d+ strike'
   ;;
 
 *)
