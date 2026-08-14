@@ -94,6 +94,7 @@
 #include "deepsettler.h"
 #include "deeptrunk.h"
 #include "deepstance.h"
+#include "deeptechcensus.h"
 #include "deeptrade.h"
 #include "deeptuning.h"
 #include "deepwant.h"
@@ -4924,7 +4925,12 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
   struct adv_choice *choice = adv_new_choice();
   bool allow_gold_upkeep;
 
+  deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
   urgency = assess_danger(ait, nmap, pcity, ul_cb);
+  /* assess_danger() reaches dai_wants_defender_against()
+   * (daimilitary.c:901 -> daitech.c:507), the first of the four
+   * military tech_want writers this census brackets. */
+  deep_techcensus_mark(ait, pplayer, DEEP_TC_STOCK_ASSESS);
   /* Changing to quadratic to stop AI from building piles
    * of small units -- Syela */
   /* It has to be AFTER assess_danger() thanks to wallvalue. */
@@ -5008,7 +5014,9 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
      * calibrated value instead. */
     struct adv_choice *dip = adv_new_choice();
 
+    deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
     dai_choose_diplomat_defensive(ait, pplayer, pcity, dip, our_def);
+    deep_techcensus_mark(ait, pplayer, DEEP_TC_STOCK_DIPLOMAT);
     if (dip->want > 0) {
       deep_want_apply(dip, (struct deep_want) {
         .tier = DWT_EMERGENCY,
@@ -5087,8 +5095,17 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     if (our_def == 0 && danger > 0) {
       /* Build defensive unit first! Walls will help nothing if there's
        * nobody behind them. */
-      if (dai_process_defender_want(ait, nmap, pplayer, pcity, danger,
-                                    choice, martial_value)) {
+      /* Hoisted out of the `if` for the census only: the writer at
+       * daimilitary.c:1203 runs on BOTH arms, so a mark inside the
+       * TRUE body would under-count it. No condition changes. */
+      bool defender_found;
+
+      deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
+      defender_found
+        = dai_process_defender_want(ait, nmap, pplayer, pcity, danger,
+                                    choice, martial_value);
+      deep_techcensus_mark(ait, pplayer, DEEP_TC_STOCK_DEFENDER);
+      if (defender_found) {
         double priced = 0.0;
         /* The dividend rides on top of whichever tier this branch
          * settles on: it is a value the FIRST defender also earns,
@@ -5179,12 +5196,17 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     if (!def_unit_selected) {
       if ((danger > 0 && num_defenders <= urgency) || martial_value > 0) {
         struct adv_choice uchoice;
+        bool defender_found;
 
         adv_init_choice(&uchoice);
 
         /* Consider building defensive units */
-        if (dai_process_defender_want(ait, nmap, pplayer, pcity, danger,
-                                      &uchoice, martial_value)) {
+        deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
+        defender_found
+          = dai_process_defender_want(ait, nmap, pplayer, pcity, danger,
+                                      &uchoice, martial_value);
+        deep_techcensus_mark(ait, pplayer, DEEP_TC_STOCK_DEFENDER);
+        if (defender_found) {
           /* Potential defender found */
           if (urgency == 0
               && uchoice.value.utype->defense_strength == 1) {
@@ -5405,8 +5427,10 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
                                  allow_gold_upkeep);
 
   /* Consider making a paratrooper */
+  deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
   dai_choose_paratrooper(ait, nmap, pplayer, pcity, choice,
                          allow_gold_upkeep);
+  deep_techcensus_mark(ait, pplayer, DEEP_TC_STOCK_PARADROP);
 
   /* Check if we want a sailing attacker. Have to put sailing first
      before we mung the seamap */
@@ -5416,8 +5440,12 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     virtualunit = unit_virtual_create(
       pplayer, pcity, punittype,
       city_production_unit_veteran_level(pcity, punittype));
+    deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
     choice = kill_something_with(ait, nmap, pplayer, pcity, virtualunit,
                                  choice);
+    /* kill_something_with() is the ONLY route to process_attacker_want()
+     * (daimilitary.c:1460), the attacker-side military tech_want writer. */
+    deep_techcensus_mark(ait, pplayer, DEEP_TC_STOCK_ATTACKER);
     unit_virtual_destroy(virtualunit);
   }
 
@@ -5448,8 +5476,10 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     adv_init_choice(&pre_attacker);
     adv_choice_copy(&pre_attacker, choice);
     virtualunit = unit_virtual_create(pplayer, pcity, punittype, 1);
+    deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
     choice = kill_something_with(ait, nmap, pplayer, pcity, virtualunit,
                                  choice);
+    deep_techcensus_mark(ait, pplayer, DEEP_TC_STOCK_ATTACKER);
     unit_virtual_destroy(virtualunit);
     if (deep_tuning_get()->boat_gate_at_bid > 0
         && deep_boat_choice_refused(ait, choice, pcity)) {
@@ -7466,10 +7496,16 @@ static void deep_city_choose_build(struct ai_type *ait,
                  game.info.turn, player_name(pplayer), pcity->id,
                  saved_founder_want);
         city_data->founder_want = 0;
+        deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
         newchoice = domestic_advisor_choose_build(ait, pplayer, pcity);
+        deep_techcensus_mark(ait, pplayer, DEEP_TC_STOCK_DOMESTIC);
         city_data->founder_want = saved_founder_want;
       } else {
+        deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
         newchoice = domestic_advisor_choose_build(ait, pplayer, pcity);
+        /* Five calls to dai_wants_role_unit() (daitech.c:602) live in
+         * here -- worker, founder, ferry, trade and defender roles. */
+        deep_techcensus_mark(ait, pplayer, DEEP_TC_STOCK_DOMESTIC);
       }
       city_data->founder_want = scale_saved_founder;
       city_data->worker_want = scale_saved_worker;
@@ -7678,10 +7714,17 @@ static void deep_city_choose_build(struct ai_type *ait,
       adv_choice_set_use(&(city_data->choice), "fallback trade route");
     } else {
       unsigned int our_def = assess_defense_quadratic(ait, pcity);
+      bool fallback_found = FALSE;
 
-      if (our_def == 0
-          && dai_process_defender_want(ait, nmap, pplayer, pcity, 1,
-                                       &(city_data->choice), 0)) {
+      if (our_def == 0) {
+        deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
+        fallback_found
+          = dai_process_defender_want(ait, nmap, pplayer, pcity, 1,
+                                      &(city_data->choice), 0);
+        deep_techcensus_mark(ait, pplayer, DEEP_TC_STOCK_DEFENDER);
+      }
+
+      if (fallback_found) {
         adv_choice_set_use(&(city_data->choice), "fallback defender");
         CITY_LOG(LOG_DEBUG, pcity, "Building fallback defender");
       } else if (best_role_unit(pcity, UTYF_WORKERS)) {
@@ -7825,15 +7868,23 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
   TIMING_LOG(AIT_EMERGENCY, TIMER_STOP);
 
   TIMING_LOG(AIT_BUILDINGS, TIMER_START);
+  deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
   building_advisor(pplayer);
+  /* The build_adv_* hooks reach want_techs_for_improvement_effect()
+   * and dont_want_tech_obsoleting_impr() (daicity.c:142), which is
+   * where the NEGATIVE wants come from. */
+  deep_techcensus_mark(ait, pplayer, DEEP_TC_STOCK_BUILDING);
   deep_adjust_building_wants(ait, pplayer);
+  deep_techcensus_mark(ait, pplayer, DEEP_TC_DEEP_HORIZON);
   /* AFTER dai_build_adv_adjust() has zeroed wonder wants outside the
    * wonder city, so the population is exactly that city's candidates. */
   deep_wonder_race(ait, pplayer);
+  deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
   TIMING_LOG(AIT_BUILDINGS, TIMER_STOP);
   /* AFTER dai_clear_tech_wants(), like every other tech_want writer:
    * the array is wiped at the top of this phase and refilled here. */
   deep_defensive_techwall(ait, pplayer);
+  deep_techcensus_mark(ait, pplayer, DEEP_TC_DEEP_TECHWALL);
 
   /* Initialize the infrastructure cache, which is used shortly. */
   initialize_infrastructure_cache(pplayer);
@@ -8125,8 +8176,12 @@ void deep_do_last_activities(struct ai_type *ait, struct player *pplayer)
    * (deeprates.c). */
   deep_rates_snapshot_tech(ait, pplayer);
   dai_clear_tech_wants(ait, pplayer);
+  /* The wipe is not a writer's doing, so re-baseline rather than
+   * charge the whole negative array to whoever marks next. */
+  deep_techcensus_resync(ait, pplayer);
 
   dai_manage_government(ait, pplayer);
+  deep_techcensus_mark(ait, pplayer, DEEP_TC_STOCK_GOV);
   dai_adjust_policies(ait, pplayer);
   TIMING_LOG(AIT_TAXES, TIMER_START);
   deep_manage_taxes(ait, pplayer);
@@ -8144,7 +8199,11 @@ void deep_do_last_activities(struct ai_type *ait, struct player *pplayer)
    * guard raised to stay solvent is not spendable income. */
   deep_late_mark = pplayer->economic.gold;
   TIMING_LOG(AIT_TECH, TIMER_START);
+  deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
   dai_manage_tech(ait, pplayer);
+  /* dai_tech_effect_values() (daitech.c:325) writes here, and it is
+   * the last writer before dai_select_tech() reads the array. */
+  deep_techcensus_mark(ait, pplayer, DEEP_TC_STOCK_EFFECTS);
   TIMING_LOG(AIT_TECH, TIMER_STOP);
   dai_manage_spaceship(pplayer);
 

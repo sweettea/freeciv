@@ -67,6 +67,7 @@
 #include "deepsite.h"
 #include "deepspy.h"
 #include "deepstance.h"
+#include "deeptechcensus.h"
 #include "deeptrade.h"
 #include "deeptuning.h"
 
@@ -721,6 +722,11 @@ static void dpai_data_phase_finished(struct player *pplayer)
   const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   dai_data_phase_finished(deftype, pplayer);
+  /* end_phase() has run last_activities for EVERY player by now
+   * (srv_main.c:1526 then :1598), so this is the one point at which a
+   * STOCK seat's tech_want[] is complete and observable from here.
+   * Self-guarded to once per turn. */
+  deep_techcensus_turn_report();
   if (deep_tuning_arena_active()) {
     log_normal("deep-arena turn=%d player=\"%s\" scopeless_reads=%d",
                game.info.turn, player_name(pplayer),
@@ -929,6 +935,8 @@ static void dpai_units_ruleset_init(void)
   struct ai_type *deftype = deep_ai_get_self();
 
   dai_units_ruleset_init(deftype);
+  /* The census classifies advances by the unit types gated on them. */
+  deep_techcensus_ruleset_reset();
 }
 
 /**********************************************************************//**
