@@ -244,6 +244,17 @@ static struct ai_type *readable_module(const struct player *pplayer)
   if (!is_ai(pplayer)) {
     return NULL;
   }
+  if (is_barbarian(pplayer)) {
+    /* Barbarians and the animal kingdom are AI players seated on a
+     * module, so they answer readable_module()'s other tests -- and
+     * they are seated on CLASSIC whatever the arms are, which would
+     * put a permanently-empty array and a nonsense research goal on
+     * the stock side of every comparison. Measured before this guard:
+     * a 4-player ALL-DEEP smoke game reported a stock seat -- "Lion",
+     * the animal kingdom, total=0.0 every turn with a goal of
+     * Advanced Flight. */
+    return NULL;
+  }
   ait = pplayer->ai;
   if (ait == NULL) {
     return NULL;
