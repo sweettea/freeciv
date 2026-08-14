@@ -120,6 +120,10 @@ SERVER=$(readlink -f "$SERVER")
 # Also add founder_berth_route = 1: NULL on open sea (t +0.21, 3 firings in
 # 16 games) but its stranded-founder population is closed-water geometry —
 # Europe's lakes and inlets are exactly where slice 2 counted 60/67 gaps.
+# ALL of the above (fence, lean zeros, berth, plus the DECAY schedule at
+# its measured anchors) are minted in derby5/tuning-derby7.ini — run
+# derby-7 with TUNING=$REPO/derby5/tuning-derby7.ini once DECAY slice 2's
+# knobs have merged (the loader must know the horizon_decay_* names).
 TUNING="${TUNING:-$REPO/derby4/tuning-derby4-personality.ini}"
 [ -f "$TUNING" ] || { echo "tuning file not found: $TUNING" >&2; exit 1; }
 
