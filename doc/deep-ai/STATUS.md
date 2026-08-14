@@ -14681,3 +14681,133 @@ delivers.
    `neg = 0`), not short of hulls (slice 2: hull-rich, founder-poor),
    and not short of serviceable coasts once routed (this slice). The
    binding constraint is somewhere the lift census cannot see.
+
+## NETTHREAT item 2 — the garrison-pin probe, and its verdict (2026-08-13)
+
+Branch `epic/pinprobe`, based on `epic/w03-horizon-content` at
+`4a6fa4578a`. Two code commits, closing the one item
+`sessions/S-NETTHREAT-offense-as-defense.md` left unreached:
+
+- `eeeb67f130` `ai/deep: count enemy garrisons that never come at us`
+- `862b5935a3` `benchmark: add the garrison-pin probe's runner and
+  reader`
+
+The brief asked for the cheap probe before the mechanism: "measure how
+often units that were garrisoning at wave-assembly time actually
+attacked us within the horizon (a counter, no behavior) — if
+garrison-pinned units rarely sortie, the discount is honest." That is
+what this is. **No knob was added.**
+
+### What is measured, and the one substitution
+
+Every attacker that qualifies for a wave in `deep_city_survival_core()`
+while standing in one of its OWNER's cities opens a tag; the next
+`survival_horizon` (= 3) turns are watched. One tag per unit at a time,
+re-taggable once its window closes, so the sample is independent
+(unit, window) observations — and because a window can only open while
+the unit is at home, the weighting is time-at-home, which is exactly
+the weighting the discount would be applied under.
+
+**Arrival stands in for attacking, and the substitution is the safe
+one.** There is no combat seam in the AI vtable — no hook fires when a
+foreign unit attacks us, only `unit_move_seen` when one moves — so a
+literal attack count is not observable from inside `ai/deep`. What is
+observable is a tagged unit reaching a tile within one move of a city
+of ours, which is precisely what wave membership asserts. Arrival is a
+SUPERSET of attacking, so the measured rate can only OVERSTATE the
+pin, and the verdict wanted here is "honest if LOW". Two observation
+points: the per-turn poll at phase begin, plus `unit_move_seen` (a
+`CALL_FUNC_EACH_AI` hook deep had left NULL) to catch the garrison that
+sorties, strikes and dies inside a single foreign phase.
+
+### The reading — tech50war-200, 8 mirrored seeds
+
+`mixed_db` + `mixed_bd`, 16/16 games completed, 0 pairing violations,
+65 deep seats, **18 858 tags opened, 18 538 windows resolved**:
+
+| the funnel, weakest claim first | windows | share |
+|---|---:|---:|
+| tagged (garrisoning when we sized a wave against it) | 18 538 | — |
+| ever left its home tile | 5 808 | 31.33% |
+| ever entered our borders | 1 124 | 6.06% |
+| **ever reached a tile it could hit one of our cities from** | **596** | **3.22%** |
+| never left home at all | 12 730 | 68.67% |
+| died inside the window | 741 | 4.00% |
+
+Excluding deaths from the denominator: **3.35%**. The sub-populations
+item 2's claim is literally about are lower still — a unit that was its
+city's **best defender**: 121/5 131 = **2.36%**; its **only military
+unit**: 30/2 437 = **1.23%**. Smoke cross-check, 438 windows: 3.42%.
+The venue is not driving the number.
+
+### Verdict: ITEM 2 PROCEEDS — the discount is honest
+
+The brief set the bar at <20% and the answer is **3.22%**, on the
+strictest available reading (a superset of attacking), on the venue
+where wars conclude (12 elimination events over the 16 games), with a
+sample three orders of magnitude past noise. A garrisoning enemy unit
+is, on this evidence, essentially never a wave member: the wave
+assembly is sizing our garrisons against an army that is 96.8% not
+coming.
+
+**But size the discount on 68.7%, not on 96.8%.** The funnel splits the
+missing mass in two, and only one half belongs to item 2:
+
+- **68.67% never left home.** This is the pin proper — item 2's
+  mechanism, and the mass it may claim.
+- **28.11% left home and still never reached us.** Of the 5 808 that
+  sortied, only 19.4% entered our borders and 10.3% reached a city.
+  That is a *reach* failure, not a pinning one, and it is ERA 3c's
+  territory (`survival_pf_reach`, the 19.1%-unreachable /
+  25.6%-slower finding). Netting it in the garrison discount as well
+  would be double-counting one enemy unit against two mechanisms —
+  the brief's own first guard.
+
+Note also which way the causation could run: a low pin rate is
+consistent with item 2's thesis (our offensive posture holds rivals'
+garrisons home) *and* with garrisons simply being sedentary. The probe
+cannot separate them and does not need to — either way the wave
+over-counts garrisons — but it does mean the discount should start as
+a flat garrison term rather than one conditioned on our own posture,
+because the posture-conditional form is the one the data does not
+support yet.
+
+### Validation
+
+- **Off-switch / identity proof: 10/10 smoke scorelogs
+  BYTE-IDENTICAL**, 0 differ, 0 missing, `identity.ini` both sides,
+  this build against a `git archive` build of the base `4a6fa4578a`
+  (source dir passed to `meson setup` explicitly). Cells resolved by
+  name, not by glob: base `smoke-2ee8202acff9`, head
+  `smoke-3d95757cfa36`, under `benchmark/results/pin-identity/`.
+  Byte-identity is not a courtesy for a counter — a counter that moved
+  the game could not be trusted to report on it.
+- **BOTH provenance directions asserted**, which is the trap the
+  muster epic recorded: the base arm must emit no `deep-pin` (it does
+  not) *and* the head arm must emit some (it does). A proof where the
+  probe never ran proves nothing about the probe.
+- `meson test -C build` **5/5 OK**. No new tuning field, so no
+  `tune-audit` delta.
+- Cost containment: the probe is gated on the metric log level (a
+  `FREECIV_DEEP_QUIET` tuning run allocates nothing) and on the
+  observer being a deep player, so the assault pricer's evaluations of
+  ENEMY cities in `deepops.c` cannot put the funnel on the wrong side
+  of the war. The per-attacker cost in the hottest routine deep has is
+  one hash-bucket lookup.
+
+### For the next session
+
+1. **Build the discount, gated on a PLACEHOLDER at 0**, and size it
+   against the 68.67% never-left mass only. State the no-double-spend
+   rule at the site: a garrison netted here may not also be netted by
+   item 1's offense discount nor feed a sortie/deterrence prize.
+2. **Item 1 stays parked.** Its mass was ~2% of the wave on smoke and
+   nothing here re-reads it on tech50war-200; that re-read is still
+   owed before item 1 is recorded measured-dead.
+3. **The A/B lens is the disarmament lens**, per the brief: any arm
+   with this discount on must report cities-lost-to-walk-ins beside
+   whatever economy it buys. A wave discounted by 68% is exactly the
+   size of error that produced derby-2's empty-city plague.
+4. **Do not stack this with an ERA 3c reach change in one arm.** The
+   28.11% they would both claim is the overlap; if both land they want
+   one factorial, not two concurrent arms.
