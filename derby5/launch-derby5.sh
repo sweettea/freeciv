@@ -117,6 +117,9 @@ SERVER=$(readlink -f "$SERVER")
 # tuning file — the fence REJECTED on benchmark mixed (it cancels the peace
 # dividend, task #63) but the derby is team-vs-team where blocking cross-team
 # peace is the intent. Pair it with the lean floor zeros (derby-6 winner).
+# Also add founder_berth_route = 1: NULL on open sea (t +0.21, 3 firings in
+# 16 games) but its stranded-founder population is closed-water geometry —
+# Europe's lakes and inlets are exactly where slice 2 counted 60/67 gaps.
 TUNING="${TUNING:-$REPO/derby4/tuning-derby4-personality.ini}"
 [ -f "$TUNING" ] || { echo "tuning file not found: $TUNING" >&2; exit 1; }
 
