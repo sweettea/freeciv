@@ -14746,3 +14746,35 @@ the deep-tuning line at 237 knobs is ~4.9KB, so only the first ~40
 knobs are readable back from a game log. The hazard the line exists to
 prevent (deeptuning.c's own comment) is only partly prevented. Flagged,
 not fixed (out of scope for a chores round).
+
+## 2026-08-14 — VOID: the lean arms never loaded; the lean evidence is defaults-vs-pv
+
+The chores round's loader guard work surfaced it and the games' own
+logs confirm it: `deep: cannot load tuning file pv3-lean.ini; using
+defaults` (lean-ab/econ-lean seed-1 game.log; provenance sha pins the
+same file for every seed). pv3-lean.ini, derby-lean.ini AND
+derby6/tuning-derby6-lean.ini all defined the four floor keys twice
+(append-over-existing), and secfile refuses a whole file over one
+duplicate key.
+
+Re-attributions:
+- The banked lean-lattice verdict (war +8.2, econ +10.4, four
+  analyses) measured COMPILED DEFAULTS vs pv3 — not the four zeros.
+  The observations stand as descriptions of the defaults arm
+  (era-slide halved, no retention cost, starve-the-rival); the
+  four-zeros attribution is void.
+- The derby-6 postmortem (+337 lean vs −809 std) measured compiled
+  defaults vs pv2-personality on Europe. Norge's containment is real
+  behavior of DEFAULTS on that map.
+- The floor family's "fourth implication" is retracted (back to
+  three); the MIL-finale fear sweep is otherwise STRENGTHENED — what
+  these accidents actually measured is that the tuned pv line loses
+  to compiled defaults on isolated-150, tech50war-mixed and Europe,
+  implicating the tuned fear/floor values wholesale.
+
+Fixes landed: the three inis deduped (intended overrides survive);
+validate_tuning now refuses duplicate keys and tune.py --arena
+reports LOADFAIL (chores merge). Open (human call, budget-gated): a
+TRUE lean A/B — pv3 vs a loading pv3-lean — if the four-zeros
+attribution is still wanted, and a defaults-vs-pv3 autopsy for which
+tuned blocks are harmful.
