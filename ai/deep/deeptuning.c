@@ -209,6 +209,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .colony_lift_weight = 0.5,            /* PLACEHOLDER, untuned */
   .hull_commission_weight = 0.0,        /* off; A/B switch */
   .invasion_reinforce_rate = 0.34,      /* PLACEHOLDER, untuned */
+  .invasion_embark_turns = 2,           /* PLACEHOLDER = the shipped literal */
   .op_wave_window = 6,                  /* PLACEHOLDER, untuned */
   .raid_radius = 12,                    /* PLACEHOLDER, untuned */
   .hut_risk_radius = 5,                 /* PLACEHOLDER, untuned */
@@ -489,6 +490,7 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(colony_lift_weight) \
   TUNE_DOUBLE(hull_commission_weight) \
   TUNE_DOUBLE(invasion_reinforce_rate) \
+  TUNE_INT(invasion_embark_turns) \
   TUNE_INT(op_wave_window) \
   TUNE_INT(raid_radius) \
   TUNE_INT(hut_risk_radius) \

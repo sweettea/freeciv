@@ -5985,7 +5985,8 @@ static void deep_assault_want(struct ai_type *ait,
       rate = MAX(punittype->move_rate, 1);
     }
     eta = (real_map_distance(city_tile(pcity), city_tile(target))
-           * SINGLE_MOVE + rate - 1) / rate + (overseas ? 2 : 0);
+           * SINGLE_MOVE + rate - 1) / rate
+          + (overseas ? tune->invasion_embark_turns : 0);
   }
 
   /* The pool that will actually fight for THIS target: own attackers
@@ -6030,7 +6031,8 @@ static void deep_assault_want(struct ai_type *ait,
       int uturns = (real_map_distance(unit_tile(punit),
                                       city_tile(target)) * SINGLE_MOVE
                     + urate - 1) / urate
-                   + (tile_continent(city_tile(target)) != home ? 2 : 0);
+                   + (tile_continent(city_tile(target)) != home
+                      ? tune->invasion_embark_turns : 0);
 
       if (uturns > eta) {
         n_far++;
@@ -6158,7 +6160,8 @@ static void deep_assault_want(struct ai_type *ait,
       }
       rate2 = MAX(overseas ? rate : ut->move_rate, 1);
       eta2 = (real_map_distance(city_tile(pcity), city_tile(target))
-              * SINGLE_MOVE + rate2 - 1) / rate2 + (overseas ? 2 : 0);
+              * SINGLE_MOVE + rate2 - 1) / rate2
+             + (overseas ? tune->invasion_embark_turns : 0);
       v2 = unit_virtual_create(pplayer, pcity, ut, 1);
       pool[n_pool] = v2;
       pa = deep_take_odds_cost(nmap, target, pool, n_pool + 1, eta2,

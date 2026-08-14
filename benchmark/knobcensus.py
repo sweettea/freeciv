@@ -599,6 +599,15 @@ MAP = {
         "populous than the crossing seam, which needs an operation "
         "actually mid-sail. sea=1 on that line separates the invasion "
         "wants from the land ones."),
+    "invasion_embark_turns": (
+        "S2", "mag", "direct", [("deep-kill", "sea=1")],
+        "the board/land allowance every OVERSEAS eta pays on top of "
+        "the sail (deepdefence.c:5988/6033/6161, deepops.c:3768). "
+        "sea=1 on deep-kill is exactly the population that charged "
+        "it -- a land want takes the zero branch -- and eta= on the "
+        "same line is the number this knob shifts. Registered at its "
+        "shipped literal 2, so the off arm is every arm until a "
+        "sweep moves it."),
     "barb_reinforce_rate": (
         "S2", "mag", "proxy", [("deep-kill", "barb>0")],
         "the barbarian branch of deep_take_odds_at_arrival() "
