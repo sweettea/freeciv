@@ -20,6 +20,8 @@
 /* utility */
 #include "log.h"
 #include "mem.h"
+#include "shared.h"
+#include "support.h"
 
 /* common */
 #include "city.h"
@@ -38,6 +40,12 @@
 #include "deeptuning.h"
 
 #include "deeptrunk.h"
+
+/* Distance histogram for beyond-ceiling picks: one bucket per map
+ * distance 0..DEEP_TRUNK_SRC_HIST-1, and a last bucket for everything
+ * farther. Instrumentation shape, not a tunable: it changes what the
+ * log line says, never what any unit does. */
+#define DEEP_TRUNK_SRC_HIST 16
 
 /* One planned link between two cities, measured over the tiles the
  * corridor walk actually visited. */
@@ -59,11 +67,23 @@ static int deep_trunk_alloc = 0;
 static int deep_trunk_turn = -1;
 static int deep_trunk_plr = -1;
 
+/* The corridor gap tiles the advisor can NEVER offer: those outside
+ * every own city radius (autoworkers.c:586). Tile indices, rebuilt
+ * with the plan. */
+static int *deep_trunk_beyond = NULL;
+static int deep_trunk_nbeyond = 0;
+static int deep_trunk_beyond_alloc = 0;
+
 /* Per-player census, reset per turn by deep_trunk_census(). */
 static int deep_trunk_c_links[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_gap[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_hits[MAX_NUM_PLAYER_SLOTS];
 static double deep_trunk_c_max[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_beyond[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_src_off[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_src_pick[MAX_NUM_PLAYER_SLOTS];
+static int
+deep_trunk_c_src_hist[MAX_NUM_PLAYER_SLOTS][DEEP_TRUNK_SRC_HIST + 1];
 
 /**********************************************************************//**
   Does this tile already carry a road that speeds movement? A corridor
@@ -161,6 +181,7 @@ static void deep_trunk_build(const struct player *pplayer)
            deep_trunk_tiles * sizeof(*deep_trunk_tile));
   }
   deep_trunk_nlinks = 0;
+  deep_trunk_nbeyond = 0;
 
   if (ncities < 2) {
     return;
@@ -252,6 +273,15 @@ static void deep_trunk_build(const struct player *pplayer)
 
             if (deep_trunk_tile[idx] == 0 && !deep_trunk_roaded(path[t])) {
               deep_trunk_tile[idx] = deep_trunk_nlinks + 1;
+              if (deep_trunk_nbeyond >= deep_trunk_beyond_alloc) {
+                deep_trunk_beyond_alloc = MAX(2 * deep_trunk_beyond_alloc,
+                                              32);
+                deep_trunk_beyond
+                  = fc_realloc(deep_trunk_beyond,
+                               deep_trunk_beyond_alloc
+                               * sizeof(*deep_trunk_beyond));
+              }
+              deep_trunk_beyond[deep_trunk_nbeyond++] = idx;
             }
           }
           deep_trunk_nlinks++;
@@ -270,6 +300,39 @@ static void deep_trunk_build(const struct player *pplayer)
         }
       }
     }
+  }
+
+  /* Of the gap tiles just collected, keep as "beyond" only those the
+   * advisor can never enumerate: worker_evaluate_improvements() offers
+   * exactly the tiles inside some own city's radius
+   * (autoworkers.c:586), so subtract those. Marking is done by
+   * negating the slot in deep_trunk_tile -- restored in the same pass
+   * that compacts the list, so the array leaves this function
+   * all-positive exactly as before. */
+  if (deep_trunk_nbeyond > 0) {
+    int m = 0;
+
+    city_list_iterate(pplayer->cities, pcity) {
+      city_tile_iterate(nmap, city_map_radius_sq_get(pcity),
+                        city_tile(pcity), ptile) {
+        int idx = tile_index(ptile);
+
+        if (deep_trunk_tile[idx] > 0) {
+          deep_trunk_tile[idx] = -deep_trunk_tile[idx];
+        }
+      } city_tile_iterate_end;
+    } city_list_iterate_end;
+
+    for (i = 0; i < deep_trunk_nbeyond; i++) {
+      int idx = deep_trunk_beyond[i];
+
+      if (deep_trunk_tile[idx] < 0) {
+        deep_trunk_tile[idx] = -deep_trunk_tile[idx];
+      } else {
+        deep_trunk_beyond[m++] = idx;
+      }
+    }
+    deep_trunk_nbeyond = m;
   }
 
   free(ctile);
@@ -298,37 +361,63 @@ static void deep_trunk_build(const struct player *pplayer)
   trunk_road_gain converts the saved movement into the advisor's tile
   currency and gates the whole term at 0.
 **************************************************************************/
-adv_want deep_trunk_want(const struct player *pplayer,
-                         const struct extra_type *target,
-                         const struct tile *ptile)
+/* The road behind a candidate extra, if it is one that speeds
+ * movement; NULL otherwise. The gate both pricing paths share. */
+static const struct road_type *
+deep_trunk_road_target(const struct extra_type *target)
 {
-  const struct deep_tuning *tune = deep_tuning_get();
-  const struct deep_trunk_link *link;
   const struct road_type *proad;
-  int pn = player_number(pplayer);
-  int saving, slot;
-  adv_want want;
 
-  if (tune->trunk_road_gain <= 0.0 || target == NULL) {
-    return 0.0;
-  }
-  if (!is_extra_caused_by(target, EC_ROAD)) {
-    return 0.0;
+  if (target == NULL || !is_extra_caused_by(target, EC_ROAD)) {
+    return NULL;
   }
   proad = extra_road_get(target);
   if (proad == NULL || !road_provides_move_bonus(proad)) {
-    return 0.0;
+    return NULL;
   }
 
-  if (deep_trunk_turn != game.info.turn || deep_trunk_plr != pn) {
-    deep_trunk_turn = game.info.turn;
-    deep_trunk_plr = pn;
-    deep_trunk_build(pplayer);
-    deep_trunk_c_links[pn] = deep_trunk_nlinks;
-    deep_trunk_c_gap[pn] = 0;
-    for (slot = 0; slot < deep_trunk_nlinks; slot++) {
-      deep_trunk_c_gap[pn] += deep_trunk_links[slot].gap;
-    }
+  return proad;
+}
+
+/**********************************************************************//**
+  Build (or reuse) this player's plan for this turn. Memoised on
+  (turn, player); also banks the per-turn census counts the build
+  determines, so the census line can be emitted after the plan's
+  scratch state has moved on to another player.
+**************************************************************************/
+static void deep_trunk_refresh(const struct player *pplayer)
+{
+  int pn = player_number(pplayer);
+  int slot;
+
+  if (deep_trunk_turn == game.info.turn && deep_trunk_plr == pn) {
+    return;
+  }
+  deep_trunk_turn = game.info.turn;
+  deep_trunk_plr = pn;
+  deep_trunk_build(pplayer);
+  deep_trunk_c_links[pn] = deep_trunk_nlinks;
+  deep_trunk_c_gap[pn] = 0;
+  for (slot = 0; slot < deep_trunk_nlinks; slot++) {
+    deep_trunk_c_gap[pn] += deep_trunk_links[slot].gap;
+  }
+  deep_trunk_c_beyond[pn] = deep_trunk_nbeyond;
+}
+
+/* The want itself, on an already-refreshed plan: the movement the
+ * corridor's link saves once whole, amortized over the tiles still
+ * missing. Counter-free so both the hook path and the task source can
+ * share it without polluting each other's instruments. */
+static adv_want deep_trunk_price(const struct deep_tuning *tune,
+                                 const struct extra_type *target,
+                                 const struct tile *ptile)
+{
+  const struct deep_trunk_link *link;
+  const struct road_type *proad = deep_trunk_road_target(target);
+  int saving, slot;
+
+  if (proad == NULL) {
+    return 0.0;
   }
 
   slot = deep_trunk_tile[tile_index(ptile)];
@@ -342,8 +431,29 @@ adv_want deep_trunk_want(const struct player *pplayer,
     return 0.0;
   }
 
-  want = tune->trunk_road_gain * ((double) saving / SINGLE_MOVE)
+  return tune->trunk_road_gain * ((double) saving / SINGLE_MOVE)
          * amortize(1.0, link->gap);
+}
+
+adv_want deep_trunk_want(const struct player *pplayer,
+                         const struct extra_type *target,
+                         const struct tile *ptile)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int pn = player_number(pplayer);
+  adv_want want;
+
+  if (tune->trunk_road_gain <= 0.0
+      || deep_trunk_road_target(target) == NULL) {
+    return 0.0;
+  }
+
+  deep_trunk_refresh(pplayer);
+
+  want = deep_trunk_price(tune, target, ptile);
+  if (want <= 0.0) {
+    return 0.0;
+  }
 
   deep_trunk_c_hits[pn]++;
   if (want > deep_trunk_c_max[pn]) {
@@ -351,6 +461,65 @@ adv_want deep_trunk_want(const struct player *pplayer,
   }
 
   return want;
+}
+
+/**********************************************************************//**
+  The corridor gap tiles outside every own city radius -- the demand
+  the advisor's enumeration ceiling hides. Returns the count and
+  points 'list' at the tile indices, valid until the next refresh.
+  Builds (and memoises) this player's plan for this turn on first
+  call, exactly as deep_trunk_want() does.
+**************************************************************************/
+int deep_trunk_beyond_tiles(const struct player *pplayer,
+                            const int **list)
+{
+  deep_trunk_refresh(pplayer);
+  *list = deep_trunk_beyond;
+
+  return deep_trunk_nbeyond;
+}
+
+/**********************************************************************//**
+  The trunk want for offering 'target' on 'ptile' as a task of deep's
+  own sourcing, beyond the advisor's ceiling. The same pricing as
+  deep_trunk_want() -- same plan, same saving, same amortize over the
+  gap -- but counted on the source's own instrument rather than the
+  hook's hits, so links>0 hits=0 keeps meaning what slice 1 said it
+  means (a corridor the AUCTION never offered).
+**************************************************************************/
+adv_want deep_trunk_source_want(const struct player *pplayer,
+                                const struct extra_type *target,
+                                const struct tile *ptile)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  adv_want want;
+
+  if (tune->trunk_road_gain <= 0.0) {
+    return 0.0;
+  }
+
+  deep_trunk_refresh(pplayer);
+
+  want = deep_trunk_price(tune, target, ptile);
+  if (want > 0.0) {
+    deep_trunk_c_src_off[player_number(pplayer)]++;
+  }
+
+  return want;
+}
+
+/**********************************************************************//**
+  Record that a beyond-ceiling task was actually assigned, 'dist' map
+  tiles from where the worker stood. Count and histogram feed the
+  deep-trunksrc census line.
+**************************************************************************/
+void deep_trunk_source_pick(const struct player *pplayer, int dist)
+{
+  int pn = player_number(pplayer);
+  int bucket = CLIP(0, dist, DEEP_TRUNK_SRC_HIST);
+
+  deep_trunk_c_src_pick[pn]++;
+  deep_trunk_c_src_hist[pn][bucket]++;
 }
 
 /**********************************************************************//**
@@ -374,8 +543,37 @@ void deep_trunk_census(struct player *pplayer)
              deep_trunk_c_max[pn]);
   }
 
+  if (log_do_output_for_level(deep_metric_log_level())
+      && (deep_trunk_c_beyond[pn] > 0 || deep_trunk_c_src_off[pn] > 0
+          || deep_trunk_c_src_pick[pn] > 0)) {
+    /* One bucket per map distance plus the overflow, colon-separated;
+     * beyond= is the demand the ceiling hides this turn, offered= the
+     * candidates the source actually priced, picked= the tasks
+     * assigned. beyond>0 with offered=0 is the source knob off (or no
+     * worker free), the denominator the A/B reads in both arms. */
+    char hist[(DEEP_TRUNK_SRC_HIST + 1) * 12];
+    int b, at = 0;
+
+    for (b = 0; b <= DEEP_TRUNK_SRC_HIST; b++) {
+      at += fc_snprintf(hist + at, sizeof(hist) - at, "%s%d",
+                        b == 0 ? "" : ":",
+                        deep_trunk_c_src_hist[pn][b]);
+    }
+    log_base(deep_metric_log_level(),
+             "deep-trunksrc turn=%d player=\"%s\" beyond=%d offered=%d"
+             " picked=%d hist=%s",
+             game.info.turn, player_name(pplayer),
+             deep_trunk_c_beyond[pn], deep_trunk_c_src_off[pn],
+             deep_trunk_c_src_pick[pn], hist);
+  }
+
   deep_trunk_c_links[pn] = 0;
   deep_trunk_c_gap[pn] = 0;
   deep_trunk_c_hits[pn] = 0;
   deep_trunk_c_max[pn] = 0.0;
+  deep_trunk_c_beyond[pn] = 0;
+  deep_trunk_c_src_off[pn] = 0;
+  deep_trunk_c_src_pick[pn] = 0;
+  memset(deep_trunk_c_src_hist[pn], 0,
+         sizeof(deep_trunk_c_src_hist[pn]));
 }
