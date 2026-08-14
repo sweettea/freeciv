@@ -53,6 +53,12 @@
 struct deep_combatant {
   struct unit *punit;
   int rating;
+  /* P(this combatant takes part at all). 1.0 for everything except an
+   * attacker the garrison-pin discount weighs down (NETTHREAT item 2);
+   * carried on the combatant so cap displacement in
+   * deep_combatant_add() cannot separate a unit from its weight. Only
+   * ever read for attackers (deep_garrison_vs_stream_full). */
+  double weight;
 };
 
 /**********************************************************************//**
@@ -72,13 +78,15 @@ static int deep_combatant_cmp(const void *a_, const void *b_)
   Keep the strongest `cap` combatants seen so far.
 **************************************************************************/
 static void deep_combatant_add(struct deep_combatant *arr, int *n, int cap,
-                               struct unit *punit, int rating)
+                               struct unit *punit, int rating,
+                               double weight)
 {
   int i, weakest = 0;
 
   if (*n < cap) {
     arr[*n].punit = punit;
     arr[*n].rating = rating;
+    arr[*n].weight = weight;
     (*n)++;
     return;
   }
@@ -90,6 +98,7 @@ static void deep_combatant_add(struct deep_combatant *arr, int *n, int cap,
   if (rating > arr[weakest].rating) {
     arr[weakest].punit = punit;
     arr[weakest].rating = rating;
+    arr[weakest].weight = weight;
   }
 }
 
@@ -132,7 +141,7 @@ static int deep_collect_defenders(struct city *pcity,
         && !unit_has_type_flag(punit, UTYF_CIVILIAN)
         && punit->hp > 0) {
       deep_combatant_add(def, &n_def, DEEP_STACK_MAX, punit,
-                         adv_unit_def_rating_basic(punit));
+                         adv_unit_def_rating_basic(punit), 1.0);
     }
   } unit_list_iterate_end;
   qsort(def, n_def, sizeof(def[0]), deep_combatant_cmp);
@@ -155,6 +164,8 @@ static double deep_garrison_vs_stream_full(const struct civ_map *nmap,
                                            double *def_death)
 {
   int att_hp[DEEP_WAVE_MAX], def_hp[DEEP_STACK_MAX];
+  double att_w[DEEP_WAVE_MAX];
+  bool weighted = FALSE;
   struct deep_duel pair[DEEP_WAVE_MAX * DEEP_STACK_MAX];
   int i, j;
 
@@ -175,6 +186,10 @@ static double deep_garrison_vs_stream_full(const struct civ_map *nmap,
 
   for (j = 0; j < n_att; j++) {
     att_hp[j] = att[j].punit->hp;
+    att_w[j] = att[j].weight;
+    if (att[j].weight < 1.0) {
+      weighted = TRUE;
+    }
   }
   for (i = 0; i < n_def; i++) {
     def_hp[i] = def[i].punit->hp;
@@ -190,8 +205,13 @@ static double deep_garrison_vs_stream_full(const struct civ_map *nmap,
     }
   }
 
-  return deep_stack_survival_full(n_att, att_hp, n_def, def_hp, pair,
-                                  att_death, def_death);
+  /* NULL when nothing is weighted, so the unweighted cell -- and every
+   * pre-knob caller -- takes the walk on the exact code path it always
+   * did (byte-identity at threat_pin_discount = 0). */
+  return deep_stack_survival_wfull(n_att, att_hp,
+                                   weighted ? att_w : NULL,
+                                   n_def, def_hp, pair,
+                                   att_death, def_death);
 }
 
 /**********************************************************************//**
@@ -827,6 +847,28 @@ static void deep_pin_open(struct player *observer, const struct city *pcity,
 }
 
 /**********************************************************************//**
+  Is the pin tracker wanted at all? Two consumers: the `deep-pin`
+  probe line (whenever the metric log level is emitted, as always),
+  and -- since NETTHREAT item 2 turned the probe's observation into a
+  discount -- the wave weighting itself whenever threat_pin_discount
+  is nonzero. Without the second arm the knob would read an EMPTY
+  tracker in every FREECIV_DEEP_QUIET run, which is every tuning run:
+  a knob that silently switches off in the harness that sweeps it.
+
+  The classification the tracker makes is untouched; this only says
+  when it runs. Read through deep_tuning_get() so the phase-scoped
+  seat decides; the move hook fires unscoped and reads the base
+  tuning, which is exact for every single-file (TUNING=) run and
+  conservative-off only for a per-seat arena knob nobody sweeps
+  quiet.
+**************************************************************************/
+static bool deep_pin_track_active(void)
+{
+  return log_do_output_for_level(deep_metric_log_level())
+         || deep_tuning_get()->threat_pin_discount > 0.0;
+}
+
+/**********************************************************************//**
   A unit moved somewhere the server could see. The second observation
   point: a garrison that sorties, strikes and dies inside one foreign
   phase never appears away from home in any poll, and without this it
@@ -836,8 +878,7 @@ void deep_pin_note_move(struct unit *punit)
 {
   struct deep_pin_tag *t;
 
-  if (deep_pin_n == 0
-      || !log_do_output_for_level(deep_metric_log_level())) {
+  if (deep_pin_n == 0 || !deep_pin_track_active()) {
     return;
   }
   t = deep_pin_find(punit->id);
@@ -864,8 +905,7 @@ void deep_pin_poll(struct player *pplayer)
   int slot = player_index(pplayer);
   int i, open = 0;
 
-  if (deep_pin_n == 0
-      || !log_do_output_for_level(deep_metric_log_level())) {
+  if (deep_pin_n == 0 || !deep_pin_track_active()) {
     return;
   }
   for (i = 0; i < deep_pin_n; i++) {
@@ -913,6 +953,60 @@ void deep_pin_poll(struct player *pplayer)
            c->res > 0 ? (double) c->near / c->res : 0.0);
 }
 
+/* THE DISCOUNT'S OWN LEDGER (NETTHREAT item 2). Cumulative per
+ * observer, like the probe's funnel: every survival evaluation of a
+ * deep city while the knob is on adds its admitted rating mass to
+ * `wave_mass`, and every attacker the pin classification weighed down
+ * adds itself to `units` and its rating to `mass` (before) and
+ * `mass_after` (after). The line this feeds exists to answer exactly
+ * one question -- DID THE SEAM REACH THE POPULATION -- because a
+ * knob-on run where share stays ~0 means the discount is priced on
+ * units the tracker never tags, and that run must be reported, not
+ * shipped. */
+struct deep_pindisc_count {
+  int evals;                    /* evaluations while the knob was on */
+  int hit;                      /* ... with >= 1 discounted attacker */
+  int units;                    /* discounted (attacker, evaluation)s */
+  double mass;                  /* their rating mass, undiscounted */
+  double mass_after;            /* the same mass after (1 - discount) */
+  double wave_mass;             /* ALL admitted rating mass */
+};
+
+static struct deep_pindisc_count deep_pindisc_stat[MAX_NUM_PLAYER_SLOTS];
+
+/**********************************************************************//**
+  Drop the discount ledger. Beside deep_pin_reset() in the game-free
+  hook, for the same reason: a second game in the same server process
+  starts from zero.
+**************************************************************************/
+void deep_pindisc_reset(void)
+{
+  memset(deep_pindisc_stat, 0, sizeof(deep_pindisc_stat));
+}
+
+/**********************************************************************//**
+  The running ledger, one line per player per turn beside `deep-pin`.
+  share is the fraction of ALL rating mass that entered this player's
+  waves and was then discounted away -- the number the brief says must
+  be visibly nonzero for the knob to be honest.
+**************************************************************************/
+void deep_pindisc_log(struct player *pplayer)
+{
+  const struct deep_pindisc_count *c
+    = &deep_pindisc_stat[player_index(pplayer)];
+
+  if (c->evals <= 0) {
+    return;
+  }
+  log_base(deep_metric_log_level(),
+           "deep-pindisc turn=%d player=\"%s\" evals=%d hit=%d units=%d"
+           " mass=%.1f mass_after=%.1f wave_mass=%.1f share=%.4f",
+           game.info.turn, player_name(pplayer), c->evals, c->hit,
+           c->units, c->mass, c->mass_after, c->wave_mass,
+           c->wave_mass > 0.0
+             ? (c->mass - c->mass_after) / c->wave_mass : 0.0);
+}
+
 /**********************************************************************//**
   As deep_city_stack_survival(), with one garrison unit left out of
   the stack -- what the night costs if that blade sorties or is lent.
@@ -943,12 +1037,24 @@ static double deep_city_survival_core(const struct civ_map *nmap,
                                        DEEP_OPS_MAX, FALSE);
   int n_marching = deep_op_live_targets(pplayer, op_marching,
                                         DEEP_OPS_MAX, TRUE);
-  /* NETTHREAT item 2's probe, hoisted out of the loop: one log-level
-   * test and one ai-type test per evaluation rather than per
-   * attacker. False in every tuning run, which is what keeps the
-   * probe free where the hot path is hottest. */
+  /* NETTHREAT item 2, hoisted out of the loop: one log-level test and
+   * one ai-type test per evaluation rather than per attacker. The
+   * probe now has a second reason to run -- the discount reads its
+   * tags -- so it is armed by the metric log level OR the knob, and
+   * still false in every knob-off tuning run, which is what keeps the
+   * hot path free where it is hottest.
+   *
+   * The discount itself applies only when the city being defended is
+   * a deep player's own: that is "deep's danger assessment". The same
+   * core pricing an ENEMY city for the assault side keeps full-weight
+   * attackers. */
   bool pin_probe = (pplayer->ai == deep_ai_get_self()
-                    && log_do_output_for_level(deep_metric_log_level()));
+                    && (log_do_output_for_level(deep_metric_log_level())
+                        || tune->threat_pin_discount > 0.0));
+  double pin_disc = (pplayer->ai == deep_ai_get_self()
+                     && tune->threat_pin_discount > 0.0)
+                    ? MIN(tune->threat_pin_discount, 1.0) : 0.0;
+  bool pin_hit = FALSE;
 
   if (wave_out != NULL) {
     *wave_out = 0;
@@ -1107,9 +1213,45 @@ static double deep_city_survival_core(const struct civ_map *nmap,
         census.far_dist = dist;
         census.far_turns = turns;
       }
-      deep_combatant_add(att, &n_att, DEEP_WAVE_MAX, aunit, rating);
+      /* THE GARRISON-PIN DISCOUNT (NETTHREAT item 2), the one seam
+       * where it acts. An attacker the tracker currently classifies
+       * as home-pinned -- open window, never yet seen off the city
+       * tile it garrisoned -- enters the wave at presence
+       * (1 - threat_pin_discount) instead of at certainty; everything
+       * else enters at 1.0 exactly as before. Placed AFTER the
+       * deep_pin_open() call above so a garrison first seen this
+       * evaluation is tagged and then weighed in the same pass. */
+      {
+        double w = 1.0;
+
+        if (pin_disc > 0.0) {
+          struct deep_pindisc_count *pd
+            = &deep_pindisc_stat[player_index(pplayer)];
+          const struct deep_pin_tag *t = deep_pin_find(aunit->id);
+
+          if (t != NULL && t->live && !t->left) {
+            w = 1.0 - pin_disc;
+            pin_hit = TRUE;
+            pd->units++;
+            pd->mass += rating;
+            pd->mass_after += w * rating;
+          }
+          pd->wave_mass += rating;
+        }
+        deep_combatant_add(att, &n_att, DEEP_WAVE_MAX, aunit, rating, w);
+      }
     } unit_list_iterate_end;
   } players_iterate_alive_end;
+
+  if (pin_disc > 0.0) {
+    struct deep_pindisc_count *pd
+      = &deep_pindisc_stat[player_index(pplayer)];
+
+    pd->evals++;
+    if (pin_hit) {
+      pd->hit++;
+    }
+  }
 
   if (n_att == 0) {
     return 1.0;
@@ -1134,7 +1276,7 @@ static double deep_city_survival_core(const struct civ_map *nmap,
 
     for (e = 0; e < n_extra; e++) {
       deep_combatant_add(def, &n_def, DEEP_STACK_MAX, extra[e],
-                         adv_unit_def_rating_basic(extra[e]));
+                         adv_unit_def_rating_basic(extra[e]), 1.0);
     }
     if (n_extra > 0) {
       qsort(def, n_def, sizeof(def[0]), deep_combatant_cmp);
@@ -1444,7 +1586,7 @@ double deep_take_odds_cost(const struct civ_map *nmap, struct city *acity,
 
   for (j = 0; j < n_stream; j++) {
     deep_combatant_add(att, &n_att, DEEP_WAVE_MAX, stream[j],
-                       adv_unit_att_rating(stream[j]));
+                       adv_unit_att_rating(stream[j]), 1.0);
   }
   if (n_att == 0) {
     return 0.0;
@@ -1472,7 +1614,7 @@ double deep_take_odds_cost(const struct civ_map *nmap, struct city *acity,
     }
     for (j = 0; j < n_virt; j++) {
       deep_combatant_add(def, &n_def, DEEP_STACK_MAX, virt[j],
-                         adv_unit_def_rating_basic(virt[j]));
+                         adv_unit_def_rating_basic(virt[j]), 1.0);
     }
     qsort(def, n_def, sizeof(def[0]), deep_combatant_cmp);
   }

@@ -159,6 +159,25 @@ double deep_stack_survival_full(int n_att, const int *att_hp,
                                 const struct deep_duel *pair,
                                 double *att_death, double *def_death)
 {
+  return deep_stack_survival_wfull(n_att, att_hp, NULL, n_def, def_hp,
+                                   pair, att_death, def_death);
+}
+
+/**********************************************************************//**
+  The walk once more, with a presence weight per attacker (see the
+  header). The transition operator for attacker j is linear in the
+  state vector, so applying ((1 - w) * I + w * T_j) in stream order is
+  the exact expectation over independent presence draws. w = 1 takes
+  the multiply-by-1.0 path, which IEEE 754 makes bit-identical to the
+  unweighted walk; w = 0 skips the attacker outright, identical to it
+  never being in the stream.
+**************************************************************************/
+double deep_stack_survival_wfull(int n_att, const int *att_hp,
+                                 const double *att_w,
+                                 int n_def, const int *def_hp,
+                                 const struct deep_duel *pair,
+                                 double *att_death, double *def_death)
+{
   int max_hp = 0, i, j, h, hh, width;
   size_t cells, c;
   double *base, *state, *next, *duel_dist, *swap;
@@ -204,6 +223,18 @@ double deep_stack_survival_full(int n_att, const int *att_hp,
   state[0 * width + def_hp[0]] = 1.0;
 
   for (j = 0; j < n_att; j++) {
+    double w = 1.0;
+
+    if (att_w != NULL) {
+      w = att_w[j];
+      if (w >= 1.0) {
+        w = 1.0;
+      } else if (w <= 0.0) {
+        /* Certainly absent: the state passes through untouched (no
+         * swap -- `state` still holds the current distribution). */
+        continue;
+      }
+    }
     for (c = 0; c < cells; c++) {
       next[c] = 0.0;
     }
@@ -221,18 +252,28 @@ double deep_stack_survival_full(int n_att, const int *att_hp,
         survive = deep_duel_defender_dist(&pair[j * n_def + i],
                                           att_hp[j], h, duel_dist);
         if (att_death != NULL) {
-          att_death[j] += m * survive;
+          att_death[j] += w * m * survive;
         }
         for (hh = 1; hh < width; hh++) {
           if (duel_dist[hh] > 0.0) {
-            next[i * width + hh] += m * duel_dist[hh];
+            next[i * width + hh] += w * m * duel_dist[hh];
           }
         }
-        die = m * (1.0 - survive);
+        die = w * m * (1.0 - survive);
         if (i + 1 < n_def) {
           next[(i + 1) * width + def_hp[i + 1]] += die;
         } else {
           dead += die;
+        }
+      }
+    }
+    if (w < 1.0) {
+      /* The absent branch of the mixture: with probability 1 - w this
+       * attacker never fought, and that mass keeps its pre-duel
+       * distribution. */
+      for (c = 0; c < cells; c++) {
+        if (state[c] > 0.0) {
+          next[c] += (1.0 - w) * state[c];
         }
       }
     }

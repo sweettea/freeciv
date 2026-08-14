@@ -1070,6 +1070,35 @@ struct deep_tuning {
    *
    * 0 = the straight-line test alone, exactly as before. */
   int survival_pf_reach;
+  /* THE GARRISON-PIN DISCOUNT (NETTHREAT item 2, the flat slice).
+   *
+   * The pin probe (deepcombat.c, `deep-pin`; merged ee61b90394)
+   * watched every enemy unit that qualified for a survival wave while
+   * garrisoning one of its OWNER's cities: over 18,538 closed windows
+   * on tech50war-200, 68.7% never left their home tile inside the
+   * horizon they were feared over, and only 3.22% ever reached a tile
+   * from which they could hit one of our cities -- on an arrival
+   * proxy that can only OVERSTATE reach.
+   *
+   * When > 0, an enemy unit the pin tracker currently classifies as
+   * home-pinned (live tag, never yet seen off its home tile)
+   * contributes (1 - threat_pin_discount) of its normal weight to the
+   * wave, as a presence probability in the duel substrate
+   * (deep_stack_survival_wfull) -- the exact expectation over it
+   * showing up or not, not a rating scale. FLAT: one factor
+   * regardless of posture, distance or war state; the
+   * posture-conditional variant is a later slice, if this one moves
+   * anything.
+   *
+   * The measured first cut is the never-left share, 0.687: a pinned
+   * unit's weight becomes 0.313 = P(it ever sorties at all). NOT
+   * 1 - 0.0322: the 28.1% that sorties but never arrives is
+   * survival_pf_reach's population, and pricing it here too would
+   * spend the same evidence twice.
+   *
+   * 0 = every attacker weighs its full self, byte for byte as
+   * before. */
+  double threat_pin_discount;
   /* Tired-attack discipline: a unit adjacent to its attack target
    * with only a tired strike left (moves_left < SINGLE_MOVE scales
    * attack power down) holds a turn to strike fresh, unless its
