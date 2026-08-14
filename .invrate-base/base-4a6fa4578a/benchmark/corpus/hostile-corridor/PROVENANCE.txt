@@ -1,0 +1,15 @@
+generated-by: make-positions.sh (playout) + make-corridor.py (edit)
+settings: 32x32, P1=deep + P2=classic, hard, seed 7042, turn 30
+edit: players 0/1 set to War; 4 classic Warriors planted across the
+  deep settler's saved route -- settler at native (26,9), goto (27,4),
+  corridor at y=6 spanning x=25..28
+observed at generation (both runs advanced 10 turns):
+  deep:    settler declines the corridor, founds at native (26,7) T31
+           (before the corridor) and again at (24,7) T38; no founder
+           losses of any kind
+  classic: identical survival outcome in this geometry (stock stalls
+           short on its accidental no_fights protection and refounds
+           nearer), so this position is a regression tripwire for deep,
+           not a stock-vs-deep discriminator; the population-level
+           discriminator is the contested-config loss rate (see
+           STATUS.md W05)

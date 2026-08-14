@@ -1,0 +1,26 @@
+/***********************************************************************
+ Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2, or (at your option)
+   any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+***********************************************************************/
+#ifndef FC__DEEPEXPLORE_H
+#define FC__DEEPEXPLORE_H
+
+/* common */
+#include "fc_types.h"
+
+adv_want deep_explore_want(struct player *pplayer, int queued);
+
+/* Explorers owned beyond what the visible prize can employ, after the
+ * hysteresis gap and the retention floor. The disposal half of the
+ * build want, keyed to the same quantity. */
+int deep_explore_surplus(struct player *pplayer);
+
+#endif /* FC__DEEPEXPLORE_H */

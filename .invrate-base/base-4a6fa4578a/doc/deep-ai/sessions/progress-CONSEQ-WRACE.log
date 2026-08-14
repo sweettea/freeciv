@@ -1,0 +1,59 @@
+2026-08-07 a28474416c  PRE  gift alliance clamp (BALANCE's owed parity). Atomic gift declines
+                            on overshoot vs trade love's clamped addition; cap=/capped= on the
+                            deep-lovegift line. Byte-identical at gift_love_gain=0 (never called).
+                            meson test 4/4, audit CLEAN 177x4.
+2026-08-07 b80ee0b42d  C6   birth guard priced: P(walk-in) x worth x birth_guard_gain (0=off).
+                            P = 1-(1-p_mil)(1-p_barb); p_mil from the survival wave, p_barb the
+                            server's own three odds factors. deep-birth/deep-birthguard counters.
+2026-08-07 ae2cd644f5  C2   write-off ledger: every call adjudicated at +survival_horizon.
+2026-08-07 census     C2   CENSUS RESULT, 20 seeds each, one arm, pin 9619996eb4818e:
+                            contested   2326 writeoff city-turns, 964 first-calls, 27 lost
+                                        PRECISION 0.028; p==0 slice 0.044; wave>=12 slice 0.007
+                                        recall 31/32 = 0.969
+                            raging-120  3279 city-turns, 1430 first-calls, 195 lost
+                                        PRECISION 0.136; p==0 slice 0.230; wave>=8 slice 0.036
+                                        recall 228/336 = 0.679
+                            => item 2 (sell-before-fall) RETIRED on the brief's own stop
+                            condition. Good alarm, useless verdict; no slice reaches usefulness.
+2026-08-07 3e2a4ba86e  C1   defensive tech wall: survival deficit -> tech_want for the gating
+                            advance (H9's military sibling). 226.5 routings/game at 1.0.
+2026-08-07 a1c73eb334  C5   never-launches dampers, explorer-divisor shape on two pumps.
+                            attacker 163.2 and diplomat 184.2 firings/game at face value.
+2026-08-07 e0ab700087  W1   deepwonder.c: tech ETA, obsolescence ETA (MIN, disjunction),
+                            successor ETA (MAX, conjunction), rival ETA = the W04 seam,
+                            P(win) ramp, race ledger. 490.2 evals/game logged with gains OFF.
+2026-08-07 c294d596b2  W2   race consumers: caravan urgency + abandonment counter.
+2026-08-07 4e8e25bbea  C4   expiry-aware amortization, buildings + units. 15398:60 split.
+2026-08-07 identity    ---  BYTE-IDENTITY pin 9619996eb4818e vs 724e885dc2ab61, smoke,
+                            10 seeds, identity.ini both: 10/10 scorelogs identical.
+2026-08-07 probe       ---  EXECUTION probe contested 10 seeds, all knobs 1.0: defwall 226.5,
+                            damper-att 163.2, damper-dip 184.2, wrace 490.2, expiry 1545.8,
+                            wrace-feed 0.0 (no contested race has a rival -> no population).
+2026-08-07 wrace-cal   ---  CALIBRATION: 35 races resolved, 13 won / 22 lost, mean est p 0.938,
+                            median 1.000, only 2 of 22 losses at p>=0.75. Estimator counts only
+                            rivals who ALREADY STARTED -> it under-declines. Stop condition not
+                            tripped in the form stated; the DEFAULT is the bug.
+2026-08-07 A/B birth   C6   contested 20 paired, pin 724e885dc2ab61: score -0.11 (t -0.05),
+                            cities +0.16 (t +1.29, 15/20), citylost +0.20 (t +0.42),
+                            priced 747.75/game (t +13.13, 20/20). 88.6% of 14955 pricings at
+                            P(walk-in)==0; mean want 13.11 vs the inherited flat 100.
+2026-08-07 edc01351af  C2   ledger enriched: relief/pool/adj/buy/exhausted at the call.
+2026-08-07 4110b0eedd  C2   rung 1 sell-to-defend + rung 3 late defence buy.
+2026-08-07 A/B ladder  C2   contested 20 paired, pin bdd23bb77f8b04: score -0.64 (t -1.22),
+                            mean_city_size -0.17 (t -2.00), citylost -0.05 (t -0.15).
+                            41.05 shortfalls, 2.65 sales, 2.65 buys -> 100% conversion.
+                            RUNG 3 NEVER FIRED: 0 latebuy, 0 latebuy-sum -> zero population.
+                            Sold: 44 Barracks, 3 Temple, 2 Aqueduct, 1 Colosseum.
+2026-08-07 cond-table  C2   CONDITIONAL PRECISION, contested 40 games, 1966 adjudications:
+                            raw 0.027 | p<0.01 0.039 | +no-relief 0.049 | +ADJACENT 0.202
+                            | exhausted 0.197 | adj>=2 0.316 | adj>=3&exh 0.667 (n=6).
+                            Adjacency carries the whole lift; the treasury test carries none.
+                            => rung 2b ships as a PRICED DESIGN, not a gate.
+2026-08-07 37127fa779  C2   rung 2a civilian evacuation (loose gate; civilians add 0 defence).
+                            Arm archived, A/B NOT run -- host restart wiped /tmp and the pins.
+2026-08-07 b449659d06  doc  findings/conseq-wrace-2026-08-07.md + archived arms.
+2026-08-07 NOT DONE    C3   item 3 (home-city upkeep redistribution) never reached: no census,
+                            no code, no claim. Its stop condition is untested.
+2026-08-07 HARNESS     ---  primary-120 (WRACE's own venue): 0/10 DONE after two foreground
+                            blocks. Third session blocked on the same wall. A parallel session
+                            put the box at load average 34 on 12 cores.

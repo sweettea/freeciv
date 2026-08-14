@@ -1,0 +1,8 @@
+/Makefile.in
+/stamp-po
+/POTFILES
+/freeciv-core.pot
+/*.mo
+/*.gmo
+/*.pox
+/messages

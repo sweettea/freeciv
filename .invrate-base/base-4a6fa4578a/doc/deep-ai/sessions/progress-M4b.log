@@ -1,0 +1,310 @@
+M4b — the deterrence seat. Branch epic/w03-horizon-content, base 6fdcd6cfd9.
+
+== Orientation ==
+Read CLAUDE.md, 00-context.md, S-M4b-deterrence.md, STATUS tail,
+findings/amortization-audit-2026-08-07.md, findings/conseq-wrace-2026-08-07.md.
+
+Seams located (all in the main tree, ai/deep only):
+- deepodds.c:130 deep_stack_survival_losses() -- the chained-duel DP.
+  att_death[j] already available; DEFENDER deaths are derivable from the
+  same walk at zero extra cost (the front index i IS the number of
+  defenders already killed), and E[defender deaths] == E[successful
+  enemy attacks], which is item 3's whole quantity.
+- deepcombat.c:142 deep_garrison_vs_stream() passes att_death; the city
+  read (deep_city_survival_core, :293) passes NULL. Item 2 needs it.
+- deepdefence.c:2338 deep_kill_sorties() -- item 1. Selection is
+  best-duel-chance; no target value anywhere.
+- deepdefence.c:4002 deep_military_choose_build() -- items 2 and 5.
+  Defender want set at :4182 (first defender) and :4269 (defender).
+- deephorizon.c:1444 deep_adjust_building_wants() -- items 3, 4, 6.
+  Credit functions add to building_want[]; most gated on !threatened,
+  culture credit is the precedent for a threat-exempt credit.
+
+Facts verified in the tree (not assumed):
+- is_stack_vulnerable() (common/combat.c:996) is FALSE inside a city, so
+  the killstack prize applies to the ADJACENT open tiles a sortie hits
+  and not to the garrison itself. Gated on game.info.killstack and
+  !EF_NO_STACK_DEATH.
+- civ2civ3 carries Unit_No_Lose_Pop on City Walls (effects.ruleset:1902)
+  and Great Wall (:3123), plus a MinSize<2 rule (:3987). So item 3 has
+  population in the benchmark ruleset.
+- killcitizen + UCF_KILLCITIZEN at server/unithand.c:4601 is the
+  mechanic; CONSEQ already verified capture costs exactly 1 size point.
+
+== Commits (items 1-5 complete) ==
+5a7694ea85  substrate: defender's side of the chained-duel ledger
+            (deep_stack_survival_full + deep_city_defence_read)
+41055ee314  item 1: killstack prize in the sortie      sortie_prize_gain
+163b7509ed  item 2: the deterrence dividend            deterrence_gain
+228bddb309  item 5: unit lifetime upkeep at the build  unit_upkeep_charge
+09202e3416  item 3: walls as pop-loss insurance        pop_insurance_gain
+03620395b4  item 4: barracks as two streams   heal_stream_gain,
+                                              veteran_stream_gain
+
+tune-audit CLEAN 202/202/202/202 (was 196 at session start).
+meson test -C build 4/4 OK after every commit.
+
+== Harness notes (cost me two false starts) ==
+- `&` inside a Bash tool call gets reaped: the driver died instantly and
+  reported exit 0. Use the harness's own run_in_background instead.
+- A pinned binary needs libfreeciv.so BESIDE it: RUNPATH is `$ORIGIN/`,
+  so a bare `cp build/freeciv-server` pin fails every game with
+  "cannot open shared object file". Pins are directories now.
+
+== Items 6 and 7: PARKED, with the evidence the brief asked for ==
+
+Item 6 (the Defend_Bonus sweep, audit 2c). The defect is confirmed and
+its seam is named, but the work is not done.
+
+  civ2civ3 has 13 Defend_Bonus effects across FOUR distinct carriers
+  that answer distinct threat classes -- City Walls (Ground), Coastal
+  Defense (sea), SAM Battery (air), SDI Defense -- plus Great Library
+  / Research Lab / Cathedral entries that are not defence carriers at
+  all.
+
+  Both deep and stock reduce that whole family to ONE building:
+  dai_find_source_building(pcity, EFT_DEFEND_BONUS, NULL), under
+  stock's own comment "HACK: This needs changing if multiple
+  improvements provide this effect" (daimilitary.c:1896, and again at
+  :962). Deep inherited the hack at deepdefence.c:4210, where
+  wall_fear_weight routes ALL injected fear -- boat shadow, air,
+  barbarian, density -- into whichever single building that call
+  happens to return. So the coastal fear a city carries can be paying
+  for City Walls, which do nothing about ships.
+
+  Not built here because the brief says park rather than rush, and
+  because the era-gated half cannot be honestly priced yet:
+
+  M4a's ERA-REACHABILITY TABLE HAS NOT LANDED. Checked at 16:20 --
+  epic/m4a is four commits ahead of my base (3fefa2bf8f, 5f76d416df,
+  633bcca985, 53bae3ca7d) and none of them is an era table; a grep for
+  era_reach / era-reach / "reachability table" over epic/m4a's ai/ and
+  doc/ returns nothing. So SAM and SDI stay parked, per the brief's
+  instruction not to invent reachability.
+
+Item 7 (incite resistance, audit 2d). Parked with a pointer, which is
+the branch the brief told me to check.
+
+  M4a HAS built the attacker side: epic/m4a 633bcca985 "price a spy's
+  actions in the want currency" adds ai/deep/deepspy.c (449 lines) and
+  prices incite among four families, replacing stock's arbitrary
+  ladder (daiactions.c:96 -- incite 7000).
+
+  It is NOT consumable by this session, for two reasons and neither is
+  a judgement call:
+  1. It has published NO numbers. There is no doc or findings commit
+     on epic/m4a; its last commit landed ~20 minutes before I looked
+     and the branch is still in flight.
+  2. Consuming it means merging an in-flight epic branch into mine,
+     which is bundling two workstreams -- refused by CLAUDE.md and by
+     this brief's own "do not touch the worktree or its branch".
+
+  So the defender side (EFT_INCITE_COST_PCT, WAG-priced at
+  daieffects.c:218) stays unpriced, and the pointer is:
+  epic/m4a:ai/deep/deepspy.c, whose incite pricing is the P(hostile
+  incite attempt) half. Whoever picks this up after M4a merges should
+  reuse it and must not build a second spy model.
+
+== 16:45 The item-5 census, and why it forced a seventh commit ==
+
+The A/B I started at 16:11 was measuring nothing, and the counter is
+what said so: ZERO deep-upcharge lines in the ON arm.
+
+Instrumented one 40-turn contested game, logging every candidate that
+reached the charge and the upkeep it read:
+
+    616 evaluations reached deep_unit_upkeep_charge()
+    321 of them got as far as reading an upkeep
+      5 were actually charged
+
+    pick / upkeep as read                            n
+    Settlers   ups=0 upg=0 upf=1  Despotism         184
+    Settlers   ups=0 upg=0 upf=1  Tribal             75
+    Settlers   ups=0 upg=0 upf=1  Anarchy            22
+    Diplomat   ups=0 upg=0 upf=0  Despotism          14
+    Phalanx    ups=0 upg=0 upf=1  Despotism           7
+    Workers    ups=0 upg=0 upf=0  Despotism           8
+    Warriors   ups=0 upg=0 upf=1  Despotism           4
+    Phalanx    ups=1 upg=0 upf=1  Tribal              2
+    ... (the rest are ones and twos)
+
+**Under Despotism, Tribal and Anarchy -- the governments deep is in
+for most of a contested game -- civ2civ3 charges almost every unit NO
+gold and NO shields. The only nonzero upkeep in the venue is FOOD.**
+
+So excluding food did not under-charge in the "safe direction" the
+commit message claimed; it charged nothing at all. Worse, the audit's
+own headline population is a SETTLER, and a settler's whole lifetime
+cost in this ruleset IS the food that suppresses the city it came
+from.
+
+Fixed in 9275e9bb6d by summing gold + food under upkeep_gold_weight,
+which is the equivalence deep_defender_upkeep_discount() (same file,
+forty lines up) already makes. After: 299 charges a game, 281 of them
+Settlers.
+
+SECOND FINDING, and it is the more interesting one. The charge is now
+correctly dimensioned and still tiny against what it is subtracted
+from:
+
+    deep-upcharge ... pick="Settlers" life=24 upf=1 debit=3.0
+                      want=750.1 left=747.1
+
+3 want against 750 is 0.4%. upkeep_gold_weight is 0.125, so even at
+the top of unit_upkeep_charge's registered range (4.0) the charge is
+1.6% of a settler bid. **The mechanism cannot move this auction, and
+the reason is not the mechanism.** A charge calibrated on the BUILDING
+side (where a 1-gold building costs 3 want against credits of tens) is
+invisible on the UNIT side, where a scaled domestic settler bid is
+750. That is RC4 -- incommensurable want scales -- measured, with a
+ratio attached. It is W01's problem, not this seat's, and I am not
+widening the knob range to paper over it because picking that width
+would be inventing a constant.
+
+Expect the item-5-alone A/B to be null. It is being run anyway,
+because the brief asked for it and because a null with a census
+attached is a result.
+
+== 16:50 Reruns launched ==
+All earlier cells discarded (they measured a superseded binary). Five
+cells on the final pin cff0da39e9dd3d, one SHARED contested OFF arm
+serving both A/Bs: 20 smoke x 2 for the off-switch proof, then c-off,
+c-i5, c-bundle at 20 contested seeds each. 80 games, jobs 5.
+
+Off-switch proof at the PREVIOUS head (03620395b4) was already
+10/10 byte-identical against base 6fdcd6cfd9; it is being re-run
+against the final sha because the sha moved.
+
+== 17:10 Item 4 is built, correct in shape, and EMPTY in civ2civ3 ==
+
+Probe, 40-turn contested, bundle ini, all six gains at 1.0:
+
+    deep-upcharge   309      deep-deter      18   (marg 11.3 shields,
+    deep-popins      11      deep-deter-sum  18    menace 1.000)
+    deep-sortie       7      deep-sortie-no   1
+    deep-barracks     0   <-- nothing
+
+Chased it down rather than blaming the 40-turn probe, and the answer
+is not about turns.
+
+1. civ2civ3's Barracks HAS both effects. It is buildable from turn 1
+   (no reqs at all, buildings.ruleset:262). So the credit functions
+   are reached -- 363 times for Barracks in one game.
+
+2. But the effects are gated on a BUILDING FLAG, not a building:
+
+       [effect_barracks_veteran]  type = "Veteran_Build"  value = 1
+         reqs = { "BuildingFlag", "Barracks", "City", TRUE
+                  "UnitClassFlag", "Barracks", "Local", TRUE ... }
+       [effect_barracks_regen]    type = "HP_Regen"       value = 100
+         reqs = { "BuildingFlag", "Barracks", "City", TRUE ... }
+
+   (effects.ruleset:1824 and :1835. Three buildings carry the flag:
+   Barracks, Barracks II, Barracks III.)
+
+3. `get_potential_improvement_bonus()` finds effects through
+   `get_req_source_effects()` keyed on a VUT_IMPROVEMENT source. An
+   effect whose requirement is VUT_IMPR_FLAG is indexed under a
+   different source and is NEVER RETURNED. Measured directly:
+
+       DBGV impr="Barracks" vb_poss=0 vb_cert=0 hp_poss=0
+            have_vb=0 have_hp=0        (363 times, one game)
+
+   RPT_POSSIBLE instead of RPT_CERTAIN does not help; I tried it and
+   it is still 0. The problem is the index, not the problem type.
+
+**THE FINDING THAT IS BIGGER THAN ITEM 4:
+`get_potential_improvement_bonus()` is blind to every effect a
+ruleset gates on a building FLAG rather than a building.** Deep uses
+that accessor in the growth credit, the health credit, the content
+credit and now these two. Any flag-gated effect in any ruleset is
+priced at zero by all of them. This is very likely why stock prices
+HP_Regen and Veteran_Build with headcount WAGs in daieffects.c
+instead of reading them -- and daieffects.c:479 carries the matching
+FIXME, "check other reqs (e.g., unitflag)".
+
+NOT FIXED HERE, deliberately. Doing it right needs the effect
+evaluated against a context that knows the candidate building's
+flags -- a virtual city, or the `struct req_context` field 00-context
+section 3 already lists as future work. That is a slice, not a
+20-minute patch at the end of a session, and rushing shared
+requirement-evaluation code is how this project breaks its control.
+
+Item 4 therefore ships built, off, and honestly reported as
+zero-population in civ2civ3. Its arithmetic is unexercised, so its
+two knobs are untuned AND untested against live data.
+
+I reverted the experiment so the binary went back to matching the
+pinned one (both cff0da39e9dd3d), which kept the 80-game run valid
+rather than costing a third restart.
+
+== 17:12 Off-switch proof, FINAL sha ==
+base 6fdcd6cfd9 vs final 9275e9bb6d, identity.ini both sides,
+smoke, 10 paired seeds: **10/10 scorelogs BYTE-IDENTICAL.**
+(The same proof passed 10/10 at the intermediate head 03620395b4.)
+
+== 18:0x A/B tables, both cells, final pin ==
+(The session was killed after these landed and before the write-up;
+this entry and the findings doc are the close-out, 2026-08-11.)
+
+Three arms on one binary -- pin cff0da39e9dd3d = final 9275e9bb6d --
+contested, 20 paired seeds each, --arms deep, 0 pairing violations.
+OFF arm is identity.ini and is SHARED by both comparisons.
+
+########## ITEM 5 ALONE  (m4b-upcharge.ini, unit_upkeep_charge 1.0) ##
+paired seeds: 20  (off 20, on 20)
+metric                       OFF        ON     delta      se      t   wins
+score                      85.10     83.29     -1.81    2.79  -0.65   6/20
+cities                      4.59      4.37     -0.22    0.18  -1.24   7/20
+unitsbuilt                 46.46     45.17     -1.29    1.57  -0.82   9/20
+techs                      19.17     19.24     +0.07    0.67  +0.11  11/20
+pop                        26.82     24.91     -1.91    0.76  -2.51   6/20
+mean_city_size              5.94      5.95     +0.01    0.21  +0.04   6/20
+settlers                    0.13      0.12     -0.01    0.03  -0.18   7/20
+landarea                50387.50  48531.25  -1856.25 1533.89  -1.21  10/20
+munits                     13.39     12.61     -0.78    0.75  -1.04   7/20
+wonders                     0.36      0.31     -0.04    0.05  -0.89   6/20
+unitslost                  13.24     13.20     -0.04    1.47  -0.03   9/20
+unitskilled                 8.47      8.51     +0.04    1.28  +0.03   9/20
+upcharge                    0.00   1551.00  +1551.00  103.11 +15.04  20/20
+upchargesum                 0.00    715.75   +715.75   28.98 +24.70  20/20
+
+########## BUNDLE  (m4b-bundle.ini, six gains at 1.0) ##############
+paired seeds: 20  (off 20, on 20)
+metric                       OFF        ON     delta      se      t   wins
+score                      85.10     83.39     -1.71    2.49  -0.68   6/20
+cities                      4.59      4.47     -0.12    0.18  -0.67  10/20
+unitsbuilt                 46.46     43.41     -3.06    1.60  -1.91   6/20
+techs                      19.17     19.01     -0.16    0.59  -0.27   8/20
+pop                        26.82     25.71     -1.12    0.85  -1.32   9/20
+mean_city_size              5.94      5.86     -0.08    0.23  -0.36   9/20
+settlers                    0.13      0.18     +0.05    0.04  +1.25   8/20
+landarea                50387.50  49300.00  -1087.50 1484.52  -0.73  11/20
+munits                     13.39     12.88     -0.51    0.63  -0.80   5/20
+wonders                     0.36      0.37     +0.01    0.06  +0.22   7/20
+unitslost                  13.24     11.24     -2.00    1.44  -1.39   6/20
+unitskilled                 8.47      8.07     -0.40    1.21  -0.33   7/20
+sortie                     36.70     39.10     +2.40    3.99  +0.60  12/20
+sortieno                    0.00      8.95     +8.95    2.04  +4.40  17/20
+deter                       0.00    273.50   +273.50   42.65  +6.41  18/20
+detersum                    0.00    192.30   +192.30   29.96  +6.42  18/20
+popins                      0.00     93.80    +93.80   16.31  +5.75  17/20
+barracks                    0.00      0.00     +0.00    0.00   +nan   0/20
+upcharge                    0.00   1583.35  +1583.35  102.07 +15.51  20/20
+
+Per-line census, bundle arm, 20 games, all six gains 1.0:
+  deter marginal shields   n=5461  mean= 15.81  median=  7.40  max= 143.9
+  deter menace             n=5461  mean=  0.99  median=  1.00  max=   1.0
+  deter dividend paid      n=5461  mean= 15.74  median=  6.90  max= 143.9
+  popins credit per line   n=1876  mean= 44.11  median=  7.85  max= 454.7
+  sortie prize TAKEN       n=  36  mean= 29.72  median= 30.00  max=  60.0
+  sortie score TAKEN       n=  36  mean= 28.70  median= 30.00  max=  60.0
+  sortie prize DECLINED    n= 179  mean= 33.85  median= 30.00  max= 150.0
+
+Both cells NULL on score. Every mechanism except the barracks pair is
+live and correctly dimensioned; barracks is 0.00 for the reason at
+17:10. No knob may be opened on this evidence.
+
+The result directories lived in the session scratchpad under /tmp and
+are gone; these tables are the analysis output, not a re-derivable
+artefact. Commands, tuning files and pin sha are above.

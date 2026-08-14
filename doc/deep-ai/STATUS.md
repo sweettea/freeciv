@@ -14681,3 +14681,146 @@ delivers.
    `neg = 0`), not short of hulls (slice 2: hull-rich, founder-poor),
    and not short of serviceable coasts once routed (this slice). The
    binding constraint is somewhere the lift census cannot see.
+
+## INVASION-RATE: the reinforcement estimate becomes a slope (2026-08-13)
+
+Branch `epic/invrate`, based at `4a6fa4578a`. Task #59: slope the
+reinforcement estimate, register the +2 embark constant. Both of the
+plan's premises held — worth saying on a project whose listed failure
+mode is bending code to a stale plan — and then the probe overturned
+the A/B the plan had queued.
+
+### The two mechanisms
+
+**1. `invasion_reinforce_slope`** (PLACEHOLDER 0.0). The M2 record
+left this open in as many words: "the charter said 'a tunable slope on
+the defender's public production / military signals'; what landed is a
+constant times eta." The one quantity that is both measurable per city
+and *already* in the model's units — defenders per turn — is
+
+    observed = surplus[O_SHIELD] / cost(best buildable defender)
+
+and `deep_reinforce_rate()` now charges `rate + slope x observed` per
+turn of eta. At slope 0 that is the flat model byte for byte. The
+barbarian branch keeps `barb_reinforce_rate` flat and takes no slope:
+T160 measured barb cities not garrisoning whatever they could afford,
+so sloping there would rebuild the phantom-Musketeer wall that knob
+exists to remove.
+
+The best-buildable-defender sweep is now one function serving both the
+rate and the virtual-unit placement, so the estimate's numerator and
+denominator cannot drift apart.
+
+**2. `invasion_embark_turns`** (PLACEHOLDER 2 = the shipped literal).
+The `+2` board/land allowance every overseas eta pays, a bare literal
+at four seams since 2026-07-31: `deepdefence.c:5988/6033/6161` and
+`deepops.c:3768`.
+
+### Stale-plan / correctness findings
+
+- **A fifth seam prices an overseas arrival and does NOT pay the
+  allowance**: `deep_op_eta()` (`deepops.c:4089`), the march re-gate's
+  own clock. Formation budgets the defender two turns that the march
+  then does not. Recorded in the field comment and here; **not**
+  changed, because making them agree is a behaviour change and a
+  different epic.
+- The brief located the reinforce-rate probe at "`deepops.c` area
+  ~8307". 8307 is the M2 record's *population* for that probe, not a
+  line number; the probe is a `knobcensus.py` MAP entry and the
+  arithmetic lives in `deepcombat.c`.
+
+### What the probe said before the A/B could
+
+`robs=` / `rrate=` now ride on `deep-kill`, written in **every** arm,
+so the distribution a slope would ride on is readable without spending
+a sweep game. `benchmark/reinforce.py` (`invrate.sh census`) reads it.
+On the naval cell, 59 324 observations:
+
+    all      robs mean 0.086  med 0.075  p90 0.150  max 0.450
+    sea=1    n=57 265 (96.5% of all deep-kill lines)
+    fraction where the target OUT-BUILDS what the model charged: 0.006
+
+**The shipped flat 0.34 is ~4.5x the median target's real build rate
+and over-charges 99.4% of the time.** That killed the queued A/B arm
+(`rate + 1.0 x observed`), which could only have asked "does deep fear
+garrisons *more*". The arms became two whole models: flat (0.34, 0) vs
+measured (0.00, 1.0).
+
+**A correction is left in place rather than quietly applied**: the
+first reading of this distribution was taken off one *unfinished* seed
+and claimed 0 of 1 036 observations exceeded 0.34. On finished smoke
+games 13-15% do. That is this project's first listed agent failure
+mode caught in the act, and the evidence stays in
+`benchmark/tuning/invrate-measured.ini`.
+
+### Validation
+
+- `tune-audit.py` **CLEAN 235/235/235/235** (233 before the two
+  fields). `meson test -C build` **5/5 OK**. Build clean bar
+  pre-existing warnings.
+- **Identity, 10 paired smoke seeds, `--arms deep`, identity tuning
+  both sides, ports 7520/7540** (`benchmark/results/invrate-identity/`),
+  this binary against a `git archive` build of `4a6fa4578a`:
+  **scorelog.txt byte-identical 10/10, 0 differ, 0 missing**; maphash
+  equal 10/10. The proof cannot pass by both sides being HEAD: the
+  base corpus emits **0** deep-kill lines carrying `robs=`/`rrate=`,
+  head emits 9 139.
+
+### The A/B: 16 paired tech65sea-150 seeds, one binary, one model swap
+
+`benchmark/results/invrate-ab/`, 32 games, 0 failures, **0 pairing
+violations, maphash equal 16/16**. Same pinned binary both arms
+(`34c9dca2e160…`); the arms differ only in the tuning file.
+
+    metric            FLAT       MEASURED     delta      se      t   wins
+    score           198.58        200.55     +1.98    2.67  +0.74  10/16
+    cities            5.90          5.91     +0.01    0.07  +0.12   6/16
+    unitsbuilt       56.70         58.30     +1.60    0.75  +2.13  11/16
+    techs            65.30         65.47     +0.17    0.11  +1.58  11/16
+    wonders           0.59          0.42     -0.16    0.07  -2.31   2/16
+    unitslost        20.70         24.60     +3.90    1.26  +3.10  13/16
+    unitskilled      16.23         19.87     +3.63    1.22  +2.98  13/16
+
+    op-form          23.62         39.44    +15.81    4.40  +3.59  12/16
+    op-abort         20.12         33.06    +12.94    4.07  +3.18  11/16
+    op-strike        11.19         14.56     +3.38    2.31  +1.46  10/16
+    invade-hold      10.81         22.19    +11.38    4.15  +2.74  11/16
+    invade-go        11.12         14.12     +3.00    2.27  +1.32  10/16
+
+**Score is NULL: +1.98 ± 2.67, t +0.74, 10/16.** The mechanism is not
+null at all — it is the largest behavioural mover this cell has seen.
+
+Reading it honestly. Charging the measured rate makes targets look far
+more takeable, so **formation rises 67%** (23.6 → 39.4, t +3.59) and
+the war gets much busier (units lost +19%, killed +22%, both t ≈ +3).
+But the yield does not follow: **strike/form falls 47% → 37%**, and
+the abort *ratio* is flat (0.85 → 0.84), so the pipeline scaled up
+roughly uniformly and the extra operations are simply **lower-quality
+formations that mostly dissolve**. `wonders -0.16 (t -2.31, 2/16)` is
+the bill: shields that were buying wonders now buy attackers that
+abort. The two effects cancel to nothing on score.
+
+This is the config header's own known limit — "the AI forms invasions
+far more often than it lands one, which is W31/W33's subject" —
+reproduced as a *measurement* rather than an anecdote, and amplified
+by a more accurate input. **A better estimate of the defender did not
+produce better decisions, because the binding constraint is downstream
+of the estimate.** That is information, not a failure; it is also
+exactly why both knobs ship at their identity defaults.
+
+### Owed
+
+- **Both knobs are PLACEHOLDERs and neither has been tuned.** The A/B
+  priced the two endpoints of `invasion_reinforce_slope`, not the axis;
+  the middle (flat retained, slope small) is untested and is the
+  natural sweep. `invasion_embark_turns` has had no sweep at all — it
+  is registered, live on `deep-kill sea=1`, and sitting on its shipped
+  literal.
+- **The `deep_op_eta()` asymmetry** above. One seam's clock disagrees
+  with the other four by two turns on every crossing.
+- **The A/B was run on `seeds/train.txt`.** Nothing here is a held-out
+  claim, and nothing here asks for a default to change.
+- The honest next question is *not* a better reinforcement estimate. It
+  is why 63% of formed operations never strike — the same conclusion
+  the naval venue was built to reach, now with a knob that can move
+  formation volume on demand to study it with.

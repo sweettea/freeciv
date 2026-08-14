@@ -1,0 +1,93 @@
+# Session brief — CONSEQ: consumers for signals we already compute (pre-v4)
+
+Branch `epic/w03-horizon-content`. Read `CLAUDE.md`, `NEXT-SESSION.md` §5,
+the relevant audit sections cited per item, and the STATUS tail. Three
+small mechanisms, one session; each is a CONSUMER of an existing signal,
+which is why they bundle safely.
+
+1. **The defensive tech-wall** (sibling of `deephorizon.c`'s H9). When
+   `deep_city_stack_survival` reports a deficit AND the best buildable
+   defender is not the best the RULESET offers at reachable tech, route
+   `survival_fear_value × deficit × defensive_techwall_weight`
+   (PLACEHOLDER) into `tech_want[]` for the gating advance — exactly how
+   H9 routes capacity credits. The defender-vs-tech test reuses
+   `can_city_build_unit_later` / the eta-reinforcement model's
+   best-buildable scan (`deepcombat.c:370-377`). Counter per routing;
+   venue: any war cell.
+2. **Sell-before-fall + evacuation** (consumer of the write-off,
+   military audit U4). When the counter-claim machinery logs a write-off
+   (`deepdefence.c:1878-1885`), act instead of shrugging: order civilian
+   units OUT (the flee machinery + `deep_hold_unit` API), and in the
+   final window (survival ≈ 0 and enemy adjacent) sell the highest-value
+   sellable building (one per turn is the server rule). Guards: never
+   sell in a city that later holds (measure false-write-off rate FIRST —
+   the write-off signal's precision has never been measured; if it is
+   imprecise, that is the finding and the sale threshold tightens to
+   certain-loss only). Counters: evacuations, fire-sales, false
+   write-offs.
+3. **Home-city upkeep redistribution** (action sweep: `Home City` used
+   once, mechanically). civ2civ3 charges the HOME city a unit's gold and
+   food upkeep; rehome units from strained cities to high-surplus ones.
+   Deliberately narrow: only when the current home is in deficit or CM
+   food-stress AND a surplus city is adjacent-or-same-tile reachable
+   (rehoming needs the unit in the new city). No optimizer — a relief
+   valve, one rule, its own counter. Reuse the treasury guard's strain
+   signals.
+
+4. **Expiry-aware amortization (human, 2026-08-05: "some units and
+   buildings expire too" — the WRACE obsolescence insight generalized).**
+   Two consumers of the own-research ETA signal (bulbs ÷ rate toward a
+   named tech — readable, no rival modelling):
+   - **Buildings**: truncate a building's amortization window at the
+     expected arrival of its own `obsolete_by` tech WHEN WE are the ones
+     researching toward it (the Barracks-under-Gunpowder case — the AI
+     currently spends shields on buildings its own queue is about to
+     void). Verify the engine's obsolete-building semantics (disabled?
+     auto-sold?) and state them.
+   - **Units**: successor-imminent deferral — when the better unit's
+     tech ETA is inside the current unit's build time, defer the build;
+     the interim shields go to the normal auction (where HEDGE's liquid
+     caravan is the natural winner once it lands — note the coupling,
+     don't depend on it). NEVER overrides an active-threat defence build
+     (tier discipline); hysteresis on the ETA estimate so research
+     wobble doesn't churn the queue (one PLACEHOLDER gap, the M3
+     pattern).
+   Counters: truncations applied, deferrals, deferral-overridden-by-
+   threat. A/B lens: shields spent on soon-void buildings and
+   soon-obsolete units, before/after.
+
+5. **The never-launches damper (derby N3).** No loop exists from "the
+   op never launches" back to "stop building its passengers": Iceland
+   built 57 Marines against 6 launches in 600 turns; Gallia switched to
+   Diplomat 191 times for +2 embassies. Consume the existing hold/launch
+   and dispatch/outcome counters as a demand damper on the corresponding
+   build wants (attackers when ops chronically hold; diplomats when
+   missions chronically fail) -- the explorer divisor's shape, applied
+   to two more pumps. Tunable gains, PLACEHOLDERs; counters.
+
+6. **Price the birth guard (human, 2026-08-06: "that tier 1 thing is
+   dumb"; derby-3 evidence: one Warriors per city at turn 2, cohort-wide,
+   39 units by T16 against stock's 0).** The inherited first-defender
+   rule (`deepdefence.c:3129-3160`) pins danger to a flat 100 when
+   `urgency==0` and fires DWT_EMERGENCY — threat-blind (the early fear
+   baseline is never 0, so every newborn city trips it), stance-proof
+   (emergency tier bypasses the gates), and unpriced against the settler
+   tempo it taxes. Replace: first-defender want = P(walk-in) × city
+   worth, where P(walk-in) consumes the reachability law + the barb gate
+   (nobody-can-reach-you → ~0 and the settler wins; warband two tiles
+   out → `urgency>0` and the emergency tier fires legitimately, which
+   stays). Tier normal, stance-gated, tunable gain (PLACEHOLDER).
+   Counters: birth-guard wants priced vs emergency escalations; A/B
+   lens: settlers-by-T20/cities-by-T30 tempo AND cities lost to
+   walk-ins (derby 2's empty-city plague is the loss guard — do not
+   trade real safety for tempo without showing both numbers).
+
+Discipline: each item its own commits + counter + A/B lens; all knobs
+PLACEHOLDERs registered everywhere; `meson test` + `tune-audit.py` CLEAN;
+byte-identity where defaults are off-shaped (items 1-2 gate on new
+weights defaulting 0 → prove byte-identity at 0; item 3 gate
+`rehome_enabled` 0). STATUS dated section final; leave NEXT-SESSION.md
+and sessions/ alone. 6-8 commits. Stop conditions: the write-off signal's
+false-positive rate exceeds usefulness (report it — that alone justifies
+the session); the rehome action's server constraints don't match the
+design (state them).

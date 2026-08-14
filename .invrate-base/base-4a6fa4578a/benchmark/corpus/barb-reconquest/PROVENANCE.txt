@@ -1,0 +1,32 @@
+Source: live Europe game (human sweettea + 6 deep + 6 classic/def +
+civil-war splinters), autosave freeciv-T0160-Y01090-auto.sav.zst,
+taken 2026-07-31. Analysis: doc/deep-ai/findings/civ2civ3-adjustments.md,
+"T160 autosave forensics".
+
+The world it preserves: under HORDES, the Pirate (player 13) and
+Barbarian (player 14) players hold 52 captured cities, 47 of them
+with NO garrison, for ~40 turns -- while every nation's military,
+deep and classic alike, is defensive infantry pinned at
+AIUNIT_DEFEND_HOME. A quarter of the map is free for the walking and
+nobody walks. Player ids 13/14 are hardcoded in assert.sh as position
+facts.
+
+Prep applied to the raw autosave: the human seat (player 12, Irish,
+"Aoife MacMurrough") was aitoggled to a classic AI and the game
+resaved, so the position runs headless with the world as-lived --
+deliberately NOT converted to a deep seat, which would change the
+story under test.
+
+What it exercises: singleton operations (required==1 formation),
+garrison drafting (sparable DEFEND_HOME blades join a formation the
+free pool cannot fill, survival-gated), barbarian non-reinforcement
+pricing (barb_reinforce_rate), snap-up attacker builds, and the
+defence-first auction under real horde pressure. (An adjacent
+walk-in sortie was prototyped and dropped: citymindist makes
+city-adjacent-to-city geometry impossible, so the sortie could
+never fire -- the singleton op owns all distances instead.)
+
+Expected before the T160 fix stack: mechanism asserts FAIL
+(singleton targets are declined by formation). Expected after: all
+asserts pass within TURNS=12; the 12-turn proof run retook 9 of the
+52 barb-held tiles where the live game retook 0 in ~40 turns.

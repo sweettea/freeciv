@@ -1,0 +1,3 @@
+generated-by: make-positions.sh
+server: 
+settings: 64x64, 4 players, hard, huts 200, seed 42, turn 1 (63 huts)
