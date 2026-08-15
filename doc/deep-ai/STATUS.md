@@ -14681,3 +14681,135 @@ margin is unchanged too.
 
 Retention: both cells under `benchmark/results/netthreat2/`
 (tech50war-200-86943cb3ce0f = pv3, -8846b69d19c1 = pv3-pindisc).
+
+## W12 slice 2: the task source past the radius ceiling — live, consuming the hidden demand, score NULL (2026-08-14)
+
+Branch `epic/w12b-task-source`, 3 commits, merged into
+`epic/w03-horizon-content`. Slice 1 (merged `d075c4bfc4`) named the
+gap and predicted its own census would show it: the worker task
+SOURCE is capped by the advisor's radius ceiling
+(`autoworkers.c:586-588`), so corridor tiles between distant cities
+generate no task at all and slice 1's locality optimised a truncated
+demand set. `links>0 hits=0` was that ceiling speaking. This slice
+opens the source; it does not change what wins once the demand set is
+complete.
+
+### 1. What landed
+
+`deep_trunk_beyond_tiles()` (`ai/deep/deeptrunk.c`) exposes the
+corridor tiles the plan already computes but the advisor never
+enumerates. `deep_trunk_source_task()` (`ai/deep/deepsettler.c`) runs
+beside the auction inside deep's own `settler_run`, prices each with
+the same `deep_trunk_price()` the task-value hook uses, times
+`trunk_source_gain`, then applies slice 1's OWN walk discount —
+`deep_worker_travel_amortized()`, extracted from
+`deep_worker_travel_price()` so there is one discount with two
+callers, not a second one invented here — and amortizes over
+completion exactly as `autoworkers.c:941` amortizes its champion. A
+corridor tile must survive both discounts to beat work at home:
+locality stays the arbiter, the demand set is what changed.
+
+No `server/advisors/` change. The source is deep-side only, so slice
+1's 20/20 stock-arm hook proof is not re-owed.
+
+### 2. Knob, PLACEHOLDER, zero
+
+    trunk_source_gain  0.0  OFF = today's ceiling, byte-identically.
+                            1.0 is the unit case: a beyond-ceiling
+                            corridor tile is worth exactly what the
+                            same corridor is worth inside a radius.
+                            Needs trunk_road_gain > 0 for a plan.
+
+Four audit places, the G/ECON/ALL blocks, knobcensus MAP
+(`deep-trunksrc picked>0`, direct grade). `tune-audit` CLEAN at 238
+fields (base 237 + this slice's 1). `meson test` 5/5.
+
+### 3. Identity: 20/20 byte-identical at the shipping zero
+
+Base binary = `git archive 50b55eab00` built in `.w12b-base/`
+(sha `b43e520a82021a26`); branch binary sha `cad20ef467690787`. Ten
+paired smoke seeds per arm, `benchmark/results/w12b-identity/`.
+
+    deep      scorelogs IDENTICAL 10/10
+    mixed_db  scorelogs IDENTICAL 10/10
+
+The mixed cell is included because the source runs inside deep's own
+`settler_run` and the mixed game is where a leak into shared advisor
+state would show. The base arm emits no `deep-trunksrc` line, so the
+proof cannot have passed by running HEAD twice.
+
+### 4. Liveness, then the A/B
+
+Liveness (`benchmark/results/w12b-live/`, 2 lategame-80 games with
+the source on): `deep-trunksrc` reads `picked>0` on most player-turns
+and `deep-trunkpick` shows real assignments out to `dist=8`. Not a
+knob-on run with zero beyond-ceiling tasks, which the brief called a
+miss to report rather than ship.
+
+A/B: 16 mirrored lategame-80 seeds, one pinned binary
+(`.w12b-pin/ab`, sha `cad20ef467690787`), ports 7830-7849, jobs 4.
+ON = `tuning/w12-source-on.ini`, OFF = `tuning/w12-on.ini` — the two
+files differ in exactly one key, so this reads the source alone
+against slice 1's probe background. All 32 games reached T81; 0
+pairing violations. `benchmark/results/w12b-ab/`.
+
+    metric              OFF        ON     delta      se      t   wins
+    score            167.38    166.05     -1.32    1.56  -0.85   6/16
+    cities             7.76      8.19     +0.43    0.25  +1.71  10/16
+    landarea       92458.33  95947.92  +3489.58 2120.31  +1.65  10/16
+    pop               40.61     41.51     +0.90    0.93  +0.96  10/16
+    techs             52.89     52.81     -0.07    0.11  -0.64   4/16
+    mean_city_size     5.36      5.26     -0.11    0.10  -1.12   7/16
+
+    trunksrc-active    0.00     17.81    +17.81    4.30  +4.14  15/16
+    trunk-picks        0.00     48.50    +48.50   15.04  +3.22  15/16
+    trunksrc-turns    67.38     39.38    -28.00   13.96  -2.01   6/16
+
+Counters summed over each arm's 16 games:
+
+                        OFF        ON
+    beyond=            1729      1275   demand the ceiling hides
+    offered=              0      1587   priced by the source
+    picked=               0       776   assigned beyond the ceiling
+    trunk links=      15981     16634
+    trunk hits=      487957    524354
+
+### 5. What the numbers say, and what they do not
+
+**The mechanism is causal and gated.** `offered`/`picked` are exactly
+0 in the OFF arm and 1587/776 in the ON arm, 15/16 seeds. 776
+beyond-ceiling worker tasks were assigned across 16 games that could
+not have existed before this slice. `beyond=` fires in BOTH arms
+(1729 vs 1275) exactly as the knobcensus entry says it should: the
+hidden demand is a property of the plan, not of the gate. That the ON
+arm sees LESS of it, on fewer emitting turns (39.4 vs 67.4 per game,
+t -2.01), is the demand being consumed — corridor tiles that get
+roads stop being gap tiles.
+
+**The score effect is null.** -1.32 +/- 1.56, t -0.85, 6/16. Not a
+regression to explain away and not a win: it is a wash on this venue
+at the unit case. `cities` +0.43 (t 1.71) and `landarea` +3490
+(t 1.65) lean positive and are the only shape in the table, but
+neither clears noise on 16 seeds and neither is being claimed.
+
+**The commuting cost is real and small.** Slice 1's walking-distance
+instrument, the regression watch this slice owed:
+
+    walker unit-turns   8918 (off)  ->  9547 (on)   +7.1%
+    mean remaining walk 3.206       ->  3.507       +9.4%
+
+Workers do walk farther when farther jobs exist to be walked to. That
+is the intended trade, not a bug — but it is a cost, it is measurable,
+and at `trunk_source_gain = 1.0` it buys no score. Both discounts are
+in the path; neither has ever been tuned.
+
+**Therefore the knob ships at 0.0** and this epic bought mechanism,
+instruments and one honest null — the same shape slice 1 shipped in.
+The next legitimate move is a tuning pass over
+`trunk_source_gain` WITH `worker_travel_discount` and
+`trunk_road_gain` (they interact through one discount and one plan;
+CLAUDE.md's "parallelise scheduling, not attribution" says they want
+one factorial cell, not three arms), not another mechanism slice.
+
+Retention: `benchmark/results/w12b-ab/{on,off}/lategame-80-*`,
+identity under `benchmark/results/w12b-identity/`.
