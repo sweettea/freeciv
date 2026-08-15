@@ -147,6 +147,18 @@ void deep_techcensus_ruleset_reset(void)
 }
 
 /**********************************************************************//**
+  Exported classification for the deep-techgoal counter: see the header.
+**************************************************************************/
+int deep_techcensus_advance_military(Tech_type_id tech)
+{
+  if (!valid_advance_by_number(tech)) {
+    return -1;
+  }
+
+  return advance_is_military(tech) ? 1 : 0;
+}
+
+/**********************************************************************//**
   The player's live want array, or NULL when there is nothing to read.
 **************************************************************************/
 static const struct ai_plr *want_array(const struct player *pplayer,

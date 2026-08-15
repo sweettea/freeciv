@@ -359,6 +359,7 @@ else
       'ai/deep/deepsite.c',
       'ai/deep/deepspy.c',
       'ai/deep/deepstance.c',
+      'ai/deep/deeptech.c',
       'ai/deep/deeptechcensus.c',
       'ai/deep/deeptrade.c',
       'ai/deep/deeptrunk.c',

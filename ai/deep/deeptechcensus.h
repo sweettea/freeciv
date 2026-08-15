@@ -108,4 +108,10 @@ void deep_techcensus_turn_report(void);
  * unit types are (re)loaded, since the cache is derived from them. */
 void deep_techcensus_ruleset_reset(void);
 
+/* The census's advance classification, exported for the deep-techgoal
+ * counter (deeptech.c) so both instruments mean the same thing by
+ * "military": 1 = gates a non-civilian unit type, 0 = does not,
+ * -1 = not a classifiable advance (A_UNSET, A_FUTURE, invalid). */
+int deep_techcensus_advance_military(Tech_type_id tech);
+
 #endif /* FC__DEEPTECHCENSUS_H */

@@ -1309,6 +1309,21 @@ MAP = {
         "logs when imposed > 0, which requires honest_info > 0 "
         "(deepai.c:559/580); see findings/omniscience-census-2026-08-"
         "11.md."),
+
+    # ---------------- TECHMIL slice 2: research-goal reselection ------
+    "techgoal_deep": (
+        "S2", "mode", "direct", [("deep-techgoal", "")],
+        "gate for deep's research-goal reselection: deeptech.c logs "
+        "deep-techgoal only past the `if (tune->techgoal_deep == 0) "
+        "return;` gate in deep_manage_tech(), one line per gated deep "
+        "player-turn; the slice-1 deep-techwant census line runs "
+        "unconditionally and does not evidence this knob."),
+    "techgoal_distance_power": (
+        "S2", "mag", "direct", [("deep-techgoal", "has:power")],
+        "power= on the deep-techgoal line is literally this knob's "
+        "value, and the goalsteps=/goalwant= fields move with it; only "
+        "read when techgoal_deep != 0 (deeptech.c "
+        "deep_reselect_research())."),
 }
 
 STAGE_NAME = {

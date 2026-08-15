@@ -94,6 +94,7 @@
 #include "deepsettler.h"
 #include "deeptrunk.h"
 #include "deepstance.h"
+#include "deeptech.h"
 #include "deeptechcensus.h"
 #include "deeptrade.h"
 #include "deeptuning.h"
@@ -8100,7 +8101,12 @@ void deep_do_last_activities(struct ai_type *ait, struct player *pplayer)
   deep_late_mark = pplayer->economic.gold;
   TIMING_LOG(AIT_TECH, TIMER_START);
   deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
-  dai_manage_tech(ait, pplayer);
+  /* Stock's dai_manage_tech(), through the TECHMIL slice 2 wrapper:
+   * at techgoal_deep = 0 (default) it is that call and nothing else;
+   * gated on, deep re-selects the goal afterwards (deeptech.c). The
+   * reselection writes no tech_want[], so the census marks around
+   * this call attribute exactly as before. */
+  deep_manage_tech(ait, pplayer);
   /* dai_tech_effect_values() (daitech.c:325) writes here, and it is
    * the last writer before dai_select_tech() reads the array. */
   deep_techcensus_mark(ait, pplayer, DEEP_TC_STOCK_EFFECTS);
