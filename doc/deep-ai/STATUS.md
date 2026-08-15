@@ -14485,3 +14485,119 @@ on tech65sea-150, 16 mirrored seeds, pv3 vs pv3 + founder_berth_route=1
 
 Retention: verdict banked; berth-naval saves/ and game.logs pruned per
 policy (scorelogs, DONE, provenance kept).
+
+## 2026-08-14 — TECHMIL slice 2: the techgoal seam lands, live and provably inert at stock's shape
+
+Brief: `sessions/S-TECHMIL2-argmax.md`. 5 commits on
+`epic/techmil2-argmax` (based at `1844e16efc`): e5c56d7694 knobs,
+a397667d85 mechanism, 0c8c500c60 harness, 5ef8fe0ac8 counter honesty,
+plus this entry.
+
+### The seam, and what reading the code corrected in the brief
+
+Deep reaches research management by calling stock's
+`dai_manage_tech()` from `deep_do_last_activities()`; that call now
+goes through `deep_manage_tech()` (new `ai/deep/deeptech.c`). Gate
+`techgoal_deep` = 0 (default): the wrapper IS the stock call —
+byte-identical. Gated on: stock runs first, unchanged (its
+`dai_tech_effect_values()` writer and its committed picks, kept as the
+counter's honesty fields), then deep re-selects BOTH the goal and the
+researching advance from the same `tech_want[]` mass, in double
+precision, with both of stock's distance divisions raised to
+`techgoal_distance_power`. Selection copied per rule 3 (stated in
+a397667d85): `dai_select_tech()` is static and the visibility
+exception would only export the exponent frozen at 1.
+
+The brief's formula sketch was incomplete in two load-bearing ways,
+found by reading:
+
+- Stock divides by distance **twice**: the per-prerequisite spread
+  (`daitech.c:127`, want/steps) and the goal argmax (`:155`,
+  path-mass/steps). Both carry the power.
+- The goal is NOT "practically never used" (stale comment,
+  `daitech.c:372`): `research_goal_step(tech_goal)` picks the next
+  research at every completion (`techtools.c:505`, `:1176`). And the
+  per-turn immediate `choose_tech()` can fight a goal-only override,
+  so deep re-sets both, behind stock's own penalty-guard shape. Deep's
+  goal write is LAST within each turn, so it is the goal in force in
+  the inter-turn window where completions happen.
+- **Upstream bug #49** (upstream-bugs.md): the newtech argmax admits
+  `gettable(allow_holes=TRUE)` advances (root_reqs_known only) that
+  `choose_tech()` then silently refuses (`techtools.c:1021`). Stock
+  "changes research" into a no-op on **33% of player-turns** on this
+  venue (measured via the liveness probe). Deep reproduces the attempt
+  for shape fidelity; the counter's `switched=` reports the post-call
+  state change, not the attempt (5ef8fe0ac8).
+
+### Validation
+
+- `meson test -C build` **5/5** at every commit; tune-audit **CLEAN**
+  (238 fields in all four registries); knobcensus MAP entries, direct
+  grade.
+- **Identity: 12/12 byte-identical** (10 `deep` + 2 `mixed_dc` smoke
+  seeds, compiled defaults) against a `git archive` build of
+  `1844e16efc`, ports 7600-7615 — proven **on the final binary**
+  (re-run after 5ef8fe0ac8). Base-is-really-base guard is binary-level
+  (head contains the `deep-techgoal` format string, base must not),
+  because at defaults neither side emits a discriminating line.
+- Liveness: 2 tech50war-200 `mixed_dc` games, gate on — counter fires
+  from turn 1, 1600/1600 gated player-turns.
+
+### The A/B (gate at power = 1.0 vs off — the seam-isolation arm)
+
+tech50war-200 mixed, 16 mirrored holdout seeds (101-116), 64 games,
+`tune.py --mixed` (mixed_db/mixed_bd vs `ai/baseline`), ONE pinned
+binary (sha256 `2833954…dafcb`, with libfreeciv.so), `identity.ini`
+vs `techgoal-on.ini`. Both arms 32/32 DONE, every game at endturn.
+
+    metric        OFF        ON       delta   se     wins
+    margin      -259.50   -259.50    +0.00   0.00   0/16
+    (deep 1539.94 / stock 1799.44, cityratio 0.80 — both arms)
+
+    per-seed margin (identical in both arms), mean -259.5, sd 193.7,
+    sem 48.4:
+    101:+0  102:-399  103:-405  104:-27   105:-309  106:-286
+    107:-544 108:-254 109:-249  110:-460  111:-290  112:+194
+    113:-503 114:-241 115:-199  116:-180
+
+**All 32 game pairs are BYTE-IDENTICAL between arms** (cmp on every
+scorelog), while the on arm's logs carry **25,600** `deep-techgoal`
+lines. That is the strongest possible reading of "isolate the seam":
+gate-on at stock's shape is an in-vivo no-op, not merely
+score-neutral.
+
+Counter, on arm: **goals differ 0.6%** of gated turns (float-vs-int
+drift of the double-precision copy against stock's int truncation),
+**researching moved 0.0%**, switch attempts refused as in stock (#49).
+None of the 0.6% goal differences ever met a completion, so no game
+diverged.
+
+Military-research share (deep seats, n=25,057 player-turns/arm):
+**57.1% OFF vs 57.1% ON — 0.0pp shift**, exactly as the byte-identity
+requires. (Not comparable 1:1 with slice 1's 47.5%: that corpus was
+`mixed_dc/cd` vs classic; this venue seats `ai/baseline`, whose array
+the census cannot read, so no in-corpus stock reference exists here.)
+
+### Verdict and what is owed
+
+The slice's deliverable was the SEAM, and the seam is proven: live
+(25,600 firings), in control of the decision (last writer each turn),
+and inert at the default and at stock's shape. **The knob stays 0.**
+No claim is made that any power value helps — that measurement does
+not exist yet.
+
+**The power tune is owed**, exactly as the brief anticipated:
+`techgoal_distance_power` sweep (registered bounds 0.0-3.0, S2/MIL
+block) on training seeds, reported on holdout. It should sweep the
+power alone at gate on; venues: tech50war-200 AND a from-scratch cell
+(primary-120) — this venue starts at techlevel 50 and slice 1 already
+flagged that the early tree weights everything differently. The
+mechanism hypothesis to test is directional: power < 1 lengthens
+deep's sight and should raise realised military share toward the
+61.0%-share appetite; the exact-zero at 1.0 means any observed move
+in that sweep is the power's own effect, with no seam artefact mixed
+in.
+
+Retention: techmil2-ab scorelogs, DONE, provenance and the on-arm
+game.logs (the counter corpus the power tune will want) kept;
+identity/live cells kept as proof artifacts. Nothing pruned yet.
