@@ -279,6 +279,11 @@ static const struct deep_tuning deep_tuning_defaults = {
   .endgame_window = 0,                  /* PLACEHOLDER, 0 = off */
   .endgame_unfinished_gain = 1.0,       /* PLACEHOLDER, 1.0 = off */
   .endgame_wonder_gain = 1.0,           /* PLACEHOLDER, 1.0 = off */
+  .horizon_decay_gate = 0,              /* 0 = off = legacy rectangle */
+  .horizon_decay_early = 0.0,           /* PLACEHOLDER; measured 0.037 */
+  .horizon_decay_late = 0.0,            /* PLACEHOLDER; measured 0.002 */
+  .horizon_decay_break_start = 50,      /* census's measured phase edge */
+  .horizon_decay_break_end = 100,       /* census's measured phase edge */
   .horizon_govcenter_weight = 0.0,      /* PLACEHOLDER, 0 = off */
   .horizon_upkeepfree_weight = 0.0,     /* PLACEHOLDER, 0 = off */
   .horizon_culture_weight = 0.0,        /* PLACEHOLDER, 0 = off */
@@ -553,6 +558,11 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(embassy_give_gain) \
   TUNE_DOUBLE(leader_check_gain) \
   TUNE_INT(endgame_horizon) \
+  TUNE_INT(horizon_decay_gate) \
+  TUNE_DOUBLE(horizon_decay_early) \
+  TUNE_DOUBLE(horizon_decay_late) \
+  TUNE_INT(horizon_decay_break_start) \
+  TUNE_INT(horizon_decay_break_end) \
   TUNE_INT(endgame_window) \
   TUNE_DOUBLE(endgame_unfinished_gain) \
   TUNE_DOUBLE(endgame_wonder_gain) \

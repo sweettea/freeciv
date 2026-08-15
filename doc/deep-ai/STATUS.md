@@ -14778,3 +14778,109 @@ reports LOADFAIL (chores merge). Open (human call, budget-gated): a
 TRUE lean A/B — pv3 vs a loading pv3-lean — if the four-zeros
 attribution is still wanted, and a defaults-vs-pv3 autopsy for which
 tuned blocks are harmful.
+## 2026-08-14 — DECAY slice 2: the scheduled discount at all three rectangles — late-game window moved, score lean +5.9 (t +1.7)
+
+Brief: `sessions/S-DECAY2-schedule.md`. Branch `epic/decay2-schedule`
+(base 9e485567be), six commits: `ab717c66c0` (register the five
+schedule knobs; tune-audit CLEAN 242/242/242/242), `6b46448fa4`
+(deep_decay_duration() + deep_decay_rate_now(), the ONE shared
+helper), `1d0b7eff7c` (deephorizon's ten duration credits + the gold
+upkeep bill through it), `881d6e0162` (deepgov.c's government
+payoff), `01f9c21ec7` (deepdefence.c's unit-lifetime upkeep charge),
+`1ed70ca608` (benchmark/tuning/pv3-decay.ini, the measured-anchor
+arm).
+
+Census claims verified by reading before wiring: deepgov.c:536
+((cand-base) x deep_horizon_turns()) and deepdefence.c:7092 (upkeep x
+deep_horizon_turns(), eta-truncated) are both genuine MORT rectangles
+— no mismatch to report. The helper implements exactly the model
+slice 1 validated offline (decay-census.py exp_value minus its
+q^delay lead — delay stays with amortize(), so delay is discounted
+once and duration once), bell-truncated from day one per slice 1's
+56.5%-phantom-value finding; cap keeps the census convention
+(structural caps survive, horizon-derived streams run to the bell;
+the obsolescence ETA in deepdefence is now correctly a structural
+cap). Rates are per-phase per the brief: early through break_start,
+late from break_end, linear in turn between.
+
+**Byte-identity at defaults: 20/20.** git-archive build of 9e485567be
+(`a3ceb4ccb6…`, 0 `horizon_decay_gate` strings) vs branch build
+(`1ef9ba732f…`, 3), smoke, DEEP_QUIET, tuning none, arms deep +
+mixed_dc x 10 seeds each: scorelogs byte-identical 20/20, maphashes
+equal, pairing violations 0.
+
+**Per-site liveness knob-on (the brief's per-site gate).** Full T200
+tech50war-200 games, exit 0, no new assertions (6 daisanity fires =
+upstream bug #30, module-symmetric):
+- deephorizon (pv3-decay game): 15,076 `deep-decay` shape lines +
+  14,913 `deep-decay-sum` lines with rate>0; the rate histogram IS
+  the schedule (10,920 at 0.03700, 11,811 at 0.00200, interpolated
+  values between); durations arithmetically exact (veteran steps
+  0.96 -> dur 1.637 = bell-truncated geometric at spacing 25).
+- deepgov + deepdefence are DORMANT under pv3 (gov_valuation and
+  unit_upkeep_charge are 0 there — parent mechanisms off, not a
+  seam miss), so a diagnostic probe (pv3-decay + gov_valuation=1 +
+  unit_upkeep_charge=1, the gov-on/m4b-upcharge probe values) proved
+  them: deep-gov 924/924 lines rate>0 (dur 27.010 vs rectangle 24 at
+  T5), deep-upcharge 2,323/2,323 rate>0 (dur 27.012, both eta-capped
+  and horizon-derived paths observed).
+
+### A/B: tech50war-200 mixed, 16 mirrored seeds, one binary — +5.9/seat, t +1.68, and the late window moved
+
+Arms mixed_dc + mixed_cd per seed, ONE pinned binary (`1ef9ba732f`,
+server + libfreeciv.so in `.decay2-bin`), control TUNING=pv3.ini vs
+on TUNING=pv3-decay.ini (gate 1, early 0.037, late 0.002, break
+50/100 — the measured anchors, documented in the arm file). 64/64
+games, 0 pairing violations, all to T201. Deep seats, mirrored pair
+averaged per seed:
+
+    metric            OFF        ON     delta      se      t   wins
+    score          189.88    195.79     +5.91    3.52  +1.68  11/16
+    cities           4.77      4.89     +0.12    0.15  +0.82   9/16
+    techs           54.41     54.62     +0.20    0.16  +1.23   9/16
+    mfg             34.06     35.20     +1.13    1.65  +0.69  11/16
+    pop             28.58     28.64     +0.06    1.04  +0.06   7/16
+    munits          17.94     16.76     -1.18    0.83  -1.42   5/16
+    unitsbuilt      89.49     86.37     -3.12    2.43  -1.29   8/16
+    unitslost       65.44     63.94     -1.50    2.17  -0.69   7/16
+    classic score  224.78    223.34     -1.45    3.54  -0.41   8/16
+
+    per-seed deltas: +8.5 +11.6 +11.5 -9.8 -20.6 +9.1 -10.1 -5.9
+                     -5.0 +22.5 +0.3 +9.4 +34.2 +20.0 +3.0 +15.9
+
+Era-slide (deep share, mean over games — the knob's whole thesis is
+this trajectory, not the final number):
+
+    tag      arm    T50    T100   T150   T200
+    techs    ctl   0.500  0.499  0.497  0.495
+    techs    on    0.501  0.497  0.496  0.495
+    mfg      ctl   0.489  0.456  0.456  0.444
+    mfg      on    0.481  0.460  0.452  0.458
+    cities   ctl   0.489  0.471  0.462  0.457
+    cities   on    0.496  0.483  0.469  0.471
+
+### Read
+
+The measured-anchor schedule moved the late-game window in the
+predicted direction: control's mfg share FALLS T150->T200
+(0.456 -> 0.444) while the on-arm's RISES (0.452 -> 0.458); city
+share ends +1.4pt (paired t +0.93); tech pace is identical — the
+same "win by not collapsing" signature the lean-lattice derby found,
+now produced by pricing alone. The composition shift is coherent:
+fewer units built (-3.1), same tech, more cities and mfg — patient
+late pricing redirects shields from military volume to economy, and
+the classic seats do not profit from it (head-to-head margin flat).
+At n=16 the +5.91 (t +1.68) is a LEAN, not a banked win — but it is
+the right shape, on the venue the knob was predicted to need, from
+anchors that were measured rather than tuned. Both rates and breaks
+stay FLAGGED FOR THE TUNING PASS (the brief's placement: with the
+extensive-tuning finale, since gate-on reprices a fifth of the
+ladder at plausible rates). Default stays 0 everywhere; pv3
+unchanged.
+
+Retention: verdict banked; saves/ and game.logs pruned per policy
+(scorelogs, DONE, provenance kept; the two instrument game.logs kept
+compressed: on-arm seed-1 mixed_dc and the site-probe cell
+tech50war-200-5db8b07a1040). Cells: -1d411042c95a = pv3,
+-597936cbdd19 = pv3-decay, -5db8b07a1040 = site probe; identity pair
+smoke-21323da53164 (base) / smoke-622c48474265 (branch).

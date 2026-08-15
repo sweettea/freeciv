@@ -1205,6 +1205,40 @@ MAP = {
         "paid= counts the great-wonder premium branch (mult = "
         "endgame_wonder_gain) taking a want up (deephorizon.c:1692/"
         "1708); a no-op at the compiled default 1.0."),
+    "horizon_decay_gate": (
+        "S1", "gate", "direct",
+        [("deep-decay", "rate>0"), ("deep-gov", "rate>0"),
+         ("deep-upcharge", "rate>0")],
+        "DECAY slice 2: deep_decay_duration() returns the flat "
+        "instalment count unless horizon_decay_gate > 0 "
+        "(deephorizon.c). With the gate on, every deep-decay shape "
+        "line, deep-gov line and deep-upcharge line carries the "
+        "applied rate= and discounted dur= beside the rectangle's "
+        "own count -- one instrument per rectangle site, so a site "
+        "whose lines never show rate>0 knob-on is a miss."),
+    "horizon_decay_early": (
+        "S1", "mag", "direct", [("deep-decay", "rate>0")],
+        "the scheduled per-turn rate for turns <= "
+        "horizon_decay_break_start; rate= on the census lines is the "
+        "schedule's output at the logging turn, monotone in this knob "
+        "early-game. PLACEHOLDER 0 (zero rate keeps the legacy window "
+        "even gate-on); measured anchor 0.037 "
+        "(benchmark/decay-anchors.py)."),
+    "horizon_decay_late": (
+        "S1", "mag", "direct", [("deep-decay", "rate>0")],
+        "the scheduled per-turn rate for turns >= "
+        "horizon_decay_break_end; as horizon_decay_early, late-game. "
+        "PLACEHOLDER 0; measured anchor 0.002."),
+    "horizon_decay_break_start": (
+        "S1", "mode", "proxy", [("deep-decay", "rate>0")],
+        "transition-band edge (the census's measured phase boundary, "
+        "T50); the breaks move WHERE the schedule bends between the "
+        "two rates, not whether anything fires, so they are pinned "
+        "per pass and reported rather than optimised."),
+    "horizon_decay_break_end": (
+        "S1", "mode", "proxy", [("deep-decay", "rate>0")],
+        "as horizon_decay_break_start (measured phase boundary "
+        "T100)."),
     "horizon_govcenter_weight": (
         "S1", "mag", "direct", [("deep-govcenter", "")],
         "deep-govcenter only logs when deep_govcenter_cities > 0, "
