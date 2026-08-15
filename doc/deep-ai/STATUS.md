@@ -14999,3 +14999,22 @@ in.
 Retention: techmil2-ab scorelogs, DONE, provenance and the on-arm
 game.logs (the counter corpus the power tune will want) kept;
 identity/live cells kept as proof artifacts. Nothing pruned yet.
+
+## 2026-08-14 — TRUE lean A/B: the four zeros are a WASH; the lean legend is fully closed
+
+With pv3-lean.ini actually loading (deduped; load confirmed absent of
+the cannot-load line), pv3 vs pv3+four-zeros on the two voided venues,
+16 holdout seeds each, one binary 1237ba9c6e (.leanab2-bin):
+
+- isolated-150: lean-minus-pv3 +1.72/seat, sem 3.68, t +0.47 (6/16)
+- tech50war-200: lean-minus-pv3 −3.57/seat, sem 4.27, t −0.84 (5/16)
+
+Both null. The four floor zeros do approximately nothing on benchmark
+venues. Combined with the voiding entry above: the original "lean
+lattice" gains (+8.2/+10.4) belonged to compiled-defaults-vs-pv3, not
+to the zeros. What remains true and actionable: DEFAULTS beat pv3 on
+these venues in those runs — the tuned fear/floor values as a package
+are implicated, and the honest attribution now runs through the
+finale's conditional (interior-vs-frontier) sweep, not through
+hand-picked zeros. derby-7's ini keeps the zeros as exhibition spice
+only.
