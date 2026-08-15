@@ -2943,7 +2943,7 @@ static void sg_load_map_tiles(struct loaddata *loading)
                                      nat_x, nat_y);
     label = secfile_lookup_str_default(loading->file, NULL, "map.label_%d_%d",
                                        nat_x, nat_y);
-    if (NULL != ptile->spec_sprite) {
+    if (NULL != spec_sprite) {
       ptile->spec_sprite = fc_strdup(spec_sprite);
     }
     if (label != NULL) {
