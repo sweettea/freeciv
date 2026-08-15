@@ -15018,3 +15018,24 @@ are implicated, and the honest attribution now runs through the
 finale's conditional (interior-vs-frontier) sweep, not through
 hand-picked zeros. derby-7's ini keeps the zeros as exhibition spice
 only.
+
+## 2026-08-14 — Derby-7 (spicy): deep still loses Europe, but the gap narrows ~3.5x
+
+Full T300 exhibition on the europe.serv roster, binary 1237ba9c6e,
+tuning derby5/tuning-derby7.ini (fence + lean zeros + berth + measured
+decay anchors + the dormant-mechanism block, all confirmed loading).
+
+Final per-seat means: deep 155 vs classic 250 (diff −95). Top board:
+Italia 341, Polska 341, Norge 309, Iberia 277, then Osmanli 233 as
+best deep. No runaway seat this time — the best classic is 341, not
+derby-5's 213-city Norge; and the worst deep (Carthago 100) survived
+to T300, unlike prior derbies' eliminations.
+
+Context: derby-4 (pv2-personality) lost −334/seat at T300; derby-5
+(std) was killed at −809. −95 with the spicy arm is the smallest
+Europe deficit yet recorded, with containment of the runaway pattern.
+Caveats stack high: one seed, exhibition format, and the spicy block
+conflates ~20 changes — this ranks PRIORITY for the finale sweep, it
+attributes nothing. The two knobs with independent positive evidence
+in the block remain the decay schedule (+5.9 benchmark) and reach
+(pv1 +71.9).
