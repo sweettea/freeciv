@@ -908,6 +908,20 @@ struct deep_tuning {
    * advisor's tile currency. 0 disables the whole term, plan included.
    */
   double trunk_road_gain;
+  /* W12 slice 2: the worker task SOURCE beyond the advisor's radius
+   * ceiling. worker_evaluate_improvements() enumerates only tiles
+   * inside some own city radius (autoworkers.c:586), so corridor gap
+   * tiles between distant cities generate no task at all and slice 1's
+   * locality optimised a truncated demand set. When this gain is
+   * positive, deep_trunk_source_task() offers those tiles itself,
+   * priced by the same deep_trunk_price() the hook uses times this
+   * gain, walk-discounted by slice 1's worker_travel_discount and
+   * amortized over completion like the auction's own champion. 1.0 is
+   * the unit case (a beyond-ceiling corridor tile is worth exactly
+   * what the same corridor is worth inside a radius); 0 keeps today's
+   * ceiling byte-identically. Needs trunk_road_gain > 0 to have a plan
+   * to read. */
+  double trunk_source_gain;
 
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).

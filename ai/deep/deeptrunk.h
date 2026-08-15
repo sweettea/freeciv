@@ -46,6 +46,18 @@ adv_want deep_trunk_want(const struct player *pplayer,
                          const struct extra_type *target,
                          const struct tile *ptile);
 
+/* W12 slice 2: the ceiling above, lifted from outside. The advisor's
+ * enumeration cannot be widened from within (STATUS "W12 slice 1"
+ * section 7), so deep sources the hidden demand itself: the corridor
+ * gap tiles outside every own city radius, the same want pricing, and
+ * a pick counter of its own. */
+int deep_trunk_beyond_tiles(const struct player *pplayer,
+                            const int **list);
+adv_want deep_trunk_source_want(const struct player *pplayer,
+                                const struct extra_type *target,
+                                const struct tile *ptile);
+void deep_trunk_source_pick(const struct player *pplayer, int dist);
+
 /* Trunk census: links planned, corridor tiles still missing a road,
  * candidates the want reached, and the largest want issued. */
 void deep_trunk_census(struct player *pplayer);
