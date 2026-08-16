@@ -149,11 +149,24 @@ const char *government_name_translation(const struct government *pgovern)
 **************************************************************************/
 const char *government_name_for_player(const struct player *pplayer)
 {
+  struct government *pgovern;
+
   if (!pplayer->is_alive) {
     return "-";
   }
 
-  return government_name_translation(government_of_player(pplayer));
+  pgovern = government_of_player(pplayer);
+  if (pgovern == nullptr) {
+    /* We don't (yet) know this player's government. This is a normal,
+     * transient state on the client: e.g. right after first contact,
+     * diplomatic state can update in a packet ahead of the
+     * PACKET_PLAYER_INFO that carries the real government, so
+     * pplayer->government is still unset. Fall back rather than
+     * dereference a nullptr. */
+    return "-";
+  }
+
+  return government_name_translation(pgovern);
 }
 
 /**********************************************************************//**
