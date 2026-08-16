@@ -319,6 +319,14 @@ static struct section_file *secfile_from_input_file(struct inputfile *inf,
   bool error = FALSE;
 
   if (!inf) {
+    /* inf_from_file() could not open the file (missing, unreadable, ...)
+     * and does not log anything itself. Without this, the stale contents
+     * of the process-global secfile error buffer -- left over from
+     * whatever unrelated secfile operation last failed -- would be
+     * reported instead, naming the wrong file and entry entirely. */
+    SECFILE_LOG(nullptr, nullptr, "Could not open '%s' for reading: %s",
+                filename != nullptr ? filename : "(unknown)",
+                fc_strerror(fc_get_errno()));
     return nullptr;
   }
 
