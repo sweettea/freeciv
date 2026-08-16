@@ -407,6 +407,13 @@ const char *ruler_title_for_player(const struct player *pplayer,
 
   fc_assert_ret_val(0 < buf_len, nullptr);
 
+  if (pgovern == nullptr) {
+    /* We don't (yet) know this player's government -- see the identical
+     * race explained in government_name_for_player(). Fall back exactly
+     * as callers already do when they know intel is unavailable. */
+    return default_title_for_player(pplayer, buf, buf_len);
+  }
+
   /* Try specific nation ruler title. */
   if (!ruler_title_hash_lookup(pgovern->ruler_titles,
                                pnation, &pruler_title)
