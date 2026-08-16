@@ -2939,8 +2939,9 @@ static void sg_load_map_tiles(struct loaddata *loading)
     int nat_x, nat_y;
 
     index_to_native_pos(&nat_x, &nat_y, tile_index(ptile));
-    spec_sprite = secfile_lookup_str(loading->file, "map.spec_sprite_%d_%d",
-                                     nat_x, nat_y);
+    spec_sprite = secfile_lookup_str_default(loading->file, NULL,
+                                             "map.spec_sprite_%d_%d",
+                                             nat_x, nat_y);
     label = secfile_lookup_str_default(loading->file, NULL, "map.label_%d_%d",
                                        nat_x, nat_y);
     if (NULL != spec_sprite) {
