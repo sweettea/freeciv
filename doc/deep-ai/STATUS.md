@@ -15171,3 +15171,37 @@ one factorial cell, not three arms), not another mechanism slice.
 
 Retention: `benchmark/results/w12b-ab/{on,off}/lategame-80-*`,
 identity under `benchmark/results/w12b-identity/`.
+
+## Observed in live play: deep fortresses saturate the city catchment (2026-08-15)
+
+Not benchmarked -- recorded from a europe.serv game (deep playing Deep_Osmanli)
+so the next session does not rediscover it. **No code changed.**
+
+Symptom: deep builds fortresses on essentially every tile of a city's work
+radius.
+
+Why this is structural rather than a tuning slip. The base want
+(`ai/deep/deepsettler.c:2238-2260`) prices a fortress as defender survival times
+how much the tile matters. Its own "bounded scope" note records that the advisor
+only ever offers candidate tiles inside some city's work radius, framed there as
+a limitation -- deep can never fortify open ground between empires. The flip
+side went unstated: it means *every* fortress deep is able to want lands inside
+its own catchment.
+
+Two costs are absent from the want:
+
+1. A fortress is territory-claiming. An enemy unit standing in one flips tile
+   ownership, so the city loses that tile from its worked set while the enemy
+   sits there.
+2. It is a defensive anchor for whoever holds it. An attacker who takes the tile
+   is harder to counterattack -- deep has prepaid the attacker's defence inside
+   its own economy.
+
+The incentive is inverted precisely where it matters: the want scales with how
+much the tile matters, and so does the damage when an enemy occupies it. Deep
+wants fortresses hardest on exactly the tiles that hurt most to lose.
+
+Before touching the want, instrument (fortresses built per game; turns a tile is
+denied to its city by enemy occupation of a deep-built fortress) rather than
+guessing a penalty term -- two guessed fixes on this project were reverted and
+the measured one won. Any fix is its own epic with its own A/B.
