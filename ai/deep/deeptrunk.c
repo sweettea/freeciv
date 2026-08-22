@@ -210,6 +210,16 @@ static int deep_trunk_c_keep_veto[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_keep_held[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_keep_kept[MAX_NUM_PLAYER_SLOTS];
 
+/* W28: occupied corridor tiles the source met, the ones it managed to
+ * price as a join, the ones whose join saved no whole turn, the joins
+ * actually assigned, and the whole turns those assignments were priced
+ * to save. */
+static int deep_trunk_c_stk_seen[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_stk_off[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_stk_dec[MAX_NUM_PLAYER_SLOTS][3];
+static int deep_trunk_c_stk_pick[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_stk_save[MAX_NUM_PLAYER_SLOTS];
+
 /* W12G: which corridor tile each worker is walking to.
  *
  * The advisor keeps no such memory -- auto_workers_player() sends an
@@ -1482,6 +1492,38 @@ void deep_trunk_source_veto(const struct player *pplayer)
 }
 
 /**********************************************************************//**
+  W28's own instrument, one call per stage so the stages can be read
+  against each other rather than only their ends.
+
+  'seen' is an occupied corridor tile the source met at all -- the
+  denominator, and the number today's skip throws away. 'offered' is one
+  it went on to price as a join, the three declines are the three tests
+  that can refuse one, and 'picked' a join assignment actually made,
+  with 'saved' the whole turns it was priced to shave off that worksite.
+
+  seen>0 with offered=0 is the gate shut, which is what the OFF arm must
+  show; offered>0 with picked=0 is joins that were priced and outbid,
+  which is a null rather than a dead knob.
+**************************************************************************/
+void deep_trunk_stack_note(const struct player *pplayer,
+                           enum deep_trunk_stack_stage stage, int saved)
+{
+  int pn = player_number(pplayer);
+
+  switch (stage) {
+  case DEEP_TRUNK_STK_SEEN: deep_trunk_c_stk_seen[pn]++; break;
+  case DEEP_TRUNK_STK_OFFER: deep_trunk_c_stk_off[pn]++; break;
+  case DEEP_TRUNK_STK_DEC_IDLE: deep_trunk_c_stk_dec[pn][0]++; break;
+  case DEEP_TRUNK_STK_DEC_LATE: deep_trunk_c_stk_dec[pn][1]++; break;
+  case DEEP_TRUNK_STK_DEC_PART: deep_trunk_c_stk_dec[pn][2]++; break;
+  case DEEP_TRUNK_STK_PICK:
+    deep_trunk_c_stk_pick[pn]++;
+    deep_trunk_c_stk_save[pn] += saved;
+    break;
+  }
+}
+
+/**********************************************************************//**
   One line per player per turn: the links the plan spans, the corridor
   tiles still without a road, how many candidates the want reached and
   the largest it issued. links>0 with hits=0 is the ceiling in
@@ -1580,6 +1622,33 @@ void deep_trunk_census(struct player *pplayer)
              game.info.turn, player_name(pplayer),
              deep_trunk_c_keep_veto[pn], deep_trunk_c_keep_held[pn],
              deep_trunk_c_keep_kept[pn]);
+  }
+
+  if (log_do_output_for_level(deep_metric_log_level())
+      && deep_trunk_c_stk_seen[pn] > 0) {
+    /* W28. seen= occupied corridor tiles the source met this turn --
+     * the ones it skips outright with the gate shut, so this line
+     * exists in BOTH settings and its first field is the denominator
+     * both arms share. offered= those priced as a join, declined= those
+     * whose join saved no whole turn, picked= join assignments made and
+     * saved= the whole turns they were priced to shave. seen>0 with
+     * offered=0 IS the gate: nothing else zeroes the middle of this
+     * line. declined= is the three refusals summed and dec= splits
+     * them idle:late:part -- nobody was actually working the tile, the
+     * job would end before this worker arrived, or the join bought no
+     * whole turn. Only the last is the marginal test turning down a
+     * real opportunity, so a null with dec= dominated by its first
+     * field is a statement about the venue, not about the price. */
+    log_base(deep_metric_log_level(),
+             "deep-trunkstack turn=%d player=\"%s\" seen=%d offered=%d"
+             " declined=%d dec=%d:%d:%d picked=%d saved=%d",
+             game.info.turn, player_name(pplayer),
+             deep_trunk_c_stk_seen[pn], deep_trunk_c_stk_off[pn],
+             deep_trunk_c_stk_dec[pn][0] + deep_trunk_c_stk_dec[pn][1]
+             + deep_trunk_c_stk_dec[pn][2],
+             deep_trunk_c_stk_dec[pn][0], deep_trunk_c_stk_dec[pn][1],
+             deep_trunk_c_stk_dec[pn][2], deep_trunk_c_stk_pick[pn],
+             deep_trunk_c_stk_save[pn]);
   }
 
   if (log_do_output_for_level(deep_metric_log_level())
@@ -1693,6 +1762,11 @@ void deep_trunk_census(struct player *pplayer)
   deep_trunk_c_keep_veto[pn] = 0;
   deep_trunk_c_keep_held[pn] = 0;
   deep_trunk_c_keep_kept[pn] = 0;
+  deep_trunk_c_stk_seen[pn] = 0;
+  deep_trunk_c_stk_off[pn] = 0;
+  memset(deep_trunk_c_stk_dec[pn], 0, sizeof(deep_trunk_c_stk_dec[pn]));
+  deep_trunk_c_stk_pick[pn] = 0;
+  deep_trunk_c_stk_save[pn] = 0;
   deep_trunk_c_div_pairs[pn] = 0;
   deep_trunk_c_div_links[pn] = 0;
   deep_trunk_c_div_max[pn] = 0.0;

@@ -154,6 +154,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .trunk_keep_margin = 0.0,            /* PLACEHOLDER, 0 = today's churn */
   .trunk_soft_border_gate = 0,         /* 0 = today's hard border clip */
   .trunk_risk_weight = 0.0,            /* PLACEHOLDER, 0 = today's walk */
+  .trunk_stack_gate = 0,               /* 0 = today's skip of taken tiles */
   .upkeep_gold_weight = 0.125,          /* PLACEHOLDER, untuned */
   .upkeep_unit_weight = 0.5,            /* PLACEHOLDER, untuned */
   .rotation_power_ratio = 2.0,          /* PLACEHOLDER, untuned */
@@ -481,6 +482,7 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(trunk_keep_margin) \
   TUNE_INT(trunk_soft_border_gate) \
   TUNE_DOUBLE(trunk_risk_weight) \
+  TUNE_INT(trunk_stack_gate) \
   TUNE_DOUBLE(upkeep_gold_weight) \
   TUNE_DOUBLE(upkeep_unit_weight) \
   TUNE_DOUBLE(rotation_power_ratio) \

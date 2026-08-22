@@ -130,6 +130,27 @@ void deep_trunk_hold_set(const struct player *pplayer, int uid,
                          const struct tile *ptile);
 void deep_trunk_hold_census(const struct player *pplayer, bool kept);
 
+/* W28, the stacking gate's own instrument. One call per stage of the
+ * occupied-tile branch: met at all, priced as a join, declined for
+ * saving no whole turn, or assigned (with the whole turns the join was
+ * priced to save). SEEN is counted in BOTH settings of the gate, so the
+ * line's first field is the denominator the OFF arm also reports. */
+enum deep_trunk_stack_stage {
+  DEEP_TRUNK_STK_SEEN,
+  DEEP_TRUNK_STK_OFFER,
+  /* The three refusals, kept apart because they mean opposite things
+   * about a null: nobody was actually working the tile (so there was
+   * nothing to join and today's skip was right), the job would finish
+   * before this worker could arrive, or the join saved no whole turn.
+   * Only the last is the marginal test declining a real opportunity. */
+  DEEP_TRUNK_STK_DEC_IDLE,
+  DEEP_TRUNK_STK_DEC_LATE,
+  DEEP_TRUNK_STK_DEC_PART,
+  DEEP_TRUNK_STK_PICK
+};
+void deep_trunk_stack_note(const struct player *pplayer,
+                           enum deep_trunk_stack_stage stage, int saved);
+
 /* Trunk census: links planned, corridor tiles still missing a road,
  * candidates the want reached, and the largest want issued -- plus,
  * on its own deep-trunkally line, the same for the corridors whose
