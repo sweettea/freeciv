@@ -9,6 +9,10 @@
 #                                        # venue ever give deep an ally?
 #   ./benchmark/w12c-ally.sh smoke [N]   # scripted alliance (teams):
 #                                        # the liveness proof
+#   ./benchmark/w12c-ally.sh ab [N]      # N (default 16) mirrored
+#                                        # lategame-80 seeds, gate off
+#                                        # vs on -- ONLY because the
+#                                        # venue stage said yes
 #
 # Machine budget: jobs 2, ports 7900-7949, this worktree's own build/.
 #
@@ -216,6 +220,42 @@ smoke)
   done
   ;;
 
+ab)
+  # One knob, one binary, both arms: off = tuning/w12-source-on.ini
+  # (slices 1+2 at their probe values), on = the same plus
+  # trunk_ally_gate=1. Run ONLY because the venue stage answered yes --
+  # lategame-80 does form deep-deep alliances inside its 80 turns, so
+  # the comparison has a population to measure instead of proving
+  # off-path identity twice.
+  OUT=$ROOT/benchmark/results/w12c-ab
+  SEEDS=${2:-16}
+  pin_server "$1"
+  # ON first, deliberately: if the gate turns out not to fire on this
+  # venue after all, the comparison is void and that is worth learning
+  # in the first arm rather than the second.
+  for arm in on off; do
+    case $arm in
+      on)  ini=$ROOT/benchmark/tuning/w12-ally-on.ini;   port=7935;;
+      off) ini=$ROOT/benchmark/tuning/w12-source-on.ini; port=7945;;
+    esac
+    echo "=== A/B arm $arm: $SEEDS lategame-80 games ==="
+    TUNING=$ini ./benchmark/run.sh --count "$SEEDS" --arms deep \
+      --config benchmark/configs/lategame-80.conf \
+      --server "$SERVER" --jobs "$JOBS" --portbase "$port" \
+      --out "$OUT/$arm"
+  done
+  off_cell=$(echo "$OUT"/off/lategame-80-*)
+  on_cell=$(echo "$OUT"/on/lategame-80-*)
+  echo "=== paired compare ==="
+  ./benchmark/paircmp.py "$off_cell" "$on_cell" \
+    --pat ally-turns="deep-trunkally turn=" \
+    --pat ally-active="deep-trunkally .*offered=[1-9]" \
+    --pat ally-picks="deep-trunkpick.*ally=1" \
+    --pat trunk-picks="deep-trunkpick turn=" \
+    --arm deep
+  ;;
+
 *)
-  echo "usage: $0 {identity|venue [seeds]|smoke [seeds]}" >&2; exit 1;;
+  echo "usage: $0 {identity|venue [seeds]|smoke [seeds]|ab [seeds]}" >&2
+  exit 1;;
 esac
