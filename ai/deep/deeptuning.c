@@ -301,6 +301,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .techgoal_deep = 0,                   /* 0 = stock selection, byte-identical */
   .techgoal_distance_power = 1.0,       /* PLACEHOLDER, stock's shape; only
                                          * read when techgoal_deep != 0 */
+  .founder_tier_gate = 0,               /* 0 = today's arbitration exactly */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -593,7 +594,8 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(buy_per_gold) \
   TUNE_INT(honest_info) \
   TUNE_INT(techgoal_deep) \
-  TUNE_DOUBLE(techgoal_distance_power)
+  TUNE_DOUBLE(techgoal_distance_power) \
+  TUNE_INT(founder_tier_gate)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 

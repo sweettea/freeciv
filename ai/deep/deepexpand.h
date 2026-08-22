@@ -49,6 +49,11 @@
  *   vcap       the city-count divisor applied (/100)
  *   skipwar    the domestic advisor was never called: war footing and a
  *              military want (dai_city_choose_build's inherited rule)
+ *   contest    founder_tier_gate: deep's founder want outbid the
+ *              military want on magnitude, so the emergency skip was
+ *              not taken and the founder was exempt from the tier at
+ *              the merge (0 with the gate off)
+ *   contwin    ... of those, the ones a founder actually won
  *   skipemerg  ... or the military choice sat in the emergency tier
  *   auc        city-turns where the domestic auction actually ran with
  *              a founder bid in hand
@@ -99,6 +104,14 @@ void deep_expand_note_bid(const struct player *pplayer, int want,
 
 /* The domestic advisor was skipped for this city-turn. */
 void deep_expand_note_skip(const struct player *pplayer, bool war);
+
+/* founder_tier_gate raised a contest: deep's founder want outbid the
+ * military want on magnitude, so the emergency skip was not taken and
+ * the founder is exempt from the tier at the merge. */
+void deep_expand_note_contest(const struct player *pplayer);
+
+/* ... and the contest ended with a founder taking the build. */
+void deep_expand_note_contest_win(const struct player *pplayer);
 
 /* The auction settled. `founder_bid` is the want the advisor compared,
  * `dom_founder` says the domestic advisor's own winner was the founder,

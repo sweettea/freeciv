@@ -46,6 +46,7 @@ struct deep_expand_tally {
   int w0, wpos, wneg;
   int held, vfood, vwonder, vcap;
   int skipwar, skipemerg;
+  int contest, contwin;
   int auc, win, lostdom, lostmil, lostmilt;
   /* The magnitudes behind the counts: what a founder bid was worth on
    * the city-turns where it existed, and on the ones where it lost. */
@@ -155,6 +156,27 @@ void deep_expand_note_skip(const struct player *pplayer, bool war)
 }
 
 /**********************************************************************//**
+  founder_tier_gate raised a contest for this city-turn: deep's own
+  founder want strictly outbid the military want on magnitude, so the
+  emergency skip is not taken and a founder that wins the domestic
+  advisor's own auction is exempt from the tier at the merge. Zero
+  with the gate off, which is what makes the funnel line the gate's
+  liveness proof.
+**************************************************************************/
+void deep_expand_note_contest(const struct player *pplayer)
+{
+  deep_expand_of(pplayer)->contest++;
+}
+
+/**********************************************************************//**
+  ... and the contest ended with a founder taking the build.
+**************************************************************************/
+void deep_expand_note_contest_win(const struct player *pplayer)
+{
+  deep_expand_of(pplayer)->contwin++;
+}
+
+/**********************************************************************//**
   The auction settled with a founder bid in hand. Three outcomes, each
   charged where it happened: the domestic advisor preferred something
   else, the merge preferred the military choice, or the founder won.
@@ -229,14 +251,16 @@ void deep_expand_census(struct player *pplayer)
   log_base(deep_metric_log_level(),
            "deep-expand turn=%d player=\"%s\" cities=%d gate=%d norole=%d"
            " fresh=%d stale=%d w0=%d wpos=%d wneg=%d held=%d vfood=%d"
-           " vwonder=%d vcap=%d skipwar=%d skipemerg=%d auc=%d win=%d"
+           " vwonder=%d vcap=%d skipwar=%d skipemerg=%d contest=%d"
+           " contwin=%d auc=%d win=%d"
            " lostdom=%d lostmil=%d lostmilt=%d wantsum=%.0f bidsum=%.0f"
            " lostsum=%.0f prod=%d born=%d alive=%d found=%d sites=%.2f"
            " freetiles=%d freeshare=%.3f",
            game.info.turn, player_name(pplayer),
            t->cities, t->gate, t->norole, t->fresh, t->stale,
            t->w0, t->wpos, t->wneg, t->held, t->vfood, t->vwonder, t->vcap,
-           t->skipwar, t->skipemerg, t->auc, t->win, t->lostdom,
+           t->skipwar, t->skipemerg, t->contest, t->contwin,
+           t->auc, t->win, t->lostdom,
            t->lostmil, t->lostmilt, t->wantsum, t->bidsum, t->lostsum,
            prod, born, alive, found,
            deep_remaining_sites(pplayer),

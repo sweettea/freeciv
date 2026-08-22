@@ -2748,6 +2748,39 @@ struct deep_tuning {
    * is more near-sighted than stock. PLACEHOLDER -- the value is the
    * tuning pile's, not a choice. */
   double techgoal_distance_power;
+
+  /* S-EXPAND-FIX: let a founder want CONTEST the military emergency
+   * tier instead of being discarded by it.
+   *
+   * What the funnel (STATUS 2026-08-22) established: deep built 0
+   * settlers in 20 complete games, and on 48.5% of the city-turns
+   * that carried a positive founder want the military side sat in
+   * the emergency tier, discarding a median want of 1 225.
+   *
+   * What reading the code then established, and what this knob is
+   * shaped by: the merge comparison is NOT where that happens.
+   * `domestic_advisor_choose_build()` clamps whatever it returns to
+   * DAI_WANT_DOMESTIC_MAX (daidomestic.c:631, = 750.075), and
+   * deep_want_from_choice() is monotone in the raw want, so at the
+   * merge deep's (tier, value) order and stock's magnitude order
+   * agree on every comparison there is -- and neither can seat a
+   * 750-capped founder against an emergency want of 1 000 or more.
+   * Measured over a probe game: the largest winning Settlers want is
+   * exactly 750.1, while military picks reach 58 588.
+   *
+   * The comparison the funnel actually adjudicated is one stage
+   * earlier: deep's `founder_want` as deep formed it, against the
+   * military want as the military advisor formed it. 43.7% of the
+   * tier-losses flip under it, median margin 411. With this gate on,
+   * a city whose founder_want strictly exceeds the military want
+   * (a) still reaches the domestic advisor when the emergency skip
+   * would have suppressed the call, and (b) wins the merge if the
+   * advisor's own winner is a founder.
+   *
+   * Both sides are wants that already exist and the comparator is
+   * `>`: no discount, no scale, no constant. Nothing changes for any
+   * non-founder want, and 0 restores today's arbitration exactly. */
+  int founder_tier_gate;
 };
 
 void deep_tuning_init(void);

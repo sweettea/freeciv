@@ -1449,6 +1449,13 @@ MAP = {
         "value, and the goalsteps=/goalwant= fields move with it; only "
         "read when techgoal_deep != 0 (deeptech.c "
         "deep_reselect_research())."),
+    "founder_tier_gate": (
+        "S3", "mode", "direct", [("deep-tiercontest", "")],
+        "A/B gate for founder-vs-emergency-tier arbitration "
+        "(deepdefence.c deep_founder_contests_emergency()). One "
+        "deep-tiercontest line per city-turn where deep's founder_want "
+        "outbids the military want; the line cannot be emitted with "
+        "the gate off. Default 0: expect no lines at defaults."),
 }
 
 STAGE_NAME = {
