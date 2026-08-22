@@ -106,6 +106,11 @@ static int deep_trunk_c_ally_pick[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_div_pairs[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_div_links[MAX_NUM_PLAYER_SLOTS];
 static double deep_trunk_c_div_max[MAX_NUM_PLAYER_SLOTS];
+/* Beyond-ceiling picks that landed on a dividend-priced corridor, and
+ * of those the ones the dividend actually FLIPPED -- the source would
+ * have assigned a different task (or none) without it. */
+static int deep_trunk_c_div_pick[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_div_flip[MAX_NUM_PLAYER_SLOTS];
 
 /**********************************************************************//**
   Does this tile already carry a road that speeds movement? A corridor
@@ -723,11 +728,16 @@ static bool deep_trunk_tile_ally(const struct tile *ptile)
  * share it without polluting each other's instruments. */
 static adv_want deep_trunk_price(const struct deep_tuning *tune,
                                  const struct extra_type *target,
-                                 const struct tile *ptile)
+                                 const struct tile *ptile,
+                                 adv_want *div_out)
 {
   const struct deep_trunk_link *link;
   const struct road_type *proad = deep_trunk_road_target(target);
   int saving, slot;
+
+  if (div_out != NULL) {
+    *div_out = 0.0;
+  }
 
   if (proad == NULL) {
     return 0.0;
@@ -742,6 +752,11 @@ static adv_want deep_trunk_price(const struct deep_tuning *tune,
   saving = link->terr - link->len * proad->move_cost;
   if (saving <= 0) {
     return 0.0;
+  }
+
+  if (div_out != NULL) {
+    *div_out = tune->trunk_trade_gain * link->dividend / MORT
+               * amortize(1.0, link->gap);
   }
 
   /* Logistics plus, behind trunk_trade_gain, the link's trade dividend
@@ -771,7 +786,7 @@ adv_want deep_trunk_want(const struct player *pplayer,
 
   deep_trunk_refresh(pplayer);
 
-  want = deep_trunk_price(tune, target, ptile);
+  want = deep_trunk_price(tune, target, ptile, NULL);
   if (want <= 0.0) {
     return 0.0;
   }
@@ -821,7 +836,7 @@ adv_want deep_trunk_source_want(const struct player *pplayer,
 
   deep_trunk_refresh(pplayer);
 
-  want = deep_trunk_price(tune, target, ptile);
+  want = deep_trunk_price(tune, target, ptile, NULL);
   if (want > 0.0) {
     deep_trunk_c_src_off[player_number(pplayer)]++;
     if (deep_trunk_tile_ally(ptile)) {
@@ -830,6 +845,33 @@ adv_want deep_trunk_source_want(const struct player *pplayer,
   }
 
   return want;
+}
+
+/**********************************************************************//**
+  The TRADE DIVIDEND alone out of what deep_trunk_source_want() just
+  said about this tile -- the part of the price W12 slice 4 added.
+
+  It exists so the task source can price its own counterfactual: the
+  champion it would have chosen with this term removed. That is the only
+  honest way to say "the dividend flipped this pick" rather than "this
+  pick happened to land on a corridor the dividend also priced", and it
+  costs one subtraction because the number is already computed.
+**************************************************************************/
+adv_want deep_trunk_source_dividend(const struct player *pplayer,
+                                    const struct extra_type *target,
+                                    const struct tile *ptile)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  adv_want dividend = 0.0;
+
+  if (tune->trunk_road_gain <= 0.0 || tune->trunk_trade_gain <= 0.0) {
+    return 0.0;
+  }
+
+  deep_trunk_refresh(pplayer);
+  deep_trunk_price(tune, target, ptile, &dividend);
+
+  return dividend;
 }
 
 /**********************************************************************//**
@@ -854,15 +896,22 @@ bool deep_trunk_tile_is_ally(const struct player *pplayer,
   the gate did work rather than merely being open.
 **************************************************************************/
 void deep_trunk_source_pick(const struct player *pplayer,
-                            const struct tile *ptile, int dist)
+                            const struct tile *ptile, int dist, bool flipped)
 {
   int pn = player_number(pplayer);
   int bucket = CLIP(0, dist, DEEP_TRUNK_SRC_HIST);
+  int slot = deep_trunk_tile == NULL ? 0 : deep_trunk_tile[tile_index(ptile)];
 
   deep_trunk_c_src_pick[pn]++;
   deep_trunk_c_src_hist[pn][bucket]++;
   if (deep_trunk_tile_ally(ptile)) {
     deep_trunk_c_ally_pick[pn]++;
+  }
+  if (slot > 0 && deep_trunk_links[slot - 1].dividend > 0.0) {
+    deep_trunk_c_div_pick[pn]++;
+  }
+  if (flipped) {
+    deep_trunk_c_div_flip[pn]++;
   }
 }
 
@@ -929,7 +978,8 @@ void deep_trunk_census(struct player *pplayer)
   }
 
   if (log_do_output_for_level(deep_metric_log_level())
-      && deep_trunk_c_div_pairs[pn] > 0) {
+      && (deep_trunk_c_div_pairs[pn] > 0
+          || deep_trunk_c_div_pick[pn] > 0)) {
     /* W12 slice 4. pairs= route valuations this turn, which is the
      * mechanism's whole CPU cost made visible; links= corridors that
      * came out carrying a dividend; maxdiv= the largest, in deeptrade's
@@ -938,15 +988,18 @@ void deep_trunk_census(struct player *pplayer)
      * rather than a broken knob. */
     log_base(deep_metric_log_level(),
              "deep-trunkdiv turn=%d player=\"%s\" pairs=%d links=%d"
-             " maxdiv=%.2f",
+             " maxdiv=%.2f picked=%d flipped=%d",
              game.info.turn, player_name(pplayer),
              deep_trunk_c_div_pairs[pn], deep_trunk_c_div_links[pn],
-             deep_trunk_c_div_max[pn]);
+             deep_trunk_c_div_max[pn], deep_trunk_c_div_pick[pn],
+             deep_trunk_c_div_flip[pn]);
   }
 
   deep_trunk_c_div_pairs[pn] = 0;
   deep_trunk_c_div_links[pn] = 0;
   deep_trunk_c_div_max[pn] = 0.0;
+  deep_trunk_c_div_pick[pn] = 0;
+  deep_trunk_c_div_flip[pn] = 0;
   deep_trunk_c_links[pn] = 0;
   deep_trunk_c_gap[pn] = 0;
   deep_trunk_c_ally_links[pn] = 0;

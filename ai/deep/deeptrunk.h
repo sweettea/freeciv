@@ -58,9 +58,16 @@ adv_want deep_trunk_source_want(const struct player *pplayer,
                                 const struct extra_type *target,
                                 const struct tile *ptile);
 void deep_trunk_source_pick(const struct player *pplayer,
-                            const struct tile *ptile, int dist);
+                            const struct tile *ptile, int dist, bool flipped);
 bool deep_trunk_tile_is_ally(const struct player *pplayer,
                              const struct tile *ptile);
+
+/* W12 slice 4: the trade dividend alone out of the want above, so the
+ * task source can price the champion it would have chosen without it
+ * and say whether the dividend FLIPPED the assignment. */
+adv_want deep_trunk_source_dividend(const struct player *pplayer,
+                                    const struct extra_type *target,
+                                    const struct tile *ptile);
 
 /* W12 slice 3: the node set was pplayer->cities and nothing else, so
  * the network could never leave the shape of deep's own empire --
