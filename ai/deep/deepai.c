@@ -67,6 +67,7 @@
 #include "deepsettler.h"
 #include "deepsite.h"
 #include "deepspy.h"
+#include "deepchat.h"
 #include "deepstance.h"
 #include "deeptechcensus.h"
 #include "deeptrade.h"
@@ -693,6 +694,10 @@ static void dpai_data_phase_begin(struct player *pplayer, bool is_new_phase)
     deep_stance_refresh(pplayer);
     deep_stance_log(pplayer);
 
+    /* A fresh rate cap for whatever deep says to its allies this turn
+     * (CHATTY). Output only, and a no-op while chatty_gate is 0. */
+    deep_chat_phase_begin(pplayer);
+
     /* Before the turn's movement, so a unit that marches out today is
      * counted where it slept (NETTHREAT item 3's cadence). */
     deep_cadence_sample(pplayer);
@@ -735,6 +740,12 @@ static void dpai_data_phase_finished(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
   const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
+
+  /* Before the forwarded call, while this phase's state is still the
+   * one deep decided in: what deep says to its allies about the turn
+   * it just played (CHATTY). Output only, and a no-op while
+   * chatty_gate is 0. */
+  deep_chat_phase_finished(pplayer);
 
   dai_data_phase_finished(deftype, pplayer);
   /* end_phase() has run last_activities for EVERY player by now

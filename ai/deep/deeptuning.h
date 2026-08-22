@@ -2748,6 +2748,33 @@ struct deep_tuning {
    * is more near-sighted than stock. PLACEHOLDER -- the value is the
    * tuning pile's, not a choice. */
   double techgoal_distance_power;
+
+  /* CHATTY -- deep talks TO its allies (deepchat.c). OUTBOUND ONLY:
+   * deep says what it is doing and what it can see, and never reads a
+   * message back, so there is no protocol here to be lied to by.
+   *
+   * chatty_gate = 0 (default): deep says nothing, deep_chat_open()
+   * fails on its first comparison, and every scan behind it is skipped
+   * -- the build is byte-identical. != 0: the four message classes are
+   * live (ally corridors, threats to an ally's city, an assault at
+   * launch, a pact or a war). FLAVOUR FLAG, not a tuning target: every
+   * line is output only and no line can move a want, a unit or the
+   * RNG, so there is no score for a tuner to climb here. It is in the
+   * registry because every field must be reachable from a tuning file,
+   * which is how the Europe seat turns it on. */
+  int chatty_gate;
+
+  /* The rate cap: lines this player may say per turn, counted per LINE
+   * and not per recipient. It is what keeps a busy turn -- three
+   * corridors, two threats and a launch -- from filling a human's chat
+   * window, and it is why the channel needs no other quieting rule.
+   * <= 0 is silence even with the gate open.
+   *
+   * PLACEHOLDER, untuned, and unusually it can never BE tuned by
+   * benchmark/tune.py: the quantity it trades off is a human ally's
+   * patience, which no scorelog contains. It owes a taste pass, not a
+   * tuning pass. */
+  int chatty_max_per_turn;
 };
 
 void deep_tuning_init(void);
