@@ -70,6 +70,11 @@
 #include "deepops.h"
 #include "deepsettler.h"
 
+/* Log-only fortress bookkeeping, defined with the base want far below
+ * and called from the two places a worker is set to work. */
+static void deep_fort_note_assignment(const struct player *pplayer,
+                                      const struct tile *ptile);
+
 /* The stock settler site search prices travel as if the map were empty
  * and at peace: its land search parameter has no tile behaviour, no
  * risk cost and no danger callback (find_best_city_placement() in
@@ -1493,6 +1498,9 @@ static bool deep_idle_fallback_work(struct ai_type *ait,
     assigned = auto_worker_setup_work(nmap, pplayer, punit, state, 0,
                                       &path, best_tile, best_act,
                                       &best_target, best_turns);
+    if (assigned && best_act == ACTIVITY_BASE) {
+      deep_fort_note_assignment(pplayer, best_tile);
+    }
     if (path != NULL) {
       pf_path_destroy(path);
     }
@@ -2203,6 +2211,9 @@ FIND_WORK:
       && auto_worker_setup_work(nmap, pplayer, punit, state, 0, &path,
                                 best_tile, best_act, &best_target,
                                 completion_time)) {
+    if (best_act == ACTIVITY_BASE) {
+      deep_fort_note_assignment(pplayer, best_tile);
+    }
     if (pcity != NULL) {
       clear_worker_tasks(pcity);
     }
@@ -2278,6 +2289,181 @@ static int deep_fort_offers[MAX_NUM_PLAYER_SLOTS];
 static int deep_fort_evals[MAX_NUM_PLAYER_SLOTS];
 static int deep_fort_wants[MAX_NUM_PLAYER_SLOTS];
 static double deep_fort_maxwant[MAX_NUM_PLAYER_SLOTS];
+
+/* Whole-GAME accumulators for the base want, never reset: the question
+ * "what does a fortress task cost, across a game" cannot be answered
+ * by pooling per-turn medians, so the histogram runs for the process
+ * and every turn reprints the running answer. The benchmark harness
+ * runs one game per server process, so the LAST such line of a game is
+ * that game's distribution.
+ *
+ * The bucket width is a LOGGING resolution, not a tunable: it decides
+ * how precisely a printed quantile names a want, and no game state
+ * reads it. Positive base wants live in (0, base_fort_gain] by
+ * construction -- survival gain and ground weight are both in [0,1] --
+ * so 1.0-wide buckets to 200 cover the whole tunable range
+ * (tuning-params.ini caps base_fort_gain at 200) with an overflow
+ * bucket for anything a future ruleset or arena file puts above it. */
+#define DEEP_FORTW_BUCKETS 200
+#define DEEP_FORTW_WIDTH 1.0
+static int deep_fortw_hist[MAX_NUM_PLAYER_SLOTS][DEEP_FORTW_BUCKETS + 1];
+static int deep_fortw_n[MAX_NUM_PLAYER_SLOTS];
+static double deep_fortw_min[MAX_NUM_PLAYER_SLOTS];
+static double deep_fortw_max[MAX_NUM_PLAYER_SLOTS];
+static double deep_fortw_sum[MAX_NUM_PLAYER_SLOTS];
+
+/* Base tasks a worker was actually SET TO WORK on, and the ones whose
+ * tile was later seen carrying a base. The ring is a bookkeeping
+ * bound, not a game bound: pending base tasks are bounded by the
+ * worker count, and an assignment evicted before its tile finished is
+ * simply not counted as finished. */
+#define DEEP_FORT_RING 64
+static int deep_fort_ring[MAX_NUM_PLAYER_SLOTS][DEEP_FORT_RING];
+static int deep_fort_ring_n[MAX_NUM_PLAYER_SLOTS];
+static int deep_fort_assigned[MAX_NUM_PLAYER_SLOTS];
+static int deep_fort_finished[MAX_NUM_PLAYER_SLOTS];
+
+/**********************************************************************//**
+  Record one positive base want in this player's whole-game histogram.
+  Log-only: nothing reads these accumulators back into a decision.
+**************************************************************************/
+static void deep_fort_want_sample(int pn, double want)
+{
+  int b;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+
+  b = (int) (want / DEEP_FORTW_WIDTH);
+  if (b < 0) {
+    b = 0;
+  } else if (b > DEEP_FORTW_BUCKETS) {
+    b = DEEP_FORTW_BUCKETS;
+  }
+  deep_fortw_hist[pn][b]++;
+
+  if (deep_fortw_n[pn] == 0 || want < deep_fortw_min[pn]) {
+    deep_fortw_min[pn] = want;
+  }
+  if (want > deep_fortw_max[pn]) {
+    deep_fortw_max[pn] = want;
+  }
+  deep_fortw_sum[pn] += want;
+  deep_fortw_n[pn]++;
+}
+
+/**********************************************************************//**
+  The want at or below which 'pct' percent of this player's positive
+  base wants fell, read off the histogram, so the answer is exact to
+  the bucket width and clamped to the exactly-tracked extremes.
+**************************************************************************/
+static double deep_fort_want_pct(int pn, int pct)
+{
+  int target = (deep_fortw_n[pn] * pct + 99) / 100;
+  int seen = 0;
+  int b;
+
+  if (deep_fortw_n[pn] <= 0) {
+    return 0.0;
+  }
+  if (target < 1) {
+    target = 1;
+  }
+
+  for (b = 0; b <= DEEP_FORTW_BUCKETS; b++) {
+    seen += deep_fortw_hist[pn][b];
+    if (seen >= target) {
+      double mid = (b + 0.5) * DEEP_FORTW_WIDTH;
+
+      if (mid < deep_fortw_min[pn]) {
+        return deep_fortw_min[pn];
+      }
+      if (mid > deep_fortw_max[pn]) {
+        return deep_fortw_max[pn];
+      }
+
+      return mid;
+    }
+  }
+
+  return deep_fortw_max[pn];
+}
+
+/**********************************************************************//**
+  Does this tile carry any base at all? Extras do not record who built
+  them, so every base-counting question this file asks is answered by
+  presence and cannot be attributed -- see the counter names.
+**************************************************************************/
+static bool deep_fort_tile_has_base(const struct tile *ptile)
+{
+  extra_type_by_cause_iterate(EC_BASE, pextra) {
+    if (tile_has_extra(ptile, pextra)) {
+      return TRUE;
+    }
+  } extra_type_by_cause_iterate_end;
+
+  return FALSE;
+}
+
+/**********************************************************************//**
+  A worker was just set to work building a base here. Counts the task
+  and remembers the tile, so the next census can see whether a base
+  appeared on it.
+**************************************************************************/
+static void deep_fort_note_assignment(const struct player *pplayer,
+                                      const struct tile *ptile)
+{
+  int pn = player_number(pplayer);
+  int idx = tile_index(ptile);
+  int i;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+
+  deep_fort_assigned[pn]++;
+
+  for (i = 0; i < deep_fort_ring_n[pn]; i++) {
+    if (deep_fort_ring[pn][i] == idx) {
+      return;
+    }
+  }
+
+  if (deep_fort_ring_n[pn] < DEEP_FORT_RING) {
+    deep_fort_ring[pn][deep_fort_ring_n[pn]++] = idx;
+  } else {
+    /* Drop the oldest pending tile. Its completion goes uncounted,
+     * which is the honest direction to lose accuracy in. */
+    memmove(&deep_fort_ring[pn][0], &deep_fort_ring[pn][1],
+            (DEEP_FORT_RING - 1) * sizeof(deep_fort_ring[pn][0]));
+    deep_fort_ring[pn][DEEP_FORT_RING - 1] = idx;
+  }
+}
+
+/**********************************************************************//**
+  Retire pending base assignments whose tile now carries a base. The
+  base need not be the one we ordered and need not be ours -- extras
+  record no builder -- so this is "a base task we gave, on a tile that
+  now has a base", not a proof of authorship.
+**************************************************************************/
+static void deep_fort_ring_sweep(const struct player *pplayer)
+{
+  int pn = player_number(pplayer);
+  int i = 0;
+
+  while (i < deep_fort_ring_n[pn]) {
+    struct tile *ptile = index_to_tile(&(wld.map), deep_fort_ring[pn][i]);
+
+    if (ptile != NULL && deep_fort_tile_has_base(ptile)) {
+      deep_fort_finished[pn]++;
+      deep_fort_ring[pn][i] = deep_fort_ring[pn][deep_fort_ring_n[pn] - 1];
+      deep_fort_ring_n[pn]--;
+      continue;
+    }
+    i++;
+  }
+}
 
 /**********************************************************************//**
   Pick this turn's reference duel: our strongest defender against the
@@ -2520,6 +2706,7 @@ static adv_want deep_base_want(const struct player *pplayer,
     if (want > deep_fort_maxwant[pn]) {
       deep_fort_maxwant[pn] = want;
     }
+    deep_fort_want_sample(pn, (double) want);
   }
 
   return want;
@@ -2550,6 +2737,23 @@ void deep_fort_census(struct player *pplayer)
                game.info.turn, player_name(pplayer), deep_fort_offers[pn],
                deep_fort_evals[pn], deep_fort_wants[pn],
                deep_fort_maxwant[pn], building);
+    }
+
+    /* Whole-game totals, on their own line so the per-turn one keeps
+     * the shape other sessions already grep. */
+    deep_fort_ring_sweep(pplayer);
+    if (deep_fortw_n[pn] > 0 || deep_fort_assigned[pn] > 0) {
+      log_base(deep_metric_log_level(),
+               "deep-fortwant turn=%d player=\"%s\" gamewants=%d"
+               " assigned=%d finished=%d min=%.2f p25=%.2f p50=%.2f"
+               " p75=%.2f max=%.2f mean=%.2f",
+               game.info.turn, player_name(pplayer), deep_fortw_n[pn],
+               deep_fort_assigned[pn], deep_fort_finished[pn],
+               deep_fortw_n[pn] > 0 ? deep_fortw_min[pn] : 0.0,
+               deep_fort_want_pct(pn, 25), deep_fort_want_pct(pn, 50),
+               deep_fort_want_pct(pn, 75), deep_fortw_max[pn],
+               deep_fortw_n[pn] > 0
+               ? deep_fortw_sum[pn] / deep_fortw_n[pn] : 0.0);
     }
   }
 
