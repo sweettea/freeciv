@@ -165,13 +165,21 @@ identity)
   unset TUNING
 
   echo "=== identity stage c: scorelog assertion ==="
+  # The NEWEST result dir per side, not a glob: run.sh keys its cell
+  # directory on the binary among other things, so a second identity
+  # run against a rebuilt head leaves two smoke-* dirs there and a
+  # bare glob expands to both -- which reads as "10 missing" and
+  # reports a pass as a failure. It did, once.
+  basedir=$(ls -dt "$OUT"/base/smoke-*/ | head -1)
+  headdir=$(ls -dt "$OUT"/head/smoke-*/ | head -1)
+  echo "comparing $basedir against $headdir"
   fail=0
   for arm in deep mixed_db; do
     same=0; diff_n=0; missing=0
     for seed in $(grep -E '^[0-9]+$' benchmark/seeds/train.txt \
                   | head -n "$SEEDS"); do
-      a=$(echo "$OUT"/base/smoke-*/"$arm"/seed-"$seed"/scorelog.txt)
-      b=$(echo "$OUT"/head/smoke-*/"$arm"/seed-"$seed"/scorelog.txt)
+      a=$basedir/$arm/seed-$seed/scorelog.txt
+      b=$headdir/$arm/seed-$seed/scorelog.txt
       if [ ! -r "$a" ] || [ ! -r "$b" ]; then
         echo "$arm seed $seed: MISSING scorelog"; missing=$((missing + 1))
       elif cmp -s "$a" "$b"; then
