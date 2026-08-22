@@ -18,6 +18,7 @@
 #include <stdlib.h>
 
 /* utility */
+#include "fcintl.h"
 #include "log.h"
 
 /* common/aicore */
@@ -55,6 +56,7 @@
 #include "daiunit.h"
 
 #include "deepai.h"
+#include "deepchat.h"
 #include "deepcombat.h"
 #include "deepdefence.h"
 #include "deepdiplomacy.h"
@@ -4035,6 +4037,27 @@ static void deep_op_launch(struct ai_type *ait, struct player *pplayer,
                            struct deep_operation *op)
 {
   int i;
+
+  /* CHATTY message class 3: tell the allies where the army is going,
+   * at LAUNCH and not at muster. Launch is when the commitment is
+   * real -- a mustering wave can still be abandoned, redeployed or
+   * re-targeted, and announcing one would be announcing something
+   * deep has not decided yet. Every assault launch passes through
+   * here (both MUSTER->MARCH transitions call it), and a raid does
+   * not: a raid has no target city to name.
+   *
+   * Output only, before the loop that actually moves anybody, and
+   * short-circuited on deep_chat_open()'s first comparison while
+   * chatty_gate is 0. */
+  if (deep_chat_open(pplayer)) {
+    struct city *goal = game_city_by_number(op->target_city);
+
+    if (goal != NULL) {
+      deep_chat_say(pplayer, DEEP_CHAT_OPERATION,
+                    _("We are marching on %s, a city of %s."),
+                    city_name_get(goal), player_name(city_owner(goal)));
+    }
+  }
 
   /* Re-resolve the target on EVERY iteration, and never hold the
    * pointer across dai_gothere().
