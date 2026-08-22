@@ -70,6 +70,11 @@
 #include "deepops.h"
 #include "deepsettler.h"
 
+/* Log-only fortress bookkeeping, defined with the base want far below
+ * and called from the two places a worker is set to work. */
+static void deep_fort_note_assignment(const struct player *pplayer,
+                                      const struct tile *ptile);
+
 /* The stock settler site search prices travel as if the map were empty
  * and at peace: its land search parameter has no tile behaviour, no
  * risk cost and no danger callback (find_best_city_placement() in
@@ -1493,6 +1498,9 @@ static bool deep_idle_fallback_work(struct ai_type *ait,
     assigned = auto_worker_setup_work(nmap, pplayer, punit, state, 0,
                                       &path, best_tile, best_act,
                                       &best_target, best_turns);
+    if (assigned && best_act == ACTIVITY_BASE) {
+      deep_fort_note_assignment(pplayer, best_tile);
+    }
     if (path != NULL) {
       pf_path_destroy(path);
     }
@@ -2203,6 +2211,9 @@ FIND_WORK:
       && auto_worker_setup_work(nmap, pplayer, punit, state, 0, &path,
                                 best_tile, best_act, &best_target,
                                 completion_time)) {
+    if (best_act == ACTIVITY_BASE) {
+      deep_fort_note_assignment(pplayer, best_tile);
+    }
     if (pcity != NULL) {
       clear_worker_tasks(pcity);
     }
@@ -2278,6 +2289,185 @@ static int deep_fort_offers[MAX_NUM_PLAYER_SLOTS];
 static int deep_fort_evals[MAX_NUM_PLAYER_SLOTS];
 static int deep_fort_wants[MAX_NUM_PLAYER_SLOTS];
 static double deep_fort_maxwant[MAX_NUM_PLAYER_SLOTS];
+
+/* Whole-GAME accumulators for the base want, never reset: the question
+ * "what does a fortress task cost, across a game" cannot be answered
+ * by pooling per-turn medians, so the histogram runs for the process
+ * and every turn reprints the running answer. The benchmark harness
+ * runs one game per server process, so the LAST such line of a game is
+ * that game's distribution.
+ *
+ * The bucket width is a LOGGING resolution, not a tunable: it decides
+ * how precisely a printed quantile names a want, and no game state
+ * reads it. Positive base wants live in (0, base_fort_gain] by
+ * construction -- survival gain and ground weight are both in [0,1] --
+ * so 1.0-wide buckets to 200 cover the whole tunable range
+ * (tuning-params.ini caps base_fort_gain at 200) with an overflow
+ * bucket for anything a future ruleset or arena file puts above it. */
+#define DEEP_FORTW_BUCKETS 200
+#define DEEP_FORTW_WIDTH 1.0
+static int deep_fortw_hist[MAX_NUM_PLAYER_SLOTS][DEEP_FORTW_BUCKETS + 1];
+static int deep_fortw_n[MAX_NUM_PLAYER_SLOTS];
+static double deep_fortw_min[MAX_NUM_PLAYER_SLOTS];
+static double deep_fortw_max[MAX_NUM_PLAYER_SLOTS];
+static double deep_fortw_sum[MAX_NUM_PLAYER_SLOTS];
+
+/* Base tasks a worker was actually SET TO WORK on, and the ones whose
+ * tile was later seen carrying a base. The ring is a bookkeeping
+ * bound, not a game bound: pending base tasks are bounded by the
+ * worker count, and an assignment evicted before its tile finished is
+ * simply not counted as finished. */
+#define DEEP_FORT_RING 64
+static int deep_fort_ring[MAX_NUM_PLAYER_SLOTS][DEEP_FORT_RING];
+static int deep_fort_ring_n[MAX_NUM_PLAYER_SLOTS];
+static int deep_fort_assigned[MAX_NUM_PLAYER_SLOTS];
+static int deep_fort_finished[MAX_NUM_PLAYER_SLOTS];
+
+/* Running sum over the game of catchment base-tiles held by a foreign
+ * unit -- tile-turns of denial, upper bound (see the census). */
+static int deep_fort_denial_turns[MAX_NUM_PLAYER_SLOTS];
+
+/**********************************************************************//**
+  Record one positive base want in this player's whole-game histogram.
+  Log-only: nothing reads these accumulators back into a decision.
+**************************************************************************/
+static void deep_fort_want_sample(int pn, double want)
+{
+  int b;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+
+  b = (int) (want / DEEP_FORTW_WIDTH);
+  if (b < 0) {
+    b = 0;
+  } else if (b > DEEP_FORTW_BUCKETS) {
+    b = DEEP_FORTW_BUCKETS;
+  }
+  deep_fortw_hist[pn][b]++;
+
+  if (deep_fortw_n[pn] == 0 || want < deep_fortw_min[pn]) {
+    deep_fortw_min[pn] = want;
+  }
+  if (want > deep_fortw_max[pn]) {
+    deep_fortw_max[pn] = want;
+  }
+  deep_fortw_sum[pn] += want;
+  deep_fortw_n[pn]++;
+}
+
+/**********************************************************************//**
+  The want at or below which 'pct' percent of this player's positive
+  base wants fell, read off the histogram, so the answer is exact to
+  the bucket width and clamped to the exactly-tracked extremes.
+**************************************************************************/
+static double deep_fort_want_pct(int pn, int pct)
+{
+  int target = (deep_fortw_n[pn] * pct + 99) / 100;
+  int seen = 0;
+  int b;
+
+  if (deep_fortw_n[pn] <= 0) {
+    return 0.0;
+  }
+  if (target < 1) {
+    target = 1;
+  }
+
+  for (b = 0; b <= DEEP_FORTW_BUCKETS; b++) {
+    seen += deep_fortw_hist[pn][b];
+    if (seen >= target) {
+      double mid = (b + 0.5) * DEEP_FORTW_WIDTH;
+
+      if (mid < deep_fortw_min[pn]) {
+        return deep_fortw_min[pn];
+      }
+      if (mid > deep_fortw_max[pn]) {
+        return deep_fortw_max[pn];
+      }
+
+      return mid;
+    }
+  }
+
+  return deep_fortw_max[pn];
+}
+
+/**********************************************************************//**
+  Does this tile carry any base at all? Extras do not record who built
+  them, so every base-counting question this file asks is answered by
+  presence and cannot be attributed -- see the counter names.
+**************************************************************************/
+static bool deep_fort_tile_has_base(const struct tile *ptile)
+{
+  extra_type_by_cause_iterate(EC_BASE, pextra) {
+    if (tile_has_extra(ptile, pextra)) {
+      return TRUE;
+    }
+  } extra_type_by_cause_iterate_end;
+
+  return FALSE;
+}
+
+/**********************************************************************//**
+  A worker was just set to work building a base here. Counts the task
+  and remembers the tile, so the next census can see whether a base
+  appeared on it.
+**************************************************************************/
+static void deep_fort_note_assignment(const struct player *pplayer,
+                                      const struct tile *ptile)
+{
+  int pn = player_number(pplayer);
+  int idx = tile_index(ptile);
+  int i;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+
+  deep_fort_assigned[pn]++;
+
+  for (i = 0; i < deep_fort_ring_n[pn]; i++) {
+    if (deep_fort_ring[pn][i] == idx) {
+      return;
+    }
+  }
+
+  if (deep_fort_ring_n[pn] < DEEP_FORT_RING) {
+    deep_fort_ring[pn][deep_fort_ring_n[pn]++] = idx;
+  } else {
+    /* Drop the oldest pending tile. Its completion goes uncounted,
+     * which is the honest direction to lose accuracy in. */
+    memmove(&deep_fort_ring[pn][0], &deep_fort_ring[pn][1],
+            (DEEP_FORT_RING - 1) * sizeof(deep_fort_ring[pn][0]));
+    deep_fort_ring[pn][DEEP_FORT_RING - 1] = idx;
+  }
+}
+
+/**********************************************************************//**
+  Retire pending base assignments whose tile now carries a base. The
+  base need not be the one we ordered and need not be ours -- extras
+  record no builder -- so this is "a base task we gave, on a tile that
+  now has a base", not a proof of authorship.
+**************************************************************************/
+static void deep_fort_ring_sweep(const struct player *pplayer)
+{
+  int pn = player_number(pplayer);
+  int i = 0;
+
+  while (i < deep_fort_ring_n[pn]) {
+    struct tile *ptile = index_to_tile(&(wld.map), deep_fort_ring[pn][i]);
+
+    if (ptile != NULL && deep_fort_tile_has_base(ptile)) {
+      deep_fort_finished[pn]++;
+      deep_fort_ring[pn][i] = deep_fort_ring[pn][deep_fort_ring_n[pn] - 1];
+      deep_fort_ring_n[pn]--;
+      continue;
+    }
+    i++;
+  }
+}
 
 /**********************************************************************//**
   Pick this turn's reference duel: our strongest defender against the
@@ -2520,6 +2710,7 @@ static adv_want deep_base_want(const struct player *pplayer,
     if (want > deep_fort_maxwant[pn]) {
       deep_fort_maxwant[pn] = want;
     }
+    deep_fort_want_sample(pn, (double) want);
   }
 
   return want;
@@ -2551,12 +2742,204 @@ void deep_fort_census(struct player *pplayer)
                deep_fort_evals[pn], deep_fort_wants[pn],
                deep_fort_maxwant[pn], building);
     }
+
+    /* Whole-game totals, on their own line so the per-turn one keeps
+     * the shape other sessions already grep. */
+    deep_fort_ring_sweep(pplayer);
+    if (deep_fortw_n[pn] > 0 || deep_fort_assigned[pn] > 0) {
+      log_base(deep_metric_log_level(),
+               "deep-fortwant turn=%d player=\"%s\" gamewants=%d"
+               " assigned=%d finished=%d min=%.2f p25=%.2f p50=%.2f"
+               " p75=%.2f max=%.2f mean=%.2f",
+               game.info.turn, player_name(pplayer), deep_fortw_n[pn],
+               deep_fort_assigned[pn], deep_fort_finished[pn],
+               deep_fortw_n[pn] > 0 ? deep_fortw_min[pn] : 0.0,
+               deep_fort_want_pct(pn, 25), deep_fort_want_pct(pn, 50),
+               deep_fort_want_pct(pn, 75), deep_fortw_max[pn],
+               deep_fortw_n[pn] > 0
+               ? deep_fortw_sum[pn] / deep_fortw_n[pn] : 0.0);
+    }
   }
 
   deep_fort_offers[pn] = 0;
   deep_fort_evals[pn] = 0;
   deep_fort_wants[pn] = 0;
   deep_fort_maxwant[pn] = 0.0;
+}
+
+/**********************************************************************//**
+  One line per player per turn: how much of this empire's city
+  catchments carries a base, and how much of the part the cities
+  actually work does.
+
+  Also the denial counter: catchment tiles that carry a base AND a
+  foreign unit standing in it. held_anybuilder is the honest name --
+  extras record no builder, so a base an ENEMY built inside our work
+  radius and then garrisoned is counted here exactly like one of ours
+  that an enemy walked into. The count is an upper bound on "we prepaid
+  an attacker's defence"; treat its LEVEL as suspect and its movement
+  with deep's own base-building as the signal. denial_tileturns is the
+  running sum over the game, so the last line of a game is the total.
+
+  "Catchment" is the work radius, city centre included, restricted to
+  the tiles the city could ever work -- the same city_tile_iterate the
+  city manager walks. "worked" is tiles this very city has a citizen
+  on right now, which is the set the saturation symptom is about: a
+  fortress on a tile nobody works costs only the worker-turns, while
+  one on a worked tile is also the thing an enemy can stand in.
+
+  Counts BASES, not fortresses. Extras record no builder and rulesets
+  spell their defensive base differently (classic gives the Fortress
+  extra a defense_bonus, civ2civ3 delivers the same thing as effects),
+  so this counts every EC_BASE extra present -- ours, an enemy's, and
+  the era's airbases and buoys alike. In the benchmark rulesets a base
+  standing inside a city work radius is overwhelmingly a fortress, but
+  the number is an upper bound and the field name says base.
+**************************************************************************/
+void deep_fort_saturation_census(struct player *pplayer)
+{
+  const struct civ_map *nmap = &(wld.map);
+  int pn = player_number(pplayer);
+  int cities = 0, tiles = 0, bases = 0, worked = 0, worked_bases = 0;
+  int held_anybuilder = 0, held_by_enemy = 0, held_unworked = 0;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+
+  city_list_iterate(pplayer->cities, pcity) {
+    cities++;
+    city_tile_iterate(nmap, city_map_radius_sq_get(pcity),
+                      city_tile(pcity), ptile) {
+      bool has_base = deep_fort_tile_has_base(ptile);
+      bool is_worked = (tile_worked(ptile) == pcity
+                        || ptile == city_tile(pcity));
+
+      tiles++;
+      if (has_base) {
+        bases++;
+        if (is_non_allied_unit_tile(ptile, pplayer, FALSE)) {
+          held_anybuilder++;
+          if (!is_worked) {
+            held_unworked++;
+          }
+          if (is_enemy_unit_tile(ptile, pplayer)) {
+            held_by_enemy++;
+          }
+        }
+      }
+      if (is_worked) {
+        worked++;
+        if (has_base) {
+          worked_bases++;
+        }
+      }
+    } city_tile_iterate_end;
+  } city_list_iterate_end;
+
+  deep_fort_denial_turns[pn] += held_anybuilder;
+
+  if (cities > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-fortsat turn=%d player=\"%s\" cities=%d tiles=%d"
+             " bases=%d worked=%d worked_bases=%d held_anybuilder=%d"
+             " held_by_enemy=%d held_unworked=%d denial_tileturns=%d",
+             game.info.turn, player_name(pplayer), cities, tiles, bases,
+             worked, worked_bases, held_anybuilder, held_by_enemy,
+             held_unworked, deep_fort_denial_turns[pn]);
+  }
+}
+
+/* Worker-turns by task class, accumulated over the GAME. One tick per
+ * worker per turn, sampled where every other census is: after the
+ * advisor has finished assigning this player's workers, so a worker
+ * set to work this turn is already carrying its activity. */
+enum deep_wclass {
+  DEEP_WCLASS_BASE = 0,
+  DEEP_WCLASS_ROAD,
+  DEEP_WCLASS_IRRIG,
+  DEEP_WCLASS_MINE,
+  DEEP_WCLASS_TRANSFORM,
+  DEEP_WCLASS_CLEAN,
+  DEEP_WCLASS_TRAVEL,
+  DEEP_WCLASS_IDLE,
+  DEEP_WCLASS_OTHER,
+  DEEP_WCLASS_COUNT
+};
+static int deep_wclass_turns[MAX_NUM_PLAYER_SLOTS][DEEP_WCLASS_COUNT];
+
+/**********************************************************************//**
+  Which class of work is this worker doing this turn? Travel is its own
+  class rather than idleness: walking to a job is the job's cost, and
+  the whole point of the fortress question is what the fortress spend
+  displaced.
+**************************************************************************/
+static enum deep_wclass deep_worker_class(const struct unit *punit)
+{
+  switch (punit->activity) {
+  case ACTIVITY_BASE:
+    return DEEP_WCLASS_BASE;
+  case ACTIVITY_GEN_ROAD:
+    return DEEP_WCLASS_ROAD;
+  case ACTIVITY_IRRIGATE:
+  case ACTIVITY_CULTIVATE:
+    return DEEP_WCLASS_IRRIG;
+  case ACTIVITY_MINE:
+  case ACTIVITY_PLANT:
+    return DEEP_WCLASS_MINE;
+  case ACTIVITY_TRANSFORM:
+    return DEEP_WCLASS_TRANSFORM;
+  case ACTIVITY_CLEAN:
+    return DEEP_WCLASS_CLEAN;
+  case ACTIVITY_GOTO:
+    return DEEP_WCLASS_TRAVEL;
+  case ACTIVITY_IDLE:
+    return (unit_has_orders(punit) || punit->goto_tile != NULL)
+      ? DEEP_WCLASS_TRAVEL : DEEP_WCLASS_IDLE;
+  default:
+    return DEEP_WCLASS_OTHER;
+  }
+}
+
+/**********************************************************************//**
+  One line per player per turn: worker-turns spent by task class,
+  accumulated over the game, so the fortress spend is readable as a
+  share of everything the worker corps did rather than as a raw count.
+  The last line of a game is that game's totals.
+**************************************************************************/
+void deep_worker_class_census(struct player *pplayer)
+{
+  int pn = player_number(pplayer);
+  int workers = 0;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+
+  unit_list_iterate(pplayer->units, punit) {
+    if (!unit_has_type_flag(punit, UTYF_WORKERS)) {
+      continue;
+    }
+    workers++;
+    deep_wclass_turns[pn][deep_worker_class(punit)]++;
+  } unit_list_iterate_end;
+
+  if (workers > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-workturn turn=%d player=\"%s\" workers=%d base=%d"
+             " road=%d irrig=%d mine=%d transform=%d clean=%d"
+             " travel=%d idle=%d other=%d",
+             game.info.turn, player_name(pplayer), workers,
+             deep_wclass_turns[pn][DEEP_WCLASS_BASE],
+             deep_wclass_turns[pn][DEEP_WCLASS_ROAD],
+             deep_wclass_turns[pn][DEEP_WCLASS_IRRIG],
+             deep_wclass_turns[pn][DEEP_WCLASS_MINE],
+             deep_wclass_turns[pn][DEEP_WCLASS_TRANSFORM],
+             deep_wclass_turns[pn][DEEP_WCLASS_CLEAN],
+             deep_wclass_turns[pn][DEEP_WCLASS_TRAVEL],
+             deep_wclass_turns[pn][DEEP_WCLASS_IDLE],
+             deep_wclass_turns[pn][DEEP_WCLASS_OTHER]);
+  }
 }
 
 /* Per-player census for the travel discount, reset per turn. */
