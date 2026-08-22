@@ -963,10 +963,11 @@ struct deep_tuning {
    * discount and no second route value exists) and the two ETAs come
    * from the corridor's measured terrain cost against the road's, at
    * the caravan's move rate. Denominated in the same units the
-   * valuator emits, divided by MORT to turn the stock into the
-   * per-turn flow the advisor's tile currency uses -- so 1.0 is the
-   * unit case by derivation, not by choice, and 0 disables the term and
-   * every pair evaluation with it. Needs trunk_road_gain > 0 for a plan
+   * valuator emits, then converted the advisor's own way: / MORT turns
+   * the stock into a per-turn flow, * TRADE_WEIGHTING prices that flow
+   * exactly as city_tile_value() prices every trade point a tile
+   * yields. So 1.0 is the unit case by derivation, not by choice, and 0
+   * disables the term and every pair evaluation with it. Needs trunk_road_gain > 0 for a plan
    * to exist at all. */
   double trunk_trade_gain;
 

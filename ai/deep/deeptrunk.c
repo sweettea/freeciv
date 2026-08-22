@@ -38,6 +38,7 @@
 #include "maphand.h"
 
 /* server/advisors */
+#include "advbuilding.h"
 #include "advtools.h"
 
 #include "deeptrade.h"
@@ -756,18 +757,21 @@ static adv_want deep_trunk_price(const struct deep_tuning *tune,
 
   if (div_out != NULL) {
     *div_out = tune->trunk_trade_gain * link->dividend / MORT
-               * amortize(1.0, link->gap);
+               * TRADE_WEIGHTING * amortize(1.0, link->gap);
   }
 
   /* Logistics plus, behind trunk_trade_gain, the link's trade dividend
-   * (W12 slice 4) -- divided by MORT to turn deeptrade's STOCK of
-   * discounted route value into the per-turn flow the advisor's tile
-   * currency is denominated in, which is the same conversion
-   * deep_trade_merit_want() makes on the same number. Both terms carry
-   * the same amortize() over the gap, because neither is paid until the
+   * (W12 slice 4). The dividend arrives as a STOCK of discounted trade
+   * points: / MORT turns it into the per-turn flow (amortize()'s own
+   * annuity factor, the conversion deep_trade_merit_want() makes on the
+   * same number), and * TRADE_WEIGHTING prices that flow in the
+   * advisor's tile currency, which is what city_tile_value() pays for
+   * every trade point a tile yields (infracache.c). Both factors are
+   * the advisor's own; neither is minted here. Both terms carry the
+   * same amortize() over the gap, because neither is paid until the
    * link is whole. */
   return (tune->trunk_road_gain * ((double) saving / SINGLE_MOVE)
-          + tune->trunk_trade_gain * link->dividend / MORT)
+          + tune->trunk_trade_gain * link->dividend / MORT * TRADE_WEIGHTING)
          * amortize(1.0, link->gap);
 }
 
