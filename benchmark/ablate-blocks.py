@@ -34,7 +34,14 @@ keys), `full` (every base key), and one arm per block of the S/X/G/M
 partition plus `REST` for base keys that partition does not reach.
 
 A SEL is a block name from tuning-blocks.ini, the literal REST, or a
-bare knob name.
+bare knob name.  Prefixing one with `^` REMOVES its keys from whatever
+the selectors to its left added, so a "base file minus one family" arm
+is written as `S,X,G,M,REST,^GCM` rather than as a union of the
+families that are meant to survive.  The difference matters: a union
+of survivors silently drops any key that no listed family reaches,
+which is exactly what a stale sub-partition does (the six G
+sub-blocks stopped covering G when 6e45a37f55 added trunk_ally_gate
+and trunk_trade_gain to it).  Subtraction cannot lose a key.
 """
 import argparse
 import pathlib
@@ -125,8 +132,12 @@ def main():
     for name, sels in plan:
         keys, order = set(), []
         for sel in sels:
-            for k in resolve(sel, blocks, base_keys, partition_keys):
-                if k not in keys:
+            drop = sel.startswith("^")
+            for k in resolve(sel.lstrip("^"), blocks, base_keys,
+                             partition_keys):
+                if drop:
+                    keys.discard(k)
+                elif k not in keys:
                     keys.add(k)
                     order.append(k)
         body = [line_of[k] for k in base_keys if k in keys]
