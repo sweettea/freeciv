@@ -16675,3 +16675,260 @@ Retention: `scratchpad/runs/{isolated-150,tech50war-200}/` scorelogs,
 game.logs (the read-back evidence) and provenance; saves pruned by the
 runner. Arm inis are committed and regenerable byte-for-byte from
 `ablate-blocks.py` + `pv3.ini` + `tuning-blocks.ini`.
+
+## S-IDLE: the backlog-empty worker policy — the carpet is gone, and the shields are what moved (2026-08-22)
+
+Brief: `sessions/S-IDLE-worker-policy.md`. Branch
+`epic/idle-worker-policy`, 6 commits + this entry, based at
+`7ea9b854eb` (`epic/w03-horizon-content`). `ai/deep` + `benchmark` +
+one tuning file; zero `ai/default`, `ai/baseline` or
+`server/advisors` changes. Own worktree `.worktrees/idle`, own build
+(`-Daimodules=classic,tex,baseline,deep -Dtools= -Dclients= -Dfcmp=`),
+binary staged with its own `libfreeciv.so` (`.stage-bin2/freeciv-server`
+sha256 `6eb523350e46bf482a2fc4cc…`, lib `71492c0cd84045f78ea67e92…`),
+ports 7300-7349, jobs 4. `meson test` 6/6. `tune-audit` CLEAN at **249**
+fields (247 + 2). `knobcensus` LIVE on both new knobs.
+
+The fortress instrumentation (`f560bf4308`) proved the carpet is not a
+price problem: an ini pricing a fortress 2.6x cheaper moved the want
+distribution 4x down and the behaviour not at all, because the base
+want does not clear a bar — it competes, and once the improvement
+backlog empties the competition is zero. This epic is the policy that
+answer implies.
+
+### 1. What landed
+
+| # | commit | what |
+|---|---|---|
+| 1 | `ef0183775a` | `deep-pollute`: polluted catchment tile-turns, arrivals, and the dwell before cleanup begins |
+| 2 | `b932bb7b77` | the policy: reserve, recycle, and reclaim-by-staying-IDLE |
+| 3 | `daa5f048db` | `knobcensus.py` entries for both knobs |
+| 4 | `3012693265` | the two A/B tunings and the reserve derivation |
+| 5 | `310c63cc4e` | the Europe rider in `derby5/tuning-derby7.ini` |
+| 6 | `397e0ce6da` | the second auction pass: a fortress that OUTBIDS is not an empty backlog |
+| — | this entry | |
+
+Reclaim needed no code, and that is the design rather than a shortcut.
+`auto_workers_player()` sends an IDLE worker through `settler_run`
+every turn and a mid-activity one through `settler_cont`
+(autoworkers.c:1399-1414), so a worker held IDLE is re-offered to the
+existing auction every turn and takes the first real task that appears.
+A fortified reserve would have been invisible to it — which is why the
+reserve stands rather than fortifies.
+
+Scope kept deliberately narrow: dedicated workers only. A cityfounder
+that runs out of work already has `deep_settler_join_city()`
+(`5d422d0b44`), and two disposal policies on one unit class would leave
+the A/B unattributable. The counters report both halves so the excluded
+one stays visible (`basew`/`basef` below).
+
+### 2. Identity at the gate's 0
+
+`smoke` (4p 32x32 T100 civ2civ3), 10 seeds, **two cells** — pure `deep`
+and `mixed_dc` — 20 games per binary. Base = `git archive 7ea9b854eb`
+built in `.idle-base/` (sha256 `7bad40ce68da78c3ec2441e5…`).
+
+    scorelog.txt byte-identical   20/20     maphash 20/20
+
+and the branch binary was writing the new instruments in those same
+games (200 `deep-pollute` + 200 `deep-idlepol` lines in a game whose
+scorelog matches the base's byte for byte).
+
+A second, unplanned witness came free. The A/B's OFF arm was run twice
+on two DIFFERENT branch binaries — `2add26fb7eaf0483…` before commit 6
+and `6eb523350e46bf48…` after — and all 16 contested scorelogs are
+identical, so commit 6's second auction pass is inert at the gate's 0
+at full venue scale as well as on the smoke cell.
+
+### 3. R, derived rather than chosen — and the venue says zero
+
+The reserve is held against pollution, so its size is the mean
+concurrent pollution events a cluster carries. Measured twice on the
+venue, both at compiled defaults:
+
+    pilot   4 games,  16 deep player-games:  tileturns 0   events 0
+    OFF arm 16 games, 64 deep player-games:  tileturns 16  events 4
+                                             cleared 4     dwell 1.00
+
+    percity = tileturns / cityturns = 0.0004  (max over player-games 0.0256)
+    reserve target = round(0.0004 x 17.0 cities) = round(0.007) = 0
+
+**R = 0.0, and that is the measurement, not a taste.** Four pollution
+events in 64 player-games of 150 turns: civ2civ3 at T150 has not
+reached the industry that makes pollution. The consequence is stated
+rather than hidden — **the reserve leg is UNDER-DOSED at this venue by
+construction**, the A/B's ON arm measures the recycle leg, and the
+reserve fires only as its fail-safe (nothing safely reachable to walk
+to). §6's isolation arm is what dosed it on purpose.
+
+### 4. The A/B
+
+`contested` (8p 32x32 T150 civ2civ3), seeds 1-16 of `seeds/train.txt`,
+arm `mixed_dc` (4 deep seats a game = 64 deep player-games an arm), one
+binary, **one key apart** — `tuning/idle-off.ini` vs
+`tuning/idle-on.ini` differ in `idle_policy_gate` and in nothing else
+(`idle_reserve_per_city = 0.0` is written into both). Read-back audit
+16/16 in each arm.
+
+**Counters, pooled over 64 deep player-games per arm:**
+
+| | OFF | ON |
+|---|---|---|
+| base worker-turns | 1854 | **45** |
+| road / irrig / mine | 3606 / 6752 / 6369 | 2455 / 3682 / 4281 |
+| travel / idle | 2797 / 11559 | 4853 / 7544 |
+| working turns (excl idle+travel) | 18593 | 10463 |
+| **base share of working** | **9.97%** | **0.43%** |
+| per player-game base share med [p75] p90 max | 0.055 [0.145] 0.204 0.290 | 0 [0] 0 0.055 |
+| catchment `bases/tiles` | 445/5168 = 8.61% | 18/5681 = 0.32% |
+| `worked_bases/worked` | 245/1850 = 13.2% | 14/1994 = 0.70% |
+| base tasks assigned / finished | 661 / 489 | 17 / 15 |
+| denial tile-turns | 20 | 0 |
+| backlog-empty worker-turns (`empty`) | 5821 | 1408 |
+| `held` / `walks` / `disbands` | 0 / 0 / 0 | 606 / 463 / **339** |
+| **shields recovered** | 0 | **3390** (53.0 per player-game) |
+| base worker-turns by workers / founders | 1832 / 22 | 2 / 43 |
+| workers / founders alive at end | 279 / 9 | 94 / 12 |
+| pollution events / tile-turns / dwell | 4 / 16 / 1.00 | 0 / 0 / — |
+
+**Paired per-seed, deep seats summed (16 seeds):**
+
+    metric          OFF        ON       delta        se       t   wins
+    score        339.81    362.00      +22.19     13.06   +1.70  11/16
+    mfg           88.50     97.69       +9.19      5.53   +1.66  12/16
+    cities        17.00     18.69       +1.69      0.89   +1.90  11/16
+    techs         76.88     81.81       +4.94      2.77   +1.78  10/16
+    landarea     193000    205938      +12938      8412   +1.54  10/16
+    pop          102.44    109.38       +6.94      5.36   +1.30   8/16
+    wonders        1.31      1.88       +0.56      0.32   +1.78   9/16
+    munits        62.38     56.94       -5.44      3.88   -1.40   6/16
+    unitslost     58.88     50.44       -8.44      5.43   -1.55   5/16
+
+    per-seed score delta: -30 -54 +42 +31 +14 +102 -78 +23
+                          -41 +58 +39 +47 +37 +80 +92 -7
+
+### 5. The four pre-registered predictions, adjudicated
+
+1. **Base share of working worker-turns falls from ~11%. CONFIRMED,
+   and not marginally: 9.97% -> 0.43%**, base tasks assigned 661 -> 17,
+   catchment base share 8.61% -> 0.32%, the p90 player-game share
+   0.204 -> 0.000. The carpet is gone. What remains is almost entirely
+   the class the policy does not touch: 43 of the ON arm's 45 base
+   worker-turns are cityfounders'.
+2. **Disband shields > 0. CONFIRMED: 3390 shields from 339 units**,
+   53.0 shields per deep player-game, counted with the same
+   `unit_shield_value()` the server credits.
+3. **Pollution dwell does not worsen. TRUE AND VACUOUS.** OFF carried 4
+   events at dwell 1.00 turn; ON carried none at all. There is no dwell
+   to worsen at this horizon, which is the same fact §3 sized. This
+   prediction was not tested by this venue and should not be reported
+   as if it were.
+4. **Score direction, whatever it is: +22.19, t +1.70, 11/16.**
+   POSITIVE and NOT SIGNIFICANT at 16 seeds. Twenty seeds are
+   direction and forty are a claim; this is sixteen. `cities` (+1.69,
+   t 1.90), `techs` (+4.94, t 1.78) and `mfg` (+9.19, t 1.66) all lean
+   the same way, `munits` and `unitslost` fall together, and nothing in
+   the table is significant on its own.
+
+### 6. The isolation arm: it is the SHIELDS, not the fortresses
+
+The A/B's ON arm bundles two changes — stop building fortresses, and
+convert the surplus corps into shields — so it cannot say which one
+moved anything. A third arm separates them: same venue, same seeds,
+same binary, `idle_reserve_per_city = 1.0` (one held worker per city,
+the smallest non-zero integer reserve, chosen to DOSE the reserve leg
+and never shipped anywhere).
+
+    arm                    base share   disbands  shields   score vs OFF
+    OFF                        9.97%           0        0   —
+    ON   reserve 0.0            0.43%        339     3390   +22.19  t +1.70
+    ISO  reserve 1.0            0.34%        115     1150    +3.81  t +0.31
+
+**Stopping the carpet on its own is a wash.** The isolation arm removes
+the fortresses just as completely (catchment share 0.37%, assigned 16)
+and holds 7173 worker-turns of reserve rather than recycling them, and
+its score lands +3.81 at t 0.31, 6/16. The A/B's movement, such as it
+is, travels with the 3390 shields.
+
+That also inverts the reading of the epic. The carpet was framed as an
+opportunity-cost problem — worker-turns spent on fortresses instead of
+improvements. Deep does not appear to have had improvements to spend
+them on: hold the same workers idle instead and the empire is no better
+off. What helped, weakly, was noticing the corps was surplus and
+banking it.
+
+### 7. The unresolved number, stated rather than explained
+
+Real improvement work fell in BOTH gate-on arms: irrigation 6752 ->
+3682 (ON) / 3763 (ISO), mine 6369 -> 4281 / 4392, road 3606 -> 2455 /
+2602. Availability is not the cause, and the isolation arm is what
+proves it: it ends with 197 workers against OFF's 279 and a nearly
+equal corps in TURNS (29873 vs 32949), of which 7173 are turns the
+policy held idle *because the auction offered them nothing* — yet its
+improvement turns are the same as the arm that recycled its workers.
+
+So OFF sustains roughly 1.8x the irrigation and mine turns of either
+gate-on arm with a corps that is not proportionally larger, and the
+mechanism is not in this session's data. Two candidates, neither
+tested: the arms diverge economically from the first policy action
+(ON has 18.7 cities to OFF's 17.0, founded later and working fewer
+tiles, so it may genuinely demand less), or a worker's POSITION after
+building a fortress changes which candidates the radius-bounded
+auction can offer it next. **Do not read the drop as the policy
+suppressing work it should have taken** — commit 6 exists precisely to
+make a fortress that outbids a real task lose to it, and it bought back
+what it was built to buy back: the same arm before commit 6 ran
+irrigation 3301 and mine 2957 (against 3682 and 4281 after), so ~1700
+pooled worker-turns had been going to a policy decision on a tile where
+a real task existed and merely lost the bid. The residual gap against
+OFF is what remains after that repair.
+
+### 8. Knobs, and what is owed
+
+    idle_policy_gate       0   0 = today's carpet, byte-identically.
+                               Policy, not a magnitude, so 0/1.
+    idle_reserve_per_city  0.0 DERIVED from deep-pollute percity on the
+                               venue played. 0.0 is contested-T150's
+                               measurement, NOT a default to trust
+                               elsewhere.
+
+Both LIVE in `knobcensus` on this corpus (`deep-idlepol held>0` /
+`target>0`; 25055 and 5591 firings). `tune-audit` CLEAN 249/249/249/249.
+
+Owed, in order:
+
+1. **Forty seeds on the gate.** +22.19 at t 1.70 is direction. The
+   isolation arm says most of that direction is the shields, so the
+   forty-seed run worth having is the ON arm, not the pair of them.
+2. **A venue that HAS pollution.** Every claim about the reserve here
+   is a claim about a venue with zero demand for it. `lategame-80` and
+   `tech50war-200` hand out tech at turn one and are the obvious
+   candidates; the dwell counter is already live in them.
+3. **§7's improvement gap.** It is the largest unexplained number in
+   this entry.
+4. The fortress PRICE and the base want's exemption from the danger
+   discount are still untouched, still their own epic, and now much
+   less urgent: at the gate the carpet is 0.32% of catchment tiles
+   whatever the price says.
+
+### 9. Europe rider
+
+`derby5/tuning-derby7.ini` gains `idle_policy_gate = 1` and
+`idle_reserve_per_city = 0.0` (`310c63cc4e`), neither key previously
+present, file still passing run.sh's unknown-key and int-float
+validators. The comment there carries the warning this entry owes the
+human: at 0.0 every backlog-empty worker is recycled and a recycled
+worker is gone, so an industrialised Europe pays twice to rebuild the
+corps it dissolved — and the `deep-pollute` line in that game's own
+log is where the number to raise it to will be.
+
+### 10. Retention
+
+`benchmark/results/idle-identity/` (three cells: branch, base, and the
+pre-commit-6 branch), `idle-pilot/` (the R derivation),
+`idle-ab2/contested-{9556be2b5fea,814b2b37ce20}/` (the A/B),
+`idle-r1b/contested-4739b1d3e9fc/` (the isolation arm), and
+`idle-ab/` (the pre-commit-6 A/B, kept because §7 quotes it).
+Analysis scripts were session-scratch; every counter line is
+self-describing `key=value` and the last line per (game, player) is
+that game's total.
