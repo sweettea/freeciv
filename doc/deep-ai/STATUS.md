@@ -15205,3 +15205,68 @@ Before touching the want, instrument (fortresses built per game; turns a tile is
 denied to its city by enemy occupation of a deep-built fortress) rather than
 guessing a penalty term -- two guessed fixes on this project were reverted and
 the measured one won. Any fix is its own epic with its own A/B.
+
+## DECAYTECH tune closed: three-way holdout — tuned edge is real but outlier-carried (2026-08-21)
+
+Campaign close-out. The tune (benchmark/results/decaytech-tune, .leanab2-bin
+binary 1237ba9c6e) died with the box's power on 2026-08-16 mid-round-5; rounds
+1-4 had all closed flat at delta +0.0 (~20 generations never beat the round-0
+incumbent), so it was cut rather than resumed. Incumbent, now staged at
+benchmark/tuning/decaytech-best.ini:
+
+    horizon_decay_early = 0.057058    horizon_decay_late = 0.037030
+    horizon_decay_break_start = 22    horizon_decay_break_end = 163
+    techgoal_distance_power = 0.940560
+
+Three-way holdout: tech50war-200, holdout seeds 101-116, one arm per tuning,
+same pinned binary, sequential (benchmark/results/decaytech-holdout/).
+Objective per seed = candidate game total score minus baseline-arm total.
+
+    seed    tuned   anchor      pv3  tun-pv3  anc-pv3
+     101      -60     -128     -129       69        1
+     102      -74     -122     -138       64       16
+     103     -174     -157      -29     -145     -128
+     104      787     -129      -20      807     -109
+     105     -250     -194     -163      -87      -31
+     106     -289     -138     -214      -75       76
+     107     -266     -150     -195      -71       45
+     108      -69      -45     -156       87      111
+     109     -149     -130      -94      -55      -36
+     110     -246     -304     -324       78       20
+     111      -98      -62       27     -125      -89
+     112     -139      -69     -156       17       87
+     113      -33     -128     -179      146       51
+     114     -154     -182     -214       60       32
+     115      -63     -269     -123       60     -146
+     116       -6     -167      -49       43     -118
+    mean    -80.2   -148.4   -134.8     54.6    -13.6
+
+(arm means reproduce tune.py's own HOLDOUT report lines exactly.)
+
+Reading it honestly:
+
+- **Tuned vs pv3: +54.6 mean, but seed 104 alone is +807** (a runaway win
+  game; the other two arms sat at -129/-20 on the same seed). Drop that seed
+  and the mean advantage is **+4.4 over 15 seeds** — noise. Sign test 10/16
+  (one-sided p ~ 0.23), median +62. Verdict: suggestive, not conclusive.
+  What CAN be said: the tuned schedule does not hurt, and it occasionally
+  enables a runaway that pv3 does not reach.
+- **Hand-picked anchors vs pv3: -13.6, 9/16** — a wash-to-slight-loss. The
+  guessed decay constants (early=0.037/late=0.002/break 50-100) did NOT
+  transfer; the optimizer's reshaping (higher late rate, much earlier break
+  start, wider window) is what rescued the mechanism. Guessing constants
+  loses again; rule 7 vindicated again.
+- **Training -50.5 vs holdout -80.2**: ~30 points of optimizer optimism,
+  the expected regression toward the mean.
+
+Adoption: NOT crowning decaytech-best as the new pv default on this evidence.
+The standing defaults-vs-pv3 autopsy (compiled defaults beat pv3 on three
+venues, 2026-08-15 entry) is still the bigger question — any new default
+should be decided after it. decaytech-best.ini stays staged as the best-known
+DECAYTECH configuration and the natural donor for the Europe spicy ini's
+decay block.
+
+Retention: benchmark/results/decaytech-holdout/{tuned,anchor,pv3}/ scorelogs
++ ARM-DONE markers; per-seed script in session scratchpad (holdout3way.py,
+logic recorded here: sum final tag-25 over all 8 seats minus baseline total).
+decaytech-tune/ r0-r4 logs stay for the tune trace; r5 partials disposable.
