@@ -120,4 +120,26 @@ bool deep_city_water_bridges(const struct tile *ptile);
 bool deep_water_serves_crossing(const struct tile *from,
                                 const struct tile *dest);
 
+/* The two standing-fear terms this file computes for a CITY, exported
+ * at a bare tile so W12H can price a corridor step on the same scale
+ * the garrison, the walls and the CM danger gate are already priced on.
+ * Exported rather than reimplemented: a second risk model would be a
+ * second thing to tune and a second thing to be wrong.
+ *
+ * deep_density_fear_at() is the chronic border-pressure term -- each
+ * met non-allied city within density_fear_radius contributing
+ * density_fear_value / (1 + distance), overseas neighbours discounted
+ * by menace_overseas_weight until they float transports, the whole
+ * scaled by the anticipation ramp. Its city form is exactly this at
+ * city_tile(pcity).
+ *
+ * deep_boat_shadow_afloat() is the boat shadow's PRECONDITION alone:
+ * does any player we are at war with own a sea transport. Split out so
+ * a caller pricing many tiles pays the unit scan once; the coastal test
+ * that completes the term is one call to is_terrain_class_near_tile()
+ * and the value is boat_shadow_fear itself. */
+unsigned int deep_density_fear_at(const struct player *pplayer,
+                                  const struct tile *ptile);
+bool deep_boat_shadow_afloat(const struct player *pplayer);
+
 #endif /* FC__DEEPDEFENCE_H */

@@ -390,6 +390,40 @@ MAP = {
         "margin too small to change any auction, a null rather than a "
         "dead knob. Needs trunk_source_gain > 0 (and trunk_road_gain "
         "> 0) for a walk to exist at all."),
+    "trunk_soft_border_gate": (
+        "S3", "gate", "direct", [("deep-trunksoft", "peaceoff>0")],
+        "W12H: deep_trunk_soft_open() admits a PEACE partner's tiles "
+        "(DS_PEACE or DS_ARMISTICE) to the corridor plan and to the "
+        "corridor pathfinder only above this gate (deeptrunk.c, "
+        "deep_corridor_tile_behavior() in deepsettler.c). The "
+        "deep-trunksoft line exists in BOTH settings, because own-city "
+        "corridors have never been clipped and already cross foreign "
+        "ground -- so the predicate is peaceoff=, the scalar copy of "
+        "the peace column of off=. With the gate shut the corridor "
+        "pathfinder TB_IGNOREs a peace partner's tile, so it is never "
+        "pathed, never priced and never assigned: peaceoff=0 and "
+        "peacepick=0 by construction however many such tiles the plan "
+        "holds. VENUE-SENSITIVE like trunk_ally_gate: a game in "
+        "which deep signs no peace treaty reports zeros that evidence "
+        "the venue. Needs trunk_source_gain > 0 (and trunk_road_gain "
+        "> 0) for the source leg; the plan leg needs only a plan."),
+    "trunk_risk_weight": (
+        "S3", "mag", "direct", [("deep-trunkrisk", "steps>0")],
+        "W12H: deep_trunk_walk() skips the whole edge-cost comparison "
+        "at weight 0.0 (deeptrunk.c), so the deep-trunkrisk line does "
+        "not exist at all below the knob -- steps>0 IS the knob. "
+        "dodge= is steps where the risk-priced choice differed from "
+        "the distance-first tile today's walk takes, and fear= is the "
+        "subset the RISK moved -- the same comparison with the risk "
+        "term removed would have chosen another tile. fear= is the "
+        "attributable count and dodge= - fear= is the terrain half the "
+        "edge cost also introduces; steps>0 with fear=0 says the "
+        "corridors had no safer way round (a null, not a dead knob). "
+        "risk=/maxrisk= are the standing fear walked over, in "
+        "deepdefence's units, and coast= the chosen tiles carrying the "
+        "boat-shadow term -- that one is zero until some at-war player "
+        "floats a transport, which is the term's own precondition and "
+        "not a miss."),
 
     # ---------------- Stage 1: economy / horizon / CM ---------------
     "horizon_capacity_weight": (

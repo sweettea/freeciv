@@ -441,13 +441,27 @@ static unsigned int deep_boat_shadow_fear(const struct civ_map *nmap,
                                           struct city *pcity)
 {
   const struct deep_tuning *tune = deep_tuning_get();
-  struct player *pplayer = city_owner(pcity);
 
   if (tune->boat_shadow_fear <= 0
       || !is_terrain_class_near_tile(nmap, city_tile(pcity), TC_OCEAN)) {
     return 0;
   }
 
+  return (deep_boat_shadow_afloat(city_owner(pcity))
+          ? tune->boat_shadow_fear : 0);
+}
+
+/**********************************************************************//**
+  The boat shadow's precondition on its own: does any player we are at
+  war with own a transport-capable ship?
+
+  Split from the term above so a caller pricing MANY tiles -- W12H's
+  corridor walk -- pays this scan once per plan instead of once per
+  tile. The city term is unchanged: the same scan, the same answer, one
+  call further down.
+**************************************************************************/
+bool deep_boat_shadow_afloat(const struct player *pplayer)
+{
   players_iterate_alive(aplayer) {
     if (aplayer == pplayer || !pplayers_at_war(pplayer, aplayer)) {
       continue;
@@ -455,12 +469,12 @@ static unsigned int deep_boat_shadow_fear(const struct civ_map *nmap,
     unit_list_iterate(aplayer->units, aunit) {
       if (unit_type_get(aunit)->transport_capacity > 0
           && deep_utype_is_sea(unit_type_get(aunit))) {
-        return tune->boat_shadow_fear;
+        return TRUE;
       }
     } unit_list_iterate_end;
   } players_iterate_alive_end;
 
-  return 0;
+  return FALSE;
 }
 
 /**********************************************************************//**
@@ -749,10 +763,45 @@ static unsigned int deep_density_prior(struct player *pplayer)
   sibling of the boat shadow; zero with no neighbours in range, so
   sprawling maps pay nothing.
 **************************************************************************/
+static double deep_density_fear_raw(const struct player *pplayer,
+                                    const struct tile *ptile,
+                                    double *raw_out, int *near_out,
+                                    int *cross_out, int *disc_out);
+
 static unsigned int deep_density_fear(struct city *pcity)
 {
-  const struct deep_tuning *tune = deep_tuning_get();
   struct player *pplayer = city_owner(pcity);
+  double fear, raw;
+  int n_near = 0, n_cross = 0, n_disc = 0;
+
+  fear = deep_density_fear_raw(pplayer, city_tile(pcity), &raw, &n_near,
+                               &n_cross, &n_disc);
+
+  if (n_near > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-density turn=%d player=\"%s\" city=%d near=%d"
+             " cross=%d discounted=%d raw=%.2f gated=%.2f ramp=%.2f"
+             " fear=%u",
+             game.info.turn, player_name(pplayer), pcity->id, n_near,
+             n_cross, n_disc, raw, fear, deep_anticipation_ramp(),
+             (unsigned int) (fear * deep_anticipation_ramp()));
+  }
+
+  return (unsigned int) (fear * deep_anticipation_ramp());
+}
+
+/**********************************************************************//**
+  The border-pressure arithmetic above at a bare TILE: the same sum over
+  the same neighbours with the same reachability gate, without the ramp
+  and without the census line. Both the city term and W12H's corridor
+  step read it, so there is one border-pressure model and not two.
+**************************************************************************/
+static double deep_density_fear_raw(const struct player *pplayer,
+                                    const struct tile *ptile,
+                                    double *raw_out, int *near_out,
+                                    int *cross_out, int *disc_out)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
   double fear = 0.0;
   /* Census (knob-coverage 4a: the whole fear lattice is invisible
    * because deep_log_defence() runs before the injection pass). `raw`
@@ -764,7 +813,7 @@ static unsigned int deep_density_fear(struct city *pcity)
   int n_near = 0, n_cross = 0, n_disc = 0;
 
   if (tune->density_fear_value <= 0) {
-    return 0;
+    return 0.0;
   }
 
   players_iterate_alive(aplayer) {
@@ -777,7 +826,7 @@ static unsigned int deep_density_fear(struct city *pcity)
       continue;
     }
     city_list_iterate(aplayer->cities, acity) {
-      int d = real_map_distance(city_tile(acity), city_tile(pcity));
+      int d = real_map_distance(city_tile(acity), ptile);
       double w;
 
       if (d > tune->density_fear_radius) {
@@ -786,8 +835,7 @@ static unsigned int deep_density_fear(struct city *pcity)
       w = tune->density_fear_value / (1.0 + d);
       n_near++;
       raw += w;
-      if (tile_continent(city_tile(acity))
-          != tile_continent(city_tile(pcity))) {
+      if (tile_continent(city_tile(acity)) != tile_continent(ptile)) {
         n_cross++;
         /* Reachability gate (task #18, spec'd 0112a65112 from the
          * Europe playtest: Hannibal hedgehogged against neighbours
@@ -815,17 +863,33 @@ static unsigned int deep_density_fear(struct city *pcity)
     } city_list_iterate_end;
   } players_iterate_alive_end;
 
-  if (n_near > 0) {
-    log_base(deep_metric_log_level(),
-             "deep-density turn=%d player=\"%s\" city=%d near=%d"
-             " cross=%d discounted=%d raw=%.2f gated=%.2f ramp=%.2f"
-             " fear=%u",
-             game.info.turn, player_name(pplayer), pcity->id, n_near,
-             n_cross, n_disc, raw, fear, deep_anticipation_ramp(),
-             (unsigned int) (fear * deep_anticipation_ramp()));
+  if (raw_out != NULL) {
+    *raw_out = raw;
+  }
+  if (near_out != NULL) {
+    *near_out = n_near;
+  }
+  if (cross_out != NULL) {
+    *cross_out = n_cross;
+  }
+  if (disc_out != NULL) {
+    *disc_out = n_disc;
   }
 
-  return (unsigned int) (fear * deep_anticipation_ramp());
+  return fear;
+}
+
+/**********************************************************************//**
+  The border-pressure fear a bare tile carries, ramp included -- the
+  city term above evaluated somewhere no city stands. W12H prices a
+  corridor step with it.
+**************************************************************************/
+unsigned int deep_density_fear_at(const struct player *pplayer,
+                                  const struct tile *ptile)
+{
+  return (unsigned int) (deep_density_fear_raw(pplayer, ptile, NULL, NULL,
+                                               NULL, NULL)
+                         * deep_anticipation_ramp());
 }
 
 /**********************************************************************//**

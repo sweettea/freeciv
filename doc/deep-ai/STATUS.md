@@ -18123,3 +18123,319 @@ under `benchmark/results/employ-probe/` (52 MB; game.log reduced to the
 ledger lines and savegames dropped, W12g pattern). Every table above
 re-derives from that directory with `benchmark/employ.py` and
 `benchmark/mixseat.py`.
+## W12H: corridors may cross a peace partner's border, and the risk term reroutes 5.9% of steps (2026-08-22)
+
+Brief: `sessions/S-W12H-soft-borders.md`. Branch `epic/w12h-soft-borders`,
+12 commits plus this entry, based at `50fdc4a620`
+(`epic/w03-horizon-content`). Own worktree `.worktrees/soft`, own build
+(`-Daimodules=classic,tex,baseline,deep -Dtools= -Dclients= -Dfcmp=`),
+binaries pinned with their own `libfreeciv.so` under `.stage-bin/`,
+ports 7500-7549, jobs 4. `tune-audit` CLEAN at **253** fields (two new
+knobs). `meson test` 6/6. Corridors are Europe-flavour and the family
+ships off; **this epic's bar is mechanism truth, and no score was
+measured.**
+
+| commit | what |
+|---|---|
+| `a5bb06c370` | `deep-trunklink`: the tiles of every planned corridor, in walk order |
+| `0e38ca115b` | `deep-trunksoft`: corridor tiles by the treaty state of their owner |
+| `2639fc51f7` | `trunk_soft_border_gate`: the planner may walk a peace partner's ground |
+| `a5d7dba6a1` | the corridor pathfinder may too (`deep_corridor_tile_behavior()`) |
+| `c3da11bf8f` | `trunk_risk_weight`: corridor edge cost gains border + coastal risk |
+| `27e333e26c` | `deep-trunkduty`: workers lost while standing on a corridor tile |
+| `655be08eaf` | census predicates for the two new knobs |
+| `896ce1dfa3` | `benchmark/w12h-soft.sh`, `softcensus.py`, the two arm inis |
+| `f02f18090b` | the derby-7 rider |
+| `f5776e9159` | `softcensus.py --roads`: roads on foreign soil from the savegame |
+| `6f1f650fa2` | `fear=`: the risk reroutes separated from the terrain reroutes |
+| `defaf58aa6` | the same-link overlap reported apart from the which-link disagreement |
+| — | this entry |
+
+### 1. The legality reading, which is the whole basis of the epic
+
+The corridor family has twice reasoned as if a worker were *forbidden*
+to work on foreign ground. It is not. What the core rules forbid a
+civilian, by diplomatic state, is: **nothing**.
+
+* **Entry.** `players_non_invade()` (`common/player.c:1434`) is TRUE for
+  `DS_PEACE` alone; its own comment says armistice is left open so units
+  can withdraw. Every caller guards on
+  `!utype_has_flag(utype, UTYF_CIVILIAN)`: `unit_move_to_tile_test()`
+  (`common/movement.c:773-777`, `MR_PEACE`),
+  `unit_teleport_to_tile_test()` (`movement.c:894-898`) and all three
+  pathfinder node initialisers (`common/aicore/path_finding.c:302-303`,
+  `:1053-1054`, `:2092-2093`). Settlers, Workers and Engineers all carry
+  `NonMil` (`data/classic/units.ruleset:427`, `:474`, `:521`). Even the
+  armistice-ripens purge spares them
+  (`remove_illegal_armistice_units()`, `server/srv_main.c:915-946`).
+* **Building.** `can_build_road()` (`common/road.c:302-314`) reaches
+  `can_build_extra_base()`, which never mentions `tile_owner`
+  (`common/extras.c:413-462`); classic's Build Road enabler asks for the
+  Workers flag and CanRoad terrain and nothing else
+  (`data/classic/actions.ruleset:1065-1074`). `tile_owner()` enters road
+  building once, as the inert `other` req context (`road.c:276-281`).
+  The contrast is `player_can_place_extra()` (`extras.c:487-529`) — the
+  INFRAPOINTS path — which *does* demand `tile_owner == pplayer`.
+* **Consequences.** None. No `Casus_Belli_*` effect in classic or
+  civ2civ3 names Build Road or unit movement, and `ACTIVITY_PILLAGE` is
+  the only worker activity that calls `action_consequence_*()`
+  (`server/unittools.c:1035-1048`). A finished road leaves the owner
+  unchanged; `create_extra()` re-claims BASES only (`maphand.c:2549`).
+
+So the refusal both worker pathfinders enforce — `pplayers_allied()` in
+`autoworkers.c:521-535` and in `deep_settler_tile_behavior()` — is
+**advisor policy, not law**, and the question the gate asks is not "is
+it legal" but "is it safe". A peace partner must declare war first, a
+visible act costing a turn; a war enemy needs no notice. `DS_PEACE` and
+`DS_ARMISTICE` therefore open (one class: a peace treaty *lands* as
+armistice and ripens by itself, `server/diplhand.c:593`,
+`srv_main.c:970-984`); war, cease-fire and no contact stay shut, which
+is today's behaviour for those states exactly.
+
+**The doctrine consequence, stated because it is not obvious.** A
+corridor worker on a peace partner's ground is *structurally
+unescortable*: `deep_cover_sorties()` (`deepdefence.c:2583`) sends
+military bodyguards, and military units are exactly what
+`players_non_invade()` bars from a peace partner's borders. The gate
+buys reach by giving up cover.
+
+### 2. What the gate opens — the one-key comparison
+
+lategame-80, 4 seeds, three arms one key apart each way
+(`w12g-keep-on.ini` -> `+trunk_soft_border_gate=1` ->
+`+trunk_risk_weight=0.1`). `benchmark/w12h-soft.sh live`, whole-arm sums
+from `softcensus.py`:
+
+    corridor tiles          family     soft     risk
+    plan peace                  16       19       37
+    plan war                   420      463      247
+    off peace                    0       76       32
+    off war                      0        0        0
+    pick peace                   0       49       23
+    work peace                   0        0        1
+    road peace                   1        1        2
+
+Three things are in that table.
+
+1. **`plan peace` barely moves (16 -> 19).** Peace tiles were ALWAYS in
+   the plan: `deep_trunk_walk()` clips only ALLY links (`clip` is
+   `is_ally[pick]`), so an own-city-to-own-city corridor has always run
+   straight through whoever sits between. What the gate changes is
+   **reachability, not planning** — and that is the leak it closes.
+2. **`off peace` 0 -> 76, `pick peace` 0 -> 49.** With the gate shut
+   these are zero *by construction*: the corridor pathfinder TB_IGNOREs
+   the tile, so it is never pathed, never priced, never assigned. The
+   plan valued 16 tiles nobody could be sent to.
+3. **`off war` is 0 in every arm.** War tiles stay in the plan (420-463
+   of them!) and stay unreachable. The asymmetry the gate encodes is
+   visible as a zero in the same table as the mechanism.
+
+**The gate firing on a treaty transition, inside one game** (risk arm,
+seed-1, player P4 — a natural experiment, same game, same turn ordering):
+
+    T15 plan=0:2:0:0:2:0:0 off=0:0:0:0:0:0:0   (2 cease-fire tiles, unreachable)
+    T16 plan=0:2:0:2:0:0:0 off=0:0:0:6:0:0:0 pick=0:0:0:6:0:0:0
+    T17 plan=0:2:0:2:0:0:0 off=0:0:0:8:0:0:0 pick=0:0:0:8:0:0:0
+    T20 plan=0:2:0:2:0:0:0 work=0:0:0:1:0:0:0
+
+The cease-fire ripened into peace between T15 and T16, and the *same two
+tiles* went from unofferable to 6 offers and 6 assignments in one turn.
+At T20 `work=` shows one of our own Workers in `ACTIVITY_GEN_ROAD` on a
+peace-classified corridor tile — the attributable observation.
+
+**Savegame-verified (a).** Every one of those picks named tile
+**(26,14) MAP**. In the final save
+(`w12h-live/risk/lategame-80-3881b25b1dbf/deep/seed-1`,
+`freeciv-T0081-final.sav.zst`), read with NATIVE_TO_MAP_POS applied to
+both the extras grid and the owner grid: **owner = p0, road = True**,
+while the corridor was P4's (player 3). A road on another player's soil,
+on a tile deep assigned 6-8 workers to while that player was a peace
+partner.
+
+**Attribution caveat, kept because it bit.** `road peace = 1` in the
+FAMILY arm too — a peace-owned plan tile gained a road with the gate
+shut, i.e. **the owner built it**. `road=` cannot distinguish. `work=`
+can, and is why both counters exist. Likewise `--roads` reads treaty
+state at GAME END: P4 and p0 finish as *allies*, because the treaty
+ripened again after T20. The pick-time state is what the counters say.
+
+### 3. The risk term: 15.7% of steps rerouted, 5.9% of them by the fear
+
+`trunk_risk_weight` makes the walk minimise `terrain movement cost +
+weight * risk` over the neighbours that close the distance equally,
+where risk is deep's OWN standing fear reused at a tile —
+`deep_density_fear_at()` for the land side and `boat_shadow_fear` for
+ocean-adjacent tiles once `deep_boat_shadow_afloat()`. No second risk
+model: the numbers that fund garrisons and walls now bend roads.
+
+    risk arm, 4 games        steps=26148  dodge=4108 (15.7%)  fear=1536 (5.9%)
+                             risk walked=330911  worst tile=36.0  coastal steps=10846
+
+**The first read could not have claimed this and did not.** `dodge=`
+counts reroutes against today's distance-first tie-break, but the edge
+cost is terrain PLUS risk, so a dodge could be either. Commit
+`6f1f650fa2` added `fear=` — the same comparison with the risk term
+removed — so **1536 steps are attributable to the fear and the other
+2572 to the terrain half the edge cost introduces on the way in**. Same
+shape as slice 4's dividend-free counterfactual. The added counter is
+log-only, proved: the risk arm's four scorelogs are byte-identical
+before and after it.
+
+**Reroute diff (b)**, `softcensus.py --reroute soft risk`, first turn
+the two arms plan a different corridor — clean by construction, because
+until then two arms one key apart are the same game:
+
+    seed-3 turn 5  player P2  (25,45) -> (27,40)
+      soft  25,44;25,43;25,42;25,41;25,40;26,40
+      risk  26,45;26,44;27,44;27,43;27,42;27,41
+      differs on 6 of 6 tiles
+
+Read against the turn-1 savegame's terrain (ocean/deep-ocean/lake
+adjacency, identifiers `" "`, `":"`, `"+"`): the soft-arm route has
+**1 ocean-adjacent tile and crosses a mountain** (letters h,h,h,m,d,h,
+terrain cost 12); the risk-arm route has **0 ocean-adjacent tiles**
+(d,d,d,h,f,f, terrain cost 9). The corridor moved off the coast — and,
+honestly, off the mountain at the same time, which is exactly why
+`fear=` had to be built before this paragraph could be written.
+
+### 4. Exposure: the bet is not yet charged anything
+
+    per arm, 4 games        family   soft   risk
+    worker-turns on duty      1229   1252   1209
+    lost on free                 2      2      3
+    lost on self                 1      0      0
+    lost on peace                0      0      0
+    of those, coastal            2      2      2
+
+Corridor duty cost **3 workers per ~1230 worker-turns**, none of them on
+foreign ground, in any arm. So on this venue the soft border is not yet
+buying deaths — but 80 turns with a treaty that held is the easy case,
+and the ledger exists for the case where it does not. `seen=` is the
+denominator the employment epic asked for.
+
+### 5. Meet in the middle: they do not meet, and fog is not why
+
+Two allied deep players plan the same link from opposite ends. Measured
+over `deep-trunklink` dumps (family arm, 4 games): **181 ally-link
+pairs, 40 with identical endpoints, mean endpoint distance 5.95.**
+
+    same-link tile overlap        0.151      (40 pairs that agree on WHICH link)
+    all-pair tile overlap         0.030
+    exact_sym / exact_parallel    118 / 0
+
+So even when both allies pick the same two cities, **they agree on 15%
+of the tiles**, and of the 118 tiles one plans and the other does not,
+**none is even adjacent to the other's route**. They do not build
+parallel roads a tile apart; they build in different places entirely.
+78% of pairs do not even agree on which two cities to connect.
+
+**Fog is not the cause, and this is the finding that matters.**
+`deep_trunk_build()`, `deep_trunk_ally_nodes()` and `deep_trunk_walk()`
+read `tile_owner`, `tile_continent`, terrain and every ally's whole
+`cities` list with **no `map_is_known()` filter anywhere** (only
+`deep_trunk_link_dividend()` filters). The corridor plan is omniscient
+even under `honest_info` — flagged in section 7. Both allies therefore
+see the *same world*; they diverge for two structural reasons:
+
+1. **The greedy walk is not symmetric.** `deep_trunk_walk()` takes the
+   first neighbour in `adjc_iterate` order that reaches the minimum
+   distance. The walk `a -> b` is not the reverse of `b -> a`, and ally
+   links are directional own->ally by design (the relaxation skip in
+   `deep_trunk_build()`). Two allies tracing the same city pair from
+   opposite ends trace different tiles.
+2. **The endpoint pair is an independent argmin.** Each side adds one
+   ally node (its nearest) and Prim attaches it to whichever own city is
+   already in the tree — which depends on *its own* MST order, not on a
+   globally symmetric rule.
+
+**Three remedies, ranked. None implemented, per the brief.**
+
+1. **Canonicalise the walk direction by tile index (RECOMMENDED).**
+   Walk every ally link from the lexicographically smaller endpoint tile
+   to the larger, regardless of who owns which. Both allies then compute
+   the identical tile list from identical public inputs — city
+   positions, terrain, borders — with **no channel at all**, so it is
+   honest-information-clean by construction: nothing is exchanged
+   because nothing needs to be. Cost: a comparison. Caveat worth
+   pre-registering: it fixes the routing half only (reason 1), and it
+   **conflicts with `trunk_risk_weight`**, whose fear map is
+   player-relative, so with both on the two allies diverge again. That
+   trade-off is the next session's design question, not a blocker.
+2. **The shared-vision clause (`CLAUSE_VISION`).** Already available and
+   already used: deep calls `dai_diplomacy_actions()`
+   (`deepai.c:1270`), which offers and asks for shared vision gated by
+   `shared_vision_is_safe()` (`daidiplomacy.c:185`, :1275-1287). It is
+   live in games — 15 allied deep pairs in the soft arm, **7 exchanging
+   vision both ways and 6 one-way**. But it would **not fix this**: the
+   plan is already omniscient, so more vision changes nothing. It also
+   leaks far more than roads (every unit and city, continuously),
+   cascades to third parties (`shared_vision_is_safe()` refuses exactly
+   when the ally shares with someone we are not allied to), and is
+   revocable mid-plan (`plrhand.c:900`). Ranked second because it is
+   real, in-game and honest — but aimed at a cause that is not
+   operative.
+3. **An announcement channel (chat/notify the intended tile list).**
+   Ranked last, and the objection is integrity rather than privacy. A
+   parsed announcement is a channel an adversary can write to: a hostile
+   player could announce fabricated corridors and steer an ally's
+   workers onto ground of its choosing. It also publishes, several turns
+   in advance, exactly where our civilians will be standing — an ambush
+   list — and implicitly which of our cities are nearest theirs. Do not
+   build it.
+
+### 6. Identity at defaults: 10/10, both cells
+
+`w12h-soft.sh identity`, 10 paired smoke seeds against the branch point
+`50fdc4a620`, **corridor family ON in both arms** so the new gates are
+proved inert on a path the corridor code actually walks. Compared on
+`scorelog.txt`, not `game.log`, because this epic adds log lines by
+design.
+
+    identity deep:     10/10 byte-identical, 0 differ, 0 missing
+    identity mixed_db: 10/10 byte-identical, 0 differ, 0 missing
+    base arm files containing a W12H token: 0    (not HEAD-vs-HEAD)
+    head arm corridor liveness: deep-trunksrc turn=63 ... beyond=1
+
+base `2a3b20b9920dbd4d…`, head `26f415e3900f9a80…`.
+
+### 7. Europe rider, and a finding about the reuse
+
+`derby5/tuning-derby7.ini` gains `trunk_soft_border_gate = 1` (dedupe
+re-checked: no duplicate key, no key outside `tuning-params.ini`, 229
+keys). Europe is long land borders between players deep signs treaties
+with — the habitat this slice was written for.
+
+`trunk_risk_weight` is deliberately **NOT** set there, and it is a
+finding rather than an omission: the risk term reuses deep's own fear,
+and derby-7 zeroes both sources (`boat_shadow_fear = 0`,
+`density_fear_value = 0` — the derby-6 lean winner, lines 104-105). Every
+corridor tile would price at risk 0, the new comparison would decide
+every step by terrain alone, and the knob would be a behaviour change
+with no risk in it. **That is the price of the reuse the brief asked
+for: turning the garrison's fear off turns the road's fear off with
+it.** It goes in when the fear it reads does.
+
+### 8. Flags for the next session
+
+* **`trunk_risk_weight = 0.1` is a PROBE, not a result.** Registered
+  PLACEHOLDER, owes a tuning pass. Nothing measures what a point of
+  standing fear is worth in move fragments.
+* **The risk knob is a gate and a magnitude at once.** At any weight > 0
+  the walk also starts minimising TERRAIN, which it never did; 2572 of
+  the 4108 reroutes are that. If the terrain half is wanted on its own
+  merits it should be its own gate; if it is not, the edge cost should
+  drop it and price risk against distance instead.
+* **The corridor plan is omniscient**, including under `honest_info`:
+  `deep_trunk_ally_nodes()` walks every ally's whole city list and the
+  walk reads terrain and ownership of tiles we have never seen. The pf
+  map that dispatches the worker DOES honour `H_MAP`. Pre-existing
+  (slices 1-3), surfaced here because the alignment question forced the
+  question; worth an entry when W04 turns the flag.
+* **A worker stalled inside a peace partner's borders** falls back on
+  `deep_settler_tile_behavior()`, which admits only its own start tile
+  (`path_finding.c:288` exempts the start tile, so it cannot be trapped,
+  but it will not move that turn if every neighbour is that partner's).
+  Not observed in 12 games; watch `deep-trunkduty on=` for a worker that
+  never leaves.
+* **No score was measured** and none should be inferred. The optional
+  marginal A/B was not run.
