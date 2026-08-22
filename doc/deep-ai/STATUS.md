@@ -15270,3 +15270,161 @@ Retention: benchmark/results/decaytech-holdout/{tuned,anchor,pv3}/ scorelogs
 + ARM-DONE markers; per-seed script in session scratchpad (holdout3way.py,
 logic recorded here: sum final tag-25 over all 8 seats minus baseline total).
 decaytech-tune/ r0-r4 logs stay for the tune trace; r5 partials disposable.
+
+## S-FORT: the catchment fortress carpet, instrumented and measured (2026-08-21)
+
+Follow-up to the 2026-08-15 live-play entry (`d3d6ad6`), which recorded deep
+carpeting its city catchments with fortresses and said to instrument before
+touching the want. This epic adds counters ONLY. **No want and no behaviour
+changed**, and that is proved below rather than asserted.
+
+### What landed
+
+Three log-only lines in `ai/deep`, all written under
+`log_do_output_for_level(deep_metric_log_level())`, none read back into a
+decision:
+
+| line | answers |
+|---|---|
+| `deep-fortwant` | whole-game positive base wants (n, min/p25/p50/p75/max/mean from a histogram), base tasks `assigned`, base tasks `finished` |
+| `deep-fortsat` | per turn: catchment `tiles`/`bases`, `worked`/`worked_bases`, `held_anybuilder`, `held_by_enemy`, `held_unworked`, cumulative `denial_tileturns` |
+| `deep-workturn` | worker-turns by class, cumulative: base/road/irrig/mine/transform/clean/travel/idle/other |
+
+Two limits are in the field names on purpose. Extras record no builder, so
+`bases` counts every EC_BASE extra in the radius -- ours, an enemy's, an era's
+airbase -- and `held_anybuilder` counts a foreign unit standing in ANY of
+them. Both are upper bounds on "deep's own fortress". `finished` likewise
+means "assignment whose tile later carried a base", not proof of authorship.
+
+### The counters do not perturb play
+
+`smoke` (4p 32x32 T100 civ2civ3), arm `mixed_dc`, 10 seeds, instrumented
+binary vs base branch `31b947ffc7`: **scorelog.txt byte-identical on 10/10**
+(`cmp -s`: identical=10 differ=0). The two result keys differ only because the
+binary hash is part of the key (`smoke-6cbbbbc94b05` instrumented,
+`smoke-3b82df250b61` base).
+
+`meson test -C build` 6/6 OK. `tune-audit.py` CLEAN (245/245/245/245).
+
+### Venue and cells
+
+`contested` (8p 32x32 T150 civ2civ3), 16 seeds of `seeds/train.txt`. Chosen
+because the symptom venue was `europe.serv` -- deep and stock seats at one
+table on a crowded map with contact from the first turns -- and `contested` is
+the canonical portfolio cell for exactly that.
+
+- **Cell A, compiled defaults**: arms `mixed_dc` + `mixed_cd`, 32 games, 126
+  deep player-games. No `deep-tuning` line in any game.log, which is the
+  read-back proof the arm ran defaults.
+- **Cell B, `derby5/tuning-derby7.ini`** (the ini the live game ran, via
+  `play-europe.sh`): arm `mixed_dc`, 16 games, 64 deep player-games.
+  Read-back confirmed in game.log: `base_fort_gain=15.604`,
+  `worker_danger_discount=3.15354`, `site_choke_bonus=6`.
+
+### Distributions
+
+Per deep player-game, at game end (peak-over-game is within 0.002 of end on
+both cells -- the carpet is monotonic, it never gets un-built):
+
+| metric | cell A (defaults, n=126) | cell B (derby-7, n=64) |
+|---|---|---|
+| catchment base share: med [p75] p90 max | 0.067 [0.156] 0.262 **0.579** | 0.053 [0.167] 0.289 **0.526** |
+| worked-tile base share: med [p75] p90 max | 0.093 [0.227] 0.398 **0.714** | 0.067 [0.239] 0.350 **0.591** |
+| base share of *working* worker-turns | 0.080 [0.144] 0.211 0.290 | 0.073 [0.133] 0.194 0.258 |
+| base tasks assigned | 8 [16] 33.5 71 | 6 [21] 34.5 74 |
+| base tasks finished | 6 [12] 25.5 54 | 4 [13] 27.7 45 |
+| denial tile-turns | 0 [0] 2 **20** | 0 [0] 0 **23** |
+| positive base wants quoted | 5213 [12483] 25860 46702 | 2594 [9692] 21290 38791 |
+| want p50 (median over player-games) | **6.50** | **1.50** |
+| want max (median over player-games) | **13.58** | **5.30** |
+
+Pooled: cell A `bases/tiles = 1046/10602 = 9.9%`,
+`worked_bases/worked = 591/3811 = 15.5%`, base worker-turns
+`4241/38931 = 10.9%` of working turns, `assigned=1557 finished=1141`,
+`denial_tileturns=82`. Cell B `540/5054 = 10.7%`, `252/1703 = 14.8%`,
+`2153/18779 = 11.5%`, `assigned=851 finished=578`, `denial_tileturns=58`.
+
+Tail fractions (player-games at or above the threshold):
+
+| threshold | cell A | cell B |
+|---|---|---|
+| catchment share >= 25% | 14/126 (11%) | 9/64 (14%) |
+| worked-tile share >= 25% | 29/126 (23%) | 15/64 (23%) |
+| base share of working worker-turns >= 15% | 30/126 (24%) | 15/64 (23%) |
+| any denial at all (>0 tile-turns) | 22/126 (17%) | 6/64 (9%) |
+
+### Verdict: it reproduces at benchmark tunings, and the spicy ini is not the cause
+
+The symptom is real at compiled defaults on a contact venue. It is not the
+median case -- half of deep's player-games put a base on under 7% of their
+catchment -- but the upper quarter is the carpet the live game showed: **23%
+of player-games have a base on a quarter or more of the tiles their citizens
+actually work, the worst reaching 71%**, and 24% of player-games spend a sixth
+or more of their productive worker-turns on it.
+
+**The surprise is cell B.** The derby-7 ini prices a fortress at
+`base_fort_gain = 15.6` against the compiled `40.0` -- 2.6x *cheaper*, not
+spicier, which was the opposite of this session's expectation going in. The
+want distribution moves exactly as the price says: median want p50 falls
+6.50 -> 1.50, median want max 13.58 -> 5.30, roughly 4x down. **The behaviour
+does not move at all.** Catchment share, worked share, worker-turn share and
+the tail fractions are all within noise of cell A, and the pooled base
+worker-turn share is if anything slightly *higher* (11.5% vs 10.9%).
+
+That is the finding that should drive the fix epic: **the carpet is not
+price-sensitive, so lowering `base_fort_gain` will not remove it.** The base
+want does not clear a bar; it competes against whatever else the advisor
+offers that worker on that turn. Once a city's improvement backlog is
+exhausted, a want of 1.5 wins as easily as a want of 13.5, because the
+alternative is zero. The single-player trace makes this concrete
+(cell A, seed-9 P7, a 2-city empire): bases in catchment 0 at T77, 6 at T102,
+14 at T127, 22 at T143; base worker-turns 0 / 10 / 37 / 107 over the same
+points, so **50% of all working worker-turns from T127 to T150 went into
+fortresses** (base +70 of +141 working turns) after irrigation had plateaued
+(+6) .
+
+A second mechanism compounds it and is worth stating because it is in the
+source as a deliberate choice (`deepsettler.c`, `deep_worker_task_value`):
+the base want is added AFTER the danger discount and is explicitly exempt
+from it, while every ordinary improvement on an exposed tile is divided by
+`1 + worker_danger_discount`. At the default 1.0 that halves the competition;
+under derby-7's 3.15 it quarters it. So the ini that made fortresses 2.6x
+cheaper simultaneously made everything they compete with ~2x cheaper still --
+which is a plausible reading of why the price cut did not show up in the
+behaviour. Cell B cannot separate those two, and this entry does not claim it
+does.
+
+The **denial cost is not the problem at this venue**. Median 0 tile-turns,
+83% of cell-A player-games never see it at all, pooled 82 tile-turns across
+126 player-games. The 2026-08-15 entry named two absent costs -- denial and
+prepaid attacker defence -- and the measured one is neither: it is the plain
+opportunity cost of the worker-turns. A fix designed around a denial penalty
+would be tuning against a term worth ~0.65 tile-turns per player-game.
+
+### What the fix epic has to beat
+
+Price range a competing term must outbid, from the want histograms
+(cell A, pooled shape): positive base wants run from ~0 to a hard ceiling of
+13.58 with median 6.50 -- the ceiling is `base_fort_gain` x survival gain x
+ground weight, and ground weight saturates near 1.0 on a 32x32 map because
+`density_fear_radius = 8` puts an enemy city within reach of nearly every
+tile. On roomier venues the same want should be much smaller; this entry
+measures one crowded venue and says nothing about `primary-120`.
+
+Design consequences, all falsifiable by the fix epic's own A/B:
+1. A price cut is not a fix (cell B).
+2. A denial penalty is not a fix (denial is ~0 at 150 turns).
+3. The lever that matches the data is a **budget or a saturation cap** -- some
+   term that knows how many of a city's tiles already carry a base -- or a
+   competing want that keeps the backlog non-empty so the fortress stops
+   winning by default.
+
+Any of those is its own epic with its own A/B. Nothing was changed here.
+
+### Retention
+
+`benchmark/results/fort-identity/` (the byte-identity pair),
+`benchmark/results/fort-measure/contested-1719c9b22012/` (cell A, 32 games),
+`benchmark/results/fort-derby7/contested-c6d583ff575c/` (cell B, 16 games).
+Analysis scripts were session-scratch; the counter lines are self-describing
+key=value and the last line per (game, player) is that game's total.
