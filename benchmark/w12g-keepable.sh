@@ -51,11 +51,25 @@ MESON_OPTS="-Dclients=stub -Dfcmp=cli -Dtools= -Dnls=false -Daudio=none
 # whose RUNPATH is $ORIGIN/ -- out of build/ before a single game
 # starts. Per stage and per side, because pinning two binaries to one
 # path is how a live server gets its text pages replaced underneath it.
+#
+# And a re-pin of the SAME bytes must not copy either: cp truncates and
+# rewrites, which replaces the text pages of every server already
+# running from that path, and they die of SIGBUS. Measured the hard way
+# -- four games of this stage died "Bus error" around turn 94 when a
+# resumed invocation re-pinned an identical binary over them. So the
+# copy happens only when the destination differs.
 pin() {
-  local src=$1 dst=$ROOT/.stage-bin/$2
+  local src=$1 dst=$ROOT/.stage-bin/$2 f
   mkdir -p "$dst"
-  cp -f "$(dirname "$src")/libfreeciv.so" "$dst/"
-  cp -f "$src" "$dst/freeciv-server"
+  for f in libfreeciv.so freeciv-server; do
+    local from=$(dirname "$src")/$f to=$dst/$f
+    [ "$f" = freeciv-server ] && from=$src
+    if [ -f "$to" ] \
+       && [ "$(sha256sum < "$from")" = "$(sha256sum < "$to")" ]; then
+      continue
+    fi
+    cp -f "$from" "$to"
+  done
   echo "$dst/freeciv-server"
 }
 
