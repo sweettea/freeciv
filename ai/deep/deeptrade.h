@@ -16,7 +16,30 @@
 struct adv_choice;
 struct ai_type;
 struct city;
+struct goods_type;
 struct player;
+struct unit;
+
+/* A caravan that does not exist, held open so a caller pricing many
+ * destinations from one city pays for the virtual unit and the goods
+ * choice once rather than per pair. */
+struct deep_trade_ghost {
+  struct unit *carrier;
+  struct goods_type *pgood;
+  int move_rate;                /* the carrier's, in move fragments */
+};
+
+bool deep_trade_ghost_open(struct deep_trade_ghost *ghost,
+                           struct player *pplayer, struct city *src);
+void deep_trade_ghost_close(struct deep_trade_ghost *ghost);
+
+/* What a route from 'src' to 'dest' would be worth AT THE MOMENT A
+ * CARAVAN ARRIVES, undiscounted for the walk: the establishment
+ * windfall plus the route's own income annuity over the horizon. */
+double deep_trade_pair_value(const struct player *pplayer,
+                             const struct deep_trade_ghost *ghost,
+                             const struct city *src,
+                             const struct city *dest);
 
 void deep_choose_trade_targets(struct ai_type *ait, struct player *pplayer);
 

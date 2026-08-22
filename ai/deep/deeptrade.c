@@ -23,6 +23,7 @@
 #include "support.h"
 
 /* common */
+#include "actions.h"
 #include "city.h"
 #include "game.h"
 #include "improvement.h"
@@ -1032,6 +1033,98 @@ static bool deep_route_reach_allows(const struct player *src,
   }
 
   return FALSE;
+}
+
+/**********************************************************************//**
+  Open a ghost caravan for 'src': the best trade-route unit this player
+  could build there, carrying the goods deep_ghost_goods() would load.
+  FALSE when the ruleset or the city offers neither, in which case
+  nothing was allocated and close() need not be called.
+
+  This exists so a caller pricing many destinations from one city --
+  deeptrunk's corridor dividend does exactly that -- pays for the
+  virtual unit once instead of per pair. It is the same ghost
+  deep_trade_merit_want() builds inline; the only difference is that the
+  unit type comes from the ruleset's role list rather than from stock's
+  probe, because there is no build choice in flight to read one from.
+**************************************************************************/
+bool deep_trade_ghost_open(struct deep_trade_ghost *ghost,
+                           struct player *pplayer, struct city *src)
+{
+  struct unit_type *utype
+    = best_role_unit_for_player(pplayer,
+                                action_id_get_role(ACTION_TRADE_ROUTE));
+
+  ghost->carrier = NULL;
+  ghost->pgood = NULL;
+  ghost->move_rate = 0;
+
+  if (utype == NULL) {
+    return FALSE;
+  }
+
+  ghost->carrier = unit_virtual_create(pplayer, src, utype, 0);
+  ghost->pgood = deep_ghost_goods(src, ghost->carrier);
+  if (ghost->pgood == NULL) {
+    /* Nothing this city could load; a caravan carrying nothing is worth
+     * nothing, and it is what would take actres.c:927's null
+     * dereference (upstream bug 34). */
+    unit_virtual_destroy(ghost->carrier);
+    ghost->carrier = NULL;
+
+    return FALSE;
+  }
+  ghost->carrier->carrying = ghost->pgood;
+  ghost->move_rate = unit_move_rate(ghost->carrier);
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Release a ghost opened above. Safe on one that never opened.
+**************************************************************************/
+void deep_trade_ghost_close(struct deep_trade_ghost *ghost)
+{
+  if (ghost->carrier != NULL) {
+    unit_virtual_destroy(ghost->carrier);
+    ghost->carrier = NULL;
+  }
+  ghost->pgood = NULL;
+}
+
+/**********************************************************************//**
+  What a route from 'src' to 'dest' is worth at the moment a caravan
+  arrives, undiscounted for the walk.
+
+  This is deep_route_price()'s value with the travel discount and the
+  cease-fire truncation left off: the establishment windfall plus the
+  income annuity over the full horizon, from deep_route_terms() and
+  deep_route_annuity() -- the same two primitives, the same
+  caravan_discount, no second valuation. The caller supplies the TIMING
+  itself, which is the whole point for a consumer asking what a shorter
+  walk would be worth.
+
+  Reach is filtered the same way the merit want filters it, so a
+  destination this player's tuner would not send a caravan to is worth
+  nothing here either.
+**************************************************************************/
+double deep_trade_pair_value(const struct player *pplayer,
+                             const struct deep_trade_ghost *ghost,
+                             const struct city *src, const struct city *dest)
+{
+  double discount = deep_tuning_get()->caravan_discount;
+  double windfall, per_turn;
+
+  if (ghost->carrier == NULL || src == dest
+      || discount <= 0.0 || discount > 1.0
+      || !deep_route_reach_allows(pplayer, city_owner(dest))) {
+    return 0.0;
+  }
+
+  deep_route_terms(pplayer, src, dest, ghost->carrier, ghost->pgood,
+                   &windfall, &per_turn);
+
+  return windfall + deep_route_annuity(per_turn, MORT, discount);
 }
 
 /* Everything the trade price is made of, so the census line can print
