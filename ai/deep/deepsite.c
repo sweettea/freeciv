@@ -58,6 +58,7 @@
 #include "daiplayer.h"
 #include "daisettler.h"
 
+#include "deepexpand.h"
 #include "deepsettler.h"
 #include "deeptuning.h"
 
@@ -1710,6 +1711,7 @@ void deep_contemplate_new_city(struct ai_type *ait, struct city *pcity)
              " want=0 boat=0 fresh=0",
              game.info.turn, player_name(pplayer), pcity->id,
              city_size_get(pcity));
+    deep_expand_note_norole(pplayer);
     log_debug("No ACTION_FOUND_CITY role unit available");
     return;
   }

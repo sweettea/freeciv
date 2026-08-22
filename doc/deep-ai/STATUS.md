@@ -18439,3 +18439,278 @@ it.** It goes in when the fear it reads does.
   never leaves.
 * **No score was measured** and none should be inferred. The optional
   marginal A/B was not run.
+## S-EXPAND: deep has not built a settler since turn 20, and the emergency tier is why (2026-08-22)
+
+Brief: `sessions/S-EXPAND-stall.md`. Branch `epic/expand-stall` (base
+`e47fecc67b`), 4 commits. **Diagnosis only — no knob moved, no tunable
+added, tune-audit count unchanged.** One new census
+(`ai/deep/deepexpand.c`), three readers (`benchmark/expandfunnel.py`,
+`foundcurve.py`, `expand-probe.sh`), one 20-game probe.
+
+Identity, the precondition for a counter that observes rather than
+steers: 10 smoke `mixed_dc` seeds, base binary `123fe026…` vs
+instrumented `1c3790eb…` — **`scorelog.txt` byte-identical 10/10**,
+maphash equal, 0 pairing violations. `meson test` 6/6.
+
+Probe: tech50war-200, `mixed_dc`, seeds 37-56, pv3 tuning
+(`9396e8e3…`), config `000431a7…` — the same config and tuning shas as
+the war-gap sources. 20/20 complete, 0 pairing violations, 16 000 deep
+player-turns, 82 148 city-turns.
+
+### 1. The finding, in one line
+
+**deep built 0 settlers in 20 complete 200-turn games.** `born` totals
+exactly 640 across 80 deep player-games — 8.00 per player-game, every
+one of them in turns 1-19, which is exactly the 8 `startunits`
+cityfounders the config hands out. From turn 20 to turn 200, across
+80 player-games, **not one founder was ever produced.**
+
+Every city deep owns is a startunit that walked somewhere. It founds
+5.62 cities per player-game from 8 starting settlers and adds nothing.
+
+### 2. The funnel, per deep player-turn
+
+    window  cities gate skipwar skipem fresh stale   w0  wpos wneg  held  auc  win lostdom  prod born found sites ftiles
+     1-19     3.29 0.00   0.00   0.80   0.57  2.72 0.47 0.08 0.01  0.53 0.46 0.16   0.05   0.16 0.42 0.22  3.34  39.6
+    20-39     4.44 0.03   0.10   2.08   0.65  3.77 0.39 0.11 0.15  1.57 0.83 0.19   0.58   0.19 0.00 0.02  4.77  33.2
+    40-49     4.84 0.19   0.37   1.81   0.74  3.92 0.36 0.15 0.22  2.23 1.25 0.18   1.01   0.18 0.00 0.03  5.23  37.8
+    50-59     5.08 0.49   0.50   1.88   0.71  3.87 0.41 0.12 0.18  2.11 1.15 0.18   0.95   0.18 0.00 0.02  4.58  33.5
+    60-69     5.25 0.59   0.63   1.92   0.75  3.91 0.51 0.09 0.14  1.65 0.83 0.13   0.66   0.14 0.00 0.02  3.75  26.5
+    70-79     5.38 0.68   0.75   1.90   0.77  3.94 0.54 0.11 0.12  1.40 0.72 0.08   0.57   0.08 0.00 0.01  3.11  22.0
+    80-99     5.50 0.79   0.84   1.77   0.73  3.98 0.56 0.07 0.10  1.16 0.59 0.10   0.45   0.10 0.00 0.00  2.70  19.0
+   100-139    5.56 0.87   0.90   1.25   0.71  3.97 0.66 0.02 0.03  0.40 0.20 0.04   0.15   0.04 0.00 0.00  2.21  15.3
+   140-201    5.54 0.99   0.99   0.92   0.72  3.83 0.72 0.00 0.00  0.03 0.03 0.00   0.02   0.00 0.00 0.00  2.26  14.5
+
+Both self-checks hold on every row: `cities = gate+norole+fresh+stale`
+and `auc = win+lostdom+lostmil` (`norole` is 0.00 throughout, `vcap`
+likewise).
+
+### 3. Veto ranking, each gate named at its fire site
+
+City-turns over the whole probe, out of 82 148:
+
+    skipemerg  domestic advisor never called: military choice in the
+               EMERGENCY tier and urgency != 0     21 859   26.6%
+               -- deepdefence.c:7360, inherited from
+                  dai_city_choose_build()
+    skipwar    domestic advisor never called: dai_on_war_footing()
+               and any military want               11 059   13.5%
+               -- deepdefence.c:7360, same seam
+    gate       deep_expansion_blocked(): founder_want zeroed
+                                                   10 488   12.8%
+               -- deepdefence.c:4347-4371 (expansion_gate_enabled,
+                  expansion_war_survival)
+    w0         site search came home empty           9 304   11.3%
+               -- deepsite.c:1590 (site_enough_result); this is also
+                  where settler_fearfulness_mult's risk-priced travel
+                  lands, via deep-siteladder's best_raw vs best_net
+    lostdom    domestic advisor preferred worker / building / caravan
+                                                     4 864    5.9%
+    vfood      food surplus below founder upkeep     3 965    4.8%
+               -- daidomestic's veto, seen at deepdefence.c:7232
+    lostmil    military beat the founder at the merge   725    0.9%
+    vwonder    wonder-city divisor                      624    0.8%
+    norole / vcap                                          0    0.0%
+    ---
+    win        founder won the auction              1 319
+    found      cities founded                         450
+
+**The brief's prime suspect is not the killer.** `site_enough_result`
+and risk-priced travel (`w0`) account for 11.3%, and the expansion
+gate this project built for 12.8%. The two arms of the *inherited*
+skip account for **40.1% between them**, and they are the ones that
+never emitted a line before this epic.
+
+### 4. Where the demand actually dies: the emergency tier, twice
+
+On the 5 537 city-turns where deep formed a **positive** founder want:
+
+    military side sits in the EMERGENCY tier    2 685   48.5%
+    founder is the top NORMAL-tier bid          2 442   44.1%
+    a building outbids it                         391    7.1%   median margin 545.6
+    military outbids it on VALUE                   19    0.3%   median margin 174.0
+
+`deep_want_cmp()` (deepwant.c:80) compares **tier first, value
+second**, so an emergency-tier military want outranks a founder want
+of any magnitude. The median founder want discarded that way is
+**1 225**, and **73.2% of them exceed `DAI_WANT_BELOW_MIL_EMERGENCY`
+(1 000)** — the very threshold that defines the tier.
+
+Stock compares magnitudes. Re-running the same logged comparison under
+stock's rule: **1 174 of the 2 685 tier-losses (43.7%) would have won,
+by a median margin of 411.** This is arithmetic on logged bids, not a
+replay — it says the comparison flips, not that the game would have
+gone that way — but the direction is not in doubt, and it is a
+deep-introduced regression (W01 replaced the magnitude test with the
+tier test).
+
+The same tier is *also* the largest entry in §3's veto ranking, via
+`skipemerg`: the emergency tier both suppresses the bid from being
+made and outranks it when it is made. **One mechanism, two fire
+sites, 26.6% + 48.5%.**
+
+### 5. Why zero settlers even though the founder wins 16.5 auctions
+
+`win` totals 16.49 per deep player-game and `prod` — city-turns whose
+production actually *is* a founder — totals 16.56. **1.004 production
+turns per auction won.** The founder takes the city for one turn and
+loses it again.
+
+Per-city pick sequences from `deep-want` confirm it directly. 528
+founder runs across the probe:
+
+    run of 1 turn    255   48.3%
+    run of 2 turns   109   20.6%
+    run of 3 turns    59   11.2%
+    run of 4+ turns  105   19.9%     longest observed: 8
+
+Mean run 2.36 turns. What the city switched to when the run ended:
+**Riflemen 28.8%**, Destroyer 9.1%, Marines 7.2%, Transport 6.6%,
+Ironclad 6.4%, Coastal Defense 6.2%, City Walls 5.5%, Diplomat 5.1% —
+about 67% military, 12% buildings.
+
+The mechanism closes on itself: the gates do not have to fire every
+turn, only on the turn *after* a win. At T40-79 the per-city-turn
+probability that no founder bid can be made at all
+(`(skipwar+skipemerg)/cities`) is **45-49%**, which gives an expected
+run of ~2 turns — the 2.36 observed. A settler costs more turns of
+production than that, and the change penalty burns the stock each
+time it flips. Hence 528 runs, 1 246 founder-turns, and **zero
+settlers**.
+
+### 6. Stall or correct early completion? Stall — but a cheap one here
+
+Three discriminators, as briefed:
+
+**(a) Sites still priced above threshold.** `deep_remaining_sites()`,
+read unconditionally so a gated city-turn still reports the land it
+declined: **5.23 sites per player at T40-49, 3.75 at T60-69, 2.70 at
+T80-99, 2.26 at T140+**, with 26.5 / 19.0 / 14.5 reachable free land
+tiles. It never goes to zero. deep stops expanding while its own land
+model says there is room for ~3 more cities per player. **Not
+completion.**
+
+**(b) What classic's settlers convert to.** Almost nothing. Across the
+64 retained mixed games classic's settler stock peaks at 22.3 (T40)
+and decays to 2.2 by T201 — ~20 settlers consumed — while its city
+count rises 17.9 → 22.6, **+4.7**. From the probe's final saves
+(`foundcurve.py`, founding module by `original`, so conquest cannot
+contaminate it), classic founds 86 cities after T20 across 80
+player-games, **1.08 per player-game**, against a settler stock of
+~5.5 per player. **Classic's 39.2-settler hoard is mostly waste, not
+virtue** — which means the headline metric of the war-gap entry's
+rank-3 finding (`settlers alive at T60`) is measuring classic's
+pathology at least as much as deep's.
+
+**(c) Are classic's late cities junk?** No, but they are small. Mean
+final size by founding turn, probe final saves:
+
+    founded   classic     deep
+      1-20    6.62/320   6.21/341
+     21-40    5.10/20    5.81/27
+     41-60    4.37/35    5.46/39
+     61-80    3.82/17    4.50/24
+     81-120   3.09/11    3.00/11
+
+A city founded after T80 ends at ~3 against ~6.6 for a turn-1 city, so
+late expansion is worth roughly half a city each — real, but not the
+prize the settler-count gap implies.
+
+**Verdict: a stall, not completion.** deep has no expansion capability
+at all after T20 — not a slow one, a zero one — while land remains.
+What that costs on *this* venue is modest, because the land left is
+late and small and because classic wastes most of what it builds. The
+capability gap is structural; the score it costs here is not the
+measure of it.
+
+### 7. Divergence turn, and a probe-design surprise that matters more
+
+From the 64 retained mixed games, the **city** gap is flat at -0.7 to
+-0.9 from T10 through T50, then opens: **T55 -1.47 (t -1.91), T60
+-1.73 (t -2.12), T65 -2.08 (t -2.44), T70 -2.44 (t -2.83)**, and
+plateaus there, drifting to -3.16 at T201. Deep's founding rate falls
+off at **T50**; classic's holds until **T70**. That 20-turn difference
+is the whole city gap.
+
+The **settler** gap is not a T60 event at all: it is -9.1 at T10
+(8.1 vs 17.2) and near its maximum by T30. The two are different
+phenomena on different clocks.
+
+**And the city gap is a seat interaction, which pooling hides.**
+Splitting the retained 64 games by ordering:
+
+    ordering            cities T60   T201    score T201   t(cities,201)
+    mixed_dc (deep odd)     +0.12   -1.75         -88.0        -0.84
+    mixed_cd (deep even)    -3.59   -4.56        -166.2        -4.05
+
+The settler gap is **identical** in both (-15.2 vs -14.9 at T60), so
+the settler deficit cannot be what produces the city deficit. My probe
+ran `mixed_dc` only and duly reported **+1.4 cities (t +0.59)** and
+score -35.8 (t -0.73) — it reproduced the settler gap (0.2 vs 2.2,
+t -3.52), the kill gap (0.631, t -3.46) and the gold gap (0.118,
+t -6.38), and did **not** reproduce the city gap, because it sampled
+the null half of an interaction.
+
+Two consequences, and the second is the expensive one:
+
+1. Running one ordering was my mistake and cost this epic its
+   city-gap arm. **Any expansion A/B on a mixed venue must run both
+   orderings**; the pooled estimate is a valid average of a null and a
+   large effect, not a description of either.
+2. Deep is differentially hurt by moving *second* in turn order, by
+   ~2.8 cities and ~78 score, and nothing in the plan predicts that.
+   It is a bigger unexplained effect than the settler stall this epic
+   was sent to find.
+
+### 8. What the next epic should do, and what it should not
+
+**Not** "make deep build more settlers." The demand is already there —
+2.23 live founder wants per player-turn at T40-49, median 1 225,
+against a settler that costs a few turns of production.
+
+The ordered, measured targets:
+
+1. **The emergency tier's two fire sites.** 26.6% of city-turns lose
+   the bid before it is made and 48.5% of positive wants lose it after
+   — one mechanism. 43.7% of the tier-losses would flip under stock's
+   own magnitude rule. This is deep's own W01 change and it is the
+   only candidate that explains both the suppression and the churn.
+2. **Production hysteresis for the founder.** 48.3% of founder runs
+   last exactly one turn. Whatever the auction decides, a build that
+   cannot survive two turns cannot produce a 30-shield unit. The
+   switch-cost machinery (`deep_switch_cost_apply`) exists and
+   evidently does not bind here.
+3. **The seat-order interaction in §7**, which is not an expansion
+   question at all and should not be bundled with one.
+
+Nothing in 1-3 is a tuning pass; all three are mechanism.
+
+### Surprises worth carrying
+
+- **`born` is exactly 640 = 8 × 80.** A counter landing on precisely
+  the startunit count, with zero after turn 19, is the kind of number
+  that reads as a bug in the counter. It is not: `alive` decays
+  monotonically 2.62 → 0.05 with no replenishment, `found` (450) and
+  the savegame founding curve (444 surviving) agree to within the
+  cities deep lost, and the retained games' settler stock matches.
+- **The whole build-side chain was already logged and still unreadable.**
+  Six log families covered it and no two answered the same question;
+  the two stages that actually dominate (`skipemerg`, `skipwar`)
+  emitted nothing at all. The census is 250 lines and cost one
+  afternoon; the six-way join it replaces was never once performed.
+- **A single-ordering mixed probe is not a paired design.** It looks
+  like one, it passes the pairing check (`maphash` equality), and it
+  can still sample one arm of an interaction. The pairing check
+  verifies the *map*, not the *seat*.
+- **tech50war-200 games are ~6 minutes, not ~60.** The first launch
+  looked frozen at turn 22 for fifteen minutes; the games had been
+  reaped ~30 s after launch by the tool call returning, `setsid` and
+  `nohup` notwithstanding, and the truncated turn-22 autosave was the
+  giveaway. Under tracked background the full 20-game batch took 19
+  minutes. Verify launches by artefact growth, never by elapsed time.
+
+Retention: `benchmark/results/expand-probe/` — 20 games, `game.log.gz`
+per game (the funnel is in them), scorelogs, turn-1 and final saves.
+Every table above re-derives from that directory with the three
+committed readers, plus `mixseat.py` on the retained 64 mixed games
+for §6b and §7.
