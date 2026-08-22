@@ -2850,6 +2850,98 @@ void deep_fort_saturation_census(struct player *pplayer)
   }
 }
 
+/* Worker-turns by task class, accumulated over the GAME. One tick per
+ * worker per turn, sampled where every other census is: after the
+ * advisor has finished assigning this player's workers, so a worker
+ * set to work this turn is already carrying its activity. */
+enum deep_wclass {
+  DEEP_WCLASS_BASE = 0,
+  DEEP_WCLASS_ROAD,
+  DEEP_WCLASS_IRRIG,
+  DEEP_WCLASS_MINE,
+  DEEP_WCLASS_TRANSFORM,
+  DEEP_WCLASS_CLEAN,
+  DEEP_WCLASS_TRAVEL,
+  DEEP_WCLASS_IDLE,
+  DEEP_WCLASS_OTHER,
+  DEEP_WCLASS_COUNT
+};
+static int deep_wclass_turns[MAX_NUM_PLAYER_SLOTS][DEEP_WCLASS_COUNT];
+
+/**********************************************************************//**
+  Which class of work is this worker doing this turn? Travel is its own
+  class rather than idleness: walking to a job is the job's cost, and
+  the whole point of the fortress question is what the fortress spend
+  displaced.
+**************************************************************************/
+static enum deep_wclass deep_worker_class(const struct unit *punit)
+{
+  switch (punit->activity) {
+  case ACTIVITY_BASE:
+    return DEEP_WCLASS_BASE;
+  case ACTIVITY_GEN_ROAD:
+    return DEEP_WCLASS_ROAD;
+  case ACTIVITY_IRRIGATE:
+  case ACTIVITY_CULTIVATE:
+    return DEEP_WCLASS_IRRIG;
+  case ACTIVITY_MINE:
+  case ACTIVITY_PLANT:
+    return DEEP_WCLASS_MINE;
+  case ACTIVITY_TRANSFORM:
+    return DEEP_WCLASS_TRANSFORM;
+  case ACTIVITY_CLEAN:
+    return DEEP_WCLASS_CLEAN;
+  case ACTIVITY_GOTO:
+    return DEEP_WCLASS_TRAVEL;
+  case ACTIVITY_IDLE:
+    return (unit_has_orders(punit) || punit->goto_tile != NULL)
+      ? DEEP_WCLASS_TRAVEL : DEEP_WCLASS_IDLE;
+  default:
+    return DEEP_WCLASS_OTHER;
+  }
+}
+
+/**********************************************************************//**
+  One line per player per turn: worker-turns spent by task class,
+  accumulated over the game, so the fortress spend is readable as a
+  share of everything the worker corps did rather than as a raw count.
+  The last line of a game is that game's totals.
+**************************************************************************/
+void deep_worker_class_census(struct player *pplayer)
+{
+  int pn = player_number(pplayer);
+  int workers = 0;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+
+  unit_list_iterate(pplayer->units, punit) {
+    if (!unit_has_type_flag(punit, UTYF_WORKERS)) {
+      continue;
+    }
+    workers++;
+    deep_wclass_turns[pn][deep_worker_class(punit)]++;
+  } unit_list_iterate_end;
+
+  if (workers > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-workturn turn=%d player=\"%s\" workers=%d base=%d"
+             " road=%d irrig=%d mine=%d transform=%d clean=%d"
+             " travel=%d idle=%d other=%d",
+             game.info.turn, player_name(pplayer), workers,
+             deep_wclass_turns[pn][DEEP_WCLASS_BASE],
+             deep_wclass_turns[pn][DEEP_WCLASS_ROAD],
+             deep_wclass_turns[pn][DEEP_WCLASS_IRRIG],
+             deep_wclass_turns[pn][DEEP_WCLASS_MINE],
+             deep_wclass_turns[pn][DEEP_WCLASS_TRANSFORM],
+             deep_wclass_turns[pn][DEEP_WCLASS_CLEAN],
+             deep_wclass_turns[pn][DEEP_WCLASS_TRAVEL],
+             deep_wclass_turns[pn][DEEP_WCLASS_IDLE],
+             deep_wclass_turns[pn][DEEP_WCLASS_OTHER]);
+  }
+}
+
 /* Per-player census for the travel discount, reset per turn. */
 static int deep_local_cand[MAX_NUM_PLAYER_SLOTS];
 static int deep_local_disc[MAX_NUM_PLAYER_SLOTS];

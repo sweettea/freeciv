@@ -43,6 +43,10 @@ void deep_fort_census(struct player *pplayer);
  * the part of it the city actually works, carries a base. */
 void deep_fort_saturation_census(struct player *pplayer);
 
+/* Worker-turns by task class, accumulated over the game, so the
+ * fortress spend is readable as a share of the worker corps. */
+void deep_worker_class_census(struct player *pplayer);
+
 /* Travel-discount census: candidates offered, candidates discounted,
  * their mean arrival and the want removed, plus how far the workers
  * that ended the turn en route still have to walk. */
