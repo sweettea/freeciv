@@ -141,6 +141,11 @@ def alignment(arm):
     seen_pairs = 0
     dsum = 0
     allylinks = 0
+    # The SAME-LINK subset: both sides picked the same two cities, so a
+    # tile disagreement is a routing disagreement and nothing else. The
+    # rest of the pairs disagree about WHICH link to build, which is a
+    # different failure and is reported by `endpoint distance`.
+    ex_num = ex_den = ex_par = ex_sym = 0
     for key, entries in arm.links.items():
         ally = [e for e in entries if e[1] == 1]
         allylinks += len(ally)
@@ -168,13 +173,23 @@ def alignment(arm):
                 if sp or sq:
                     ov_num += len(sp & sq)
                     ov_den += len(sp | sq)
+                    if d == 0:
+                        ex_num += len(sp & sq)
+                        ex_den += len(sp | sq)
+                        ex_par += sum(
+                            1 for t in (sp ^ sq)
+                            if any(chev(t, u) <= 1
+                                   for u in (sq if t in sp else sp)))
+                        ex_sym += len(sp ^ sq)
                 for t in (sp ^ sq):
                     other = sq if t in sp else sp
                     if any(chev(t, u) <= 1 for u in other):
                         par += 1
                     else:
                         lonely += 1
-    return dict(allylinks=allylinks, pairs=seen_pairs, exact=exact,
+    return dict(exact_overlap=(ex_num / ex_den if ex_den else 0.0),
+                exact_parallel=ex_par, exact_sym=ex_sym,
+                allylinks=allylinks, pairs=seen_pairs, exact=exact,
                 near=near, meand=(dsum / seen_pairs if seen_pairs else 0.0),
                 overlap=(ov_num / ov_den if ov_den else 0.0),
                 parallel=par, disjoint=lonely)
@@ -459,12 +474,15 @@ def main(argv):
     print("\n== meet in the middle: two allies planning one link")
     print("%-24s%s" % ("", "".join("%14s" % a.name for a in arms)))
     for k in ("allylinks", "pairs", "exact", "near", "parallel",
-              "disjoint"):
+              "disjoint", "exact_parallel", "exact_sym"):
         print("%-24s%s" % (k, "".join("%14d" % g[k] for g in aligns)))
     print("%-24s%s" % ("endpoint distance",
                        "".join("%14.2f" % g["meand"] for g in aligns)))
     print("%-24s%s" % ("tile overlap",
                        "".join("%14.3f" % g["overlap"] for g in aligns)))
+    print("%-24s%s" % ("same-link overlap",
+                       "".join("%14.3f" % g["exact_overlap"]
+                               for g in aligns)))
     return 0
 
 
