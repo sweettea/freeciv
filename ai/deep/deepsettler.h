@@ -39,6 +39,10 @@ bool deep_settler_overnight_veto(struct unit *punit,
  * the behaviour metric -- workers actually building a base now. */
 void deep_fort_census(struct player *pplayer);
 
+/* Saturation census: how much of each deep city's work radius, and of
+ * the part of it the city actually works, carries a base. */
+void deep_fort_saturation_census(struct player *pplayer);
+
 /* Travel-discount census: candidates offered, candidates discounted,
  * their mean arrival and the want removed, plus how far the workers
  * that ended the turn en route still have to walk. */

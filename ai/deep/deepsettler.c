@@ -2763,6 +2763,65 @@ void deep_fort_census(struct player *pplayer)
   deep_fort_maxwant[pn] = 0.0;
 }
 
+/**********************************************************************//**
+  One line per player per turn: how much of this empire's city
+  catchments carries a base, and how much of the part the cities
+  actually work does.
+
+  "Catchment" is the work radius, city centre included, restricted to
+  the tiles the city could ever work -- the same city_tile_iterate the
+  city manager walks. "worked" is tiles this very city has a citizen
+  on right now, which is the set the saturation symptom is about: a
+  fortress on a tile nobody works costs only the worker-turns, while
+  one on a worked tile is also the thing an enemy can stand in.
+
+  Counts BASES, not fortresses. Extras record no builder and rulesets
+  spell their defensive base differently (classic gives the Fortress
+  extra a defense_bonus, civ2civ3 delivers the same thing as effects),
+  so this counts every EC_BASE extra present -- ours, an enemy's, and
+  the era's airbases and buoys alike. In the benchmark rulesets a base
+  standing inside a city work radius is overwhelmingly a fortress, but
+  the number is an upper bound and the field name says base.
+**************************************************************************/
+void deep_fort_saturation_census(struct player *pplayer)
+{
+  const struct civ_map *nmap = &(wld.map);
+  int cities = 0, tiles = 0, bases = 0, worked = 0, worked_bases = 0;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+
+  city_list_iterate(pplayer->cities, pcity) {
+    cities++;
+    city_tile_iterate(nmap, city_map_radius_sq_get(pcity),
+                      city_tile(pcity), ptile) {
+      bool has_base = deep_fort_tile_has_base(ptile);
+      bool is_worked = (tile_worked(ptile) == pcity
+                        || ptile == city_tile(pcity));
+
+      tiles++;
+      if (has_base) {
+        bases++;
+      }
+      if (is_worked) {
+        worked++;
+        if (has_base) {
+          worked_bases++;
+        }
+      }
+    } city_tile_iterate_end;
+  } city_list_iterate_end;
+
+  if (cities > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-fortsat turn=%d player=\"%s\" cities=%d tiles=%d"
+             " bases=%d worked=%d worked_bases=%d",
+             game.info.turn, player_name(pplayer), cities, tiles, bases,
+             worked, worked_bases);
+  }
+}
+
 /* Per-player census for the travel discount, reset per turn. */
 static int deep_local_cand[MAX_NUM_PLAYER_SLOTS];
 static int deep_local_disc[MAX_NUM_PLAYER_SLOTS];
