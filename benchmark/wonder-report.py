@@ -11,6 +11,7 @@ producing, how many wonders it finished, and how much of that is the
 race pass's doing.
 """
 import glob
+import gzip
 import re
 import statistics
 import sys
@@ -43,8 +44,15 @@ def med(xs):
     return statistics.median(xs) if xs else float('nan')
 
 
+def openlog(path):
+    """game.log files are ~15 MB each and are kept gzipped after scoring."""
+    if path.endswith('.gz'):
+        return gzip.open(path, 'rt', errors='replace')
+    return open(path, errors='replace')
+
+
 def cell(label, pattern):
-    logs = sorted(glob.glob(pattern))
+    logs = sorted(glob.glob(pattern) + glob.glob(pattern + '.gz'))
     if not logs:
         print(f'--- {label}: NO LOGS ({pattern})')
         return
@@ -62,7 +70,7 @@ def cell(label, pattern):
     for path in logs:
         games += 1
         prev = {}
-        for line in open(path, errors='replace'):
+        for line in openlog(path):
             if 'deep-wrace' not in line:
                 continue
             d = parse(line, 'deep-wrace-city')
