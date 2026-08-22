@@ -15270,3 +15270,157 @@ Retention: benchmark/results/decaytech-holdout/{tuned,anchor,pv3}/ scorelogs
 + ARM-DONE markers; per-seed script in session scratchpad (holdout3way.py,
 logic recorded here: sum final tag-25 over all 8 seats minus baseline total).
 decaytech-tune/ r0-r4 logs stay for the tune trace; r5 partials disposable.
+
+## AUTOPSY closed: the tuned package loses on the ECON venue only, and G — mostly the CM block — is why (2026-08-22)
+
+Brief: `sessions/S-AUTOPSY-defaults-vs-pv3.md`. Branch
+`epic/autopsy-defaults` (base 31b947ffc7), diagnosis only, no
+behaviour code touched. One pinned binary for all 200 games
+(`.worktrees/autopsy/.stage-bin/freeciv-server`,
+sha256 `b65878a6ccd975cc…`, with its own `libfreeciv.so`
+`2618460cc337db3c…`), ports 7300-7339, jobs 4, TRAINING seeds.
+
+Arms are generated, never hand-typed: `benchmark/ablate-blocks.py`
+copies the chosen block's lines verbatim out of `benchmark/tuning/pv3.ini`
+and omits everything else, which the loader treats as an EXACT compiled
+default (`deeptuning.c` `deep_tuning_load_file`, TUNE_DOUBLE existence
+guard). Every arm passed `validate_tuning` and an awk duplicate-key
+check, and every one of the 200 games was audited against its own
+`deep-tuning file="…"` read-back line: **200/200 loaded the arm they
+were supposed to**, and a separate check confirmed each arm's live
+values equal pv3 for its own keys and the compiled default for all
+others.
+
+Objective is the all-deep game's total score (`tune.py`'s `final_score`,
+sum of every seat at its last turn). Arms are compared to each other on
+the same seed, so the classic baseline arm — a per-(config, seed)
+constant that cancels exactly — was not run at all; that is where the
+game budget for the third round came from.
+
+### Round 1: which family, both venues, 8 seeds (112 games)
+
+isolated-150 (4 seats, the ECON venue), paired vs the `defaults` arm:
+
+    arm        mean    sem      t    wins
+    full      -98.8   38.1  -2.59    1/8      <- pv3 entire
+    G         -53.8   18.6  -2.90    1/8
+    S         -27.2   18.6  -1.47    1/8
+    M         -24.2   20.0  -1.21    2/8
+    X         +22.6   17.0  +1.33    5/8
+    rest       +1.9   21.7  +0.09    4/8
+
+tech50war-200 (8 seats, the WAR venue), same treatment:
+
+    arm        mean    sem      t    wins
+    full      +28.9   35.3  +0.82    4/8      <- pv3 entire
+    M         -58.6   36.6  -1.60    3/8
+    S         -30.1   32.8  -0.92    3/8
+    G         -28.9   36.2  -0.80    3/8
+    X          -8.0   34.1  -0.23    4/8
+    rest       -0.2   20.1  -0.01    4/8
+
+**The war venue does not reproduce the finding at all**: pv3 is
+nominally AHEAD of compiled defaults there and nothing separates. The
+standing claim "defaults beat pv3 on three venues" survives only as
+"defaults beat pv3 on the ECON venue". (`rest` is the 14 pv3 keys that
+S/X/G/M do not reach — the naval lift/boat set and three gift knobs. It
+is a clean zero on both venues, so the block-assignment gap costs
+nothing measurable, but it is still a gap.)
+
+### Round 2: split G, isolated-150, 8 seeds (48 games)
+
+G is 109 knobs; `benchmark/tuning-blocks.ini` now carries an exact
+six-way partition of it (commit `9960d99a28`). Paired vs `defaults`:
+
+    arm         mean    sem      t    wins
+    GCM        -33.1   13.5  -2.45    1/8     17 cm_* knobs
+    GHORIZON   -29.4   37.9  -0.77    2/8
+    GCIVIL     -19.2   28.8  -0.67    4/8
+    GDIPLO      -3.0    2.0  -1.52    0/8
+    GPROD       +4.9   29.4  +0.17    5/8
+    GSITE      +14.5   15.9  +0.91    4/8
+
+Sub-arms sum to -65.3 against G's own -53.8, so the families are
+roughly additive at this resolution and no interaction term needs to be
+invented to explain the total.
+
+### Round 3: confirm the top two at 16 seeds (40 games)
+
+Same venue, seeds 1-16, five arms:
+
+    arm         mean    sem      t    wins   median   12+ neg   drop-extreme
+    full       -46.5   25.5  -1.83   6/16    -33.5    10/16        -35.3
+    G          -40.4   17.7  -2.28   4/16    -43.0    12/16        -53.3
+    GCM        -24.2   13.4  -1.80   4/16    -19.5    12/16        -17.3
+    GHORIZON    -6.3   21.9  -0.29   6/16    -13.5    10/16        -20.1
+
+`drop-extreme` removes the single largest-|diff| seed, the sensitivity
+check the DECAYTECH entry above wishes it had run earlier. G survives
+it and gets worse; GCM survives it; **GHORIZON collapses** — its
+round-2 -29.4 was one +201 seed away from nothing.
+
+### Verdict
+
+- **Guilty: block G, and inside it GCM.** G carries -40.4 of pv3's
+  -46.5 on the ECON venue at n=16 (t -2.28, negative on 12 of 16
+  seeds); GCM carries -24.2 of G's -40.4 (t -1.80, negative on 12 of
+  16). Nothing else in G is resolved: GHORIZON is null once the
+  outlier goes, GDIPLO is tiny (-3.0) though it lost all 8 seeds,
+  GSITE/GPROD are nominally positive.
+- **Acquitted for now: the fear/floor family.** S is -27.2 (t -1.47)
+  on econ and -30.1 (t -0.92) on war — the same direction the lean
+  legend predicted, but not separated at any n we ran, and less than
+  half of G on the venue where anything separates. The pre-registered
+  suspicion in the brief ("most plausibly the fear/floor family") is
+  NOT what the ablation found.
+- **X is the only family that helps** (+22.6 on econ, t +1.33), which
+  is consistent with the settler/site work being the tuned line's real
+  contribution.
+
+The 17 GCM overrides, as ratios to compiled default:
+`cm_grow_safety_margin` x2.46, `cm_grow_trade` x2.25, `cm_wonder_trade`
+x1.75, `cm_cap_food` x1.50, `cm_grow_shield` x1.50, `cm_trade_quality_slope`
+x1.35, `cm_grow_below` x1.17, `cm_cap_shield`/`cm_grow_food` x1.12,
+`cm_cap_trade` x0.62, `cm_wonder_shield` x0.60, plus two knobs pushed off
+a compiled zero (`cm_grow_price_blend` 0.154, `cm_war_growth_charge`
+0.285). The shape is "value trade and safety margin far above stock,
+value the wonder shield below it" — a citizen-manager posture that the
+optimiser found on some other objective and that costs score here.
+
+### Recommended follow-up
+
+1. **A pv4 should drop the GCM block** — revert those 17 `cm_*` keys to
+   compiled defaults — and keep everything else. That is one change
+   with n=16 evidence behind it, worth about +24/game (~+6/seat) on the
+   econ venue.
+2. Second candidate, weaker: GDIPLO (0/8 seeds won, but only -3.0).
+3. Do NOT drop S on this evidence. If the fear/floor family is to be
+   judged, it needs a venue where it separates and an n we did not
+   spend here.
+4. Whatever a pv4 does, it has to be re-measured on BOTH venues: the
+   war venue's answer to this whole question is "no difference", and a
+   package tuned to the econ venue's answer can lose there.
+
+### Caveats
+
+- 8 (round 1-2) and 16 (round 3) training seeds. Effects shrank when
+  seeds 9-16 arrived (G -53.8 -> -40.4, GCM -33.1 -> -24.2, GHORIZON
+  -29.4 -> -6.3): treat every n=8 number above as direction only.
+- Two venues, not three. The third (Europe) is a single-seed
+  exhibition, not a paired venue, and buys no per-seed statistics.
+- The `deep-tuning` read-back line is truncated at 8192 chars, so it
+  shows ~170-185 of the 245 fields. The audit is exact for the fields
+  it prints and blind past the cut.
+- Trap found the hard way, now in the runner's own docstring: this
+  worktree's `meson setup` did not carry the tree's
+  `-Daimodules=classic,tex,baseline,deep`, so the first smoke run
+  logged "There is no AI type deep" and returned an identical 336 for
+  all seven arms — a perfectly plausible null. The read-back audit is
+  what caught it.
+
+Retention: `benchmark/results/autopsy-r{1,2,3}/` scorelogs, game.logs
+(the read-back evidence) and provenance; saves pruned. Arm inis are
+regenerable byte-for-byte from `ablate-blocks.py` + `pv3.ini` +
+`tuning-blocks.ini`; the exact round-2 invocation is
+`ablate-blocks.py --out … --arm G=G --arm GCM=GCM --arm GHORIZON=GHORIZON
+--arm GSITE=GSITE --arm GDIPLO=GDIPLO --arm GCIVIL=GCIVIL --arm GPROD=GPROD`.
