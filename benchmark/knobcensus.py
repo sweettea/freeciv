@@ -310,6 +310,21 @@ MAP = {
         "picked= counts the beyond-ceiling tasks actually assigned, "
         "each also a deep-trunkpick line, with hist= their "
         "map-distance histogram."),
+    "trunk_ally_gate": (
+        "S3", "gate", "direct", [("deep-trunkally", "links>0")],
+        "W12 slice 3: deep_trunk_build() appends allied cities to the "
+        "MST node set only when the gate is open (deeptrunk.c), so the "
+        "deep-trunkally line does not exist at all below it. links= "
+        "corridors planned to an allied city, gap= their tiles still "
+        "without a road, offered= and picked= what the beyond-ceiling "
+        "source priced and assigned on them (each pick also a "
+        "deep-trunkpick line carrying ally=1). VENUE-SENSITIVE and "
+        "unlike every other knob here: the mechanism cannot fire in a "
+        "game where deep has no ally, so links=0 evidences the VENUE "
+        "and not the knob. Read it only in a game where an alliance "
+        "exists (benchmark/w12c-ally.sh smoke scripts one with the "
+        "server's team command); a zero from anywhere else is a miss "
+        "to report, not a null to ship."),
 
     # ---------------- Stage 1: economy / horizon / CM ---------------
     "horizon_capacity_weight": (
