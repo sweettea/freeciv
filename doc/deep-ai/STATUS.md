@@ -16512,3 +16512,166 @@ measured and the `techs` t −3.18 it cost.
   games, saves pruned after reading), identity under
   `/tmp` scratch and reproducible from the two staged binaries named
   above.
+## pv4 holdout confirm: dropping GCM does NOT replicate on held-out seeds (2026-08-22)
+
+Brief: `sessions/S-PV4-drop-gcm.md`. Branch `epic/pv4-drop-gcm`
+(base `6ab31162b0`). No behaviour code touched — ini generation, runs
+and verdict only. 128 games on one pinned binary
+(`.worktrees/pv4/stage/freeciv-server`, sha256 `8e44607a71fd1486…`,
+with its own `libfreeciv.so` `26e9db673fcdd2dd…`), ports 7300-7315 and
+7400-7415, jobs 4, **HELD-OUT seeds 101-116**.
+
+Arms are generated, never hand-typed:
+
+    ablate-blocks.py --out benchmark/tuning \
+      --arm 'pv4=S,X,G,M,REST,^GCM' \
+      --arm 'pv4d=S,X,G,M,REST,^GCM,^GDIPLO'
+
+pv4 = pv3 minus GCM's 17 tuned `cm_*` knobs (188 keys); pv4d drops
+GDIPLO's 13 on top (175). Every line byte-equal to `pv3.ini`; absent
+keys are exact compiled defaults by `deep_tuning_load_file`'s
+existence guard. Both pass `validate_tuning` and awk dedupe.
+
+**96/96 deep-arm games verified against their own `deep-tuning
+file="…"` read-back line** — every key the arm sets reads back as the
+ini's value and every dropped key reads back as the compiled default.
+(The 32 baseline games run no deep seat, so there is nothing to audit.)
+
+### The table, 16 held-out seeds, both venues
+
+Objective is `tune.py`'s `final_score` (sum of every seat at its last
+turn). The `baseline` column is the classic arm, a per-(config, seed)
+constant that cancels exactly in the arm-vs-arm contrasts — those
+contrasts are the comparable quantity, **not** the vs-baseline means,
+and neither is comparable to the autopsy's vs-compiled-defaults
+numbers.
+
+isolated-150 (4 seats, the ECON venue), paired vs the classic baseline:
+
+    arm       n    mean   median    sem      t   wins
+    pv3      16    +9.4     +0.5   26.9  +0.35   8/16
+    pv4      16    +8.0    -21.0   22.8  +0.35   7/16
+    pv4d     16    +6.9    -11.0   25.1  +0.27   7/16
+
+tech50war-200 (8 seats, the WAR venue), same treatment:
+
+    arm       n    mean   median    sem      t   wins
+    pv3      16  -134.8   -147.0   21.9  -6.15   1/16
+    pv4      16  -149.2   -149.0   28.1  -5.32   1/16
+    pv4d     16  -184.0   -211.5   31.8  -5.79   2/16
+
+**Arm-vs-arm, which is the actual question:**
+
+    venue          contrast     mean  median    sem      t  signs +/-/=  sign-p
+    isolated-150   pv4  - pv3   -1.4   +22.5   19.5  -0.07     9/6/1      0.61
+    isolated-150   pv4d - pv3   -2.5   +20.5   18.5  -0.13    11/5/0      0.21
+    isolated-150   pv4d - pv4   -1.1    +0.0   10.4  -0.11     4/7/5      0.55
+    tech50war-200  pv4  - pv3  -14.5   -37.5   30.0  -0.48     7/9/0      0.80
+    tech50war-200  pv4d - pv3  -49.2   -83.0   30.9  -1.59     5/11/0     0.21
+    tech50war-200  pv4d - pv4  -34.8   -20.0   25.2  -1.38     7/9/0      0.80
+
+Per-seed paired diffs, isolated-150 (baseline pv3 pv4 pv4d | pv4-pv3
+pv4d-pv3):
+
+    101   907  841  819  788 |  -22   -53      109   704  764  628  628 | -136  -136
+    102   756  780  809  801 |  +29   +21      110   636  879  792  766 |  -87  -113
+    103   789  663  737  677 |  +74   +14      111   749  732  657  691 |  -75   -41
+    104   674  664  693  693 |  +29   +29      112   801  849  713  705 | -136  -144
+    105   515  646  662  662 |  +16   +16      113   797  776  776  796 |   +0   +20
+    106   746  696  725  725 |  +29   +29      114   593  744  684  808 |  -60   +64
+    107   731  742  863  803 | +121   +61      115   897  708  803  812 |  +95  +104
+    108   738  651  712  712 |  +61   +61      116   769  817  857  845 |  +40   +28
+
+Per-seed paired diffs, tech50war-200:
+
+    101  1646 1517 1529 1412 |  +12  -105      109  1712 1618 1531 1386 |  -87  -232
+    102  1806 1668 1561 1553 | -107  -115      110  1932 1608 1729 1564 | +121   -44
+    103  1751 1722 1691 1847 |  -31  +125      111  1671 1698 1578 1524 | -120  -174
+    104  1792 1772 1544 1582 | -228  -190      112  1623 1467 1666 1697 | +199  +230
+    105  1671 1508 1464 1432 |  -44   -76      113  1750 1571 1433 1455 | -138  -116
+    106  1738 1524 1683 1569 | +159   +45      114  1747 1533 1473 1557 |  -60   +24
+    107  1768 1573 1462 1526 | -111   -47      115  1831 1708 1803 1618 |  +95   -90
+    108  1577 1421 1502 1511 |  +81   +90      116  1682 1633 1660 1520 |  +27  -113
+
+Drop-extreme (remove the single largest-|diff| seed, the autopsy's
+sensitivity check):
+
+    isolated-150   pv4-pv3   -1.4 -> +7.6  (t +0.41), dropping seed 109 (-136)
+    isolated-150   pv4d-pv3  -2.5 -> +6.9  (t +0.41), dropping seed 112 (-144)
+    tech50war-200  pv4-pv3  -14.5 -> -0.3  (t -0.01), dropping seed 104 (-228)
+    tech50war-200  pv4d-pv3 -49.2 -> -37.1 (t -1.22), dropping seed 109 (-232)
+
+### Verdict, applying the pre-registered rule
+
+The rule was: *pv4 confirms if it beats pv3 on the econ venue holdout
+AND does not regress the war venue beyond noise.*
+
+- **pv4 does NOT confirm.** It fails the first clause: on the econ
+  venue it does not beat pv3, it is nominally **behind** by -1.4/game
+  (t -0.07). The second clause is satisfied — the war venue moves
+  -14.5 (t -0.48), which is noise — but the conjunction fails on the
+  clause that mattered.
+- **The autopsy's effect size does not replicate.** GCM was worth
+  -24.2/game on TRAINING seeds at n=16 (t -1.80, negative on 12 of
+  16), so dropping it was priced at about +24. On HELD-OUT seeds the
+  same drop is worth **-1.4** on the same venue at the same n. That is
+  not a shrunken effect, it is an absent one.
+- **pv4d, reported separately: no.** It does not beat pv4 on econ
+  (-1.1, t -0.11) and it is the worst arm on the war venue (-49.2 vs
+  pv3, t -1.59; -34.8 vs pv4, t -1.38). Nothing here is resolved
+  either, but every point estimate points the wrong way, so there is
+  no case for stacking the GDIPLO drop.
+
+**No crowning here — the orchestrator adjudicates.** What this epic
+establishes is that the evidence for a pv4 is gone, not that some
+other candidate is better.
+
+### What is worth carrying forward
+
+- **Mean and median disagree in sign on the econ venue, for both
+  contrasts.** pv4-pv3 is mean -1.4 but median +22.5 with 9/16 wins;
+  pv4d-pv3 is mean -2.5 but median +20.5 with 11/16. Two seeds (109
+  -136, 112 -136) carry the mean, and drop-extreme flips it positive
+  (+7.6). Neither statistic is significant — sign-test p 0.61 and 0.21
+  — so the honest reading is "unresolved with a weak positive lean in
+  the typical seed and a fat negative tail", not "slightly negative".
+  This is exactly why the brief asked for medians.
+- **The war venue is where pv3 is decisively behind the classic
+  baseline**: -134.8/game, t -6.15, winning 1 seed in 16. That is the
+  largest, best-resolved effect anywhere in this run, and it is about
+  pv3 as a whole, not about GCM. It is a different comparison from the
+  autopsy's (which was vs compiled defaults, where the war venue was a
+  null), so the two do not contradict — but a -6σ deficit against the
+  classic arm on the war venue is a bigger target than any G sub-block.
+- **GDIPLO is inert on the econ venue.** pv4d-pv4 is an *exact* tie on
+  5 of 16 isolated-150 seeds: dropping 13 diplomacy knobs changed the
+  game not at all. GCM is inert on 1 of 16 (seed 113). A block that
+  cannot move a third of its games cannot be measured on that venue.
+- **The six G sub-blocks no longer partition G.** `6e45a37f55` (W12
+  slice 4) added `trunk_ally_gate` and `trunk_trade_gain` to G after
+  `9960d99a28` wrote the sub-partition, so building "pv3 minus GCM" as
+  a union of the surviving families would silently have dropped them.
+  pv3 sets neither, so the file would have been right today and wrong
+  the next time G grows. `ablate-blocks.py` now takes a `^SEL`
+  subtraction selector, which cannot lose a key.
+
+### Caveats
+
+- 16 held-out seeds, two venues. At the observed per-seed sd (~78 on
+  econ, ~120 on war) n=16 resolves about ±40 and ±60 respectively at
+  1 sem, so this run can say "the +24 the autopsy priced is not there"
+  and cannot say "the true effect is zero".
+- The `deep-tuning` read-back line is cut by the logger at ~4140 chars
+  (not the 8192 buffer), so it shows 170-171 of 247 fields. All 17 GCM
+  knobs land before the cut and are audited exactly; **12 of GDIPLO's
+  13 land after it**. The one that survives, `embassy_science_value`,
+  is a live witness and behaves correctly: 4.59615 (pv3's tuned value)
+  under pv3 and pv4, 8.0 (the compiled default) under pv4d. All 16
+  pv4d games also carry pv4d.ini's sha256 in their provenance.
+- Both venues ran with a sibling epic sharing the box, so wall-clock
+  rates varied; nothing about the paired comparison depends on it.
+
+Retention: `scratchpad/runs/{isolated-150,tech50war-200}/` scorelogs,
+game.logs (the read-back evidence) and provenance; saves pruned by the
+runner. Arm inis are committed and regenerable byte-for-byte from
+`ablate-blocks.py` + `pv3.ini` + `tuning-blocks.ini`.
