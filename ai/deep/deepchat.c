@@ -329,9 +329,9 @@ static void deep_chat_ally_threats(struct player *pplayer)
                               player_number(eplayer))) {
           deep_chat_tell(pplayer, aplayer, DEEP_CHAT_THREAT,
                          PL_("Enemy force approaching your city %s:"
-                             " %d unit of %s, %d turns off.",
+                             " %d unit of %s, nearest eta %d.",
                              "Enemy force approaching your city %s:"
-                             " %d units of %s, %d turns off.", seen),
+                             " %d units of %s, nearest eta %d.", seen),
                          city_name_get(acity), seen, player_name(eplayer),
                          nearest);
           if (!deep_chat_open(pplayer)) {
