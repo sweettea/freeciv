@@ -197,6 +197,7 @@ static int deep_trunk_c_duty_coast[MAX_NUM_PLAYER_SLOTS];
 
 static int deep_trunk_c_risk_steps[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_risk_dodge[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_risk_fear[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_risk_coast[MAX_NUM_PLAYER_SLOTS];
 static double deep_trunk_c_risk_sum[MAX_NUM_PLAYER_SLOTS];
 static double deep_trunk_c_risk_max[MAX_NUM_PLAYER_SLOTS];
@@ -477,9 +478,9 @@ static int deep_trunk_walk(const struct civ_map *nmap,
   int n = 0;
 
   while (dist > 1) {
-    struct tile *step = NULL, *plain = NULL;
+    struct tile *step = NULL, *plain = NULL, *flat = NULL;
     int stepdist = dist;
-    double stepcost = 0.0;
+    double stepcost = 0.0, flatcost = 0.0;
 
     adjc_iterate(nmap, cur, atile) {
       int d;
@@ -495,15 +496,29 @@ static int deep_trunk_walk(const struct civ_map *nmap,
          * best distance, iteration order deciding. Kept so the census
          * can charge the risk term for the steps it actually moved. */
         plain = atile;
+        /* And the tile the SAME comparison would take with the risk
+         * term removed -- terrain alone. The counterfactual, so the
+         * census can say the RISK moved this step rather than that the
+         * edge cost did: folding terrain into the cost means the
+         * smallest positive weight already reroutes for terrain, and
+         * without this the two are inseparable. Same shape as slice 4's
+         * dividend-free champion. */
+        flat = atile;
         if (risky) {
           stepcost = deep_trunk_step_cost(pplayer, atile, afloat, NULL);
+          flatcost = tile_terrain(atile)->movement_cost * SINGLE_MOVE;
         }
       } else if (risky && step != NULL && d == stepdist) {
         double c = deep_trunk_step_cost(pplayer, atile, afloat, NULL);
+        double f = tile_terrain(atile)->movement_cost * SINGLE_MOVE;
 
         if (c < stepcost) {
           stepcost = c;
           step = atile;
+        }
+        if (f < flatcost) {
+          flatcost = f;
+          flat = atile;
         }
       }
     } adjc_iterate_end;
@@ -523,6 +538,11 @@ static int deep_trunk_walk(const struct civ_map *nmap,
       }
       if (step != plain) {
         deep_trunk_c_risk_dodge[pn]++;
+      }
+      if (step != flat) {
+        /* The risk term ALONE moved this step: terrain would have
+         * chosen differently, and only the fear separates them. */
+        deep_trunk_c_risk_fear[pn]++;
       }
     }
     if (clip && !deep_trunk_soft_open(pplayer, step)) {
@@ -789,6 +809,7 @@ static void deep_trunk_build(const struct player *pplayer)
   memset(deep_trunk_c_soft_road[pn], 0, sizeof(deep_trunk_c_soft_road[pn]));
   deep_trunk_c_risk_steps[pn] = 0;
   deep_trunk_c_risk_dodge[pn] = 0;
+  deep_trunk_c_risk_fear[pn] = 0;
   deep_trunk_c_risk_coast[pn] = 0;
   deep_trunk_c_risk_sum[pn] = 0.0;
   deep_trunk_c_risk_max[pn] = 0.0;
@@ -1590,17 +1611,21 @@ void deep_trunk_census(struct player *pplayer)
       && deep_trunk_c_risk_steps[pn] > 0) {
     /* W12H. steps= corridor steps the walk priced this turn, dodge= the
      * ones where the risk-priced choice differed from the distance-
-     * first tile today's walk takes -- the reroute count, and the whole
-     * visible effect of the term. risk= the standing fear actually
+     * first tile today's walk takes. fear= the subset of those the
+     * RISK moved: the same comparison with the risk term removed
+     * (terrain alone) would have chosen another tile, so fear= is
+     * attributable to the fear and dodge= - fear= is the terrain half
+     * the edge cost also introduces. risk= the standing fear actually
      * walked over, maxrisk= its worst tile, coast= chosen tiles
      * carrying the boat-shadow term. steps>0 with dodge=0 says the
      * corridors had no cheaper way round, which is a null rather than
      * a dead knob; the line does not exist at all at weight 0. */
     log_base(deep_metric_log_level(),
              "deep-trunkrisk turn=%d player=\"%s\" steps=%d dodge=%d"
-             " risk=%.2f maxrisk=%.2f coast=%d",
+             " fear=%d risk=%.2f maxrisk=%.2f coast=%d",
              game.info.turn, player_name(pplayer),
              deep_trunk_c_risk_steps[pn], deep_trunk_c_risk_dodge[pn],
+             deep_trunk_c_risk_fear[pn],
              deep_trunk_c_risk_sum[pn], deep_trunk_c_risk_max[pn],
              deep_trunk_c_risk_coast[pn]);
   }
