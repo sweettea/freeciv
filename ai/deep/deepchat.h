@@ -58,7 +58,10 @@ enum deep_chat_class {
 #define DEEP_CHAT_MEMOS 64
 
 struct deep_chat_memo {
-  short klass;                  /* enum deep_chat_class, -1 = free */
+  short klass;                  /* enum deep_chat_class PLUS ONE, so a
+                                 * zeroed (never written) slot cannot
+                                 * read as class 0 with keys 0,0 --
+                                 * which is a real subject. 0 = free. */
   int key1;
   int key2;
 };
