@@ -15662,3 +15662,243 @@ the kind of change 16 seeds cannot price.
   incrementally by byte offset. The games and their checks had already
   completed, but the stage exited 2 for a reason that had nothing to
   do with the AI.
+
+## W12 slice 4: corridors priced by the trade they unlock — mechanism live and flipping picks, score NULL (2026-08-22)
+
+Branch `epic/w12d-trade-dividend`, 9 commits, based at `e6d64d7345`
+(`epic/w03-horizon-content`). `ai/deep` + `benchmark` + one tuning
+file; zero `ai/default`, `ai/baseline` or `server/advisors` changes.
+
+Slices 1-3 price a corridor as pure logistics — the movement points
+the finished link saves. Slice 3's A/B was a score NULL with the
+mechanism strongly live, and the reading it invites is that corridors
+are cheap to build and buy nothing. This slice gives them something to
+buy, and the answer is still null: they buy it, the picks move, the
+score does not.
+
+### 1. What landed
+
+| # | Commit | What |
+|---|---|---|
+| 1 | `0feb01a600` | `deep_trade_pair_value()`, deeptrade's route value quoted at arrival |
+| 2 | `6e45a37f55` | the dividend itself, behind `trunk_trade_gain` |
+| 3 | `857a1f1ba0` | the source's dividend-free counterfactual: `flipped=` |
+| 4 | `a9903ef55e` | the conversion corrected to the advisor's trade weighting |
+| 5 | `3c21128657` | `trunk_trade_gain` in `knobcensus.py` |
+| 6 | `ad26161537` | `w12d-dividend.sh` identity + marginal A/B stages |
+| 7 | `28c2596ec9` | the Europe rider in `derby5/tuning-derby7.ini` |
+| 8 | `aa8313ab72` | the on-path identity stage |
+| 9 | this entry | |
+
+Deep already amortizes a caravan route by travel time
+(`caravan_discount` d = 0.95/turn). Route face value GROWS with
+distance while d^ETA shrinks with it, so the biggest routes on the map
+are exactly the ones slow travel suppresses. Behind the gain, each MST
+link additionally carries
+
+    sum over served pairs of  value * (d^ETA_with - d^ETA_without)
+
+`value` is `deep_trade_pair_value()` — `deep_route_terms()` plus
+`deep_route_annuity()`, deeptrade's own two primitives at deeptrade's
+own discount, quoted at the moment of arrival instead of at now — and
+the reach filter deciding which partners count is deeptrade's too. No
+second route valuation and no second discount exist.
+
+### 2. The bounded ETA approximation, and what it cost
+
+The exact ETA-with-road is a second pathfind per pair per corridor.
+Instead, three approximations, all stated in the commit body:
+
+- **ETA is arithmetic.** The corridor walk already measured its terrain
+  cost (`link->terr`) over its own tiles (`link->len`), so
+  `terr / len` is a measured cost per tile on this ground; a
+  destination `dist` tiles away is priced at that rate, the road
+  subtracts the same `saving` the logistics term is built from, and
+  both ETAs are that cost over the caravan's own `move_rate`. Every
+  number is measured or from the ruleset — no constant minted.
+- **The served set is a distance test.** The corridor serves
+  (near endpoint → destination) when the far endpoint is strictly
+  closer to the destination than the near one is. Same continent, and
+  known to us. That includes the link's own two cities, the pair the
+  corridor most obviously serves.
+- **Route life is held at the full horizon** on both sides of the
+  difference, so it factors out. This overstates a distant route's
+  tail and leaves the ETA difference, which is the signal, untouched.
+
+The whole computation runs once per link inside the plan's existing
+`(turn, player)` memoisation — that IS the cache by (corridor,
+partner); the pricing path reads a per-link number and never
+recomputes it.
+
+**Measured cost, over the 16 on-arm games:** 5999 player-turns priced,
+304,053 route valuations in total.
+
+    pairs per player-turn   mean 50.7   median 41   p90 101   max 305
+
+And in wall time, paired against the off arm on the same 16 seeds,
+same binary, same `jobs 3`:
+
+    off mean 169.5 s/game   on mean 167.1 s/game
+    delta -2.4 s (-1.4%), paired sd 18.2, t -0.52, on-slower 7/16
+
+**Not measurable.** The mechanism's cost is below the noise floor of
+game wall time, so the per-(corridor, partner) cache the brief allowed
+for is not owed.
+
+### 3. The units error the instrument caught
+
+Worth recording as a method note, because guessing would have shipped
+it. The first implementation converted the dividend with `/ MORT`
+alone, turning deeptrade's stock of discounted trade into a per-turn
+flow. Two liveness games (`results/w12d-live`) then said:
+
+    756 deep-trunkdiv player-turns, 459 with links carrying a
+    dividend, maxdiv up to 23 — and flipped=0 on EVERY line.
+
+The dividend priced corridors and moved no decision. The reason is
+that the advisor's tile currency is not output points:
+`city_tile_value()` (`infracache.c`) pays `TRADE_WEIGHTING` = 18 per
+point of trade, so a trade term quoted in raw points stood beside a
+logistics term at `trunk_road_gain` = 5.0 and was roughly 2% of the
+price it was added to. Multiplying by `TRADE_WEIGHTING` states the
+flow in the currency every other trade point is stated in; both
+factors are the advisor's own. Same two games afterwards
+(`results/w12d-live2`): 782 lines, 21 with `picked>0`, 4 with
+`flipped>0`, 7 flips, maxdiv up to 122.
+
+### 4. Knob, PLACEHOLDER, zero
+
+    trunk_trade_gain  0.0  OFF = slices 1-3 exactly, byte-identically,
+                           and no route valuation is spent either. 1.0
+                           is the unit case BY DERIVATION: the dividend
+                           is in deeptrade's own route-value units,
+                           / MORT to a per-turn flow (amortize()'s own
+                           annuity factor, the conversion
+                           deep_trade_merit_want() makes on the same
+                           number), * TRADE_WEIGHTING into the
+                           advisor's tile currency. Needs
+                           trunk_road_gain > 0 for a plan to exist.
+
+One knob and not the gate-plus-gain the brief sketched: a gain of 0.0
+IS the gate, as `trunk_source_gain`'s is, and a separate boolean would
+be a second name for the same zero. Four audit places, the G/ECON/ALL
+blocks, `knobcensus.py` MAP entry (`deep-trunkdiv pairs>0`, mag grade,
+direct — the pair COUNT and not the dividend, because the count
+evidences the knob while a dividend additionally needs the map to
+contain a route worth walking). `tune-audit` CLEAN at 247 fields
+(base 246 + this slice's 1). `meson test -C build` 6/6.
+
+### 5. Identity: 10/10 twice, off the path and ON it
+
+Base = `git archive e6d64d7345` built in `.w12d-base/` (sha256
+`9d2605744085e26a`); branch binary `02f03e6acbccabd1`, pinned with
+`libfreeciv.so` per stage.
+
+At compiled defaults (`tuning/identity.ini`),
+`benchmark/results/w12d-identity/`:
+
+    deep      scorelogs IDENTICAL 10/10   (0 differ, 0 missing)
+    mixed_db  scorelogs IDENTICAL 10/10   (0 differ, 0 missing)
+
+That proof is off-path: at defaults `trunk_road_gain` is 0 and no
+corridor plan exists at all. So the stage was run a second time with
+slices 1-3 LIVE (`tuning/w12-ally-on.ini`, which does not name
+`trunk_trade_gain` and therefore leaves it at its compiled 0.0),
+`benchmark/results/w12d-identity-live/`:
+
+    on-path identity deep: 10/10 byte-identical, 0 differ
+    deep-trunk turn=100 player="P3" links=2 gap=2 hits=51 maxwant=15.97
+
+The last line is the stage asserting its own premise — corridors were
+planned and priced in both arms, and only the dividend was absent.
+Provenance guard on both: the base logs carry no `deep-trunkdiv` and
+no `flip=` token, so neither proof can have passed by running HEAD
+twice.
+
+A third, unplanned corroboration: the A/B's OFF arm scored **166.70**
+on 16 `lategame-80` seeds, which is slice 3's ON arm to the last digit
+(STATUS 2026-08-21 §7, same tuning file, same venue, same seeds,
+different binary).
+
+### 6. Score A/B: the picks move, the score does not
+
+16 mirrored `lategame-80` seeds, one pinned binary
+(`.w12d-pin/ab`, sha `02f03e6acbccabd1`), arms differing in exactly one
+key — `tuning/w12-ally-on.ini` (slice 3's ON arm, the baseline the
+brief names) vs the same plus `trunk_trade_gain = 1.0`.
+`benchmark/results/w12d-ab/`, `benchmark/paircmp.py`, 0 pairing
+violations, all 32 games reached T81.
+
+    paired seeds: 16  (off 16, on 16)
+        metric                       OFF        ON     delta      se      t   wins
+        score                     166.70    165.47     -1.23    1.77  -0.69   7/16
+        cities                      7.98      7.56     -0.42    0.27  -1.53   8/16
+        unitsbuilt                 39.69     38.16     -1.53    0.84  -1.81   4/16
+        techs                      52.76     53.15     +0.39    0.16  +2.48  11/16
+        pop                        41.05     39.85     -1.20    1.24  -0.96   8/16
+        mean_city_size              5.28      5.44     +0.16    0.05  +2.99  12/16
+        settlers                    0.50      0.49     -0.01    0.13  -0.08   7/16
+        landarea                94010.42  91625.00  -2385.42 2381.53  -1.00   6/16
+        munits                     16.88     16.29     -0.58    0.67  -0.87   8/16
+        wonders                     0.18      0.20     +0.02    0.05  +0.44   5/16
+        unitslost                  11.11     10.32     -0.79    0.87  -0.91   6/16
+        unitskilled                 9.48      9.04     -0.44    0.80  -0.55   6/16
+
+        div-turns                   0.00    374.94  +374.94   10.10 +37.12  16/16
+        div-links                   0.00    285.19  +285.19   20.65 +13.81  16/16
+        div-picks                   0.00     13.44   +13.44    2.79   +4.82  15/16
+        div-flips                   0.00      9.06    +9.06    2.68   +3.38  13/16
+        trunk-picks                56.81     46.69   -10.12    9.81   -1.03   6/16
+        ally-picks                 10.69     10.69    +0.00    5.80   +0.00   4/16
+
+Read the execution counters first. The knob's predicate is exactly
+zero in the OFF arm — the off-switch proof restated on the A/B's own
+data — and in the ON arm 375 player-turns per game price route pairs,
+285 of them come out with a dividend, 13.4 beyond-ceiling tasks per
+game are assigned on a dividend-priced corridor, and **9.1 picks per
+game were FLIPPED by the term**, on 13 of 16 seeds, measured against
+the source's own dividend-free counterfactual rather than inferred.
+The brief's bar (dividend picks > 0 or it is a miss) is met with room.
+
+**The score does not move: −1.23 on 166, t −0.69, 7/16 wins. NULL,
+and reported as null.** The knob stays at its shipping 0.0.
+
+Two honest observations that are not claims:
+
+- `techs` +0.39 (t +2.48) and `mean_city_size` +0.16 (t +2.99) are the
+  only cells that clear |t| = 2, and they are the two you would predict
+  if trade routes were in fact being unlocked — trade buys beakers, and
+  a road between cities is what migration walks along. They are also
+  two nominal hits out of twelve metrics with no multiplicity
+  correction, on the same 16 games, and `score` is the metric this
+  project ranks by. Worth a look at higher power; not worth believing
+  yet.
+- `trunk-picks` −10.12 against `div-picks` +13.44 says the dividend
+  did not ADD corridor work, it REDIRECTED it: total beyond-ceiling
+  picks fell while the dividend-priced subset rose. The same
+  reallocation slice 3 found, one level down — and the same reason 16
+  seeds cannot price it.
+
+### 7. For whoever picks this up
+
+- **The Europe rider is now whole.** `derby5/tuning-derby7.ini` carries
+  `trunk_road_gain`, `trunk_source_gain`, `trunk_ally_gate` and now
+  `trunk_trade_gain`, all at the unit case. Europe is where the
+  dividend should be largest for exactly the reason the corridors are
+  worth anything there: long land distances are what
+  `caravan_discount` buries hardest.
+- **The instrument is the reusable part.** `flipped=` is a real
+  counterfactual (the same auction re-run with one term removed), it
+  cost one subtraction per candidate, and it is what turned "the
+  dividend priced 459 corridors" into "the dividend changed nothing" in
+  two games instead of sixteen. Any term added to an existing price
+  should carry one.
+- **Three W12 slices have now returned NULL on `lategame-80` with the
+  mechanism live each time.** That is a pattern worth naming rather
+  than re-testing a fourth way: in this venue, deep's cities are size
+  ~5.3 and average 8 per empire on a 40x40 map, so corridors are short,
+  routes are small, and worker-turns spent on roads are worker-turns
+  not spent on tiles. The next honest question is not another corridor
+  term — it is whether `lategame-80` can resolve any corridor effect at
+  all, which a power calculation on `trunk-picks` (se 9.8 on a mean of
+  ~50) answers more cheaply than another 32 games.
