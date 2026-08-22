@@ -65,6 +65,11 @@ struct deep_employ_plr {
 
   enum deep_employ_verdict verdict_now;
   int verdict_turn;
+
+  /* The sortie funnel: one outcome per city per turn. */
+  int sortie[DES_SORTIE_COUNT];
+  double sortie_chance[DES_SORTIE_COUNT];
+  int blade[DEB_BLADE_COUNT];
 };
 
 static struct deep_employ_plr *deep_employ_plr_tbl[MAX_NUM_PLAYER_SLOTS];
@@ -72,6 +77,14 @@ static struct deep_employ_plr *deep_employ_plr_tbl[MAX_NUM_PLAYER_SLOTS];
 static const char *const deep_employ_verdict_name[DEV_VERDICT_COUNT] = {
   "nowar", "noslot", "nohome", "notarget", "nostaging", "poolempty",
   "musteroff", "worth", "muster", "formed"
+};
+
+static const char *const deep_employ_sortie_name[DES_SORTIE_COUNT] = {
+  "noblade", "novictim", "floor", "price", "home", "go"
+};
+
+static const char *const deep_employ_blade_name[DEB_BLADE_COUNT] = {
+  "moves", "done", "claim"
 };
 
 /**********************************************************************//**
@@ -158,6 +171,71 @@ void deep_employ_form_verdict(const struct player *pplayer,
   ep->verdict[verdict]++;
   ep->verdict_now = verdict;
   ep->verdict_turn = game.info.turn;
+}
+
+/**********************************************************************//**
+  One city's sortie pass ended here. `chance` is the best win chance the
+  pass found (0.0 where it found no duel to price), summed so the line
+  can report what the declines were declining -- a pass that turns down
+  0.84 duels is a different finding from one that never sees a duel.
+**************************************************************************/
+void deep_employ_sortie(const struct player *pplayer,
+                        enum deep_employ_sortie outcome, double chance)
+{
+  struct deep_employ_plr *ep = deep_employ_get(pplayer, TRUE);
+
+  if (ep == NULL || outcome < 0 || outcome >= DES_SORTIE_COUNT) {
+    return;
+  }
+  ep->sortie[outcome]++;
+  ep->sortie_chance[outcome] += chance;
+}
+
+/**********************************************************************//**
+  An attack-rated unit standing in the city was not a candidate blade.
+**************************************************************************/
+void deep_employ_sortie_blade(const struct player *pplayer,
+                              enum deep_employ_blade why)
+{
+  struct deep_employ_plr *ep = deep_employ_get(pplayer, TRUE);
+
+  if (ep != NULL && why >= 0 && why < DEB_BLADE_COUNT) {
+    ep->blade[why]++;
+  }
+}
+
+/**********************************************************************//**
+  The cumulative sortie line, printed beside the census.
+**************************************************************************/
+static void deep_employ_sortie_census(struct player *pplayer)
+{
+  struct deep_employ_plr *ep = deep_employ_get(pplayer, FALSE);
+  char passes[(DES_SORTIE_COUNT + DEB_BLADE_COUNT) * 32];
+  int i, at = 0, total = 0;
+
+  if (ep == NULL) {
+    return;
+  }
+  for (i = 0; i < DES_SORTIE_COUNT; i++) {
+    total += ep->sortie[i];
+    at += fc_snprintf(passes + at, sizeof(passes) - at, "%s%s=%d/%d",
+                      i == 0 ? "" : ",", deep_employ_sortie_name[i],
+                      ep->sortie[i],
+                      (int) (1000.0 * ep->sortie_chance[i]
+                             / MAX(1, ep->sortie[i])));
+  }
+  if (total <= 0) {
+    return;
+  }
+
+  for (i = 0; i < DEB_BLADE_COUNT; i++) {
+    at += fc_snprintf(passes + at, sizeof(passes) - at, ",b%s=%d",
+                      deep_employ_blade_name[i], ep->blade[i]);
+  }
+
+  log_base(deep_metric_log_level(),
+           "deep-employsortie turn=%d player=\"%s\" passes=%d %s",
+           game.info.turn, player_name(pplayer), total, passes);
 }
 
 /**********************************************************************//**
@@ -347,4 +425,5 @@ void deep_employ_census(struct ai_type *ait, struct player *pplayer)
            deep_employ_verdict_name[verdict]);
 
   deep_employ_form_census(pplayer);
+  deep_employ_sortie_census(pplayer);
 }

@@ -97,4 +97,42 @@ void deep_employ_form_priced(const struct player *pplayer, double odds,
 void deep_employ_form_verdict(const struct player *pplayer,
                               enum deep_employ_verdict verdict);
 
+/* THE SORTIE FUNNEL (deep-employsortie) is the other place deep decides
+ * to attack, and the one an operation cannot explain: a garrison
+ * duelling something standing next to its own walls. It has its own
+ * three gates, and a garrison that declines every night for a hundred
+ * turns is an employment leak that never touches the op machinery.
+ *
+ * One outcome per city per turn, charged at the gate that stopped it.
+ * DES_NOBLADE and DES_NOVICTIM are the two ways the pass finds nothing
+ * to decide about, and telling them apart is the whole point: a city
+ * with no sparable blade is a garrison problem, a city with a blade and
+ * nobody next door is a geography one. */
+enum deep_employ_sortie {
+  DES_NOBLADE = 0, /* No unclaimed, undone, attack-rated unit inside. */
+  DES_NOVICTIM,    /* A blade, but no at-war defender on any adjacent
+                    * tile -- deep_kill_sorties() leaves `blade` NULL in
+                    * both cases, so the two are separated by whether
+                    * any candidate blade existed at all. */
+  DES_FLOOR,       /* Best win chance below sortie_win_floor. */
+  DES_PRICE,       /* Priced, and the trade came out non-positive. */
+  DES_HOME,        /* The lending city would fall below survival_target. */
+  DES_GO,          /* The rampage ran. */
+  DES_SORTIE_COUNT
+};
+void deep_employ_sortie(const struct player *pplayer,
+                        enum deep_employ_sortie outcome, double chance);
+
+/* And, one level down, why an attack-rated unit standing in the city
+ * was not even a candidate blade. DES_NOBLADE is by far the commonest
+ * sortie outcome, and it has three quite different meanings. */
+enum deep_employ_blade {
+  DEB_MOVES = 0,   /* Fewer than SINGLE_MOVE moves left. */
+  DEB_DONE,        /* The done flag was already set when the pass ran. */
+  DEB_CLAIM,       /* An operation holds it. */
+  DEB_BLADE_COUNT
+};
+void deep_employ_sortie_blade(const struct player *pplayer,
+                              enum deep_employ_blade why);
+
 #endif /* FC__DEEPEMPLOY_H */
