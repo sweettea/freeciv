@@ -943,6 +943,32 @@ struct deep_tuning {
    * trunk_source_gain > 0 for a worker to be dispatched down a
    * corridor that starts outside every own city radius. */
   int trunk_ally_gate;
+  /* W12 slice 4: the corridor's TRADE dividend. Slices 1-3 price a
+   * corridor as pure logistics -- the movement points the finished link
+   * saves -- and a corridor that buys nothing else is cheap to build
+   * and worth little. But deep already amortizes a caravan's route by
+   * travel time (caravan_discount, 0.95/turn), and route face value
+   * GROWS with distance while that discount buries distant routes
+   * exponentially, so the biggest routes on the map are exactly the
+   * ones slow travel suppresses. A road that halves a caravan's ETA
+   * multiplies the discounted value of every route it serves. That
+   * dividend is credited to nobody today. With this gain positive, each
+   * link is additionally worth
+   *
+   *   sum over served pairs of
+   *     route_value * (d^ETA_with_road - d^ETA_without)
+   *
+   * where route_value is deep_trade_pair_value() (deeptrade's own
+   * valuator, at deeptrade's own caravan_discount d -- no second
+   * discount and no second route value exists) and the two ETAs come
+   * from the corridor's measured terrain cost against the road's, at
+   * the caravan's move rate. Denominated in the same units the
+   * valuator emits, divided by MORT to turn the stock into the
+   * per-turn flow the advisor's tile currency uses -- so 1.0 is the
+   * unit case by derivation, not by choice, and 0 disables the term and
+   * every pair evaluation with it. Needs trunk_road_gain > 0 for a plan
+   * to exist at all. */
+  double trunk_trade_gain;
 
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).
