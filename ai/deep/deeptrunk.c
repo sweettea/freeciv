@@ -167,6 +167,34 @@ static struct deep_trunk_seen deep_trunk_prev[MAX_NUM_PLAYER_SLOTS];
  * whole visible effect), the risk actually walked over and its worst
  * tile, and how many chosen tiles carried the coastal term. Plan
  * properties, so recomputed by every refresh. */
+/* W12H, the exposure ledger the employment epic's standing question
+ * wants: which workers stood on a corridor tile at the last refresh,
+ * so this refresh can say which of them are gone. Attribution is by the
+ * tile they were standing on -- whose ground it was and whether it was
+ * ocean-adjacent -- which is the split the question is asked in.
+ *
+ * "Gone" is honest rather than precise: a unit id that no longer
+ * resolves has died, been disbanded, been captured or joined a city.
+ * On corridor duty the first is much the commonest, and the alternative
+ * -- a death hook the vtable does not offer -- does not exist. */
+struct deep_trunk_duty {
+  int unit;
+  int tile;
+  unsigned char own;
+  unsigned char coastal;
+};
+
+static struct deep_trunk_duty *deep_trunk_duty[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_duty_n[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_duty_alloc[MAX_NUM_PLAYER_SLOTS];
+
+/* Cumulative over the game, so the LAST line per (game, player) is that
+ * game's total -- the same shape deep-trunkfun uses. */
+static int deep_trunk_c_duty_seen[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_duty_lost[MAX_NUM_PLAYER_SLOTS]
+                                 [DEEP_TRUNK_OWN_COUNT];
+static int deep_trunk_c_duty_coast[MAX_NUM_PLAYER_SLOTS];
+
 static int deep_trunk_c_risk_steps[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_risk_dodge[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_risk_coast[MAX_NUM_PLAYER_SLOTS];
@@ -1004,12 +1032,45 @@ static void deep_trunk_build(const struct player *pplayer)
    * on a peace partner's tile" should be read from. Sampled here rather
    * than in the census because the census runs after the plan's
    * single-slot memoisation may have moved on to another player. */
-  unit_list_iterate(pplayer->units, punit) {
-    if (punit->activity == ACTIVITY_GEN_ROAD
-        && deep_trunk_tile[tile_index(unit_tile(punit))] != 0) {
-      deep_trunk_c_soft_work[pn]
-        [deep_trunk_own_class(pplayer, unit_tile(punit))]++;
+  /* Same pass answers the exposure question: first charge the previous
+   * roster for the workers that are no longer there, then rebuild it
+   * from who is standing on a corridor tile now. */
+  for (i = 0; i < deep_trunk_duty_n[pn]; i++) {
+    if (game_unit_by_number(deep_trunk_duty[pn][i].unit) == NULL) {
+      deep_trunk_c_duty_lost[pn][deep_trunk_duty[pn][i].own]++;
+      if (deep_trunk_duty[pn][i].coastal) {
+        deep_trunk_c_duty_coast[pn]++;
+      }
     }
+  }
+  deep_trunk_duty_n[pn] = 0;
+
+  unit_list_iterate(pplayer->units, punit) {
+    struct tile *utile = unit_tile(punit);
+    enum deep_trunk_own own;
+
+    if (deep_trunk_tile[tile_index(utile)] == 0
+        || !unit_has_type_flag(punit, UTYF_WORKERS)) {
+      continue;
+    }
+    own = deep_trunk_own_class(pplayer, utile);
+    if (punit->activity == ACTIVITY_GEN_ROAD) {
+      deep_trunk_c_soft_work[pn][own]++;
+    }
+
+    if (deep_trunk_duty_n[pn] >= deep_trunk_duty_alloc[pn]) {
+      deep_trunk_duty_alloc[pn] = MAX(2 * deep_trunk_duty_alloc[pn], 32);
+      deep_trunk_duty[pn]
+        = fc_realloc(deep_trunk_duty[pn],
+                     deep_trunk_duty_alloc[pn] * sizeof(*deep_trunk_duty[pn]));
+    }
+    deep_trunk_duty[pn][deep_trunk_duty_n[pn]].unit = punit->id;
+    deep_trunk_duty[pn][deep_trunk_duty_n[pn]].tile = tile_index(utile);
+    deep_trunk_duty[pn][deep_trunk_duty_n[pn]].own = (unsigned char) own;
+    deep_trunk_duty[pn][deep_trunk_duty_n[pn]].coastal
+      = is_terrain_class_near_tile(nmap, utile, TC_OCEAN) ? 1 : 0;
+    deep_trunk_duty_n[pn]++;
+    deep_trunk_c_duty_seen[pn]++;
   } unit_list_iterate_end;
 
   free(ctile);
@@ -1498,6 +1559,31 @@ void deep_trunk_census(struct player *pplayer)
              game.info.turn, player_name(pplayer),
              deep_trunk_c_keep_veto[pn], deep_trunk_c_keep_held[pn],
              deep_trunk_c_keep_kept[pn]);
+  }
+
+  if (log_do_output_for_level(deep_metric_log_level())
+      && deep_trunk_c_duty_seen[pn] > 0) {
+    /* W12H exposure. on= workers standing on a corridor tile at this
+     * turn's refresh; seen= worker-turns of corridor duty so far;
+     * lost= the ones that stopped existing between two refreshes, by
+     * the ownership class of the tile they were last seen on
+     * (free:self:ally:peace:cease:war:other); coast= how many of those
+     * losses were on ocean-adjacent ground. Cumulative except on=, so
+     * the LAST line per game and player is that game's total. The
+     * denominator seen= is the point: losses without exposure are a
+     * rate nobody can read. */
+    char lost[DEEP_TRUNK_OWN_COUNT * 12];
+    int at = 0, c;
+
+    for (c = 0; c < DEEP_TRUNK_OWN_COUNT; c++) {
+      at += fc_snprintf(lost + at, sizeof(lost) - at, "%s%d",
+                        c == 0 ? "" : ":", deep_trunk_c_duty_lost[pn][c]);
+    }
+    log_base(deep_metric_log_level(),
+             "deep-trunkduty turn=%d player=\"%s\" on=%d seen=%d lost=%s"
+             " coast=%d",
+             game.info.turn, player_name(pplayer), deep_trunk_duty_n[pn],
+             deep_trunk_c_duty_seen[pn], lost, deep_trunk_c_duty_coast[pn]);
   }
 
   if (log_do_output_for_level(deep_metric_log_level())
