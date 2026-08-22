@@ -19,6 +19,7 @@
 /* ai/default */
 #include "daidata.h"
 
+#include "deepchat.h"
 #include "deepops.h"
 #include "deeprates.h"
 #include "deepstance.h"
@@ -293,6 +294,16 @@ struct deep_plr {
    * itself changes. Not saved: the worst case after a reload is one
    * extra ask per pair. */
   signed char embassy_asked[MAX_NUM_PLAYER_SLOTS];
+  /* CHATTY (deepchat.c): everything deep needs to remember about what
+   * it has SAID. The per-turn line tally with the turn it belongs to
+   * (the rate cap), and the ring of subjects already raised (the
+   * once-per-subject memos). Not saved and never read by any decision
+   * -- the worst a reload can cost is one repeated line, and the whole
+   * structure is inert while chatty_gate is 0. */
+  int chat_turn;
+  int chat_said;
+  struct deep_chat_memo chat_memo[DEEP_CHAT_MEMOS];
+  int chat_memo_next;
 };
 
 static inline struct deep_plr *deep_plr_data(const struct player *pplayer)
