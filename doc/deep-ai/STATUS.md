@@ -17786,3 +17786,9 @@ Ranked by the size of the number above, not by proximity to `deepwonder.c`:
 Retention: `benchmark/results/wonder-probe/{econ-pv3,econ-base,war-pv3,
 econ-d7}/`, 16 games, `game.log` gzipped after scoring (the report reader
 takes `.gz`). `key.txt` in each cell records config/binary/tuning shas.
+
+## Wave plan committed (2026-08-22)
+
+Synthesis + ranked next-wave portfolio in `PLAN-wave-2026-08-22.md`:
+Paradox A gets a 16-game resolving test (defaults on holdout), Paradox B
+a pre-committed decision tree keyed to the employment probe's tables.
