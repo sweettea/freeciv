@@ -16055,3 +16055,254 @@ regenerable byte-for-byte from `ablate-blocks.py` + `pv3.ini` +
 `tuning-blocks.ini`; the exact round-2 invocation is
 `ablate-blocks.py --out … --arm G=G --arm GCM=GCM --arm GHORIZON=GHORIZON
 --arm GSITE=GSITE --arm GDIPLO=GDIPLO --arm GCIVIL=GCIVIL --arm GPROD=GPROD`.
+
+## VENUE: lategame-80 is under-DOSED, not under-powered — and buying dose buys variance (2026-08-22)
+
+Brief: `sessions/S-VENUE-corridor-power.md`. Branch
+`epic/venue-corridor-power`, 7 commits, based at `6ab31162b0`
+(`epic/w03-horizon-content`, all four W12 slices merged). **Zero `ai/`
+changes of any kind** — one config, one tuning file, three instruments,
+one driver, this entry. Own worktree `.worktrees/venue`, own build
+(`-Daimodules=classic,tex,baseline,deep`), one pinned binary staged
+with its own `libfreeciv.so` (`.stage-bin/freeciv-server` sha256
+`2b5271ffcbf6f367de3c…`, lib `dc388fb8648fa152a6a3…`), ports 7500-7549,
+jobs 4.
+
+Three W12 slices returned score NULL on `lategame-80` with the
+mechanism strongly live each time, and slice 4's entry named the right
+next question: *can `lategame-80` resolve a corridor effect at all?*
+The answer is not the one that question expects.
+
+### 1. The diagnosis: the venue's problem is DOSE, not variance
+
+Two new instruments, both reading artefacts that were already on disk.
+`benchmark/corridorcensus.py` aggregates the `deep-trunk*` census lines
+in a game log into a per-seed dose table.
+`benchmark/corridorgeom.py` reads the final savegames and reimplements
+`deep_trunk_build()`'s Prim to measure the world the plan was made in.
+
+Over the 16 retained `lategame-80` games of the slice-4 A/B
+(`.worktrees/w12d/benchmark/results/w12d-ab`), ON arm:
+
+    links 2.73   gap 4.79   gap/link 1.75   hits 79.28   beyond 1.50
+    ally-lnk 0.88   ally-gap/l 1.14
+    picks: mean 46.7  sd 41.0  cv 0.88  near-zero in 2/16 seeds
+
+**A corridor there is 1.75 tiles of missing road.** An ally corridor is
+1.14. The beyond-ceiling demand W12 slice 2 exists to serve is one and
+a half tiles per player-turn. And from the savegames, 95 deep
+player-games of the same batch's OFF arm — which runs slices 1-3 live,
+because that A/B was a MARGINAL control for the dividend, so if
+anything it carries more road than an untreated `lategame-80` would and
+the pre-roading figure below is generous to the venue:
+
+    ncity 8.05   MST edges 5.72   edge len 4.50 tiles
+    gap 2.77 tiles/edge   unfinished 3.20   MST path roaded 48.3%
+    home continent 260 tiles   land 519   biggest continent 336
+
+519 land tiles on a 40x40 world is 32% land shared by six seats, ~86
+land tiles each, and **50.8% of every land tile on the map carries a
+road by T81** (0.0% at T1 — the ten workers per seat that
+`startunits ccccccccxxwwwwwwwwww` hands out at `techlevel 50` lay them).
+Total unroaded MST tiles per empire: **8.9**.
+
+Now the part that overturns the standing reading. `benchmark/powern.py`
+inverts the paired t on the two retained A/Bs:
+
+    slice 4 (w12d-ab):  OFF 166.70  ON 165.47  d -1.23  sd 7.10  se 1.77
+                        D=+3.0 (1.8%)  n >= 23
+    slice 3 (w12c-ab):  OFF 166.05  ON 166.70  d +0.65  sd 3.93  se 0.98
+                        D=+3.0 (1.8%)  n >= 7
+        per-seed diffs: +0.8 +0.0 +10.7 -2.5 +0.2 +0.0 +8.7 +0.0
+                        -2.2 +0.0 +0.0 -5.3 +0.5 -1.2 -1.7 +2.3
+
+**`lategame-80` is not underpowered for +3 score.** Twenty-three paired
+seeds resolve one; slice 3's own sd says seven would. Slice 3's sd is
+small for the worst possible reason — **six of its sixteen paired
+differences are exactly 0.000**, because the venue applied no treatment
+at all in those games. Three slices were read as "the term does
+nothing" when what the data says is "the venue could not hand the term
+enough to do".
+
+### 2. corridor-150, and every setting that differs
+
+`benchmark/configs/corridor-150.conf`, derived from the CANONICAL
+`primary-120.conf` and differing in exactly three places:
+
+| setting | primary-120 | corridor-150 | why |
+|---|---|---|---|
+| `ENDTURN` | 120 | 150 | the brief's floor; a road finished at T50 repays over 100 turns instead of 30 (`lategame-80`'s median corridor pick is turn 29 of 80) |
+| `EXTRA_SERV` | — | `+ set startpos ALL` | one continent: `deep_trunk_build()` refuses an MST edge across a `tile_continent` mismatch, and an ally's border on `lategame-80` was 1.14 tiles away |
+| `TIMEOUT_S` | 7200 | 10800 | `longhaul-300`'s watchdog, for the horizon |
+
+Inherited from `primary-120` and load-bearing, so stated rather than
+assumed: `TILESPERPLAYER=400` against `lategame-80`'s measured ~86 land
+tiles per seat; `GENERATOR=FRACTAL`; `PLAYERS=6`, `SKILL=hard`, classic
+ruleset, `migration`/`mgr_distance 6` all unchanged; and **no
+`startunits`/`techlevel` line**, so a seat builds its own workers
+instead of being handed ten at Railroad tech.
+
+Measured, not hoped for — the OFF arm's own 8 games:
+
+| | lategame-80 | corridor-150 |
+|---|---|---|
+| map | 40x40 = 1600 | 64x128 = 8192 |
+| land | 519 (32%) | 2603 (32%) |
+| land per seat | 86 | 434 |
+| biggest continent | 336 | 1620 |
+| deep's home continent | 260 | 1345 |
+| cities per deep empire | 8.05 | 24.98 |
+| MST edges | 5.72 | 22.41 |
+| unfinished edges | 3.20 | 20.33 |
+| gap tiles per edge | 2.77 | 3.84 |
+| **unroaded MST tiles per empire** | **8.9** | **78.1** |
+| MST path already roaded | 48.3% | 9.6% |
+| all land roaded at game end | 50.8% | 11.5% |
+
+`startpos ALL` is honest rather than absolute: 4 to 5 of the 6 seats
+end on the biggest continent, not 6 of 6.
+
+### 3. The pilot: 8 mirrored seeds, one binary, family ON vs all-OFF
+
+`benchmark/venue-corridor.sh pilot 8 4`, results in
+`benchmark/results/venue-pilot`. Arms differ in exactly the five keys
+of the W12 family: `tuning/w12-div-on.ini` (slices 1-4 at their probe
+values) against the new `tuning/w12-family-off.ini` (the same five keys
+at their compiled shipping zeros). All 16 games reached T151, 8/8
+maphashes match, 0 pairing violations, and the `deep-tuning file="…"`
+read-back audit is 8 and 8.
+
+**The dose the venue delivers (ON arm; OFF arm is a clean zero on every
+column, which is the off-switch proof restated on the A/B's own data):**
+
+    seed      links        gap   gap/link       hits     beyond   ally-gap/l      picks
+       1       9.22      28.60       3.10     536.32       9.18         7.74     136
+       2      13.40      30.69       2.29    1357.56       3.09         2.77     577
+       3      11.31      29.64       2.62     703.38       6.76         4.10     357
+       4      12.04      30.30       2.52     884.95       4.40         3.42     270
+       5      11.54      28.49       2.47     733.96       5.03         3.39     340
+       6      13.09      31.24       2.39    1132.08       2.99         2.84     109
+       7       9.00      24.16       2.68     343.71       4.90         3.55     147
+       8       7.86      18.55       2.36     342.79       3.69         3.24     107
+    MEAN      10.93      27.71       2.55     754.34       5.00         3.88     255.4
+    SD         2.02       4.30       0.26     360.98       2.08         1.61     165.0
+
+    picks: mean 255.4  sd 165.0  cv 0.65  near-zero in 0/8 seeds
+
+Against `lategame-80`: links x4.0, total gap x5.8, gap/link x1.5,
+candidates reached x9.5, ally corridor length x3.4, tasks assigned
+x5.5 — and **no seed at zero dose**, where `lategame-80` had two of
+sixteen at zero and six of sixteen at an exactly-zero paired score
+difference. The venue does what it was designed to do.
+
+**Paired A/B (`paircmp.py`):**
+
+    paired seeds: 8  (off 8, on 8)
+        metric                       OFF        ON     delta      se      t   wins
+        score                     198.48    191.23     -7.25    5.64  -1.29   2/8
+        cities                     25.31     24.44     -0.87    1.09  -0.80   3/8
+        unitsbuilt                126.50    128.00     +1.50    3.49  +0.43   3/8
+        techs                      31.60     30.31     -1.29    0.41  -3.18   1/8
+        pop                        94.15     92.81     -1.33    2.50  -0.53   3/8
+        mean_city_size              3.96      3.99     +0.03    0.14  +0.22   4/8
+        settlers                    8.19      9.17     +0.98    1.15  +0.85   4/8
+        landarea               343250.00 332354.17 -10895.83 9717.89  -1.12   2/8
+        munits                     35.44     37.60     +2.17    2.17  +1.00   6/8
+        wonders                     0.10      0.27     +0.17    0.11  +1.53   4/8
+        unitslost                  16.98     19.83     +2.85    2.84  +1.01   4/8
+        unitskilled                11.19     12.96     +1.77    2.68  +0.66   5/8
+
+        trunk-turns                 0.00    688.75   +688.75    8.31 +82.88   8/8
+        trunk-picks                 0.00    255.38   +255.38   58.34  +4.38   8/8
+        ally-turns                  0.00    322.38   +322.38   41.86  +7.70   8/8
+        div-turns                   0.00    111.38   +111.38   28.68  +3.88   8/8
+
+**Power (`powern.py`), from the pilot's own paired differences:**
+
+    paired sd 15.94   se 5.64   t -1.29   wins 2/8
+    per-seed diffs: -15.3 -13.8 -13.3 -16.2 +27.3 -24.0 +0.5 -3.2
+
+    implied paired n for |t| >= 2, n >= (2*sd/D)^2:
+      D =  +3.0  (1.5% of the OFF mean)   n >= 113   -> 226 games
+      D =  +4.0  (2.0%)                   n >=  64   -> 128 games
+      D =  +6.0  (3.0%)                   n >=  29   ->  58 games
+      D = +10.0  (5.0%)                   n >=  11   ->  22 games
+
+At ~20 minutes a game and jobs 4, that is ~19 h for D=+3, ~11 h for
+D=+4, **~5 h for D=+6**.
+
+### 4. Verdict
+
+**Powered at n=29 for a 3% effect (+6 score); NOT powered at any cheap
+n for +3.** Stated in the brief's own two forms, because both halves
+are true and they point opposite ways:
+
+- *"This venue is powered at n=N"*: **N = 29 paired seeds for D = +6
+  score (3.0%)**, 58 games, about five hours at jobs 4. At the
+  project's own `--full` size of 100 paired seeds, corridor-150
+  resolves **|D| >= 3.2 score (1.6%)**.
+- *"Corridor effects are below X at any feasible n"*: at n = 8 the
+  pilot bounds the family's effect at **|D| <= 11.3 (2 se)**, and
+  resolving the brief's +3 needs **n >= 113**, which is past `--full`.
+
+**The trade the venue makes is dose for variance, and it is close to
+one-for-one.** corridor-150 multiplies the corridor dose by 4-6x and
+eliminates zero-dose seeds — and its paired score sd is **15.94 against
+`lategame-80`'s 7.10**, so on pure score resolution it is *worse*
+(n>=113 for +3 against n>=23). That is not a flaw in the config: the
+dose IS the perturbation. 255 redirected worker tasks per game move the
+game more than 47 do, in both directions.
+
+**And the pilot's point estimate is negative.** −7.25 score (−3.7%),
+2/8 wins, 6 of 8 seeds down, t −1.29 — not significant, and reported as
+not significant. But `techs` −1.29 with **t −3.18** is the only cell in
+the table clearing |t| = 2, and it is exactly the cost you would
+predict: worker turns spent on connecting roads are worker turns not
+spent on the tiles a city works. The first venue that gives the W12
+family enough dose to show a sign shows a negative one. **That is
+information the queued fifth corridor term (a military dividend) should
+have before it is written, not after.**
+
+Three further facts from the pilot, none of them claims:
+
+- **The roads barely appear.** Map-wide roaded land tiles at T151: OFF
+  298, ON 312 — **+14 tiles per game across six empires**, against 255
+  corridor tasks assigned. The reallocation slices 3 and 4 each found
+  at 1/6 the dose is still the dominant effect at full dose: the
+  mechanism moves which tile a worker is sent to far more than it
+  changes how much road exists.
+- **The trade dividend shrinks as the map grows.** `maxdiv` on
+  `lategame-80` reached 122; here it averages 1.37 with a max of 8.99
+  per player-turn, because `caravan_discount`'s d^ETA is near zero at
+  both ends of a long-distance difference. Slice 4's own header
+  predicted Europe would be where the dividend is largest; this venue
+  says the opposite for the same reason, and the factorial should not
+  assume the dividend arm is live here without checking `div-flips`.
+- **The cost is not in wall time.** `pairs` per player-turn reaches
+  2400 here against slice 4's measured mean of 50.7, and the arms still
+  ran at 1198.6 s (OFF) and ~1099 s (ON) per game.
+
+### 5. For whoever picks this up
+
+- **The factorial was NOT run and must not be inferred from this.** The
+  pilot is one cell — family on against family off — at n=8. Reading
+  four marginal effects out of it would be exactly the mistake the
+  brief was written to prevent.
+- **Size the factorial from `powern.py`, not from hope.** A four-factor
+  read wants the marginal contrasts, whose sd is bounded above by this
+  family contrast's 15.94 and is probably nearer slice 4's 7.10. Run
+  the pilot's own arms first at the chosen n and re-read `powern.py`
+  before committing the rest of the budget.
+- **The sd is estimated from 8 differences**, so it is good to about
+  ±25% and the implied n to about a factor of 1.5 either way. It sizes
+  a decision; it is not a guarantee.
+- **`corridor-150` is a PROBE cell, not canonical and not a tuning
+  cell.** It has never been tuned on and its verdict here is its whole
+  provenance. Promoting it into the portfolio is a separate decision
+  with separate evidence.
+- **Reuse the two instruments before designing any venue.**
+  `corridorgeom.py` on eight retained savegames answered "why is this
+  venue hostile" in under a minute and cost no games at all; the four
+  most important numbers in this entry (land per seat, gap per edge,
+  50.8% pre-roaded, unroaded MST tiles per empire) all came out of
+  artefacts three earlier sessions had already paid for.
