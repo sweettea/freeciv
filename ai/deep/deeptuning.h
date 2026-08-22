@@ -987,6 +987,24 @@ struct deep_tuning {
    * ordering byte-identically. Needs trunk_source_gain > 0 (and so
    * trunk_road_gain > 0) for there to be a bid to gate at all. */
   int trunk_keepable_gate;
+  /* W12G: how much more a rival bid must be worth before a worker
+   * already walking to a corridor tile is turned around. A walking
+   * worker is re-decided from scratch every turn --
+   * auto_workers_player() sends an IDLE unit to settler_run and
+   * adv_follow_path() restores IDLE after every partial walk -- so the
+   * task source re-runs the whole auction each turn with no memory of
+   * the walk already spent. The funnel charged 13.1% of dropped
+   * assignments to the advisor's champion winning the re-run and 4.5%
+   * to a different corridor tile winning it, against 91.9% of all
+   * assignments spent walking (STATUS 2026-08-22). This is the sunk
+   * walk priced as what it is: the tile the worker holds has its bid
+   * multiplied by 1 + this margin, so a rival must beat it by that
+   * fraction rather than by any epsilon. 0 is the off-state and
+   * reproduces today's churn exactly -- the multiplier is then 1.0,
+   * the ledger that remembers the held tile is never allocated, and the
+   * auction is the same auction. PLACEHOLDER: no measured value exists
+   * yet, and the knob owes a tuning pass. */
+  double trunk_keep_margin;
 
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).

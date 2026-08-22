@@ -354,6 +354,17 @@ MAP = {
         "for a bid to exist, and a CITYFOUNDER worker for the floor to "
         "be nonzero: in a ruleset whose workers cannot found, veto=0 "
         "evidences the ruleset, not the knob."),
+    "trunk_keep_margin": (
+        "S3", "mag", "direct", [("deep-trunkkeep", "held>0")],
+        "W12G: deep_trunk_source_task() reads the tile a worker is "
+        "already walking to only when trunk_keep_margin > 0.0 -- the "
+        "hold ledger in deeptrunk.c is never written below it -- so "
+        "held=, the count of walks re-priced this turn, exists only "
+        "above the knob. kept= is the subset the premium was decisive "
+        "for and is monotone in the margin; held>0 with kept=0 is a "
+        "margin too small to change any auction, a null rather than a "
+        "dead knob. Needs trunk_source_gain > 0 (and trunk_road_gain "
+        "> 0) for a walk to exist at all."),
 
     # ---------------- Stage 1: economy / horizon / CM ---------------
     "horizon_capacity_weight": (

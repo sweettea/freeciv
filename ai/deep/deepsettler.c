@@ -1740,6 +1740,20 @@ static adv_want deep_worker_travel_amortized(adv_want gain, int arrival)
   every corridor assignment ending exactly that way (STATUS
   2026-08-22). Nothing is re-valued here: the floor IS the site search's
   own number, computed once per unit per call and used twice.
+
+  trunk_keep_margin is W12G's other half. The auction above re-runs from
+  scratch every turn for a WALKING worker, because adv_follow_path()
+  restores IDLE after every partial walk, so the tile a worker is
+  halfway to has no standing here at all -- 13.1% of dropped
+  assignments went to the advisor's champion winning the re-run and
+  4.5% to a different corridor tile winning it. The tile the worker
+  holds therefore bids at 1 + margin times its value: a rival must beat
+  it by that fraction, and an unchanged or merely-equal rival does not
+  take the worker off a walk already half spent. At margin 0 the
+  multiplier is 1.0, no hold is ever recorded, and this is the same
+  auction it always was. Invalidity is not overridden: a held tile that
+  is unsafe, taken, unreachable, unroadable or out of the plan never
+  reaches the comparison at all.
 **************************************************************************/
 static adv_want deep_trunk_source_task(const struct civ_map *nmap,
                                        struct player *pplayer,
@@ -1784,6 +1798,17 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
    * and simply did not win. */
   struct tile *prev_tile = deep_funnel_open(pplayer, punit);
   int prev_stage = DEEP_FUNNEL_ST_ABSENT;
+  /* W12G stickiness: the corridor tile this worker is ALREADY walking
+   * to. Its bid carries a premium of trunk_keep_margin, so a rival must
+   * beat it by that fraction to turn the worker around; held_raw and
+   * rival_top are the same auction without the premium, which is what
+   * lets the census say the premium was decisive. NULL, and every line
+   * below inert, at margin 0. */
+  struct tile *held_tile = (tune->trunk_keep_margin > 0.0
+                            ? deep_trunk_hold_tile(pplayer, punit->id)
+                            : NULL);
+  adv_want held_raw = 0;
+  adv_want rival_top;
 
   if (tune->trunk_source_gain <= 0.0 || tune->trunk_road_gain <= 0.0) {
     deep_funnel_close(pplayer, punit, NULL, prev_stage);
@@ -1799,8 +1824,13 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
     nodiv_value = keep_floor;
   }
 
+  rival_top = pick_value;
+
   nbeyond = deep_trunk_beyond_tiles(pplayer, &beyond);
   if (nbeyond <= 0) {
+    if (held_tile != NULL) {
+      deep_trunk_hold_set(pplayer, punit->id, NULL);
+    }
     deep_funnel_close(pplayer, punit, NULL, prev_stage);
     return best_impr;
   }
@@ -1897,6 +1927,21 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
       }
       value = amortize(want, delay);
 
+      if (ptile == held_tile) {
+        /* The walk already spent on this tile, priced: a rival has to
+         * be worth 1 + margin times as much before the worker is turned
+         * around. The premium rides on the bid itself rather than on
+         * the comparison, so the want this function returns is the want
+         * the assignment was actually made at. */
+        if (value > held_raw) {
+          held_raw = value;
+        }
+        value *= 1.0 + tune->trunk_keep_margin;
+        nodiv *= 1.0 + tune->trunk_keep_margin;
+      } else if (value > rival_top) {
+        rival_top = value;
+      }
+
       if (nodiv > 0.0 && amortize(nodiv, delay) > nodiv_value) {
         nodiv_value = amortize(nodiv, delay);
         nodiv_tile = ptile;
@@ -1915,11 +1960,22 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
     } aw_extra_action_iterate_end;
   }
 
+  if (held_tile != NULL && held_raw > 0) {
+    /* The tile the worker was walking to was priced again this turn.
+     * The premium was decisive exactly when the raw bid did not beat
+     * every rival by itself. */
+    deep_trunk_hold_census(pplayer,
+                           pick_tile == held_tile && held_raw <= rival_top);
+  }
+
   if (pick_tile == NULL) {
     if (top_value > best_impr) {
       /* A candidate outbid the champion and would have been assigned;
        * only the floor stopped it. That is the leak, counted. */
       deep_trunk_source_veto(pplayer);
+    }
+    if (held_tile != NULL) {
+      deep_trunk_hold_set(pplayer, punit->id, NULL);
     }
     pf_map_destroy(pfm);
     deep_funnel_close(pplayer, punit, NULL, prev_stage);
@@ -1934,8 +1990,17 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
   if (*path == NULL) {
     /* Cannot happen for a tile pf_map_position() just priced, but a
      * champion without a path must not replace one with. */
+    if (held_tile != NULL) {
+      deep_trunk_hold_set(pplayer, punit->id, NULL);
+    }
     deep_funnel_close(pplayer, punit, NULL, prev_stage);
     return best_impr;
+  }
+
+  if (tune->trunk_keep_margin > 0.0) {
+    /* This is the tile the worker is now walking to, and next turn's
+     * auction will be told so. */
+    deep_trunk_hold_set(pplayer, punit->id, pick_tile);
   }
 
   *completion_time = pf_path_last_position(*path)->turn;
