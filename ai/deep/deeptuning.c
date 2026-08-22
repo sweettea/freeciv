@@ -153,6 +153,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .trunk_keepable_gate = 0,            /* 0 = today's bid ordering exactly */
   .trunk_keep_margin = 0.0,            /* PLACEHOLDER, 0 = today's churn */
   .trunk_soft_border_gate = 0,         /* 0 = today's hard border clip */
+  .trunk_risk_weight = 0.0,            /* PLACEHOLDER, 0 = today's walk */
   .upkeep_gold_weight = 0.125,          /* PLACEHOLDER, untuned */
   .upkeep_unit_weight = 0.5,            /* PLACEHOLDER, untuned */
   .rotation_power_ratio = 2.0,          /* PLACEHOLDER, untuned */
@@ -479,6 +480,7 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(trunk_keepable_gate) \
   TUNE_DOUBLE(trunk_keep_margin) \
   TUNE_INT(trunk_soft_border_gate) \
+  TUNE_DOUBLE(trunk_risk_weight) \
   TUNE_DOUBLE(upkeep_gold_weight) \
   TUNE_DOUBLE(upkeep_unit_weight) \
   TUNE_DOUBLE(rotation_power_ratio) \

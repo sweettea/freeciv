@@ -41,6 +41,7 @@
 #include "advbuilding.h"
 #include "advtools.h"
 
+#include "deepdefence.h"
 #include "deeptrade.h"
 #include "deeptuning.h"
 
@@ -159,6 +160,18 @@ struct deep_trunk_seen {
 };
 
 static struct deep_trunk_seen deep_trunk_prev[MAX_NUM_PLAYER_SLOTS];
+
+/* W12H, the risk term's own instruments: corridor steps the walk
+ * priced, the ones where the risk-priced choice differed from the
+ * distance-first one today's walk takes (the reroutes, which is the
+ * whole visible effect), the risk actually walked over and its worst
+ * tile, and how many chosen tiles carried the coastal term. Plan
+ * properties, so recomputed by every refresh. */
+static int deep_trunk_c_risk_steps[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_risk_dodge[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_risk_coast[MAX_NUM_PLAYER_SLOTS];
+static double deep_trunk_c_risk_sum[MAX_NUM_PLAYER_SLOTS];
+static double deep_trunk_c_risk_max[MAX_NUM_PLAYER_SLOTS];
 
 /* W12G: corridor bids the founder's own site value refused, corridor
  * tiles a worker was already walking to and that the source priced
@@ -338,6 +351,68 @@ static void deep_trunk_seen_add(int pn, int idx, enum deep_trunk_own own)
 }
 
 /**********************************************************************//**
+  W12H: what a corridor tile is worth being afraid of, in deep's own
+  standing-fear units.
+
+  Two terms, both deep's existing ones, evaluated at a tile instead of
+  at a city:
+
+  * Land. deep_density_fear_at() -- every met non-allied city within
+    density_fear_radius contributing density_fear_value / (1 + distance),
+    overseas neighbours discounted by menace_overseas_weight until they
+    float transports. Near a rival's cities is expensive; empty
+    borderland between two empires is nearly free, which is the shape
+    the brief asks for and the shape the term already had.
+  * Coast. boat_shadow_fear on a tile adjacent to ocean, once
+    deep_boat_shadow_afloat() says some player we are at war with owns
+    a transport. Same no-fear-before-the-threat-class law the city term
+    obeys: before anyone can sail, a beach is just a tile.
+
+  Not a second risk model, by construction: every number here is read
+  from deepdefence, and tuning the garrison's fear tunes the road.
+**************************************************************************/
+static double deep_trunk_tile_risk(const struct player *pplayer,
+                                   const struct tile *ptile, bool afloat,
+                                   bool *coastal_out)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  double risk = deep_density_fear_at(pplayer, ptile);
+  bool coastal = (afloat && tune->boat_shadow_fear > 0
+                  && is_terrain_class_near_tile(&(wld.map), ptile,
+                                                TC_OCEAN));
+
+  if (coastal) {
+    risk += tune->boat_shadow_fear;
+  }
+  if (coastal_out != NULL) {
+    *coastal_out = coastal;
+  }
+
+  return risk;
+}
+
+/**********************************************************************//**
+  The cost of stepping onto this tile: what the corridor already pays
+  for it in movement (terrain movement_cost * SINGLE_MOVE, the very
+  quantity link->terr sums) plus trunk_risk_weight times its risk.
+
+  One currency, move fragments, because the corridor's whole value is
+  denominated in them -- deep_trunk_price() pays trunk_road_gain per
+  whole movement point saved. The weight is what says how many fragments
+  a point of fear is worth, and nothing measures that yet.
+**************************************************************************/
+static double deep_trunk_step_cost(const struct player *pplayer,
+                                   const struct tile *ptile, bool afloat,
+                                   bool *coastal_out)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+
+  return (double) (tile_terrain(ptile)->movement_cost * SINGLE_MOVE)
+         + tune->trunk_risk_weight
+           * deep_trunk_tile_risk(pplayer, ptile, afloat, coastal_out);
+}
+
+/**********************************************************************//**
   Walk a corridor from 'from' to 'to', greedily: each step goes to the
   land neighbour strictly nearer the destination, so the walk cannot
   loop and terminates in at most real_map_distance() steps. Returns the
@@ -363,15 +438,20 @@ static void deep_trunk_seen_add(int pn, int idx, enum deep_trunk_own own)
 static int deep_trunk_walk(const struct civ_map *nmap,
                            const struct player *pplayer,
                            struct tile *from, struct tile *to,
-                           struct tile **path, int maxlen, bool clip)
+                           struct tile **path, int maxlen, bool clip,
+                           bool afloat)
 {
+  const struct deep_tuning *tune = deep_tuning_get();
+  bool risky = (tune->trunk_risk_weight > 0.0);
+  int pn = player_number(pplayer);
   struct tile *cur = from;
   int dist = real_map_distance(from, to);
   int n = 0;
 
   while (dist > 1) {
-    struct tile *step = NULL;
+    struct tile *step = NULL, *plain = NULL;
     int stepdist = dist;
+    double stepcost = 0.0;
 
     adjc_iterate(nmap, cur, atile) {
       int d;
@@ -383,11 +463,39 @@ static int deep_trunk_walk(const struct civ_map *nmap,
       if (d < stepdist) {
         stepdist = d;
         step = atile;
+        /* The tile today's walk takes: the FIRST neighbour reaching the
+         * best distance, iteration order deciding. Kept so the census
+         * can charge the risk term for the steps it actually moved. */
+        plain = atile;
+        if (risky) {
+          stepcost = deep_trunk_step_cost(pplayer, atile, afloat, NULL);
+        }
+      } else if (risky && step != NULL && d == stepdist) {
+        double c = deep_trunk_step_cost(pplayer, atile, afloat, NULL);
+
+        if (c < stepcost) {
+          stepcost = c;
+          step = atile;
+        }
       }
     } adjc_iterate_end;
 
     if (step == NULL || n >= maxlen) {
       return -1;
+    }
+    if (risky) {
+      bool coastal = FALSE;
+      double risk = deep_trunk_tile_risk(pplayer, step, afloat, &coastal);
+
+      deep_trunk_c_risk_steps[pn]++;
+      deep_trunk_c_risk_sum[pn] += risk;
+      deep_trunk_c_risk_max[pn] = MAX(deep_trunk_c_risk_max[pn], risk);
+      if (coastal) {
+        deep_trunk_c_risk_coast[pn]++;
+      }
+      if (step != plain) {
+        deep_trunk_c_risk_dodge[pn]++;
+      }
     }
     if (clip && !deep_trunk_soft_open(pplayer, step)) {
       return n;
@@ -626,6 +734,11 @@ static void deep_trunk_build(const struct player *pplayer)
   bool *seen, *is_ally;
   int *near_to, *near_d;
   char *dump;
+  /* The boat shadow's precondition, asked ONCE per plan rather than
+   * once per tile: it is a scan of every at-war player's unit list. */
+  bool afloat = (tune->trunk_risk_weight > 0.0
+                 && tune->boat_shadow_fear > 0
+                 && deep_boat_shadow_afloat(pplayer));
   int i, j, maxpath, dumpsz;
 
   if (deep_trunk_tiles != MAP_INDEX_SIZE) {
@@ -646,6 +759,11 @@ static void deep_trunk_build(const struct player *pplayer)
   memset(deep_trunk_c_soft_plan[pn], 0, sizeof(deep_trunk_c_soft_plan[pn]));
   memset(deep_trunk_c_soft_work[pn], 0, sizeof(deep_trunk_c_soft_work[pn]));
   memset(deep_trunk_c_soft_road[pn], 0, sizeof(deep_trunk_c_soft_road[pn]));
+  deep_trunk_c_risk_steps[pn] = 0;
+  deep_trunk_c_risk_dodge[pn] = 0;
+  deep_trunk_c_risk_coast[pn] = 0;
+  deep_trunk_c_risk_sum[pn] = 0.0;
+  deep_trunk_c_risk_max[pn] = 0.0;
   for (i = 0; i < deep_trunk_prev[pn].n; i++) {
     if (deep_trunk_tile_roaded(index_to_tile(nmap,
                                              deep_trunk_prev[pn].tile[i]))) {
@@ -741,7 +859,8 @@ static void deep_trunk_build(const struct player *pplayer)
 
     if (near_to[pick] >= 0) {
       int len = deep_trunk_walk(nmap, pplayer, ctile[near_to[pick]],
-                                ctile[pick], path, maxpath, is_ally[pick]);
+                                ctile[pick], path, maxpath, is_ally[pick],
+                                afloat);
 
       if (len > 0) {
         struct deep_trunk_link *link = &deep_trunk_links[deep_trunk_nlinks];
@@ -1379,6 +1498,25 @@ void deep_trunk_census(struct player *pplayer)
              game.info.turn, player_name(pplayer),
              deep_trunk_c_keep_veto[pn], deep_trunk_c_keep_held[pn],
              deep_trunk_c_keep_kept[pn]);
+  }
+
+  if (log_do_output_for_level(deep_metric_log_level())
+      && deep_trunk_c_risk_steps[pn] > 0) {
+    /* W12H. steps= corridor steps the walk priced this turn, dodge= the
+     * ones where the risk-priced choice differed from the distance-
+     * first tile today's walk takes -- the reroute count, and the whole
+     * visible effect of the term. risk= the standing fear actually
+     * walked over, maxrisk= its worst tile, coast= chosen tiles
+     * carrying the boat-shadow term. steps>0 with dodge=0 says the
+     * corridors had no cheaper way round, which is a null rather than
+     * a dead knob; the line does not exist at all at weight 0. */
+    log_base(deep_metric_log_level(),
+             "deep-trunkrisk turn=%d player=\"%s\" steps=%d dodge=%d"
+             " risk=%.2f maxrisk=%.2f coast=%d",
+             game.info.turn, player_name(pplayer),
+             deep_trunk_c_risk_steps[pn], deep_trunk_c_risk_dodge[pn],
+             deep_trunk_c_risk_sum[pn], deep_trunk_c_risk_max[pn],
+             deep_trunk_c_risk_coast[pn]);
   }
 
   if (log_do_output_for_level(deep_metric_log_level())) {

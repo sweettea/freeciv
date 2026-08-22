@@ -1054,6 +1054,35 @@ struct deep_tuning {
    * Gate rather than magnitude, like trunk_ally_gate: it changes the
    * geometry the plan may occupy, and there is nothing in it to tune. */
   int trunk_soft_border_gate;
+  /* W12H: how dearly a corridor step pays for the DANGER of the ground
+   * it crosses, in move fragments per point of deep's own standing
+   * fear.
+   *
+   * The corridor walk has always chosen its step by distance alone,
+   * breaking ties by neighbour iteration order, so a corridor runs
+   * through whatever happens to lie on the straight line -- a rival's
+   * city gate, an exposed beach -- at the same price as empty
+   * borderland. Above 0 the walk minimises an EDGE COST over the
+   * neighbours that close the distance equally: the tile's terrain
+   * movement cost (the same movement_cost * SINGLE_MOVE the corridor
+   * already sums into link->terr) plus this weight times the tile's
+   * risk.
+   *
+   * Risk is deep's existing fear, not a new model:
+   * deep_density_fear_at() for the land side (each met non-allied city
+   * within density_fear_radius at density_fear_value / (1 + distance),
+   * overseas neighbours discounted until they float) and
+   * boat_shadow_fear for the coastal side, added on a tile adjacent to
+   * ocean once some player we are at war with owns a sea transport.
+   * The same numbers that fund garrisons and walls therefore bend
+   * roads, and tuning one moves both.
+   *
+   * 0 is the off state and restores today's walk exactly -- the whole
+   * cost comparison is skipped, not merely zeroed, because a walk that
+   * minimised terrain cost alone would already be a different walk.
+   * PLACEHOLDER: nothing measures what a point of standing fear is
+   * worth in move fragments, and the knob owes a tuning pass. */
+  double trunk_risk_weight;
 
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).
