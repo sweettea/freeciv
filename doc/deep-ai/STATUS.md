@@ -15428,3 +15428,237 @@ Any of those is its own epic with its own A/B. Nothing was changed here.
 `benchmark/results/fort-derby7/contested-c6d583ff575c/` (cell B, 16 games).
 Analysis scripts were session-scratch; the counter lines are self-describing
 key=value and the last line per (game, player) is that game's total.
+## W12 slice 3: allied cities as trunk endpoints — live in a STANDARD venue, not only a scripted one (2026-08-21)
+
+Branch `epic/w12c-ally-corridors`, 7 commits, based at `31b947ffc7`
+(`epic/w03-horizon-content`). `ai/deep` + `benchmark` + one tuning
+file; zero `ai/default`, `ai/baseline` or `server/advisors` changes.
+
+Slice 1 (`d075c4bfc4`) built the corridor plan and slice 2
+(`e0dc5f193b`) lifted the advisor's radius ceiling — but the node set
+in `ai/deep/deeptrunk.c` was `pplayer->cities` and nothing else, so
+the network could never leave the shape of deep's own empire. A road
+to the ally next door was exactly as invisible after W12 as any
+connecting road was before it. Live play had already shown the
+consequence (STATUS 2026-08-15, fortress saturation): worker turns
+into catchment fortresses while the road to the human ally went
+unbuilt.
+
+### 1. What landed
+
+| # | Commit | What |
+|---|---|---|
+| 1 | `9648bce65d` | the gate: allied cities in the MST node set |
+| 2 | `c79c82836e` | `deep-trunkally`, the ally corridors' own census line |
+| 3 | `22aa581d0a` | `w12c-ally.sh` + `w12c-roadcheck.py`, the scripted-alliance venue |
+| 4 | `8b04422173` | `trunk_ally_gate` in `knobcensus.py` |
+| 5 | `a55ae73071` | the Europe rider in `derby5/tuning-derby7.ini` |
+| 6 | `3c2d54f8b2` | the A/B stage the venue answer licensed |
+| 7 | this entry | |
+
+`deep_trunk_ally_nodes()` appends ONE node per allied player: that
+ally's city nearest by map distance to any of our own, on a continent
+we have a city on. One and not the whole allied city list — n allied
+cities in the node set would let Prim spend edges inside the ally's
+empire, which the ally's own workers already cover, and dilute the one
+link that matters. Ally nodes are LEAVES: `deep_trunk_build()` skips
+the Prim relaxation from an ally, so a foreign capital can never
+become the hub between two of our own cities, and every ally link's
+direction is fixed own -> ally, which is what the border clip below
+needs in order to mean "as far toward the ally as a worker can go".
+
+Locality stays the arbiter. Ally corridor tiles enter the existing
+beyond-ceiling set and are priced by the same `deep_trunk_price()` and
+discounted by the same `deep_worker_travel_amortized()` as every other
+corridor tile. No second discount and no new magnitude — one gate.
+
+### 2. The buildability law, checked before the design
+
+The brief demanded this be established rather than assumed. It splits
+cleanly in two, and the interesting half is not the one the design
+started from.
+
+**Building is not restricted by tile ownership** in the classic
+ruleset. `enabler_road` (`data/classic/actions.ruleset:1066-1074`)
+requires `UnitTypeFlag "Workers"` on the actor and `TerrainAlter
+"CanRoad"` on the target tile — no `DiplRel`, no owner requirement.
+The Road extra's own reqs (`terrain.ruleset:1603-1607`) are the
+Workers flag and a Land tile. And `ACTRES_ROAD` sits in the "no hard
+requirements" case list at all three places `common/actions.c`
+enumerates them (2569, 2767, 4314). A worker may legally road an
+unowned tile and an allied-owned tile.
+
+**Reaching the tile is what binds.** Both worker pathfinders
+`TB_IGNORE` every tile whose owner is not allied —
+`autoworker_tile_behavior()` (`autoworkers.c:521-535`, comment: "Don't
+enter in enemy territories") and deep's own
+`deep_settler_tile_behavior()` (`deepsettler.c:99-114`). Separately
+`players_non_invade()` (`common/player.c:1434`) bars movement into a
+PEACE partner's borders — but only for non-`UTYF_CIVILIAN` units
+(`common/movement.c:775`), and workers are civilians, so peace is not
+what stops them; the pathfinder callback is.
+
+Consequence for the design: unowned and allied ground is both legal
+and reachable, a third party's ground is neither in practice, and
+`deep_trunk_walk()` therefore clips an ally corridor at the first
+non-allied-owned tile. The clip is passed only for ally links, so
+slice 1's own-empire links are untouched and the gate-off graph is
+unchanged by construction.
+
+### 3. Knob, PLACEHOLDER, zero
+
+    trunk_ally_gate  0  OFF = the slice-1/2 graph exactly, byte-
+                        identically. 1 = allied cities join the node
+                        set. Geometry, not a magnitude, so 0/1 like
+                        boat_water_gate. Needs trunk_road_gain > 0 for
+                        a plan to exist at all, and trunk_source_gain
+                        > 0 for a worker to be dispatched down a
+                        corridor that begins outside every own city
+                        radius (which is nearly all of one).
+
+Four audit places, the G/ECON/ALL blocks, `knobcensus.py` MAP entry
+(`deep-trunkally links>0`, gate grade, direct — carrying the one
+caveat no other entry needs: the predicate reads zero when deep simply
+had no ALLY, so it evidences the venue as well as the knob).
+`tune-audit` CLEAN at 246 fields (base 245 + this slice's 1).
+`meson test -C build` 6/6.
+
+### 4. Identity: 10/10 byte-identical at the shipping zero, both cells
+
+Base = `git archive 31b947ffc7` built in `.w12c-base/`
+(sha256 `4802958e0b7f93d7`); branch binary `7eeecc63dbdcade0`, pinned
+with `libfreeciv.so` per stage. Ten paired smoke seeds per arm at
+`tuning/identity.ini`, `benchmark/results/w12c-identity/`:
+
+    deep      scorelogs IDENTICAL 10/10   (0 differ, 0 missing)
+    mixed_db  scorelogs IDENTICAL 10/10   (0 differ, 0 missing)
+
+The mixed cell is included because the plan is consumed inside deep's
+own `settler_run` and a mixed game is where a leak into shared advisor
+state would show. Provenance guard: the base arm's logs carry no
+`deep-trunkally` and no `ally=` token, so the proof cannot have passed
+by running HEAD twice.
+
+### 5. The venue question answered the other way
+
+The brief expected no benchmark venue to form alliances and told me to
+fall back on a scripted one. **The standard `lategame-80` cell forms
+them.** Four seeds at `tuning/w12-ally-on.ini`,
+`benchmark/results/w12c-venue/`, 249 `deep-trunkally` lines:
+
+    seed   allylines  maxlinks  gap(sum)  offered  picked
+    1        105         2        223       41       29
+    2          0         0          0        0        0
+    3        116         2        198       13       12
+    4         28         1         32        0        0
+
+Three of four seeds plan a corridor to an allied city; two of four
+assign tasks on one. So deep-deep alliances do form inside 80 turns
+and the mechanism runs on the primary path without any scripting.
+
+The scripted smoke was run anyway, because it is the venue that can be
+relied on rather than hoped for:
+`benchmark/w12c-ally.sh smoke` seats two deep players on one team
+(`team P1 "Team 1"` — DS_TEAM from turn 0, which `pplayers_allied()`
+answers TRUE for, `srv_main.c:3481-3492`) with `startpos ALL` so they
+share a continent. Three seeds, 80 turns,
+`benchmark/results/w12c-smoke/`:
+
+    seed   deep-trunkally lines   ally=1 picks
+    1              53                  10
+    2              42                   0
+    3             123                  13
+
+### 6. The road on the ground
+
+Counters say what deep planned and assigned. `w12c-roadcheck.py` reads
+the FINAL SAVEGAME's extras and owner grids and asks what is standing
+there. Two confirmed roads on ally-corridor task tiles OUTSIDE the
+deep player's own borders:
+
+    smoke seed-1  P2 tile (23,10)  road=yes  owner=p0  (its ALLY)
+    venue seed-1  P1 tile (32,14)  road=yes  owner=p2  (its ALLY)
+
+Both are tiles no own city radius covers and no pre-slice-3 corridor
+could have reached. That is the liveness claim in the brief, met.
+
+It is also honestly small. Across seven games the distinct ally
+corridor tiles ever worked number in the low single digits per player
+— 29 picks in venue seed-1 are the SAME two tiles re-picked turn after
+turn — and most ally links are short (`gap=1` on many turns), because
+an ally's border is usually close to ours and the corridor between two
+adjacent empires is a few tiles long. The mechanism does what it says;
+what it says is worth a handful of worker-turns per game in these
+cells, not a strategy.
+
+### 7. Score A/B: mechanism strongly live, score a WASH
+
+16 mirrored `lategame-80` seeds, one binary, arms differing in exactly
+one key (`tuning/w12-source-on.ini` vs the same plus
+`trunk_ally_gate = 1`), `benchmark/results/w12c-ab/`,
+`benchmark/paircmp.py`:
+
+    paired seeds: 16  (off 16, on 16)
+        metric                   OFF        ON      delta       se      t   wins
+        score                 166.05    166.70      +0.65     0.98  +0.66   6/16
+        cities                  8.19      7.98      -0.21     0.13  -1.60   3/16
+        techs                  52.81     52.76      -0.05     0.10  -0.51   2/16
+        pop                    41.51     41.05      -0.46     0.35  -1.30   3/16
+        mean_city_size          5.26      5.28      +0.02     0.04  +0.52   7/16
+        landarea            95947.92  94010.42   -1937.50  1138.94  -1.70   4/16
+        unitsbuilt             40.21     39.69      -0.52     0.32  -1.61   3/16
+
+        ally-turns              0.00     80.19     +80.19    16.45  +4.87  14/16
+        ally-active             0.00      4.06      +4.06     1.26  +3.23   9/16
+        ally-picks              0.00     10.69     +10.69     3.13  +3.42   9/16
+        trunk-picks            48.50     56.81      +8.31     9.53  +0.87   8/16
+
+Read it in that order. The execution counters are unambiguous and the
+knob's own predicate is exactly zero in the OFF arm, which is the
+off-switch proof restated on the A/B's own data: 80 player-turns per
+game plan an ally corridor, 4 of them price one, 10.7 tasks per game
+are assigned on one, and 14 of 16 seeds show the mechanism running.
+The score does not move: +0.65 on 166, t +0.66, 6/16 wins. **NULL, and
+reported as null.**
+
+The three counters that lean negative — cities −0.21 (t −1.60),
+landarea −1938 (t −1.70), unitsbuilt −0.52 (t −1.61) — are the shape
+you would predict if worker turns were being spent outward instead of
+at home, and none of them clears significance at n=16. They are worth
+naming rather than burying because they point the same way and the
+mechanism is the plausible cause; they are not worth acting on at this
+power.
+
+Honest limit on the design: `trunk-picks` (all beyond-ceiling picks,
+both arms) rose +8.31 with se 9.53, so the ally picks are not purely
+additional work — some of them displace own-empire corridor picks the
+OFF arm would have made. That is locality doing its job, and it also
+means the knob buys a REALLOCATION of worker turns, which is exactly
+the kind of change 16 seeds cannot price.
+
+### 8. For whoever picks this up
+
+- **The venue finding generalises beyond this slice.** Anything gated
+  on deep having an ally (the FENCE variant, gift-refold's ALLY class,
+  W12.4 bridges) can be measured on `lategame-80` after all; the
+  cheapest probe is one grep for `deep-trunkally links>0`, and it
+  costs four games.
+- **`trunk_ally_gate` is untuned and PLACEHOLDER, and the A/B is not
+  a verdict on shipping it.** It is a gate, so the only tuning
+  question is on/off; n=16 at this effect size answers "not
+  measurable here", not "worthless". The next honest step is either
+  more seeds in a cell where alliances are common, or a cell with
+  longer land borders (Europe) where a corridor to an ally is more
+  than a handful of tiles.
+- **The Europe rider is half a rider.** `derby5/tuning-derby7.ini`
+  carries `trunk_road_gain` but has never carried
+  `trunk_source_gain`, so with the ally gate on, Europe exercises only
+  the task-value hook leg — ally corridor tiles that happen to fall
+  inside one of our own city radii. Adding slice 2's knob there is a
+  separate decision and was left to whoever owns the derby file.
+- **Do not edit a shell script while it is executing.** The smoke
+  stage's trailing parse died with "unexpected EOF" because the A/B
+  stage was appended to `w12c-ally.sh` mid-run; bash reads a script
+  incrementally by byte offset. The games and their checks had already
+  completed, but the stage exited 2 for a reason that had nothing to
+  do with the AI.

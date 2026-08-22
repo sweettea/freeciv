@@ -1856,12 +1856,13 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
   *best_target = pick_target;
   *best_tile = pick_tile;
 
-  deep_trunk_source_pick(pplayer, pick_dist);
+  deep_trunk_source_pick(pplayer, pick_tile, pick_dist);
   log_base(deep_metric_log_level(),
            "deep-trunkpick turn=%d player=\"%s\" unit=%d at=(%d,%d)"
-           " tile=(%d,%d) dist=%d value=%.2f beat=" ADV_WANT_PRINTF,
+           " tile=(%d,%d) dist=%d ally=%d value=%.2f beat=" ADV_WANT_PRINTF,
            game.info.turn, player_name(pplayer), punit->id,
            TILE_XY(unit_tile(punit)), TILE_XY(pick_tile), pick_dist,
+           deep_trunk_tile_is_ally(pplayer, pick_tile) ? 1 : 0,
            (double) pick_value, best_impr);
 
   return pick_value;

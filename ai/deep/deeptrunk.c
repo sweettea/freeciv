@@ -55,6 +55,8 @@ struct deep_trunk_link {
   int len;                   /* Corridor tiles (city ends excluded). */
   int gap;                   /* Of those, still without a road that
                               * speeds movement. */
+  bool ally;                 /* Far endpoint is an allied city, not one
+                              * of ours (W12 slice 3). */
 };
 
 /* The plan, memoised on (turn, player): one link index per tile
@@ -84,6 +86,13 @@ static int deep_trunk_c_src_off[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_src_pick[MAX_NUM_PLAYER_SLOTS];
 static int
 deep_trunk_c_src_hist[MAX_NUM_PLAYER_SLOTS][DEEP_TRUNK_SRC_HIST + 1];
+/* W12 slice 3, the ally corridors' own instruments: links planned to
+ * an allied city, their corridor tiles still missing a road, and how
+ * many of those the task source offered and picked. */
+static int deep_trunk_c_ally_links[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_ally_gap[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_ally_off[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_ally_pick[MAX_NUM_PLAYER_SLOTS];
 
 /**********************************************************************//**
   Does this tile already carry a road that speeds movement? A corridor
@@ -111,13 +120,25 @@ static bool deep_trunk_roaded(const struct tile *ptile)
   runs out of land -- a link that has to cross water is not a road link
   and is dropped whole rather than half-marked.
 
+  With 'clip' the walk also stops at the first tile owned by a player
+  'pplayer' is not allied with, returning the corridor up to that
+  border. Building there would be legal -- the classic ruleset's road
+  enabler asks only for the Workers flag and CanRoad terrain
+  (actions.ruleset:1066), and ACTRES_ROAD carries no hard ownership
+  requirement (common/actions.c) -- but a worker cannot GET there:
+  both worker pathfinders TB_IGNORE every tile owned by a non-ally
+  (autoworkers.c:521-535, deepsettler.c:99-114). So the reachable
+  border is where the corridor ends, and the tiles past it would be
+  want nobody can spend.
+
   Greedy and not pathfinding on purpose. This runs once per city pair
   per turn and its output is a corridor to VALUE, not a route to
   follow; a worker's own pathfinding decides how it gets there.
 **************************************************************************/
 static int deep_trunk_walk(const struct civ_map *nmap,
+                           const struct player *pplayer,
                            struct tile *from, struct tile *to,
-                           struct tile **path, int maxlen)
+                           struct tile **path, int maxlen, bool clip)
 {
   struct tile *cur = from;
   int dist = real_map_distance(from, to);
@@ -143,12 +164,73 @@ static int deep_trunk_walk(const struct civ_map *nmap,
     if (step == NULL || n >= maxlen) {
       return -1;
     }
+    if (clip) {
+      const struct player *owner = tile_owner(step);
+
+      if (owner != NULL && owner != pplayer
+          && !pplayers_allied(owner, pplayer)) {
+        return n;
+      }
+    }
     path[n++] = step;
     cur = step;
     dist = stepdist;
   }
 
   return n;
+}
+
+/**********************************************************************//**
+  W12 slice 3: append one trunk node per allied player -- that ally's
+  city nearest (map distance) to any of our own cities on the same
+  continent. Returns the number of nodes appended at 'ctile + nown'.
+
+  One per ally and not the whole allied city list, because the MST is
+  the point: n allied cities dropped into the node set would let Prim
+  spend its edges inside the ally's empire, which the ally's own
+  workers are already covering, and would dilute the one link that
+  matters -- the shortest hop from our empire to theirs. Same-continent
+  because a corridor is a road: deep_trunk_walk() drops any link it
+  cannot walk over land anyway, so an overseas ally would cost a walk
+  and yield nothing.
+**************************************************************************/
+static int deep_trunk_ally_nodes(const struct player *pplayer,
+                                 struct tile **ctile, int nown)
+{
+  int added = 0;
+
+  players_iterate_alive(aplayer) {
+    struct tile *best = NULL;
+    int bestd = FC_INFINITY;
+
+    if (aplayer == pplayer || !pplayers_allied(pplayer, aplayer)) {
+      continue;
+    }
+
+    city_list_iterate(aplayer->cities, acity) {
+      struct tile *atile = city_tile(acity);
+      int i;
+
+      for (i = 0; i < nown; i++) {
+        int d;
+
+        if (tile_continent(ctile[i]) != tile_continent(atile)) {
+          continue;
+        }
+        d = real_map_distance(ctile[i], atile);
+        if (d < bestd) {
+          bestd = d;
+          best = atile;
+        }
+      }
+    } city_list_iterate_end;
+
+    if (best != NULL) {
+      ctile[nown + added++] = best;
+    }
+  } players_iterate_alive_end;
+
+  return added;
 }
 
 /**********************************************************************//**
@@ -164,10 +246,12 @@ static int deep_trunk_walk(const struct civ_map *nmap,
 **************************************************************************/
 static void deep_trunk_build(const struct player *pplayer)
 {
+  const struct deep_tuning *tune = deep_tuning_get();
   const struct civ_map *nmap = &(wld.map);
-  int ncities = city_list_size(pplayer->cities);
+  int nown = city_list_size(pplayer->cities);
+  int nnodes = nown;
   struct tile **ctile, **path;
-  bool *seen;
+  bool *seen, *is_ally;
   int *near_to, *near_d;
   int i, j, maxpath;
 
@@ -183,48 +267,64 @@ static void deep_trunk_build(const struct player *pplayer)
   deep_trunk_nlinks = 0;
   deep_trunk_nbeyond = 0;
 
-  if (ncities < 2) {
+  if (nown < 1) {
     return;
   }
 
-  if (deep_trunk_alloc < ncities) {
-    free(deep_trunk_links);
-    deep_trunk_alloc = ncities;
-    deep_trunk_links = fc_malloc(deep_trunk_alloc
-                                 * sizeof(*deep_trunk_links));
-  }
-
-  ctile = fc_malloc(ncities * sizeof(*ctile));
-  seen = fc_calloc(ncities, sizeof(*seen));
-  near_to = fc_malloc(ncities * sizeof(*near_to));
-  near_d = fc_malloc(ncities * sizeof(*near_d));
+  /* One node per own city, plus at most one per other player. */
+  ctile = fc_malloc((nown + player_count()) * sizeof(*ctile));
 
   i = 0;
   city_list_iterate(pplayer->cities, pcity) {
     ctile[i++] = city_tile(pcity);
   } city_list_iterate_end;
 
+  if (tune->trunk_ally_gate > 0) {
+    nnodes += deep_trunk_ally_nodes(pplayer, ctile, nown);
+  }
+
+  if (nnodes < 2) {
+    free(ctile);
+    return;
+  }
+
+  if (deep_trunk_alloc < nnodes) {
+    free(deep_trunk_links);
+    deep_trunk_alloc = nnodes;
+    deep_trunk_links = fc_malloc(deep_trunk_alloc
+                                 * sizeof(*deep_trunk_links));
+  }
+
+  seen = fc_calloc(nnodes, sizeof(*seen));
+  is_ally = fc_calloc(nnodes, sizeof(*is_ally));
+  near_to = fc_malloc(nnodes * sizeof(*near_to));
+  near_d = fc_malloc(nnodes * sizeof(*near_d));
+
+  for (i = nown; i < nnodes; i++) {
+    is_ally[i] = TRUE;
+  }
+
   /* A greedy walk that must strictly close the gap every step cannot
    * take more steps than the map is wide plus tall. */
   maxpath = wld.map.xsize + wld.map.ysize;
   path = fc_malloc(maxpath * sizeof(*path));
 
-  for (i = 0; i < ncities; i++) {
+  for (i = 0; i < nnodes; i++) {
     near_to[i] = -1;
     near_d[i] = FC_INFINITY;
   }
   seen[0] = TRUE;
-  for (j = 1; j < ncities; j++) {
+  for (j = 1; j < nnodes; j++) {
     if (tile_continent(ctile[j]) == tile_continent(ctile[0])) {
       near_to[j] = 0;
       near_d[j] = real_map_distance(ctile[0], ctile[j]);
     }
   }
 
-  for (i = 1; i < ncities; i++) {
+  for (i = 1; i < nnodes; i++) {
     int pick = -1, best = FC_INFINITY;
 
-    for (j = 0; j < ncities; j++) {
+    for (j = 0; j < nnodes; j++) {
       if (!seen[j] && near_d[j] < best) {
         best = near_d[j];
         pick = j;
@@ -233,7 +333,7 @@ static void deep_trunk_build(const struct player *pplayer)
     if (pick < 0) {
       /* Every remaining city is on another landmass: start a fresh
        * component at the first one still unseen. */
-      for (j = 0; j < ncities; j++) {
+      for (j = 0; j < nnodes; j++) {
         if (!seen[j]) {
           pick = j;
           break;
@@ -248,8 +348,8 @@ static void deep_trunk_build(const struct player *pplayer)
     seen[pick] = TRUE;
 
     if (near_to[pick] >= 0) {
-      int len = deep_trunk_walk(nmap, ctile[near_to[pick]], ctile[pick],
-                                path, maxpath);
+      int len = deep_trunk_walk(nmap, pplayer, ctile[near_to[pick]],
+                                ctile[pick], path, maxpath, is_ally[pick]);
 
       if (len > 0) {
         struct deep_trunk_link *link = &deep_trunk_links[deep_trunk_nlinks];
@@ -258,6 +358,7 @@ static void deep_trunk_build(const struct player *pplayer)
         link->terr = 0;
         link->len = 0;
         link->gap = 0;
+        link->ally = is_ally[pick];
         for (t = 0; t < len; t++) {
           link->terr += tile_terrain(path[t])->movement_cost * SINGLE_MOVE;
           link->len++;
@@ -289,7 +390,17 @@ static void deep_trunk_build(const struct player *pplayer)
       }
     }
 
-    for (j = 0; j < ncities; j++) {
+    if (is_ally[pick]) {
+      /* An ally is an ENDPOINT, never a hub: relaxing from it could
+       * make it the nearest neighbour of one of our own cities and put
+       * a foreign capital in the middle of our own trunk. Skipping the
+       * relaxation also fixes every ally link's direction as own ->
+       * ally, which is what the border clip in deep_trunk_walk()
+       * needs to mean "as far towards the ally as a worker can go". */
+      continue;
+    }
+
+    for (j = 0; j < nnodes; j++) {
       if (!seen[j]
           && tile_continent(ctile[j]) == tile_continent(ctile[pick])) {
         int d = real_map_distance(ctile[pick], ctile[j]);
@@ -337,6 +448,7 @@ static void deep_trunk_build(const struct player *pplayer)
 
   free(ctile);
   free(seen);
+  free(is_ally);
   free(near_to);
   free(near_d);
   free(path);
@@ -398,10 +510,30 @@ static void deep_trunk_refresh(const struct player *pplayer)
   deep_trunk_build(pplayer);
   deep_trunk_c_links[pn] = deep_trunk_nlinks;
   deep_trunk_c_gap[pn] = 0;
+  deep_trunk_c_ally_links[pn] = 0;
+  deep_trunk_c_ally_gap[pn] = 0;
   for (slot = 0; slot < deep_trunk_nlinks; slot++) {
     deep_trunk_c_gap[pn] += deep_trunk_links[slot].gap;
+    if (deep_trunk_links[slot].ally) {
+      deep_trunk_c_ally_links[pn]++;
+      deep_trunk_c_ally_gap[pn] += deep_trunk_links[slot].gap;
+    }
   }
   deep_trunk_c_beyond[pn] = deep_trunk_nbeyond;
+}
+
+/* Whether this tile's corridor runs to an allied city, on an
+ * already-refreshed plan. The ally counters' only question. */
+static bool deep_trunk_tile_ally(const struct tile *ptile)
+{
+  int slot;
+
+  if (deep_trunk_tile == NULL) {
+    return FALSE;
+  }
+  slot = deep_trunk_tile[tile_index(ptile)];
+
+  return slot > 0 && deep_trunk_links[slot - 1].ally;
 }
 
 /* The want itself, on an already-refreshed plan: the movement the
@@ -503,23 +635,46 @@ adv_want deep_trunk_source_want(const struct player *pplayer,
   want = deep_trunk_price(tune, target, ptile);
   if (want > 0.0) {
     deep_trunk_c_src_off[player_number(pplayer)]++;
+    if (deep_trunk_tile_ally(ptile)) {
+      deep_trunk_c_ally_off[player_number(pplayer)]++;
+    }
   }
 
   return want;
 }
 
 /**********************************************************************//**
-  Record that a beyond-ceiling task was actually assigned, 'dist' map
-  tiles from where the worker stood. Count and histogram feed the
-  deep-trunksrc census line.
+  Whether this tile sits on a corridor to an allied city, for a caller
+  that wants to say so in its own log line. Builds (and memoises) this
+  player's plan for this turn on first call, like every other public
+  entry point here.
 **************************************************************************/
-void deep_trunk_source_pick(const struct player *pplayer, int dist)
+bool deep_trunk_tile_is_ally(const struct player *pplayer,
+                             const struct tile *ptile)
+{
+  deep_trunk_refresh(pplayer);
+
+  return deep_trunk_tile_ally(ptile);
+}
+
+/**********************************************************************//**
+  Record that a beyond-ceiling task was actually assigned on 'ptile',
+  'dist' map tiles from where the worker stood. Count and histogram
+  feed the deep-trunksrc census line; a pick on an ally corridor also
+  feeds the deep-trunkally line, which is the one instrument that says
+  the gate did work rather than merely being open.
+**************************************************************************/
+void deep_trunk_source_pick(const struct player *pplayer,
+                            const struct tile *ptile, int dist)
 {
   int pn = player_number(pplayer);
   int bucket = CLIP(0, dist, DEEP_TRUNK_SRC_HIST);
 
   deep_trunk_c_src_pick[pn]++;
   deep_trunk_c_src_hist[pn][bucket]++;
+  if (deep_trunk_tile_ally(ptile)) {
+    deep_trunk_c_ally_pick[pn]++;
+  }
 }
 
 /**********************************************************************//**
@@ -567,8 +722,29 @@ void deep_trunk_census(struct player *pplayer)
              deep_trunk_c_src_pick[pn], hist);
   }
 
+  if (log_do_output_for_level(deep_metric_log_level())
+      && (deep_trunk_c_ally_links[pn] > 0 || deep_trunk_c_ally_off[pn] > 0
+          || deep_trunk_c_ally_pick[pn] > 0)) {
+    /* W12 slice 3. links= corridors planned to an allied city this
+     * turn, gap= their tiles still without a road (the demand the
+     * gate exposed), offered= the ally corridor tiles the task source
+     * priced, picked= the ally corridor tasks actually assigned.
+     * links=0 in a game where deep HAS an ally is a miss, not a null:
+     * the mechanism never ran. */
+    log_base(deep_metric_log_level(),
+             "deep-trunkally turn=%d player=\"%s\" links=%d gap=%d"
+             " offered=%d picked=%d",
+             game.info.turn, player_name(pplayer),
+             deep_trunk_c_ally_links[pn], deep_trunk_c_ally_gap[pn],
+             deep_trunk_c_ally_off[pn], deep_trunk_c_ally_pick[pn]);
+  }
+
   deep_trunk_c_links[pn] = 0;
   deep_trunk_c_gap[pn] = 0;
+  deep_trunk_c_ally_links[pn] = 0;
+  deep_trunk_c_ally_gap[pn] = 0;
+  deep_trunk_c_ally_off[pn] = 0;
+  deep_trunk_c_ally_pick[pn] = 0;
   deep_trunk_c_hits[pn] = 0;
   deep_trunk_c_max[pn] = 0.0;
   deep_trunk_c_beyond[pn] = 0;

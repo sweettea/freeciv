@@ -51,15 +51,44 @@ adv_want deep_trunk_want(const struct player *pplayer,
  * section 7), so deep sources the hidden demand itself: the corridor
  * gap tiles outside every own city radius, the same want pricing, and
  * a pick counter of its own. */
+
 int deep_trunk_beyond_tiles(const struct player *pplayer,
                             const int **list);
 adv_want deep_trunk_source_want(const struct player *pplayer,
                                 const struct extra_type *target,
                                 const struct tile *ptile);
-void deep_trunk_source_pick(const struct player *pplayer, int dist);
+void deep_trunk_source_pick(const struct player *pplayer,
+                            const struct tile *ptile, int dist);
+bool deep_trunk_tile_is_ally(const struct player *pplayer,
+                             const struct tile *ptile);
+
+/* W12 slice 3: the node set was pplayer->cities and nothing else, so
+ * the network could never leave the shape of deep's own empire --
+ * a corridor to the ally next door was exactly as invisible as any
+ * road was before slice 1. Behind trunk_ally_gate the set gains one
+ * city per allied player (the ally's city nearest to ours on a shared
+ * continent), as a LEAF: an ally is an endpoint, never a hub between
+ * two of our own cities.
+ *
+ * What a worker may do out there, checked before this was designed:
+ * building is not restricted by tile ownership in the classic ruleset
+ * -- the road enabler asks for the Workers flag and CanRoad terrain
+ * (data/classic/actions.ruleset:1066-1074), the Road extra itself for
+ * the Workers flag and a Land tile (terrain.ruleset:1603-1607), and
+ * ACTRES_ROAD has no hard ownership requirement anywhere in
+ * common/actions.c. REACHING the tile is the binding law: both worker
+ * pathfinders TB_IGNORE every tile owned by a player we are not
+ * allied with (autoworkers.c:521-535, deepsettler.c:99-114), and
+ * players_non_invade() (common/player.c:1434) additionally bars
+ * non-civilian movement into a peace partner's borders. Unowned and
+ * allied ground is therefore both legal and reachable, third-party
+ * ground is neither in practice, and the corridor is clipped at the
+ * first tile of it. */
 
 /* Trunk census: links planned, corridor tiles still missing a road,
- * candidates the want reached, and the largest want issued. */
+ * candidates the want reached, and the largest want issued -- plus,
+ * on its own deep-trunkally line, the same for the corridors whose
+ * far endpoint is an allied city. */
 void deep_trunk_census(struct player *pplayer);
 
 #endif /* FC__DEEPTRUNK_H */

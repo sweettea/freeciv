@@ -922,6 +922,27 @@ struct deep_tuning {
    * ceiling byte-identically. Needs trunk_road_gain > 0 to have a plan
    * to read. */
   double trunk_source_gain;
+  /* W12 slice 3: allied cities as trunk endpoints. Slices 1 and 2 span
+   * pplayer->cities only, so the corridor network can never leave the
+   * shape of deep's own empire -- a road to the ally next door is
+   * exactly as invisible as it was before W12. With this gate on the
+   * node set gains ONE city per allied player (that ally's city
+   * nearest to any of our own, on a continent we have a city on), and
+   * those nodes are leaves: an ally is never a hub between two of our
+   * own cities. Ally corridors are clipped at the first tile owned by
+   * a player we are not allied with, because that is the first tile a
+   * worker may not path across (deep_settler_tile_behavior(),
+   * deepsettler.c:99; autoworker_tile_behavior(), autoworkers.c:521)
+   * -- BUILDING is unrestricted on unowned and on allied ground in the
+   * classic ruleset (enabler_road, actions.ruleset:1066, requires only
+   * the Workers flag and TerrainAlter CanRoad; ACTRES_ROAD has no hard
+   * ownership requirement in common/actions.c), so the reachable
+   * border and not the deed is the limit. Geometry, not a magnitude,
+   * so 0/1 like boat_water_gate. 0 = the slice-1 graph exactly. Needs
+   * trunk_road_gain > 0 for a plan to exist at all, and
+   * trunk_source_gain > 0 for a worker to be dispatched down a
+   * corridor that starts outside every own city radius. */
+  int trunk_ally_gate;
 
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).

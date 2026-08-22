@@ -146,6 +146,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .worker_travel_discount = 0.0,       /* PLACEHOLDER, off by default */
   .trunk_road_gain = 0.0,              /* PLACEHOLDER, off by default */
   .trunk_source_gain = 0.0,            /* PLACEHOLDER, off by default */
+  .trunk_ally_gate = 0,                /* 0 = the slice-1 graph exactly */
   .upkeep_gold_weight = 0.125,          /* PLACEHOLDER, untuned */
   .upkeep_unit_weight = 0.5,            /* PLACEHOLDER, untuned */
   .rotation_power_ratio = 2.0,          /* PLACEHOLDER, untuned */
@@ -465,6 +466,7 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(worker_travel_discount) \
   TUNE_DOUBLE(trunk_road_gain) \
   TUNE_DOUBLE(trunk_source_gain) \
+  TUNE_INT(trunk_ally_gate) \
   TUNE_DOUBLE(upkeep_gold_weight) \
   TUNE_DOUBLE(upkeep_unit_weight) \
   TUNE_DOUBLE(rotation_power_ratio) \
