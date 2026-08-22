@@ -85,6 +85,7 @@
 #include "deepai.h"
 #include "deepcombat.h"
 #include "deepdiplomacy.h"
+#include "deepemploy.h"
 #include "deepexplore.h"
 #include "deepfunnel.h"
 #include "deepidle.h"
@@ -2378,17 +2379,38 @@ static void deep_kill_sorties(struct ai_type *ait, struct player *pplayer)
     bool priced = (tune->sortie_prize_gain > 0.0);
     struct deep_cover_move cover;
     bool covered = FALSE;
+    /* The employment ledger's only new read in this pass: whether any
+     * candidate blade existed at all, which is what separates "this
+     * city has nothing to send" from "this city has nobody to send it
+     * at". The shipped code leaves `blade` NULL for both. */
+    bool had_blade = FALSE;
 
     unit_list_iterate(city_tile(pcity)->units, u) {
       if (unit_owner(u) != pplayer
           || unit_has_type_flag(u, UTYF_CIVILIAN)
           || u->hp <= 0
-          || u->moves_left < SINGLE_MOVE
-          || def_ai_unit_data(u, ait)->done
           || adv_unit_att_rating(u) <= 0) {
         continue;
       }
+      /* The same six predicates as before, split so each rejection can
+       * be counted, and with the claim check still last so the
+       * deep-claimskip line fires for exactly the units it always did.
+       * Every branch is `continue`, so the set of units that reach the
+       * duel loop is unchanged.
+       *
+       * `done` is the interesting one and it is worth naming: this pass
+       * runs in deep_do_first_activities(), BEFORE deep_manage_units()
+       * refreshes the flag, so what it reads is last turn's value. */
+      if (u->moves_left < SINGLE_MOVE) {
+        deep_employ_sortie_blade(pplayer, DEB_MOVES);
+        continue;
+      }
+      if (def_ai_unit_data(u, ait)->done) {
+        deep_employ_sortie_blade(pplayer, DEB_DONE);
+        continue;
+      }
       if (deep_op_claiming(pplayer, u->id) >= 0) {
+        deep_employ_sortie_blade(pplayer, DEB_CLAIM);
         /* Every other unit-claiming pool asks this first; the two
          * sortie passes were the only ones that did not (military
          * audit C2), so a mustering or marching op member could be
@@ -2401,6 +2423,7 @@ static void deep_kill_sorties(struct ai_type *ait, struct player *pplayer)
                  deep_op_claiming(pplayer, u->id));
         continue;
       }
+      had_blade = TRUE;
       adjc_iterate(nmap, city_tile(pcity), atile) {
         struct unit *pdef = get_defender(nmap, u, atile, NULL);
         double chance;
@@ -2451,10 +2474,15 @@ static void deep_kill_sorties(struct ai_type *ait, struct player *pplayer)
     } unit_list_iterate_end;
 
     if (blade == NULL) {
+      deep_employ_sortie(pplayer,
+                         had_blade ? DES_NOVICTIM : DES_NOBLADE, 0.0);
       continue;
     }
     if (best < tune->sortie_win_floor
         || (priced && best_score <= 0.0)) {
+      deep_employ_sortie(pplayer,
+                         best < tune->sortie_win_floor
+                         ? DES_FLOOR : DES_PRICE, best);
       /* Declined, WITH the prize it declined -- the counter the item
        * owes: a pass that turns down big stacks at 0.84 is a
        * different finding from one that never sees a big stack. */
@@ -2483,8 +2511,10 @@ static void deep_kill_sorties(struct ai_type *ait, struct player *pplayer)
                                             tune->survival_horizon,
                                             blade, NULL))
         < tune->survival_target) {
+      deep_employ_sortie(pplayer, DES_HOME, best);
       continue;
     }
+    deep_employ_sortie(pplayer, DES_GO, best);
     log_base(deep_metric_log_level(),
              "deep-sortie turn=%d player=\"%s\" city=%d kill=\"%s\""
              " victim=\"%s\" p=%.3f prize=%.1f score=%.1f",
@@ -8070,6 +8100,7 @@ void deep_do_last_activities(struct ai_type *ait, struct player *pplayer)
    * anything that was going to re-task a held unit has already had its
    * chance (deepops.c, deep_hold_census). */
   deep_hold_census(ait, pplayer);
+  deep_employ_census(ait, pplayer);
   deep_fort_census(pplayer);
   deep_fort_saturation_census(pplayer);
   deep_worker_class_census(pplayer);

@@ -17792,3 +17792,334 @@ takes `.gz`). `key.txt` in each cell records config/binary/tuning shas.
 Synthesis + ranked next-wave portfolio in `PLAN-wave-2026-08-22.md`:
 Paradox A gets a 16-game resolving test (defaults on holdout), Paradox B
 a pre-committed decision tree keyed to the employment probe's tables.
+## S-EMPLOY: deep forms 19 assaults a game and they book 2 kills in 40 games (2026-08-22)
+
+Brief: `sessions/S-EMPLOY-military-idle.md`. Branch
+`epic/employ-military-idle` (base `ed488f15d5`), 7 commits.
+**Diagnosis only — counters, no behaviour change, no new tunables**
+(`tune-audit.py` still reports 251/251/251/251 CLEAN).
+
+The war-gap decomposition (STATUS 2026-08-22, merge `4f62416b87`)
+ordered the deficit's three legs — capacity −6%, allocation −13%,
+**employment −33%** — and could not say why employment is low, there
+being no counters between "a unit was built" and "a unit killed
+something". This epic builds them and runs the probe that entry
+specified.
+
+### The instruments
+
+Five, four in `ai/deep/deepemploy.c` and one in `server/unittools.c`,
+all log-only and all gated (the deep four on the metric log level, the
+server one on `$FREECIV_KILL_DYAD`, off by default):
+
+- `deep-employ` — disposition census, one line per player-turn, every
+  military unit in exactly one state, sliced by the turn's formation
+  verdict. This is the wait ledger; it is not a separate instrument.
+- `deep-employform` — the formation funnel, cumulative, each refusal
+  charged to a cause at the site that refused it.
+- `deep-employsortie` — the sortie funnel, the other seat where deep
+  decides to attack.
+- `deep-employop` — one line per assault operation resolved, with the
+  kills and losses the operation booked at the walls.
+- `kill-dyad` — one line per unit killed, naming both sides' AI module.
+  Added beyond the brief: the −33% claim compares deep's kills-per-built
+  to classic's without controlling for **victim identity**, and a module
+  that farms weaker neighbours is not a module that fights better.
+
+**Counters observe, never steer: scorelog byte-identity 10/10.**
+tech50war-60, mixed_dc + mixed_cd, seeds 1-5, pv3 tuning, this branch's
+binary (with `FREECIV_KILL_DYAD=1`) against a `git archive` build of the
+base commit `ed488f15d5`. All ten `scorelog.txt` pairs `cmp` clean and
+all ten `maphash.txt` pairs agree.
+
+### The probe
+
+Exactly the run §8 of the war-gap entry asked for: **tech50war-200,
+mixed_dc + mixed_cd, seeds 17-36, 40 games**, ports 7300-7309, jobs 4,
+one pinned binary (`.worktrees/employ/stage/freeciv-server` sha
+`e9de7ed4…`), tuning `benchmark/tuning/pv3.ini` sha `9396e8e3…` — pv3
+because §5's mixed-game kill:loss trajectory was measured under it. All
+20 seeds verified paired by `maphash.txt` across the two seat orderings.
+Reproduce every table below with `benchmark/employ.py` and
+`benchmark/mixseat.py`.
+
+### 0. The probe replicates the target, and moves the crossover 17 turns
+
+Per side, 4 deep vs 4 classic seats in the same game, 40 games:
+
+    turn  deep_k  deep_l   k:l    cls_k  cls_l   k:l
+      40     6.5     4.6  1.418     4.7    7.4  0.632
+      50    13.5    11.8  1.144    15.3   18.8  0.814
+      60    20.9    21.4  0.975    30.7   33.6  0.912
+      65    25.0    27.1  0.922    40.3   43.2  0.934
+      80    38.9    46.2  0.842    71.5   74.6  0.958
+     100    59.5    74.1  0.804   117.9  121.0  0.975
+     200   164.1   248.0  0.661   351.1  328.9  1.067
+
+    T200 per side    deep  classic    diff     sem      t   ratio
+    unitskilled     164.1    351.1  -187.0    20.4  -9.15   0.467
+    unitslost       248.0    328.9   -80.9    12.6  -6.41   0.754
+    unitsbuilt      360.6    419.7   -59.1    21.1  -2.81   0.859
+    munits           80.0     81.8    -1.9     7.2  -0.26   0.977
+    score           797.1    885.9   -88.8    33.9  -2.62   0.900
+
+The 64 retained games gave 0.447 kills and 0.746 losses at T201; these
+40 fresh, held-out seeds give 0.467 and 0.754. **The kill:loss curves
+cross at T62-T63, not T80** — the old estimate came from four sampled
+turns, and deep is behind on the exchange 17 turns earlier than
+believed. kills/built: T60 0.275 vs 0.341, T100 0.401 vs 0.635, T200
+0.455 vs 0.837.
+
+### 1. Disposition census — a third of the army is doing nothing
+
+Mean per deep seat per turn, 160 seat-games. `attidle` is
+attack-rated units that ended the phase with their full move allowance
+(fortified or not); it is the denominator the −33% claim never had.
+
+    turn    mil   att  attidle  muster  march  strike  raid  escort  garrison  moved  fort  idle   ops  wars
+      40   5.86  5.86     0.41    0.46   0.14    0.12  0.26    2.42      1.66   0.34  0.20  0.21  0.41  2.49
+      60   8.05  8.05     0.67    0.50   0.05    0.09  0.32    3.17      2.78   0.40  0.32  0.35  0.22  3.53
+      80  10.29 10.29     1.43    0.42   0.22    0.13  0.39    2.88      4.14   0.57  0.46  0.97  0.22  4.53
+     100  12.53 12.53     2.26    0.59   0.51    0.00  0.37    2.27      5.62   0.83  0.49  1.77  0.23  4.77
+     200  19.81 19.81     6.50    1.31   1.09    0.13  0.25    1.82      7.47   1.15  0.53  5.97  0.36  4.39
+
+Every military unit deep owns is attack-rated (`mil == att` at every
+turn), so this is not a defender-only army by type. It is a defender-only
+army by **assignment**: at T200, 7.47 units are garrisons, 6.50 are idle,
+1.82 are escorting civilians, and **2.53 are in an operation of any
+kind**. The idle share rises monotonically — 7% of the army at T40, 33%
+at T200 — and `idlecity` says half of it (3.06 of 6.50) is standing
+inside a city with nothing to do.
+
+### 2. Attack-opportunity funnel — the odds model returns zero
+
+Per deep seat-game, n=160 (cumulative over 200 turns):
+
+    formation attempts        199.1   sem 0.35
+      reached pricing         172.7   sem 1.53
+        odds exactly 0        117.9   sem 3.27   (68.3% of priced)
+        odds short of bar      49.7   sem 2.86   (28.8%)
+        odds cleared bar        5.0   sem 0.52   ( 2.9%)
+      free blades priced      385.0            = 2.23 per attempt
+      draft fired              31.8   sem 2.67
+      blades drafted           42.5   sem 4.35
+    mean best-prefix odds     0.036   against a bar of 0.649
+
+    verdict, ranked          count   share
+      musteroff              104.0   52.2%   odds refused, muster off
+      poolempty               63.7   32.0%   target and staging, no blade
+      notarget                20.7   10.4%   nothing met and unclaimed
+      nohome                   5.7    2.9%
+      formed                   5.0    2.5%
+      noslot                   0.9    0.5%
+
+**deep asks 199 times a game whether to attack and says yes five
+times.** The refusal is not scarcity of targets — only 10.4% of attempts
+fail to find one — and it is not the op quota, which binds on 0.5% of
+attempts. It is the price: the best prefix of the assembled pool reaches
+a mean take-probability of **0.036 against a 0.649 bar**, and 68% of the
+time it reaches *exactly zero*. The pool is 2.23 free blades per attempt
+against a garrison the model says needs 8-15.
+
+The garrison draft fires on 18% of pricing attempts and adds 0.25 blades
+per attempt, which does not change the answer.
+
+`op_muster` is 0 in pv3, so every odds refusal terminates as `musteroff`
+rather than being admitted to a muster. That is the shipped configuration
+and it is the one the deficit was measured in; the ERA 3b muster
+mechanism exists but is not on in the arm that loses.
+
+### 3. Op lifecycle — 748 operations, 50 reach the walls, 2 kills
+
+All 748 assault operations of the 40 games:
+
+    operations per game            18.70
+    launched (reached MARCH)          313   41.8%
+    reached the walls (STRIKE)         50    6.7%
+    members at formation             5.61
+    members at dissolve              1.59
+    turns gathering                  6.57
+    turns from march to end          8.07
+    dissolved with zero members       378   50.5%
+    KILLS booked by the op layer        2   over 40 games
+    LOSSES booked by the op layer       1   over 40 games
+
+    end cause      all    unlaunched   launched
+      abort        407       357          50
+      abort-odds   194         7         187
+      abort-wait    70        68           2
+      abort-strike  32         1          31
+      abort-march   27         2          25
+      held          18         0          18
+
+Read down the two columns and the machinery's whole failure is there.
+
+**Of the 435 waves that never march, 336 (77.2%) dissolve with zero
+members left.** The validation pass drops a member only when it is dead,
+no longer ours, or released to another claimant, so these waves were not
+refused by a gate — they *evaporated* during the mean 5.9 turns their
+members spent walking to the staging city.
+
+**Of the 313 that do march, 187 (59.7%) turn back on `abort-odds`** —
+the target reinforced faster than the wave closed, and the re-gate banked
+it. Only 50 operations in 40 games ever stand at the walls, 18 of them
+take the city, and the op-controlled battle books **two kills and one
+loss in the entire probe**. Whatever produces deep's 164 kills a game, it
+is not the operations layer.
+
+### 4. Wait ledger — the veto holds 4.4 idle attackers every turn
+
+32 000 deep seat-turns, bucketed by the formation verdict of that turn.
+`attidle/t` is idle attack-rated units per seat-turn.
+
+    gate that held the army        turns   share  attidle/t  mil/turn
+      target priced but vetoed     16633   52.0%       4.37     16.29
+      target priced, no force      10190   31.8%       1.09      7.50
+      no target worth hitting       4220   13.2%       0.07      1.15
+      a wave formed                  806    2.5%       2.04     17.98
+      all op slots occupied          151    0.5%       5.01     27.34
+
+and the same ledger by window, because the binding gate changes:
+
+    T0-T60      turns   share  attidle/t      T61-T100    turns  share  attidle/t
+      notarget   3665   38.2%      0.07         vetoed     3462  54.1%      2.14
+      no force   3399   35.4%      0.16         no force   2712  42.4%      0.37
+      vetoed     2224   23.2%      0.70         formed      139   2.2%      1.43
+
+    T101-T200   turns   share  attidle/t
+      vetoed    10947   68.4%      5.82
+      no force   4079   25.5%      2.35
+      formed      375   2.3%       3.66
+
+The brief's three hypotheses, separated: **"no target worth hitting" is
+13.2% of seat-turns and holds 0.07 idle attackers**; it is real only in
+the opening (38.2% of T0-T60 turns, when deep has met nobody) and is
+gone by T61. **"Target priced but vetoed" is 52.0% overall and 68.4%
+after T100, holding 4.37 and 5.82 idle attackers per turn.** **"Waiting
+for a wave that never fills" cannot be measured in this arm at all** —
+`op_muster` is off in pv3, so no muster ever opens, and the 806
+wave-formed turns hold 2.04 idle attackers each.
+
+### 5. Kill dyads — classic is not farming its own kind
+
+Kills per game by (killer module, victim module), 40 games:
+
+    killer -> victim       T40     T60     T80    T100    T200
+      classic -> deep     2.73   15.47   34.38   55.83  176.20
+      classic -> classic  2.60   16.18   36.98   61.00  165.40
+      deep -> classic     5.15   15.40   28.80   43.52  110.05
+      deep -> deep        1.95    5.65    9.85   15.00   47.70
+      none -> classic     0.07    0.20    0.68    0.93    2.23
+      none -> deep        0.05    0.12    0.47    0.68    1.98
+
+    kill:loss from the dyad table
+      module      T40     T60     T80    T100    T200
+      classic   0.681   0.996   1.074   1.108   1.230
+      deep      1.503   0.991   0.865   0.819   0.698
+
+    killer     vs same   vs other   same share
+      classic   165.40     176.20        48.4%
+      deep       47.70     110.05        30.2%
+
+**The confound is checked and it does not explain the gap.** Classic
+kills deep *more* than it kills classic (176.2 vs 165.4); its advantage
+is not harvested from its own kind. Deep is the preferred victim of both
+modules: 176.2 + 47.7 = 223.9 deep units die to somebody each game
+against classic's 275.5, on a smaller army. The dyad kill:loss
+reproduces the scorelog one to within 0.04 at every turn, which is the
+consistency check the new counter had to pass.
+
+### 6. The sortie pass is inert, and a stale flag is why
+
+Per deep seat-game, n=160:
+
+    city-passes              1008.4
+      noblade                 899.0   89.2%
+      novictim                105.6   10.5%
+      floor                     2.0    0.2%
+      home                      1.1    0.1%
+      go                        0.7    0.1%
+    blade rejections (units, not passes)
+      moves                     0.1
+      done                   1539.8
+      claim                     5.1
+
+Deep runs a thousand sortie evaluations per seat-game and fires **0.7
+sorties**. Not one refusal in the probe came from an odds gate worth
+speaking of (2.0 `floor`, 1.1 `home`); 89% of passes had no candidate
+blade, and **99.7% of blade rejections were the `done` flag** —
+1539.8 per seat-game against 0.1 for moves and 5.1 for op claims.
+
+`deep_kill_sorties()` runs inside `deep_do_first_activities()`, which is
+**before** `deep_manage_units()` refreshes `unit_ai.done`. What the pass
+reads is last turn's flag. Four other passes sit on the same side of that
+line (`deep_cover_sorties`, `deep_hold_tired_attackers`,
+`deep_pillage_sorties`, `deep_fortify_ground`). This is the same shape as
+mechanism-map D-A, which fixed the *reset* half of the done-flag problem;
+the *read-before-refresh* half is still here. **Recorded, not fixed** —
+this epic is diagnosis only, and the fix wants its own A/B.
+
+### The dominant employment leak, with numbers
+
+**Deep's army is idle because deep's odds model prices every assault at
+zero, and the operations that survive the price evaporate before they
+fight.** In one line of arithmetic per seat-game: 199 formation
+attempts → 173 priced → 5 form → and across the whole probe, 748
+operations → 313 marches → 50 arrivals at a wall → 2 kills.
+
+Ranked, every rank citing a number:
+
+1. **The odds gate, 52% of seat-turns and 4.4 idle attackers each.**
+   Mean best-prefix take-probability 0.036 against a 0.649 bar, exactly
+   zero on 68% of priced attempts, cleared on 2.9%. Not a target-supply
+   problem (10.4% notarget) and not a quota problem (0.5% noslot).
+2. **Pool starvation upstream of the gate.** 2.23 free blades per
+   pricing attempt; 32.0% of attempts have a target, a staging city and
+   *no blade at all*. The garrison draft adds 0.25 blades per attempt.
+   The model is not obviously wrong to refuse 2.23 blades against a
+   Gunpowder-era garrison — which makes this the leg to attack, not the
+   threshold.
+3. **Member attrition during the muster walk.** 77.2% of the 435
+   unlaunched waves dissolve with zero members left after a mean 5.9
+   turns of walking. Members are lost to death or to another claimant;
+   which of the two dominates is the next counter to build, and it is
+   one field on an existing line.
+4. **The march re-gate turning waves around.** 59.7% of launched
+   operations abort on `abort-odds` before contact.
+5. **The sortie pass reading a stale done flag.** 1539.8 of 1545.0
+   blade rejections per seat-game. Cheap to test, unknown magnitude,
+   and the only item here that is a plain defect rather than a design
+   consequence.
+
+What this **rejects**: "deep has nothing to attack" (13.2% of
+seat-turns, 0.07 idle attackers, and gone after T60); "classic's kill
+lead is farmed from other classic seats" (classic kills deep more than
+classic); "deep's army is the wrong type" (`mil == att` at every turn —
+every unit it owns can attack).
+
+### Surprises worth carrying
+
+- **The op layer books 2 kills in 40 games.** It was built to
+  concentrate force, and the census says 2.53 units per seat are in one
+  at T200. Deep's 164 kills a game are produced almost entirely by
+  stock's per-unit attack path operating on units the op layer left
+  free, and by defending. Any change to the operations machinery is
+  therefore changing a subsystem that currently produces ~1% of the
+  fighting.
+- **The kill:loss crossover is T62-T63, not T80.** Sampling four turns
+  put it 17 turns late, and T63 is inside the window where the score
+  curve turns (T64), not after it.
+- **Deep is ahead on the exchange for the first 60 turns** (k:l 1.42 at
+  T40 against classic's 0.63) and gives it back between T60 and T100.
+  The employment problem is not present at the start of the game; it
+  arrives with the era in which one defender needs eight attackers.
+- **`op_muster` is 0 in the arm that loses.** ERA 3b built the muster
+  precisely for the "odds refused 98% of the time" world these counters
+  now measure directly, and pv3 does not turn it on. Whether it should
+  be is an A/B this epic did not run.
+
+Retention: 40 filtered game logs, scorelogs, maphashes and provenance
+under `benchmark/results/employ-probe/` (52 MB; game.log reduced to the
+ledger lines and savegames dropped, W12g pattern). Every table above
+re-derives from that directory with `benchmark/employ.py` and
+`benchmark/mixseat.py`.

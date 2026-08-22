@@ -1944,6 +1944,56 @@ static void unit_lost_with_transport(const struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Log one killer/victim pair, by AI MODULE on both sides.
+
+  Diagnosis only, off unless $FREECIV_KILL_DYAD is set, and it changes
+  nothing: it is one log line beside the two score counters that the
+  same switch arm already increments, on exactly the reasons that count
+  as a kill.
+
+  Why it exists. The war-gap decomposition compared deep's kills-per-
+  unit-built (0.541) against ai/default's (0.669) in mixed games and
+  read the gap as deep declining fights. That comparison does not
+  control for VICTIM IDENTITY: in a four-deep, four-classic game,
+  classic's kills may be harvested mostly from other classic seats, and
+  a module that farms weaker neighbours is not the same finding as a
+  module that fights better. Only a per-dyad count can tell them apart,
+  and the score counters are per-player totals with no attribution in
+  them at all.
+
+  Booked at the loss, not at the attack, so it counts every way a unit
+  dies to somebody -- an assault, a defence, a bribe, a lost transport.
+  Barbarians and dead-player kills come through with `killer` NULL and
+  are reported as "none", which keeps the dyad table's rows summing to
+  the score counters.
+**************************************************************************/
+static void kill_dyad_log(const struct player *killer,
+                          const struct player *victim,
+                          const struct unit_type *vtype)
+{
+  static int enabled = -1;
+
+  if (enabled < 0) {
+    const char *e = getenv("FREECIV_KILL_DYAD");
+
+    enabled = (e != nullptr && e[0] != '\0') ? 1 : 0;
+  }
+  if (enabled == 0) {
+    return;
+  }
+
+  log_normal("kill-dyad turn=%d killer=\"%s\" killerai=\"%s\""
+             " victim=\"%s\" victimai=\"%s\" utype=\"%s\"",
+             game.info.turn,
+             killer != nullptr ? player_name(killer) : "none",
+             killer != nullptr && killer->ai != nullptr
+               ? killer->ai->name : "none",
+             player_name(victim),
+             victim->ai != nullptr ? victim->ai->name : "none",
+             utype_rule_name(vtype));
+}
+
+/**********************************************************************//**
   Remove the unit, and passengers if it is a carrying any. Remove the
   _minimum_ number, eg there could be another boat on the square.
 **************************************************************************/
@@ -2043,6 +2093,7 @@ static void wipe_unit_full(struct unit *punit, bool transported,
       killer->score.units_killed++;
     }
     pplayer->score.units_lost++;
+    kill_dyad_log(killer, pplayer, putype_save);
     break;
   case ULR_BARB_UNLEASH:
   case ULR_CITY_LOST:

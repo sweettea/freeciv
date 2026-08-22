@@ -58,6 +58,7 @@
 #include "deepcombat.h"
 #include "deepdefence.h"
 #include "deepdiplomacy.h"
+#include "deepemploy.h"
 #include "deepstance.h"
 #include "deeptuning.h"
 
@@ -3103,6 +3104,7 @@ static void deep_brief_allies(const struct player *pplayer,
 static void deep_op_dissolve(struct deep_operation *op, int oi,
                              const char *why, struct player *pplayer)
 {
+  deep_employ_op_end(pplayer, oi, why, op->n_members);
   log_base(deep_metric_log_level(),
            "deep-op turn=%d player=\"%s\" op=%d %s target=%d members=%d",
            game.info.turn, player_name(pplayer), oi, why, op->target_city,
@@ -3617,6 +3619,8 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
    * from the scoring loop's own returns -- never a second call. */
   double best_odds = 0.0;
 
+  deep_employ_form_attempt(pplayer);
+
   /* The anchor everything below is measured from: targets are scored
    * worth/(1 + distance) from here, the members' continent is this
    * city's, and "overseas" means not this city's landmass.
@@ -3649,6 +3653,7 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
     } city_list_iterate_end;
   }
   if (home_city == NULL) {
+    deep_employ_form_verdict(pplayer, DEV_NOHOME);
     return FALSE;
   }
 
@@ -3701,6 +3706,7 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
     }
   }
   if (target == NULL) {
+    deep_employ_form_verdict(pplayer, DEV_NOTARGET);
     return FALSE;
   }
 
@@ -3748,6 +3754,7 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
     } city_list_iterate_end;
   }
   if (staging == NULL) {
+    deep_employ_form_verdict(pplayer, DEV_NOSTAGING);
     return FALSE;
   }
 
@@ -3936,6 +3943,11 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
       }
     }
   }
+  /* Everything the odds loop saw, banked before the branch splits:
+   * the best prefix odds, the bar it was compared against, the free
+   * pool and what the draft added. One call per attempt that reached
+   * pricing at all. */
+  deep_employ_form_priced(pplayer, best_odds, bar, n - drafted, drafted);
   if (required < 1) {
     /* THE MUSTER (ERA 3b). No prefix of the pool clears the bar --
      * and on this venue that is the answer 98.2% of the time, with
@@ -3963,6 +3975,11 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
     if (tune->op_muster <= 0 || tune->op_launch_odds <= 0 || n < 1
         || !deep_muster_worth(ait, pplayer, target, pool, n, eta, bar,
                               &eff)) {
+      deep_employ_form_verdict(pplayer,
+                               n < 1 ? DEV_POOLEMPTY
+                               : (tune->op_muster <= 0
+                                  || tune->op_launch_odds <= 0)
+                                 ? DEV_MUSTEROFF : DEV_WORTH);
       deep_opodds_log(pplayer, oi, target, "refused", best_odds, bar,
                       0, n, drafted, eta, overseas, NULL, NULL);
       return FALSE;
@@ -4023,6 +4040,8 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
   deep_opodds_log(pplayer, oi, target, muster ? "muster" : "formed",
                   best_odds, bar, required, n, drafted, eta, overseas,
                   op, NULL);
+  deep_employ_form_verdict(pplayer, muster ? DEV_MUSTER : DEV_FORMED);
+  deep_employ_op_formed(pplayer, oi, muster, op->n_members, target->id);
 
   return TRUE;
 }
@@ -4699,9 +4718,25 @@ static void deep_op_drive_strike(struct ai_type *ait,
     }
     {
       int att_id = att->id;
+      int enemy0 = 0, enemy1 = 0;
 
+      /* What the ordered attack cost and bought, read off the target
+       * tile either side of it: the drop in units that are not ours is
+       * exact for a duel, and correctly zero for a walk-in. */
+      unit_list_iterate(ctile->units, tu) {
+        if (unit_owner(tu) != pplayer) {
+          enemy0++;
+        }
+      } unit_list_iterate_end;
       (void) dai_unit_attack(ait, att, ctile);
       att = game_unit_by_number(att_id);
+      unit_list_iterate(ctile->units, tu) {
+        if (unit_owner(tu) != pplayer) {
+          enemy1++;
+        }
+      } unit_list_iterate_end;
+      deep_employ_op_strike(pplayer, oi, MAX(0, enemy0 - enemy1),
+                            att == NULL ? 1 : 0);
       if (att != NULL) {
         def_ai_unit_data(att, ait)->done = TRUE;
       }
@@ -5083,6 +5118,7 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
       op->state = DEEP_OP_MARCH;
       op->march_turn = game.info.turn;
       op->march_eta = MAX(deep_op_eta(pplayer, op, target), 1);
+      deep_employ_op_launch(pplayer, oi, present);
       if (op->muster) {
         /* The muster became an operation at the instant it launched
          * (ERA 3b): counted into BOTH censuses here, never into
@@ -5444,6 +5480,13 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
         (void) deep_op_form_raid(ait, pplayer, &dp->ops[oi], oi);
       }
       break;
+    }
+    if (!tried_assault) {
+      /* The loop above never reached a free army slot, so formation
+       * was not refused this turn -- it was never asked. An army whose
+       * four slots are all occupied is a different finding from one
+       * that looked and found nothing. */
+      deep_employ_form_verdict(pplayer, DEV_NOSLOT);
     }
   }
 
