@@ -15,6 +15,8 @@
 #include <fc_config.h>
 #endif
 
+#include <string.h>
+
 /* utility */
 #include "log.h"
 #include "mem.h"
@@ -70,6 +72,21 @@ struct deep_employ_plr {
   int sortie[DES_SORTIE_COUNT];
   double sortie_chance[DES_SORTIE_COUNT];
   int blade[DEB_BLADE_COUNT];
+
+  /* One record per op slot, opened at formation and closed at dissolve.
+   * A slot reused by a raid or a lift never opens a record, and a
+   * record is closed exactly once -- `live` is what guarantees both. */
+  struct {
+    bool live;
+    bool muster;
+    int target;
+    int formed_turn;
+    int launch_turn;          /* 0 if it never marched. */
+    int members0;             /* Members at formation. */
+    int peak;                 /* High-water member count seen. */
+    int kills;
+    int losses;
+  } op[DEEP_OPS_MAX];
 };
 
 static struct deep_employ_plr *deep_employ_plr_tbl[MAX_NUM_PLAYER_SLOTS];
@@ -202,6 +219,90 @@ void deep_employ_sortie_blade(const struct player *pplayer,
   if (ep != NULL && why >= 0 && why < DEB_BLADE_COUNT) {
     ep->blade[why]++;
   }
+}
+
+/**********************************************************************//**
+  An assault operation opened in slot `oi`.
+**************************************************************************/
+void deep_employ_op_formed(const struct player *pplayer, int oi,
+                           bool muster, int members, int target)
+{
+  struct deep_employ_plr *ep = deep_employ_get(pplayer, TRUE);
+
+  if (ep == NULL || oi < 0 || oi >= DEEP_OPS_MAX) {
+    return;
+  }
+  memset(&ep->op[oi], 0, sizeof(ep->op[oi]));
+  ep->op[oi].live = TRUE;
+  ep->op[oi].muster = muster;
+  ep->op[oi].target = target;
+  ep->op[oi].formed_turn = game.info.turn;
+  ep->op[oi].members0 = members;
+  ep->op[oi].peak = members;
+}
+
+/**********************************************************************//**
+  It marched. `present` is the force that actually stood at the staging
+  city when the launch gate opened -- the number the odds were taken
+  against, not the roster.
+**************************************************************************/
+void deep_employ_op_launch(const struct player *pplayer, int oi,
+                           int present)
+{
+  struct deep_employ_plr *ep = deep_employ_get(pplayer, FALSE);
+
+  if (ep == NULL || oi < 0 || oi >= DEEP_OPS_MAX || !ep->op[oi].live) {
+    return;
+  }
+  ep->op[oi].launch_turn = game.info.turn;
+  if (present > ep->op[oi].peak) {
+    ep->op[oi].peak = present;
+  }
+}
+
+/**********************************************************************//**
+  One ordered attack at the walls resolved.
+**************************************************************************/
+void deep_employ_op_strike(const struct player *pplayer, int oi,
+                           int kills, int losses)
+{
+  struct deep_employ_plr *ep = deep_employ_get(pplayer, FALSE);
+
+  if (ep == NULL || oi < 0 || oi >= DEEP_OPS_MAX || !ep->op[oi].live) {
+    return;
+  }
+  ep->op[oi].kills += kills;
+  ep->op[oi].losses += losses;
+}
+
+/**********************************************************************//**
+  The slot is being dissolved: print the operation's whole life.
+  `waited` is the turns it spent gathering before it marched (or, for
+  one that never marched, its whole life), and `held` the turns it spent
+  from the march to the end.
+**************************************************************************/
+void deep_employ_op_end(const struct player *pplayer, int oi,
+                        const char *why, int members)
+{
+  struct deep_employ_plr *ep = deep_employ_get(pplayer, FALSE);
+
+  if (ep == NULL || oi < 0 || oi >= DEEP_OPS_MAX || !ep->op[oi].live) {
+    return;
+  }
+  ep->op[oi].live = FALSE;
+  log_base(deep_metric_log_level(),
+           "deep-employop turn=%d player=\"%s\" op=%d target=%d"
+           " muster=%d formed=%d launched=%d waited=%d held=%d"
+           " members0=%d peak=%d final=%d kills=%d losses=%d why=%s",
+           game.info.turn, player_name(pplayer), oi, ep->op[oi].target,
+           ep->op[oi].muster ? 1 : 0, ep->op[oi].formed_turn,
+           ep->op[oi].launch_turn,
+           (ep->op[oi].launch_turn > 0 ? ep->op[oi].launch_turn
+            : game.info.turn) - ep->op[oi].formed_turn,
+           ep->op[oi].launch_turn > 0
+             ? game.info.turn - ep->op[oi].launch_turn : 0,
+           ep->op[oi].members0, ep->op[oi].peak, members,
+           ep->op[oi].kills, ep->op[oi].losses, why);
 }
 
 /**********************************************************************//**

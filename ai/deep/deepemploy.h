@@ -135,4 +135,28 @@ enum deep_employ_blade {
 void deep_employ_sortie_blade(const struct player *pplayer,
                               enum deep_employ_blade why);
 
+/* THE OP LIFECYCLE (deep-employop): one line per assault operation
+ * resolved, from formation to dissolve.
+ *
+ * The funnel above says how often deep decides to march. This says what
+ * happened afterwards -- how long the wave stood at its staging city,
+ * whether it ever launched, what ended it, and the kills and losses the
+ * operation itself booked at the walls. Without it the aborts are a
+ * single deep-op line with a reason string and no cost beside it, so
+ * "the machinery forms waves that dissolve" and "the machinery forms
+ * waves that fight and lose" are indistinguishable.
+ *
+ * Kills are counted as the drop in enemy units on the target tile
+ * across one ordered attack, which is exact for a duel and correctly
+ * zero for a walk-in; losses are the attacker not surviving its own
+ * strike. Both are read from state the strike loop already has. */
+void deep_employ_op_formed(const struct player *pplayer, int oi,
+                           bool muster, int members, int target);
+void deep_employ_op_launch(const struct player *pplayer, int oi,
+                           int present);
+void deep_employ_op_strike(const struct player *pplayer, int oi,
+                           int kills, int losses);
+void deep_employ_op_end(const struct player *pplayer, int oi,
+                        const char *why, int members);
+
 #endif /* FC__DEEPEMPLOY_H */
