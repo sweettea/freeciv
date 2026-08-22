@@ -58,6 +58,7 @@
 #include "deepcombat.h"
 #include "deepdefence.h"
 #include "deepdiplomacy.h"
+#include "deepemploy.h"
 #include "deepstance.h"
 #include "deeptuning.h"
 
@@ -3617,6 +3618,8 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
    * from the scoring loop's own returns -- never a second call. */
   double best_odds = 0.0;
 
+  deep_employ_form_attempt(pplayer);
+
   /* The anchor everything below is measured from: targets are scored
    * worth/(1 + distance) from here, the members' continent is this
    * city's, and "overseas" means not this city's landmass.
@@ -3649,6 +3652,7 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
     } city_list_iterate_end;
   }
   if (home_city == NULL) {
+    deep_employ_form_verdict(pplayer, DEV_NOHOME);
     return FALSE;
   }
 
@@ -3701,6 +3705,7 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
     }
   }
   if (target == NULL) {
+    deep_employ_form_verdict(pplayer, DEV_NOTARGET);
     return FALSE;
   }
 
@@ -3748,6 +3753,7 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
     } city_list_iterate_end;
   }
   if (staging == NULL) {
+    deep_employ_form_verdict(pplayer, DEV_NOSTAGING);
     return FALSE;
   }
 
@@ -3936,6 +3942,11 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
       }
     }
   }
+  /* Everything the odds loop saw, banked before the branch splits:
+   * the best prefix odds, the bar it was compared against, the free
+   * pool and what the draft added. One call per attempt that reached
+   * pricing at all. */
+  deep_employ_form_priced(pplayer, best_odds, bar, n - drafted, drafted);
   if (required < 1) {
     /* THE MUSTER (ERA 3b). No prefix of the pool clears the bar --
      * and on this venue that is the answer 98.2% of the time, with
@@ -3963,6 +3974,11 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
     if (tune->op_muster <= 0 || tune->op_launch_odds <= 0 || n < 1
         || !deep_muster_worth(ait, pplayer, target, pool, n, eta, bar,
                               &eff)) {
+      deep_employ_form_verdict(pplayer,
+                               n < 1 ? DEV_POOLEMPTY
+                               : (tune->op_muster <= 0
+                                  || tune->op_launch_odds <= 0)
+                                 ? DEV_MUSTEROFF : DEV_WORTH);
       deep_opodds_log(pplayer, oi, target, "refused", best_odds, bar,
                       0, n, drafted, eta, overseas, NULL, NULL);
       return FALSE;
@@ -4023,6 +4039,7 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
   deep_opodds_log(pplayer, oi, target, muster ? "muster" : "formed",
                   best_odds, bar, required, n, drafted, eta, overseas,
                   op, NULL);
+  deep_employ_form_verdict(pplayer, muster ? DEV_MUSTER : DEV_FORMED);
 
   return TRUE;
 }
@@ -5444,6 +5461,13 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
         (void) deep_op_form_raid(ait, pplayer, &dp->ops[oi], oi);
       }
       break;
+    }
+    if (!tried_assault) {
+      /* The loop above never reached a free army slot, so formation
+       * was not refused this turn -- it was never asked. An army whose
+       * four slots are all occupied is a different finding from one
+       * that looked and found nothing. */
+      deep_employ_form_verdict(pplayer, DEV_NOSLOT);
     }
   }
 

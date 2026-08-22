@@ -17,6 +17,8 @@
 
 /* utility */
 #include "log.h"
+#include "mem.h"
+#include "support.h"
 
 /* common */
 #include "city.h"
@@ -41,6 +43,155 @@
 #include "deeptuning.h"
 
 #include "deepemploy.h"
+
+/* The formation funnel, cumulative over the game, plus the one field
+ * that is not cumulative: this turn's verdict, which the disposition
+ * census reads and the wait ledger slices by. `verdict_turn` is what
+ * makes that field turn-scoped without a reset pass -- a stale value
+ * from an earlier turn reads as DEV_NOWAR, which is exactly what "no
+ * formation attempt happened this turn" means. */
+struct deep_employ_plr {
+  int attempts;
+  int verdict[DEV_VERDICT_COUNT];
+  int priced;                   /* Attempts that reached the odds loop. */
+  int odds_zero;                /* Of those, ones that priced at 0.000. */
+  int odds_short;               /* Priced above zero, below the bar. */
+  int odds_clear;               /* Cleared the bar -- a real quorum. */
+  int pool_sum;                 /* Free blades summed over `priced`. */
+  int draft_fired;              /* Attempts where the garrison draft gave. */
+  int drafted;                  /* Blades it gave, summed. */
+  double odds_sum;
+  double bar_sum;
+
+  enum deep_employ_verdict verdict_now;
+  int verdict_turn;
+};
+
+static struct deep_employ_plr *deep_employ_plr_tbl[MAX_NUM_PLAYER_SLOTS];
+
+static const char *const deep_employ_verdict_name[DEV_VERDICT_COUNT] = {
+  "nowar", "noslot", "nohome", "notarget", "nostaging", "poolempty",
+  "musteroff", "worth", "muster", "formed"
+};
+
+/**********************************************************************//**
+  This player's ledger, created on demand. NULL when the metric lines
+  are not being written: the whole ledger is instrumentation, so when
+  nothing will read it, nothing is kept and nothing is spent. Same
+  contract as deep_funnel_get().
+**************************************************************************/
+static struct deep_employ_plr *deep_employ_get(const struct player *pplayer,
+                                               bool create)
+{
+  int pn = player_number(pplayer);
+  struct deep_employ_plr *ep;
+
+  if (pn < 0 || pn >= MAX_NUM_PLAYER_SLOTS) {
+    return NULL;
+  }
+  ep = deep_employ_plr_tbl[pn];
+  if (ep != NULL || !create
+      || !log_do_output_for_level(deep_metric_log_level())) {
+    return ep;
+  }
+  ep = fc_calloc(1, sizeof(*ep));
+  deep_employ_plr_tbl[pn] = ep;
+
+  return ep;
+}
+
+/**********************************************************************//**
+  One formation attempt begins.
+**************************************************************************/
+void deep_employ_form_attempt(const struct player *pplayer)
+{
+  struct deep_employ_plr *ep = deep_employ_get(pplayer, TRUE);
+
+  if (ep != NULL) {
+    ep->attempts++;
+  }
+}
+
+/**********************************************************************//**
+  What the odds loop saw: the best take-probability any prefix of the
+  pool reached, the bar it was compared against, the pool it had and
+  what the garrison draft added to it. Called once per attempt that got
+  as far as pricing -- after the draft, so `pool` is the free pool and
+  `drafted` the blades borrowed from the walls on top of it.
+**************************************************************************/
+void deep_employ_form_priced(const struct player *pplayer, double odds,
+                             double bar, int pool, int drafted)
+{
+  struct deep_employ_plr *ep = deep_employ_get(pplayer, TRUE);
+
+  if (ep == NULL) {
+    return;
+  }
+  ep->priced++;
+  ep->odds_sum += odds;
+  ep->bar_sum += bar;
+  ep->pool_sum += pool;
+  if (odds >= bar) {
+    ep->odds_clear++;
+  } else if (odds > 0.0) {
+    ep->odds_short++;
+  } else {
+    ep->odds_zero++;
+  }
+  if (drafted > 0) {
+    ep->draft_fired++;
+    ep->drafted += drafted;
+  }
+}
+
+/**********************************************************************//**
+  The attempt ends here, with this verdict.
+**************************************************************************/
+void deep_employ_form_verdict(const struct player *pplayer,
+                              enum deep_employ_verdict verdict)
+{
+  struct deep_employ_plr *ep = deep_employ_get(pplayer, TRUE);
+
+  if (ep == NULL || verdict < 0 || verdict >= DEV_VERDICT_COUNT) {
+    return;
+  }
+  ep->verdict[verdict]++;
+  ep->verdict_now = verdict;
+  ep->verdict_turn = game.info.turn;
+}
+
+/**********************************************************************//**
+  The cumulative funnel line, printed beside the census. Cumulative for
+  the same reason deepfunnel's is: "what became of a formation attempt"
+  cannot be answered by pooling per-turn medians, and the LAST such line
+  of a game is that game's funnel.
+**************************************************************************/
+static void deep_employ_form_census(struct player *pplayer)
+{
+  struct deep_employ_plr *ep = deep_employ_get(pplayer, FALSE);
+  char verdicts[DEV_VERDICT_COUNT * 24];
+  int i, at = 0;
+
+  if (ep == NULL || ep->attempts <= 0) {
+    return;
+  }
+  for (i = 0; i < DEV_VERDICT_COUNT; i++) {
+    at += fc_snprintf(verdicts + at, sizeof(verdicts) - at, "%s%s=%d",
+                      i == 0 ? "" : ",", deep_employ_verdict_name[i],
+                      ep->verdict[i]);
+  }
+
+  log_base(deep_metric_log_level(),
+           "deep-employform turn=%d player=\"%s\" attempts=%d priced=%d"
+           " oddszero=%d oddsshort=%d oddsclear=%d pool=%d draftfired=%d"
+           " drafted=%d moddsx1000=%d mbarx1000=%d %s",
+           game.info.turn, player_name(pplayer), ep->attempts, ep->priced,
+           ep->odds_zero, ep->odds_short, ep->odds_clear, ep->pool_sum,
+           ep->draft_fired, ep->drafted,
+           ep->priced > 0 ? (int) (1000.0 * ep->odds_sum / ep->priced) : 0,
+           ep->priced > 0 ? (int) (1000.0 * ep->bar_sum / ep->priced) : 0,
+           verdicts);
+}
 
 /**********************************************************************//**
   The disposition census: every military unit of this player in exactly
@@ -81,6 +232,10 @@ void deep_employ_census(struct ai_type *ait, struct player *pplayer)
   int escort = 0, ward = 0, garrison = 0, attack = 0, hunt = 0, tasked = 0;
   int moved = 0, fort = 0, idle = 0;
   int incity = 0, wars = 0, ops = 0, musters = 0;
+  const struct deep_employ_plr *ep = deep_employ_get(pplayer, FALSE);
+  enum deep_employ_verdict verdict
+    = (ep != NULL && ep->verdict_turn == game.info.turn)
+      ? ep->verdict_now : DEV_NOWAR;
 
   if (!log_do_output_for_level(deep_metric_log_level())) {
     return;
@@ -185,8 +340,11 @@ void deep_employ_census(struct ai_type *ait, struct player *pplayer)
            "deep-employ turn=%d player=\"%s\" mil=%d att=%d attidle=%d"
            " muster=%d march=%d strike=%d raid=%d lift=%d escort=%d"
            " ward=%d garrison=%d attack=%d hunt=%d tasked=%d moved=%d fort=%d"
-           " idle=%d idlecity=%d ops=%d musters=%d wars=%d",
+           " idle=%d idlecity=%d ops=%d musters=%d wars=%d why=%s",
            game.info.turn, player_name(pplayer), mil, att, attidle,
            muster, march, strike, raid, lift, escort, ward, garrison, attack,
-           hunt, tasked, moved, fort, idle, incity, ops, musters, wars);
+           hunt, tasked, moved, fort, idle, incity, ops, musters, wars,
+           deep_employ_verdict_name[verdict]);
+
+  deep_employ_form_census(pplayer);
 }

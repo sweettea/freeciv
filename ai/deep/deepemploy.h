@@ -47,8 +47,54 @@
 
 struct ai_type;
 
-/* One line per player-turn: the disposition census. Called from
- * deep_do_last_activities(). */
+/* THE FORMATION FUNNEL (deep-employform) is the second, and it answers
+ * the question the disposition census can only pose: an army standing
+ * still is either an army with nothing to hit or an army refusing what
+ * it can see, and those call for opposite fixes.
+ *
+ * One ATTEMPT is one call of deep_op_form(), and it ends in exactly one
+ * VERDICT charged at the site that decided it. The odds facts beside
+ * the verdict (zero / short of the bar / clear) are attributes of the
+ * attempts that reached pricing, not verdicts of their own: with the
+ * muster available, an attempt whose odds fall short is refused by the
+ * WORTH gate or admitted as a muster, and it is that terminal branch
+ * the ledger has to name.
+ *
+ * The verdict is also what the WAIT LEDGER slices the idle army by, so
+ * the disposition census carries this turn's value: "no target worth
+ * hitting" (NOTARGET/NOSTAGING), "target priced but vetoed" (WORTH,
+ * MUSTEROFF, POOLEMPTY) and "waiting for a wave that never fills"
+ * (MUSTER, with the census's own `musters` count beside it) are three
+ * values of one field rather than three instruments. */
+enum deep_employ_verdict {
+  DEV_NOWAR = 0,   /* No attempt at all this turn: op_take_target off,
+                    * or deep_run_operations() never reached formation. */
+  DEV_NOSLOT,      /* Every army op slot was already occupied. */
+  DEV_NOHOME,      /* No city to anchor an operation on. */
+  DEV_NOTARGET,    /* No met, unclaimed, at-war city worth scoring. */
+  DEV_NOSTAGING,   /* Target found; no own city can stage against it. */
+  DEV_POOLEMPTY,   /* Target and staging found; not one free blade. */
+  DEV_MUSTEROFF,   /* Odds refused and the muster is unavailable. */
+  DEV_WORTH,       /* Odds refused AND the take is not worth mustering
+                    * for -- the muster's own gate. */
+  DEV_MUSTER,      /* A muster opened on the worth gate. */
+  DEV_FORMED,      /* A wave formed against a priced quorum. */
+  DEV_VERDICT_COUNT
+};
+
+/* One line per player-turn: the disposition census, sliced by this
+ * turn's formation verdict, plus the cumulative formation funnel.
+ * Called from deep_do_last_activities(). */
 void deep_employ_census(struct ai_type *ait, struct player *pplayer);
+
+/* Formation funnel. `attempt` opens one attempt at the top of
+ * deep_op_form(); `priced` records what the odds loop saw, once, for an
+ * attempt that reached it; `verdict` closes the attempt. Every value
+ * passed is one the seat had already computed. */
+void deep_employ_form_attempt(const struct player *pplayer);
+void deep_employ_form_priced(const struct player *pplayer, double odds,
+                             double bar, int pool, int drafted);
+void deep_employ_form_verdict(const struct player *pplayer,
+                              enum deep_employ_verdict verdict);
 
 #endif /* FC__DEEPEMPLOY_H */
