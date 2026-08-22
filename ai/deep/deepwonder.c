@@ -18,6 +18,7 @@
 #include "log.h"
 
 /* common */
+#include "actions.h"
 #include "city.h"
 #include "game.h"
 #include "improvement.h"
@@ -408,6 +409,100 @@ static void deep_race_adjudicate(const struct player *pplayer)
 }
 
 /**********************************************************************//**
+  THE WONDER-CITY ADMISSION CENSUS. Read-only, log-only.
+
+  The race pass can only price candidates that exist, and a candidate
+  only exists when `adv->wonder_city` names a city -- because
+  dai_build_adv_adjust() zeroes EVERY wonder want in EVERY city when
+  the wonder city is NULL (daicity.c:2007). So "deep built no wonders"
+  has two completely different causes that the race counters cannot
+  tell apart, and only one of them is about racing:
+
+  (a) the pass priced candidates and something damped them, or
+  (b) there was never a wonder city, so there was never a candidate.
+
+  (b) is decided in server/advisors/advbuilding.c:209-254, by a filter
+  this function REPLICATES READ-ONLY so the log can say which clause
+  emptied the field:
+
+  - `consider_wonder_city` rejects a city with grave_danger > 0
+    (daicity.c:2086-2094 -- deep delegates to it verbatim);
+  - with a HelpWonder unit in the ruleset (`has_help`), a candidate
+    must ALSO sit on a continent carrying more than 5 of our cities
+    AND have downtown > 3.
+
+  Replicating rather than exporting is deliberate: advbuilding.c is
+  shared with human auto-workers (CLAUDE.md rule 4) and this is an
+  instrument, not a consumer. It is counted, never acted on.
+
+  `downtown` is refreshed by calculate_city_clusters() only on the
+  turns advbuilding.c actually looks for a new wonder city, so the
+  count is exact on those turns and a lower bound on the others. Said
+  here so the log is not read as more precise than it is.
+**************************************************************************/
+static void deep_wonder_city_census(struct ai_type *ait,
+                                    const struct player *pplayer,
+                                    const struct adv_data *adv,
+                                    bool has_help, int *danger_out,
+                                    int *eligible_out)
+{
+  int danger = 0, eligible = 0;
+
+  city_list_iterate(pplayer->cities, pcity) {
+    Continent_id place = tile_continent(pcity->tile);
+
+    if (def_ai_city_data(pcity, ait)->grave_danger > 0) {
+      danger++;
+      continue;
+    }
+    if (has_help
+        && !(place >= 0 && adv->stats.cities[place] > 5
+             && pcity->server.adv->downtown > 3)) {
+      continue;
+    }
+    eligible++;
+  } city_list_iterate_end;
+
+  *danger_out = danger;
+  *eligible_out = eligible;
+}
+
+/**********************************************************************//**
+  How many great wonders are ours, rivals', and still unbuilt.
+
+  The outcome side of the ledger, and the one number the live-play flag
+  ("15 cities, 1 wonder") is actually about. deep-wrace-end only closes
+  races that were PRICED at least once, so a wonder deep never had a
+  chance to want never appears there; this census is unconditional.
+**************************************************************************/
+static void deep_wonder_stock_census(const struct player *pplayer,
+                                     int *ours_out, int *theirs_out,
+                                     int *open_out)
+{
+  int ours = 0, theirs = 0, open = 0;
+
+  improvement_iterate(pimprove) {
+    if (!is_great_wonder(pimprove)) {
+      continue;
+    }
+    if (great_wonder_is_built(pimprove)) {
+      if (great_wonder_owner(pimprove) == pplayer) {
+        ours++;
+      } else {
+        theirs++;
+      }
+    } else if (great_wonder_is_available(pimprove)) {
+      open++;
+    }
+    /* Destroyed wonders are none of the three. */
+  } improvement_iterate_end;
+
+  *ours_out = ours;
+  *theirs_out = theirs;
+  *open_out = open;
+}
+
+/**********************************************************************//**
   The per-player wonder-race pass.
 
   Runs after stock's building_advisor() has chosen the wonder city and
@@ -443,16 +538,38 @@ void deep_wonder_race(struct ai_type *ait, struct player *pplayer)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   struct adv_data *adv = adv_data_get(pplayer, NULL);
+  bool has_help
+    = (num_role_units(action_id_get_role(ACTION_HELP_WONDER)) > 0);
+  const struct impr_type *best_impr = NULL;
   struct city *wcity;
+  adv_want best_want = 0;
   int declined = 0, priced = 0, abandoned = 0;
+  int danger = 0, eligible = 0, own = 0, rival = 0, open = 0;
 
   deep_race_adjudicate(pplayer);
 
-  if (adv == NULL || adv->wonder_city <= 0) {
+  if (adv == NULL) {
     return;
   }
-  wcity = player_city_by_number(pplayer, adv->wonder_city);
+
+  /* The admission census and the wonder stock are logged whether or not
+   * a wonder city exists, because "no wonder city" is the hypothesis
+   * they are here to separate from "wonder city, damped candidates". */
+  deep_wonder_city_census(ait, pplayer, adv, has_help, &danger, &eligible);
+  deep_wonder_stock_census(pplayer, &own, &rival, &open);
+
+  wcity = (adv->wonder_city > 0
+           ? player_city_by_number(pplayer, adv->wonder_city) : NULL);
+
   if (wcity == NULL) {
+    log_base(deep_metric_log_level(),
+             "deep-wrace-city turn=%d player=\"%s\" city=-1 cities=%d"
+             " hashelp=%d danger=%d eligible=%d size=-1 surplus=-1"
+             " stock=-1 prod=\"-\" building=0 cands=0 best=\"-\""
+             " bestwant=0.0 own=%d rival=%d open=%d",
+             game.info.turn, player_name(pplayer),
+             city_list_size(pplayer->cities), has_help ? 1 : 0, danger,
+             eligible, own, rival, open);
     return;
   }
 
@@ -461,6 +578,13 @@ void deep_wonder_race(struct ai_type *ait, struct player *pplayer)
     adv_want *want = &wcity->server.adv->building_want[id];
     const struct player *who = NULL;
     double p, factor = 1.0;
+    /* The three terms of factor= , kept apart on the line because the
+     * knob census cannot attribute a folded product to one of three
+     * knobs (benchmark/knobcensus.py, wrace_pwin_gain: "Needs: per-term
+     * factors on deep-wrace"). Each is exactly 1.0 when its gain is
+     * off, and factor is still accumulated in the original order so
+     * the arithmetic is bit-for-bit what it was. */
+    double pwin_f = 1.0, eta_f = 1.0, obs_f = 1.0;
     int ours = -1, theirs = -1, ob_eta;
     bool decline;
 
@@ -480,12 +604,14 @@ void deep_wonder_race(struct ai_type *ait, struct player *pplayer)
               || (ob_eta >= 0 && ours >= 0 && ob_eta <= ours);
 
     if (tune->wrace_pwin_gain > 0.0) {
-      factor *= 1.0 - tune->wrace_pwin_gain * (1.0 - p);
+      pwin_f = 1.0 - tune->wrace_pwin_gain * (1.0 - p);
+      factor *= pwin_f;
     }
     if (tune->wrace_eta_gain > 0.0 && ours > 0) {
       double disc = (double) amortize((adv_want) 1000, ours) / 1000.0;
 
-      factor *= 1.0 - tune->wrace_eta_gain * (1.0 - disc);
+      eta_f = 1.0 - tune->wrace_eta_gain * (1.0 - disc);
+      factor *= eta_f;
     }
     if (tune->wrace_obsolete_gain > 0.0 && ob_eta >= 0) {
       /* The share of a MORT horizon the wonder actually lives for,
@@ -494,18 +620,26 @@ void deep_wonder_race(struct ai_type *ait, struct player *pplayer)
       double life = MAX(0, ob_eta - MAX(ours, 0));
       double share = MIN(1.0, life / (double) MORT);
 
-      factor *= 1.0 - tune->wrace_obsolete_gain * (1.0 - share);
+      obs_f = 1.0 - tune->wrace_obsolete_gain * (1.0 - share);
+      factor *= obs_f;
     }
     factor = MAX(factor, 0.0);
+
+    if (*want > best_want) {
+      best_want = *want;
+      best_impr = pimprove;
+    }
 
     log_base(deep_metric_log_level(),
              "deep-wrace turn=%d player=\"%s\" city=%d wonder=\"%s\""
              " ours=%d theirs=%d rival=\"%s\" p=%.3f obsolete=%d"
-             " want=%.1f factor=%.3f decline=%d",
+             " want=%.1f factor=%.3f pwin_f=%.3f eta_f=%.3f obs_f=%.3f"
+             " decline=%d",
              game.info.turn, player_name(pplayer), wcity->id,
              improvement_rule_name(pimprove), ours, theirs,
              who != NULL ? player_name(who) : "-", p, ob_eta,
-             (double) *want, factor, decline ? 1 : 0);
+             (double) *want, factor, pwin_f, eta_f, obs_f,
+             decline ? 1 : 0);
 
     deep_race_note(pplayer, pimprove, ours, theirs, p, decline);
     if (decline) {
@@ -542,6 +676,27 @@ void deep_wonder_race(struct ai_type *ait, struct player *pplayer)
              game.info.turn, player_name(pplayer), wcity->id, priced,
              declined, abandoned);
   }
+
+  /* Unconditional, unlike deep-wrace-sum: a turn with a wonder city and
+   * ZERO candidates is the observation that matters most, and the sum
+   * line is exactly the line that does not exist on it. `bestwant` is
+   * the largest candidate want BEFORE the race factor is applied, so
+   * the pair (bestwant, factor= on the deep-wrace lines) separates "the
+   * effect wants were small" from "the race pass shrank them". */
+  log_base(deep_metric_log_level(),
+           "deep-wrace-city turn=%d player=\"%s\" city=%d cities=%d"
+           " hashelp=%d danger=%d eligible=%d size=%d surplus=%d"
+           " stock=%d prod=\"%s\" building=%d cands=%d best=\"%s\""
+           " bestwant=%.1f own=%d rival=%d open=%d",
+           game.info.turn, player_name(pplayer), wcity->id,
+           city_list_size(pplayer->cities), has_help ? 1 : 0, danger,
+           eligible, city_size_get(wcity), wcity->surplus[O_SHIELD],
+           wcity->shield_stock, universal_rule_name(&wcity->production),
+           (VUT_IMPROVEMENT == wcity->production.kind
+            && is_great_wonder(wcity->production.value.building)) ? 1 : 0,
+           priced + declined,
+           best_impr != NULL ? improvement_rule_name(best_impr) : "-",
+           (double) best_want, own, rival, open);
 }
 
 /**********************************************************************//**
