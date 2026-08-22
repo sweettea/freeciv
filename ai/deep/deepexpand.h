@@ -65,9 +65,11 @@
  *              caravan
  *   lostmil    the founder won the domestic auction and the military
  *              choice beat it at the merge
- *   lostmilt   ... of those, ones lost on TIER rather than value: an
- *              emergency-tier military want outranks any founder want
- *              whatever its magnitude (deepwant.c deep_want_cmp)
+ *   lostmilt   ... of those, ones with the military side in the
+ *              emergency tier. NOT "lost on tier rather than value":
+ *              the domestic bid is clamped to DAI_WANT_DOMESTIC_MAX
+ *              (750.075) before it arrives, so it is below any
+ *              emergency want under either order (see deepexpand.c)
  *   prod       cities whose production at end of turn IS a founder
  *   born       founders that came into existence this turn
  *   alive      founders alive at census time

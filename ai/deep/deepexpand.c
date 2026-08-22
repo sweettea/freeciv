@@ -201,11 +201,18 @@ void deep_expand_note_hold_yield(const struct player *pplayer)
   charged where it happened: the domestic advisor preferred something
   else, the merge preferred the military choice, or the founder won.
 
-  `lostmilt` is the tier half of the third case. deep compares
-  (tier, value) rather than magnitudes (deepwant.c), so an
-  emergency-tier military want outranks a founder want of any size --
-  a loss that no magnitude in the log can explain and that no rescaling
-  of the founder want could ever reverse.
+  `lostmilt` records the third case with the military side in the
+  EMERGENCY tier. It was introduced as the TIER half of that case, on
+  the reading that deep's (tier, value) order (deepwant.c) can refuse
+  a founder want that stock's magnitude order would have seated. It
+  cannot: domestic_advisor_choose_build() clamps whatever it returns
+  to DAI_WANT_DOMESTIC_MAX (daidomestic.c:631 = 750.075) and the
+  emergency tier starts at 1000, so a founder bid ARRIVES at the merge
+  already below any emergency want, and deep_want_from_choice() is
+  monotone in the raw want besides -- the two orders agree on every
+  comparison that reaches this seam. Every lostmilt is a magnitude
+  loss as well. The comparison that can distinguish them happens one
+  stage earlier and is founder_tier_gate's (deepdefence.c).
 **************************************************************************/
 void deep_expand_note_auction(const struct player *pplayer, int founder_bid,
                               bool dom_founder, bool dom_won,
