@@ -6,6 +6,9 @@
 #                                            # the branch point, deep
 #                                            # AND mixed_db cells, at
 #                                            # trunk_trade_gain 0.0
+#   ./benchmark/w12d-dividend.sh identity-live # the same, with slices
+#                                            # 1-3 LIVE and only the
+#                                            # dividend absent
 #   ./benchmark/w12d-dividend.sh ab [N]      # N (default 16) mirrored
 #                                            # lategame-80 seeds:
 #                                            # slice-3 ON vs the same
@@ -115,6 +118,54 @@ identity)
   [ "$fail" -eq 0 ] || { echo "STOP: not inert." >&2; exit 1; }
   ;;
 
+identity-live)
+  # The identity above is at COMPILED DEFAULTS, where trunk_road_gain
+  # is 0 and no corridor plan exists at all -- so it proves the new
+  # code is inert on a path it never reaches. This stage proves the
+  # stronger thing: with slices 1-3 fully live (tuning/w12-ally-on.ini,
+  # which does not mention trunk_trade_gain and therefore leaves it at
+  # its compiled 0.0), the branch is still byte-identical to the branch
+  # point. Corridors are planned, priced and worked in both arms; only
+  # the dividend is absent.
+  OUT=$ROOT/benchmark/results/w12d-identity-live
+  SEEDS=10
+  [ -x "$BASE_SERVER" ] || { echo "run the identity stage first" >&2; exit 1; }
+  pin_server "$1"
+  export TUNING=$ROOT/benchmark/tuning/w12-ally-on.ini
+  for side in base head; do
+    case $side in
+      base) bin=$BASE_SERVER; port=7900;;
+      head) bin=$SERVER;      port=7910;;
+    esac
+    ./benchmark/run.sh --count "$SEEDS" --arms deep \
+      --config benchmark/configs/smoke.conf \
+      --server "$bin" --jobs "$JOBS" --portbase "$port" \
+      --out "$OUT/$side"
+  done
+  unset TUNING
+
+  same=0; diff_n=0
+  for seed in $(grep -E '^[0-9]+$' benchmark/seeds/train.txt \
+                | head -n "$SEEDS"); do
+    a=$(echo "$OUT"/base/smoke-*/deep/seed-"$seed"/scorelog.txt)
+    b=$(echo "$OUT"/head/smoke-*/deep/seed-"$seed"/scorelog.txt)
+    if cmp -s "$a" "$b"; then
+      same=$((same + 1))
+    else
+      echo "seed $seed: SCORELOGS DIFFER"; diff_n=$((diff_n + 1))
+    fi
+  done
+  echo "on-path identity deep: $same/$SEEDS byte-identical, $diff_n differ"
+  if grep -rqs "deep-trunkdiv" "$OUT"/base/; then
+    echo "STOP: the base arm emitted a slice-4 token -- not the base." >&2
+    exit 1
+  fi
+  # ... and the corridor machinery really was live in both arms.
+  grep -rh "deep-trunk turn=" "$OUT"/head/smoke-*/deep/seed-1/game.log \
+    | tail -1
+  [ "$same" -eq "$SEEDS" ] || { echo "STOP: not inert on path." >&2; exit 1; }
+  ;;
+
 ab)
   # One knob, one binary, both arms. off = tuning/w12-ally-on.ini
   # (slices 1-3 at their probe values, which is slice 3's ON arm),
@@ -149,6 +200,6 @@ ab)
   ;;
 
 *)
-  echo "usage: $0 {identity|ab [seeds]}" >&2
+  echo "usage: $0 {identity|identity-live|ab [seeds]}" >&2
   exit 1;;
 esac
