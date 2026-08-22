@@ -363,6 +363,7 @@ else
       'ai/deep/deeptechcensus.c',
       'ai/deep/deeptrade.c',
       'ai/deep/deepfunnel.c',
+      'ai/deep/deepidle.c',
       'ai/deep/deeptrunk.c',
       'ai/deep/deepsettler.c',
       'ai/deep/deeptuning.c',
