@@ -16306,3 +16306,209 @@ Three further facts from the pilot, none of them claims:
   most important numbers in this entry (land per seat, gap per edge,
   50.8% pre-roaded, unroaded MST tiles per empire) all came out of
   artefacts three earlier sessions had already paid for.
+
+## W12 funnel: 255 corridor picks buy 21 work starts, and a fifth of them are overridden in the same call (2026-08-22)
+
+Brief: `sessions/S-W12F-conversion-funnel.md`. Branch
+`epic/w12f-funnel`, 7 commits, based at `75a9221054`
+(`epic/w03-horizon-content`, all four W12 slices merged plus the
+corridor-150 venue). **Counters only — no behaviour change anywhere,
+proved twice below.** Own worktree `.worktrees/funnel`, own build
+(`-Daimodules=classic,tex,baseline,deep`), one pinned binary staged
+with its own `libfreeciv.so` (`.stage-bin/freeciv-server` sha256
+`1b76af65bc3e1ab54dc93bc3…`, lib `6ea1358503e553ebbddf9e68…`), ports
+7500-7549, jobs 4. `tune-audit` CLEAN at 247 fields, unchanged (no new
+knobs — the ledger has none). `meson test` 6/6.
+
+The corridor-150 pilot measured 255 corridor tasks assigned per game
+buying +14 net roaded land tiles map-wide, and named the gap between
+those two numbers without being able to look inside it. This session
+put stages in the gap.
+
+| commit | what |
+|---|---|
+| `a03d62b5ee` | export `deep_trunk_tile_roaded()` |
+| `73d8ceed9e` | `deepfunnel.c`, the per-worker assignment ledger and its causes |
+| `d2cf780a6c` | the mid-build task the safety pass idles |
+| `2dd7dff31e` | `benchmark/funnelreport.py`, the stage table |
+| `a4750dc6a6` | `benchmark/pickfunnel.py`, the funnel from artefacts that predate the counters |
+| `02aa35c30a` | `benchmark/pickfate.py`, what took the worker |
+| — | this entry |
+
+### 1. How the ledger reads the real decision sites
+
+The mechanic that shapes everything below was read before the counters
+were written, and it is not the one the brief assumed.
+`auto_workers_player()` sends a worker whose activity is `IDLE` to
+`settler_run` and a worker that is mid-activity to `settler_cont`
+(autoworkers.c:1399-1414), and `adv_follow_path()` restores `IDLE` after
+every partial walk (advgoto.c:65-72). So a worker **walking** to a
+corridor tile is re-decided from scratch every turn, with no memory of
+its task beyond `punit->server.adv->task`; a worker **building** is not
+re-decided at all, and the only decision that can take it off the job is
+`dai_auto_settler_cont()` idling it for danger. Those are the two sites,
+and the ledger sits on both.
+
+`deep_funnel_open()` hands `deep_trunk_source_task()` the tile the
+worker already held; the source raises a stage at each test that refuses
+it (unsafe / taken / nopath / noact / price) and
+`deep_funnel_close()` maps the final stage onto a cause only when the
+tile was not re-picked. Absent from the plan entirely splits on the road
+test into `roaded` and `replan`. A city work request, the flee pass, the
+end-of-phase sweep and death each name their own.
+
+### 2. Identity: the counters observe, twice
+
+**Short config, family ON in both arms.** Base = `git archive
+75a9221054` built in `.funnel-base/` (sha `73d97646216ac88d`), branch
+`1b76af65bc3e1ab5`. Ten paired seeds, `configs/smoke.conf`, deep arm,
+`tuning/w12-div-on.ini` read back in both:
+
+    scorelogs IDENTICAL 10/10   maphash 10/10
+    deep-trunkpick per seed: 40 3 11 20 20 8 69 33 59 6  — equal, arm for arm
+    deep-trunkfun lines:     75 (branch)   0 (base)
+
+On-path in every seed: 269 corridor picks across the ten games, the same
+269 in both arms.
+
+**And at full venue scale.** The measurement run below reuses the
+pilot's exact seeds and config, so its games are comparable to the
+pilot's ON arm game for game:
+
+    corridor-150 scorelogs identical to the pilot's ON arm: 8/8
+
+150 turns, six empires, 255 corridor picks a game, byte-identical
+against a binary built by a different session from a different tree.
+
+### 3. The funnel: 8 seeds, corridor-150, family ON
+
+`benchmark/results/w12f-funnel`, `tuning/w12-div-on.ini`, read-back
+audit 8 of 8, 45 deep player-games.
+
+    seed      picks    tiles    start   wtiles   wturns     done    dsalv
+    1           136       41       14       14       49       15        2
+    2           577       53       31       31       91       34        3
+    3           357       59       28       28       87       31        4
+    4           270       61       22       22       60       23        2
+    5           340       61       24       24       57       29        6
+    6           109       35        9        9       27       12        3
+    7           147       49       26       26       64       29        3
+    8           107       25       12       12       27       13        2
+    MEAN      255.4     48.0     20.8     20.8     57.8     23.2      3.1
+
+**The stages, per game, with the attrition between them:**
+
+| # | stage | per game | of the stage above |
+|---|---|---|---|
+| 1 | picks — assignments made | 255.4 | |
+| 2 | tiles — DISTINCT tiles ever assigned | 48.0 | 18.8% of picks |
+| 3 | walk — picks that did not begin work | 234.6 | 91.9% of picks |
+| 4 | start — times work actually began | **20.8** | **8.1% of picks** |
+| | wtiles — distinct tiles worked | 20.8 | 43.2% of tiles wanted |
+| 5 | wturns — turns of work accumulated | 57.8 | |
+| 6 | done — corridor tiles that got a road | 23.2 | 48.4% of tiles wanted |
+| | dwork — of those, deep began work there | 20.1 | 86.6% of done |
+| 7 | dsalv — of those, deep never worked them | 3.1 | 13.4% of done |
+| | live — still assigned at game end | 3.2 | |
+
+    picks per distinct tile      5.32
+    picks per work start        12.31
+
+**Where an assignment ended (148.8 drops a game):**
+
+    norun     58.9   39.6%   the source never saw the worker again
+    taken     28.2   19.0%   another own worker stands on the tile
+    roaded    20.4   13.7%   the tile got its road (not a leak)
+    outbid    19.5   13.1%   the advisor's own champion won
+    replan     8.1    5.5%   the plan no longer carries the tile
+    switch     6.8    4.5%   a different corridor tile won
+    gone       5.2    3.5%   the worker died or stopped being a worker
+    unsafe     1.4    0.9%
+    nopath     0.1    0.1%
+    flee       0.1    0.1%
+    noact/price/request  0
+
+**The salvage hypothesis is dead and the churn hypothesis is half
+right.** `dsalv` is 3.1 tiles a game: essentially nobody finishes what
+deep walks away from. And mid-build preemption — the brief's leading
+suspect — is `flee` 0.1 and `stop` 0: once a worker actually starts a
+corridor road it almost always finishes it (20.1 of 20.8 work starts end
+roaded). The churn is entirely on the WALK.
+
+### 4. What `norun` is, from the log rather than the ledger
+
+`benchmark/pickfate.py`, same 8 games, artefacts only:
+
+    SAME TURN: 458 of 2043 picks (22.4%) were overridden by the
+               city-placement search in the same call
+    NEXT TURN: 978 picks were not followed by a pick by the same unit
+               city mission     426   43.6%
+               silent but alive 411   42.0%
+               never named again 141  14.4%
+
+The same-turn number is the one that matters and it is exact.
+`deep_auto_settler_run()` runs the corridor task source inside the
+`UTYF_WORKERS` block (deepsettler.c:2167) and then, for a unit that is
+**also** a cityfounder, runs `deep_find_best_city_placement()` and takes
+the site whenever `result->result > best_impr` — where `best_impr` IS
+the corridor pick that was just made and logged. In the classic ruleset
+Settlers carry `UTYF_WORKERS`, so the corridor auction bids for, wins,
+and logs a task on a unit that is one comparison away from being sent to
+found a city. The task never survives the function it was made in, and
+nothing charges it: the ledger only learns the next turn, when the unit
+is in the `BUILD_CITY` branch and returns before `FIND_WORK`.
+
+That also explains the ledger's `taken` at 19.0%, which is the second
+cause and reads oddly at first: 69.5 distinct workers touch 48 corridor
+tiles a game, so the tiles are crowded by units that keep being handed
+the same corridor and keep being taken away from it.
+
+### 5. Diagnosis
+
+**The dominant leak is that the corridor task source bids for units it
+does not get to keep, and 91.9% of its assignments are spent walking.**
+Of 255.4 picks a game only 20.8 — one in twelve — ever begin work, and
+those 20.8 are spread over 48.0 distinct tiles that are taken up 3.17
+separate times each; 22.4% of every pick is overridden by the
+city-placement search inside the same call before the worker takes a
+single step, and 43.6% of the picks that are never renewed are followed
+by that unit on a city mission. What is NOT the leak: mid-build
+preemption (`flee` 0.1, `stop` 0 a game), the safety pass (`unsafe`
+1.4), pathing (`nopath` 0.1), and salvage by others (`dsalv` 3.1 —
+nobody finishes what deep drops). Once a worker starts a corridor road
+it finishes it 96% of the time; the whole loss is between the
+assignment and the first shovel. The 255 picks and the +14 roads are
+therefore not a completion problem at all — they are 234.6 worker-turns
+a game of walking, redirected by a term whose winner is discarded a few
+lines later, which is exactly the reallocation-without-road the pilot
+measured and the `techs` t −3.18 it cost.
+
+### 6. For whoever picks this up
+
+- **A fix was not in scope and is its own epic.** The obvious shape —
+  do not let the corridor source bid for a unit the founder search is
+  about to take, or do not re-run the source for a unit already walking
+  to a corridor tile — is two different changes with two different
+  risks, and the second one changes what the AI does with a worker
+  every turn. Neither is a counter.
+- **The two independent reads of stage 6 agree.** `deepfunnel`'s
+  `done` is 23.2 a game; `pickfunnel.py` decoding the final savegames of
+  the pilot's own ON games says 23.2. That agreement is the ledger's
+  correctness check and it cost no games.
+- **`pickfunnel.py` found a coordinate trap worth stating.** A savegame
+  row is in NATIVE coordinates (`savegame3.c` calls
+  `index_to_native_pos()` before writing every position) while `TILE_XY`
+  — and so every `tile=` in a log line — is in MAP coordinates.
+  corridor-150's own save says `"topology","ISO|HEX"`, and comparing the
+  two directly put 22 of 41 picked tiles off the map and 5 in the ocean;
+  `NATIVE_TO_MAP_POS` (common/map.h:170) fixes it, after which all 41
+  are land. Any future instrument that joins a log tile to a savegame
+  tile needs the conversion. `corridorgeom.py` is not affected — it
+  works entirely inside the save, where everything is native — but its
+  `real_map_distance` is computed in native coordinates on an isometric
+  map, which is a separate question for whoever next reads its edge
+  lengths.
+- **Retention:** `benchmark/results/w12f-funnel` (8 corridor-150 ON
+  games, saves pruned after reading), identity under
+  `/tmp` scratch and reproducible from the two staged binaries named
+  above.
