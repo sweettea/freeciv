@@ -373,6 +373,14 @@ static bool deep_idle_recycle(struct ai_type *ait, const struct civ_map *nmap,
 }
 
 /**********************************************************************//**
+  Is the policy switched on for this player?
+**************************************************************************/
+bool deep_idle_policy_on(const struct player *pplayer)
+{
+  return deep_tuning_for(pplayer)->idle_policy_gate > 0;
+}
+
+/**********************************************************************//**
   Decide what to do with a worker whose backlog is empty.
 
   The caller has already established the state: this unit's best task is

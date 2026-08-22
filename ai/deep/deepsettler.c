@@ -72,6 +72,13 @@
 #include "deepops.h"
 #include "deepsettler.h"
 
+/* Switched on for the auction's SECOND pass only (deep_auto_settler_run,
+ * behind idle_policy_gate): while it is set, deep_worker_task_value()
+ * prices a base candidate at its bare tile value and counts nothing, so
+ * the pass answers "what is the best task that is not a fortress" on
+ * the auction's own scale, without doubling any census. */
+static bool deep_base_want_off = FALSE;
+
 /* Log-only fortress bookkeeping, defined with the base want far below
  * and called from the two places a worker is set to work. */
 static void deep_fort_note_assignment(const struct player *pplayer,
@@ -2219,6 +2226,56 @@ FIND_WORK:
                                          &best_tile, &path,
                                          &completion_time);
     }
+
+    /* "The fortress won" and "there was nothing else" are different
+     * states, and only the second one is the backlog-empty state the
+     * idle policy is for. Ask the auction again with the base want
+     * switched off: whatever wins the second pass is the best REAL
+     * task, and if there is one this worker takes it and the policy
+     * never sees it. Without this pass a base that merely OUTBID a
+     * marginal irrigation would take the worker out of the corps
+     * instead -- measured, and it halved the irrigation and mine
+     * worker-turns of a whole arm.
+     *
+     * Only behind the gate, so nothing runs at the knob's 0, and only
+     * for units that are not cityfounders, which is the same scope the
+     * policy itself keeps: a founder compares best_impr against its
+     * site result a few lines below, and moving that comparison would
+     * change founding rates under a knob that claims not to.
+     *
+     * The corridor source is NOT re-run. It cannot be the champion
+     * here (its picks carry ACTIVITY_GEN_ROAD), and running it twice
+     * in one call would double-count the funnel ledger it maintains. */
+    if (best_tile != NULL && best_act == ACTIVITY_BASE
+        && !unit_is_cityfounder(punit)
+        && deep_idle_policy_on(pplayer)) {
+      enum unit_activity real_act = ACTIVITY_LAST;
+      struct extra_type *real_target = NULL;
+      struct tile *real_tile = NULL;
+      struct pf_path *real_path = NULL;
+      adv_want real_impr;
+
+      deep_base_want_off = TRUE;
+      real_impr = worker_evaluate_improvements(nmap, punit, &real_act,
+                                               &real_target, &real_tile,
+                                               &real_path, state);
+      deep_base_want_off = FALSE;
+
+      if (real_tile != NULL && real_impr > 0) {
+        if (path != NULL) {
+          pf_path_destroy(path);
+        }
+        path = real_path;
+        best_impr = real_impr;
+        best_act = real_act;
+        best_target = real_target;
+        best_tile = real_tile;
+        completion_time = (path != NULL
+                           ? pf_path_last_position(path)->turn : 0);
+      } else if (real_path != NULL) {
+        pf_path_destroy(real_path);
+      }
+    }
     UNIT_LOG(LOG_DEBUG, punit, "impr want " ADV_WANT_PRINTF, best_impr);
     TIMING_LOG(AIT_WORKERS, TIMER_STOP);
   }
@@ -3136,8 +3193,13 @@ static adv_want deep_worker_travel_price(const struct player *pplayer,
   adv_want gain, priced;
 
   /* Counted before the gate, like the base want's offers: "the auction
-   * offered a candidate" and "we discounted it" are separate facts. */
-  deep_local_cand[pn]++;
+   * offered a candidate" and "we discounted it" are separate facts.
+   * The base-suppressed second pass prices identically and counts
+   * NOTHING: it is the same candidates a second time, and doubling
+   * them would say the auction offered twice what it did. */
+  if (!deep_base_want_off) {
+    deep_local_cand[pn]++;
+  }
 
   if (tune->worker_travel_discount <= 0.0 || arrival <= 0) {
     return want;
@@ -3153,9 +3215,11 @@ static adv_want deep_worker_travel_price(const struct player *pplayer,
 
   priced = old_tile_value + deep_worker_travel_amortized(gain, arrival);
 
-  deep_local_disc[pn]++;
-  deep_local_turns[pn] += arrival;
-  deep_local_shave[pn] += want - priced;
+  if (!deep_base_want_off) {
+    deep_local_disc[pn]++;
+    deep_local_turns[pn] += arrival;
+    deep_local_shave[pn] += want - priced;
+  }
 
   return priced;
 }
@@ -3252,7 +3316,7 @@ adv_want deep_worker_task_value(const struct player *pplayer,
 
   addon = deep_trunk_want(pplayer, target, ptile);
 
-  if (act == ACTIVITY_BASE) {
+  if (act == ACTIVITY_BASE && !deep_base_want_off) {
     /* Counted BEFORE any gate: "the advisor offered a base candidate
      * at all" and "we priced it" are different questions, and the
      * first one is the one a zero want has to answer first. */

@@ -48,6 +48,11 @@ enum deep_idle_verdict {
   DEEP_IDLE_ACT_DISBAND     /* Walking home to be recycled -- may be gone. */
 };
 
+/* Is the policy switched on for this player? Exported so the auction
+ * can ask before spending a second evaluation pass on the
+ * base-outbid-everything case. */
+bool deep_idle_policy_on(const struct player *pplayer);
+
 /* Call ONLY for a worker whose best task is not real work -- nothing at
  * all, or a base, which the fortress measurement showed is what "the
  * backlog is empty" looks like from inside the auction. Counts the
