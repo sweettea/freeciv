@@ -1645,11 +1645,21 @@ void deep_trunk_census(struct player *pplayer)
                             c == 0 ? "" : ":", src[k][c]);
         }
       }
+      /* peaceoff=/peacepick= repeat the PEACE column of off= and pick=
+       * as scalars. Redundant on purpose: they are what the knob
+       * census reads for trunk_soft_border_gate, and its predicates are
+       * key=number matches that cannot index into a colon tuple. They
+       * are also exactly the gate -- with it shut the corridor
+       * pathfinder TB_IGNOREs a peace partner's tile, so it is never
+       * pathed, never priced and never assigned, and both fields are 0
+       * by construction however many such tiles the plan holds. */
       log_base(deep_metric_log_level(),
                "deep-trunksoft turn=%d player=\"%s\" plan=%s off=%s"
-               " pick=%s work=%s road=%s",
+               " pick=%s work=%s road=%s peaceoff=%d peacepick=%d",
                game.info.turn, player_name(pplayer),
-               f[0], f[1], f[2], f[3], f[4]);
+               f[0], f[1], f[2], f[3], f[4],
+               deep_trunk_c_soft_off[pn][DEEP_TRUNK_OWN_PEACE],
+               deep_trunk_c_soft_pick[pn][DEEP_TRUNK_OWN_PEACE]);
     }
   }
 
