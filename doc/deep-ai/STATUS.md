@@ -17552,3 +17552,237 @@ five artefact sets listed at the top with the four committed scripts.
 The pv4 scratchpad path is a `/tmp` scratchpad and **will not survive a
 reboot** — `benchmark/results/decaytech-holdout/pv3/` holds the same 32
 games byte-for-byte plus savegames, so the analysis survives its loss.
+
+## WRACE race-pass check: there is no race pass, and the symptom is econ-venue-specific (2026-08-22)
+
+Brief: `doc/deep-ai/sessions/S-WONDER-race-pass.md`, from the live Europe
+flag "Deep_Osmanli finished with 15 cities and 1 wonder". The brief's
+counter-evidence — the war-gap decomposition measured deep **AHEAD
++13.1** on wonder score at T201 on tech50war-200 — asked venue-specificity
+to be established rather than assumed. It is established, and it points
+the other way from the flag.
+
+**No fix shipped. No knob added. The finding is the deliverable**, which
+is the branch the brief names for "the passes are correct play".
+
+Branch `epic/wonder-race-pass` (not merged), worktree `.worktrees/wonder`,
+binary `stage-inst/freeciv-server` sha `b601cc266f7f8a` with
+`libfreeciv.so` sha `6f78ac8f596435`; the pre-instrument control is
+`stage-base/freeciv-server` sha `5d09b1a91852b4` with the *same*
+`libfreeciv.so` (only `ai/deep` changed).
+
+### 1. The premise does not exist: `decline` has no actuator
+
+`deep_wonder_race()` (`ai/deep/deepwonder.c`) computes a go/no-go —
+`decline = (p <= 0.0) || (ob_eta >= 0 && ours >= 0 && ob_eta <= ours)` —
+and then uses it for **exactly three things**: a counter, a log line, and
+a field in the race ledger. The want is damped by `factor`, which is a
+product of three independently-gated ramps and never reads `decline`. So
+deep has never once stopped building a wonder because it judged the race
+lost. The brief's "machinery that decides deep is losing a wonder race
+and passes" is half-built: the *deciding* is there, the *passing* is not.
+
+That is not an inference from reading. It is visible in the counters:
+
+    deep-wrace-abandon verdicts that REPEAT on the very next turn,
+    same city, same wonder (i.e. the city kept building it):
+
+      econ  garden2b-150 pv3       64 of 81   (79%)
+      war   tech50war-200 pv3      53 of 98   (54%)
+      econ  garden2b-150 derby-7   32 of 51   (63%)
+
+An actuated abandon fires once. These fire again, and again, while the
+shields keep going in.
+
+The nearest thing to an actuator is `wrace_pwin_gain`, which at pv3's
+`0.036972` turns a p=0 verdict into a **3.7% want shave**. The whole
+pass, all three terms folded, averages `factor` 0.90–0.92 with a floor of
+0.788. It is a rounding error on the wonder decision.
+
+### 2. Per-venue table
+
+Four seeds per cell, `--arms deep`, jobs 2, ports 7600+, all 16 games
+DONE at their full end turn (151 / 201 / 151). Sources under
+`benchmark/results/wonder-probe/`, read by `benchmark/wonder-report.py`.
+
+    cell                        ECON pv3    WAR pv3    ECON derby-7
+    config                   garden2b-150  tech50war  garden2b-150
+                                    (150)   -200(200)        (150)
+    deep seats                          8         32           10
+    ---------------------------------------------------------------
+    final cities / seat             22.88       5.12        27.20
+    final great wonders / seat       0.88       1.16         2.00
+    WONDERS PER CITY                0.038      0.226        0.074
+    great wonders unbuilt at end    28.25      20.75        25.00
+    ---------------------------------------------------------------
+    player-turns with NO wonder
+      city                          43.5%      70.4%        26.2%
+      ... of which zero cities
+          passed the admission gate  99.0%     100.0%        98.8%
+    wonder city size (mean/median)  3.71/4    5.77/6       4.34/4
+    wonder city shield surplus      4.69/4   11.42/11      6.97/6
+    eligible cities of all cities  4.5/22.9   1.8/5.1     6.8/27.2
+    ---------------------------------------------------------------
+    candidates priced / turn         6.13       7.30         5.71
+    declined                        13.3%       3.0%        13.3%
+      ... by p=0 (race lost)          148        258          197
+      ... by obsolescence              403        158          512
+      ... FALSE passes (declined
+          while AHEAD of the rival)      0          0            0
+    race factor mean / min      0.904/0.788 0.922/0.789 0.916/0.788
+    evaluations seeing any rival     8.2%       9.8%        10.1%
+    own completion ETA mean/med    54.7/41    31.5/26      31.9/25
+    ---------------------------------------------------------------
+    wonder builds STARTED              21        103           41
+      ... completed                      7         40           20
+      ... INTERRUPTED, no wonder        17         90           33
+      mean shield stock dumped        43.0       56.0         48.7
+    races closed  won / lost          7/5      34/66        20/20
+      lost at estimated p >= 0.75        0          7            2
+
+Per-seed, the flagged shape reproduces and gets worse:
+
+    ECON pv3   seed-2  P2: 35 cities, 0 wonders
+               seed-3  P1: 41 cities, 1 wonder
+    ECON d7    seed-4  P1: 28 cities, 0 wonders
+    WAR pv3    seed-1  P7: 16 cities, 4 wonders
+
+### 3. Venue verdict
+
+**The symptom lives on the ECONOMIC venue, and the derby-7 tuning is not
+its cause.** Wonders per city: econ pv3 **0.038**, war pv3 **0.226** —
+the war venue is 6x better per city, which is the same fact the war-gap
+decomposition reported as deep +13.1 on wonder score, seen from the
+supply side. And derby-7 tuning on the *identical* econ config roughly
+doubles the rate (0.038 → 0.074, 0.88 → 2.00 wonders per seat), so the
+Europe cell's tuning was mitigating the symptom, not producing it.
+
+So: not war-specific, not tuning-specific, and not personality-specific.
+It is what deep does when it has many cities.
+
+### 4. Where the wonders actually go, since it is not the race pass
+
+Three mechanisms, in order of size, none of them in `deepwonder.c`:
+
+1. **No wonder city at all on 26–70% of player-turns**, and on 99–100%
+   of those turns **not one city passed the admission gate**. The gate is
+   `server/advisors/advbuilding.c:209-254`: `grave_danger > 0` rejects a
+   city outright, and with a HelpWonder unit in the ruleset a candidate
+   must also sit on a continent holding **more than 5** of our cities
+   **and** have `downtown > 3`. When it admits nobody,
+   `dai_build_adv_adjust()` zeroes every wonder want in **every** city
+   (`daicity.c:2007`) and the race pass has an empty population by
+   construction. On the war venue, at 5.1 cities per player, the
+   "more than 5 on this continent" clause alone is close to unsatisfiable
+   — 70.4% of turns have no wonder city.
+2. **The wonder city that is admitted is tiny.** It is chosen by raw
+   `surplus[O_SHIELD]` (halved when coastal), and deep's median wonder
+   city is **size 4 with 4 shields a turn** on the econ venue. Median own
+   completion ETA 41 turns in a 150-turn game.
+3. **71–87% of wonder builds are interrupted without finishing**
+   (17 of 21, 90 of 103, 33 of 41), dumping a mean 43–56 shields of stock
+   each time. The interruptions are the city's own production churn —
+   in the seed-1 econ trace the wonder city ran Sun Tzu's to a 101-shield
+   stock and then switched to Pikemen, Pikemen, Pikemen, Caravan — which
+   is the switch-cost/military-scheduler complex already on the ledger
+   (`europe-derby-hindsight.md` item 5, 10 239 switch-cost debits), not
+   the race pass.
+
+### 5. What the race pass got RIGHT, stated so the next session does not re-litigate it
+
+- **Zero false passes in 1 676 declines across three venues.** Every
+  single `p = 0` decline was a race where a *known* rival's ETA was ahead
+  of ours by at least the margin. Not one decline fired while deep was
+  ahead of the rival it had found.
+- **Most declines are obsolescence, not racing** (403/551, 158/416,
+  512/709). `deep_impr_obsolete_eta()` is doing more work than
+  `deep_wonder_p_win()` is.
+- **The `surplus <= 0` blind spot never fired**: `ours = -1` appears in
+  **0** of 23 336 evaluations, so the theoretical hole (a city with a full
+  shield stock and zero surplus declared out of its own race, and the
+  same for a rival) has no population in these venues. Recorded as
+  checked, not as fixed.
+- **The calibration counter fires the same way it did on 2026-08-07**:
+  61 races won, 91 lost, 9 of the losses at an estimated p >= 0.75. The
+  estimator still only counts rivals who have already started (8–10% of
+  evaluations see any rival at all), so it still under-declines. That is
+  the safe direction and it is unchanged; it is not the thing costing
+  deep its wonders.
+
+### 6. What landed
+
+- `4bf68c4991` `ai/deep: census the wonder city the race pass is priced
+  in` — log-only. `deep-wrace-city` once per player-turn *always*,
+  including on the no-wonder-city return path, carrying the wonder city's
+  size/surplus/stock/production, the candidate count, the best pre-damp
+  want, and a running census of great wonders owned/rival-owned/unbuilt;
+  a read-only replication of the advisor's admission filter (`danger=`,
+  `eligible=`); and `pwin_f= eta_f= obs_f=` splitting the folded
+  `factor=` into its three terms — which `benchmark/knobcensus.py` asks
+  for **by name** under `wrace_pwin_gain` ("Needs: per-term factors
+  (pwin_factor=, eta_factor=, obs_factor=) on deep-wrace"). The three
+  census entries are **deliberately left at `-`**: the numbers now exist
+  on the line, but the census predicate language still has no less-than
+  operator, so "this knob fired" is still inexpressible as
+  `pwin_f < 1.0`. The instrument is the half this session could supply;
+  flipping the entries needs the predicate language and is not this
+  epic. Census verdict counts therefore unchanged, and `tune-audit.py`
+  is CLEAN at 251/251/251/251 — no knob added.
+- `2e3a0fca44` `benchmark: report the wonder race census per venue cell`
+  — `wonder-report.py` (starts / completions / interruptions are
+  transitions in the per-turn census, which no single line carries) and
+  the `wonder-probe.sh` driver.
+
+**Identity: 4/4 scorelogs BYTE-IDENTICAL**, `stage-base` vs `stage-inst`,
+garden2b-150 seeds 1-4, `TUNING=benchmark/tuning/pv3.ini` on both, same
+maphash per seed. The instrument is log-only and the three factor terms
+are each initialised to 1.0, assigned only inside their existing gain
+guard, and multiplied into `factor` in the original order, so the
+arithmetic is bit-for-bit what it was. `meson test -C build` 6/6 OK.
+No knob added, so knobcensus and tune-audit counts are unchanged.
+
+### 7. Next, and explicitly NOT this session
+
+Ranked by the size of the number above, not by proximity to `deepwonder.c`:
+
+1. **The admission gate.** A knobbed deep override of
+   `adv->wonder_city` — deep already runs after `building_advisor()` and
+   the field is writable — that admits a best-shield city when the
+   HelpWonder clause admits nobody. Needs its own A/B. **Do not fix it in
+   `server/advisors/`**: rule 4, and it is not a defect that harms humans
+   (a human picks their own wonder city).
+2. **The wonder-city choice itself**, which is `max(shield surplus)` over
+   a pool of size-4 cities with no notion of what the empire could build
+   there in 40 turns. This is RC1 in one line.
+3. **The interruptions**, which belong to the switch-cost epic already on
+   the ledger and are being measured there.
+4. **`wrace_pwin_gain` is a placeholder that a tuning pass set to
+   0.037**, which is indistinguishable from off. If the go/no-go is
+   wanted as a *gate* rather than a ramp, that is a design change with a
+   knob and an A/B, and the evidence above says it would move ~13% of
+   candidate evaluations that are already producing zero false passes —
+   i.e. very little. Low priority, and it must not be smuggled in as a
+   "fix".
+
+### Surprises worth carrying
+
+- **`decline` has been dead code as an action since the WRACE module
+  landed**, and the module's own comment claims otherwise: "What this
+  pass owes the decision is a want of zero and a number saying it
+  happened." It owes it; it does not pay it. The comment was written
+  against the intended `wrace_pwin_gain = 1.0` and survived the knob
+  shipping at 0.
+- **The war venue is deep's *good* wonder venue.** Every prior on this
+  project says wars cost wonders. Deep builds 6x more wonders per city
+  under arms at techlevel 50 than it does in a peaceful island economy,
+  because the thing gating wonders is city *size*, and a war venue that
+  starts at Gunpowder hands it size-6 cities on turn 1.
+- **The admission gate is a cliff, not a slope.** On 99–100% of the
+  no-wonder-city turns the eligible count is exactly **zero** — the
+  advisor was not choosing badly between candidates, it had none. Five
+  turns of the econ cell had `eligible > 0` and still no wonder city; the
+  other 517 had nobody to choose from.
+
+Retention: `benchmark/results/wonder-probe/{econ-pv3,econ-base,war-pv3,
+econ-d7}/`, 16 games, `game.log` gzipped after scoring (the report reader
+takes `.gz`). `key.txt` in each cell records config/binary/tuning shas.
