@@ -68,10 +68,20 @@ pin_server() {
   sha256sum "$SERVER" "$pin/libfreeciv.so" | sed 's/^/  /'
 }
 
-# One scripted-alliance game. Two deep players on one team (players on
-# a team start at DS_TEAM, which pplayers_allied() answers TRUE for),
-# three classic players to be at war with, all on one continent so a
-# land corridor between the allies can exist at all.
+# One scripted-alliance game, on a WAR-FORCING venue. Two deep players
+# on one team (players on a team start at DS_TEAM, which
+# pplayers_allied() answers TRUE for), four classic players to be at
+# war with, all on one continent so a land corridor between the allies
+# can exist at all.
+#
+# The war-forcing half is configs/tech50war-200.conf's recipe copied
+# verbatim -- techlevel 50, startunits ccccccccxxwwwwwwwwww,
+# dispersion 3, small map -- and it is here because a 40-turn probe of
+# the peaceful version had deep at PEACE with every classic player by
+# T21 and allied to one of them by T37. Two of the four message
+# classes (a threat to an ally city, an assault launch) have no
+# population in a game nobody fights, and a class that cannot fire for
+# want of a war is a venue result, not a liveness result.
 smoke_game() {
   local dir=$1 seed=$2 port=$3
 
@@ -84,25 +94,30 @@ smoke_game() {
     echo "set minplayers 0"
     echo "set timeout -1"
     echo "set mapsize XYSIZE"
-    echo "set xsize 40"
-    echo "set ysize 40"
+    echo "set xsize 32"
+    echo "set ysize 32"
     echo "set landmass 40"
     echo "set generator FRACTAL"
     echo "set startpos ALL"
     echo "set teamplacement CONTINENT"
-    echo "set aifill 5"
+    echo "set aifill 6"
+    echo "set techlevel 50"
+    echo "set startunits ccccccccxxwwwwwwwwww"
+    echo "set dispersion 3"
     echo "create P1 deep"
     echo "create P2 deep"
     echo "create P3 classic"
     echo "create P4 classic"
     echo "create P5 classic"
+    echo "create P6 classic"
     echo 'team P1 "Team 1"'
     echo 'team P2 "Team 1"'
     echo 'team P3 "Team 2"'
     echo 'team P4 "Team 3"'
     echo 'team P5 "Team 4"'
+    echo 'team P6 "Team 5"'
     echo "hard"
-    echo "set endturn 120"
+    echo "set endturn 100"
     echo "set autosaves \"GAMEOVER\""
     echo "set scorelog enabled"
     echo "set scoreloglevel ALL"
