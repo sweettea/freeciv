@@ -349,6 +349,7 @@ else
       'ai/deep/deepdefence.c',
       'ai/deep/deepdiplomacy.c',
       'ai/deep/deepeffects.c',
+      'ai/deep/deepexpand.c',
       'ai/deep/deepexplore.c',
       'ai/deep/deepgov.c',
       'ai/deep/deephorizon.c',

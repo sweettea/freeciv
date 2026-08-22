@@ -85,6 +85,7 @@
 #include "deepai.h"
 #include "deepcombat.h"
 #include "deepdiplomacy.h"
+#include "deepexpand.h"
 #include "deepexplore.h"
 #include "deepfunnel.h"
 #include "deepidle.h"
@@ -7258,6 +7259,8 @@ static void deep_founder_bid_log(struct player *pplayer, struct city *pcity,
            city_data->founder_want, wonder ? 1 : 0, capped ? 1 : 0,
            adv->max_num_cities, city_list_size(pplayer->cities), trait,
            pcity->surplus[O_FOOD], upkeep, fed ? 1 : 0, cm, minfood, bid);
+  deep_expand_note_bid(pplayer, city_data->founder_want, wonder, capped,
+                       fed);
 }
 
 /**********************************************************************//**
@@ -7355,10 +7358,24 @@ static void deep_city_choose_build(struct ai_type *ait,
   if (is_barbarian(pplayer)) {
     dai_barbarian_choose_build(pplayer, pcity, &(city_data->choice));
   } else {
-    if ((deep_want_from_choice(&city_data->choice).tier != DWT_EMERGENCY
-         || city_data->urgency == 0)
-        && !(dai_on_war_footing(ait, pplayer) && city_data->choice.want > 0
-             && pcity->id != adv->wonder_city)) {
+    /* The two arms of the inherited skip, named so the funnel can
+     * charge a founder want that never reached an auction to the arm
+     * that stopped it. Both conjuncts are the same expressions the
+     * condition below evaluates; hoisting them changes nothing but
+     * makes the reason readable. */
+    bool skip_emerg
+      = (deep_want_from_choice(&city_data->choice).tier == DWT_EMERGENCY
+         && city_data->urgency != 0);
+    bool skip_war = (dai_on_war_footing(ait, pplayer)
+                     && city_data->choice.want > 0
+                     && pcity->id != adv->wonder_city);
+
+    if (skip_emerg || skip_war) {
+      /* The emergency arm is the one the original condition tested
+       * first, so a city-turn that trips both is charged to it. */
+      deep_expand_note_skip(pplayer, !skip_emerg);
+    }
+    if (!skip_emerg && !skip_war) {
       /* Refuse the ferry where the bid is FORMED, not after it has
        * won. The domestic ferry rides the founder's-boat branch
        * (daidomestic.c:595), which fires only on a NEGATIVE
@@ -7492,6 +7509,21 @@ static void deep_city_choose_build(struct ai_type *ait,
                    adv_choice_rule_name(dom_won_before
                                         ? newchoice : &(city_data->choice)));
         }
+        /* The founder's verdict, taken where both sides of the
+         * comparison still exist. `scale_saved_founder` is deep's own
+         * want, before the class scale and before the water gate that
+         * may have withdrawn it -- i.e. the demand that entered this
+         * seam, which is the quantity the funnel is following. Whether
+         * the advisor made it its own winner is read off the choice it
+         * returned. */
+        deep_expand_note_auction(pplayer, scale_saved_founder,
+                                 (newchoice->type == CT_CIVILIAN
+                                  && newchoice->value.utype != NULL
+                                  && utype_is_cityfounder(newchoice
+                                                          ->value.utype)),
+                                 dom_won_after,
+                                 (deep_want_from_choice(&city_data->choice)
+                                  .tier == DWT_EMERGENCY));
         if (dom_won_after) {
           adv_choice_copy(&(city_data->choice), newchoice);
         }
@@ -7794,6 +7826,7 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
   city_list_iterate(pplayer->cities, pcity) {
     struct ai_city *city_data = def_ai_city_data(pcity, ait);
     struct adv_choice *choice;
+    bool expansion_blocked;
 
     if (city_data->choice.want <= 0) {
       /* Note that this function mungs the seamap, but we don't care */
@@ -7804,7 +7837,13 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
       adv_free_choice(choice);
       TIMING_LOG(AIT_CITY_MILITARY, TIMER_STOP);
     }
-    if (deep_expansion_blocked(ait, pplayer, pcity)
+    /* Hoisted out of the `&&` it used to head, so the funnel can count
+     * the verdict; `&&` evaluates its left operand first in every case,
+     * so the call order and the branch are unchanged. */
+    expansion_blocked = deep_expansion_blocked(ait, pplayer, pcity);
+    deep_expand_note_gate(pplayer,
+                          expansion_blocked && city_data->choice.want > 0);
+    if (expansion_blocked
         && city_data->choice.want > 0) {
       city_data->worker_want = 0;
       city_data->founder_want = 0;
@@ -7882,6 +7921,9 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
           deep_plr_data(pplayer)->stance_expand_gated++;
         }
       }
+      /* The want as the bid side will find it: every deep-owned term
+       * above has now been applied. */
+      deep_expand_note_want(pplayer, fresh, city_data->founder_want);
     }
     TIMING_LOG(AIT_CITY_SETTLERS, TIMER_STOP);
 
@@ -8099,6 +8141,10 @@ void deep_do_last_activities(struct ai_type *ait, struct player *pplayer)
   TIMING_LOG(AIT_CITIES, TIMER_STOP);
   /* Immediately after the build choices that accumulate it. */
   deep_birth_census(pplayer);
+  /* Likewise: the founder funnel's stages are all inside the pass that
+   * just ran, so this is the first point at which the line is complete
+   * for this turn. */
+  deep_expand_census(pplayer);
   /* After taxes and production are settled: if the treasury still
    * cannot cover the coming turn, choose our own sacrifice before
    * the server chooses one for us. */
