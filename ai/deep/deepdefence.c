@@ -7541,6 +7541,20 @@ static bool deep_founder_run_held(struct player *pplayer, struct city *pcity,
     return FALSE;
   }
 
+  /* A hold is only worth taking on a build that can actually finish.
+   * The server refuses to complete a pop-cost unit in a city that is
+   * not bigger than the cost and KEEPS the shields
+   * (city_build_unit(), server/cityturn.c:3062), so `can_city_build_now`
+   * says yes to a settler the city will never deliver. Without this
+   * test the hold is unbounded: measured on one probe game, city 271
+   * held Settlers from turn 8 to turn 19 with the stock climbing 33 to
+   * 66 against a 30-shield unit, refusing a defender at urgency 4 the
+   * whole time. Same test as the server's, read the same way. */
+  if (city_size_get(pcity)
+      <= utype_pop_value(pcity->production.value.utype, pcity)) {
+    return FALSE;
+  }
+
   /* Last, so that the exception has its own counter: these are the
    * runs the hold WOULD have kept and grave danger took. If this
    * number is large the hold is not the mechanism it looks like. */
@@ -7811,13 +7825,14 @@ static void deep_city_choose_build(struct ai_type *ait,
   if (deep_founder_run_held(pplayer, pcity, city_data)) {
     log_base(deep_metric_log_level(),
              "deep-runhold turn=%d player=\"%s\" city=%d prod=\"%s\""
-             " stock=%d beat=\"%s\" want=" ADV_WANT_PRINTF
-             " danger=%u urgency=%u",
+             " stock=%d size=%d beat=\"%s\" want=" ADV_WANT_PRINTF
+             " danger=%u urgency=%u grave=%u",
              game.info.turn, player_name(pplayer), pcity->id,
              universal_rule_name(&pcity->production), pcity->shield_stock,
+             city_size_get(pcity),
              adv_choice_rule_name(&city_data->choice),
              city_data->choice.want, city_data->danger,
-             city_data->urgency);
+             city_data->urgency, city_data->grave_danger);
     deep_expand_note_hold(pplayer);
     return;
   }
