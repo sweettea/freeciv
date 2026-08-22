@@ -990,6 +990,41 @@ struct deep_tuning {
    * disables the term and every pair evaluation with it. Needs trunk_road_gain > 0 for a plan
    * to exist at all. */
   double trunk_trade_gain;
+  /* W12G: do not bid for a worker the founder logic is about to
+   * reclaim. The corridor task source runs inside the UTYF_WORKERS
+   * block of deep_auto_settler_run(), and in the classic ruleset
+   * Settlers carry that flag, so the auction bids for and wins a unit
+   * that is one comparison away from being sent to found a city:
+   * `result->result > best_impr` a few lines later discards the pick
+   * inside the same call. The funnel measured that at 22.4% of every
+   * corridor assignment made (STATUS 2026-08-22), with 43.6% of the
+   * never-renewed picks followed by that unit on a city mission. With
+   * this gate open the site search for a cityfounder runs BEFORE the
+   * auction and its result becomes a floor the corridor bid must clear,
+   * so a pick that the founder search would override is never made --
+   * the same comparison, moved upstream of the assignment, with the
+   * search still run exactly once per unit per call. 0 keeps today's
+   * ordering byte-identically. Needs trunk_source_gain > 0 (and so
+   * trunk_road_gain > 0) for there to be a bid to gate at all. */
+  int trunk_keepable_gate;
+  /* W12G: how much more a rival bid must be worth before a worker
+   * already walking to a corridor tile is turned around. A walking
+   * worker is re-decided from scratch every turn --
+   * auto_workers_player() sends an IDLE unit to settler_run and
+   * adv_follow_path() restores IDLE after every partial walk -- so the
+   * task source re-runs the whole auction each turn with no memory of
+   * the walk already spent. The funnel charged 13.1% of dropped
+   * assignments to the advisor's champion winning the re-run and 4.5%
+   * to a different corridor tile winning it, against 91.9% of all
+   * assignments spent walking (STATUS 2026-08-22). This is the sunk
+   * walk priced as what it is: the tile the worker holds has its bid
+   * multiplied by 1 + this margin, so a rival must beat it by that
+   * fraction rather than by any epsilon. 0 is the off-state and
+   * reproduces today's churn exactly -- the multiplier is then 1.0,
+   * the ledger that remembers the held tile is never allocated, and the
+   * auction is the same auction. PLACEHOLDER: no measured value exists
+   * yet, and the knob owes a tuning pass. */
+  double trunk_keep_margin;
 
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).

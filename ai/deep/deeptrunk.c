@@ -112,6 +112,43 @@ static double deep_trunk_c_div_max[MAX_NUM_PLAYER_SLOTS];
  * have assigned a different task (or none) without it. */
 static int deep_trunk_c_div_pick[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_div_flip[MAX_NUM_PLAYER_SLOTS];
+/* W12G: corridor bids the founder's own site value refused, corridor
+ * tiles a worker was already walking to and that the source priced
+ * again this turn, and the subset of those the sunk-walk premium
+ * actually held on to. */
+static int deep_trunk_c_keep_veto[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_keep_held[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_keep_kept[MAX_NUM_PLAYER_SLOTS];
+
+/* W12G: which corridor tile each worker is walking to.
+ *
+ * The advisor keeps no such memory -- auto_workers_player() sends an
+ * IDLE unit to settler_run and adv_follow_path() restores IDLE after
+ * every partial walk (advgoto.c:65-72), so a walking worker is
+ * re-decided from scratch every turn and `punit->server.adv->task`
+ * holds the KIND of task and not its tile. The stickiness margin needs
+ * the tile, so this is it: one entry per worker holding a corridor
+ * assignment, allocated only when the margin is open.
+ *
+ * Deliberately NOT the funnel's ledger, which looks identical and is
+ * not: deepfunnel.c allocates nothing unless the metric lines are being
+ * written (deepfunnel.c:106), so reading it here would make what the AI
+ * DOES depend on whether it is being logged.
+ *
+ * The slot count is a bookkeeping bound like deepfunnel's: a worker
+ * that cannot be recorded simply gets no premium. Entries for units
+ * that never return to the source (dead, held, mid-activity elsewhere)
+ * are evicted least-recently-touched-first when the table fills. */
+#define DEEP_TRUNK_HOLD_SLOTS 512
+
+struct deep_trunk_hold {
+  int unit;                  /* Unit id; 0 marks a free slot. */
+  int tile;                  /* Tile index of the corridor tile held. */
+  int turn;                  /* Turn the hold was last written. */
+};
+
+static struct deep_trunk_hold
+deep_trunk_holds[MAX_NUM_PLAYER_SLOTS][DEEP_TRUNK_HOLD_SLOTS];
 
 /**********************************************************************//**
   Does this tile already carry a road that speeds movement? A corridor
@@ -920,6 +957,96 @@ void deep_trunk_source_pick(const struct player *pplayer,
 }
 
 /**********************************************************************//**
+  The corridor tile this worker is already walking to, or NULL when it
+  holds none. Reading it costs one scan of this player's hold table.
+**************************************************************************/
+struct tile *deep_trunk_hold_tile(const struct player *pplayer, int uid)
+{
+  struct deep_trunk_hold *holds = deep_trunk_holds[player_number(pplayer)];
+  int i;
+
+  for (i = 0; i < DEEP_TRUNK_HOLD_SLOTS; i++) {
+    if (holds[i].unit == uid) {
+      return index_to_tile(&(wld.map), holds[i].tile);
+    }
+  }
+
+  return NULL;
+}
+
+/**********************************************************************//**
+  Remember that this worker is walking to 'ptile', or forget its hold
+  when 'ptile' is NULL. Called once per worker per pass of the task
+  source, so a worker that stops being offered a corridor stops being
+  sticky on the same turn the source says so.
+**************************************************************************/
+void deep_trunk_hold_set(const struct player *pplayer, int uid,
+                         const struct tile *ptile)
+{
+  struct deep_trunk_hold *holds = deep_trunk_holds[player_number(pplayer)];
+  int i, free_slot = -1, oldest = 0;
+
+  for (i = 0; i < DEEP_TRUNK_HOLD_SLOTS; i++) {
+    if (holds[i].unit == uid) {
+      if (ptile == NULL) {
+        holds[i].unit = 0;
+      } else {
+        holds[i].tile = tile_index(ptile);
+        holds[i].turn = game.info.turn;
+      }
+      return;
+    }
+    if (holds[i].unit == 0) {
+      free_slot = (free_slot < 0 ? i : free_slot);
+    } else if (holds[i].turn < holds[oldest].turn) {
+      oldest = i;
+    }
+  }
+
+  if (ptile == NULL) {
+    return;
+  }
+  if (free_slot < 0) {
+    /* Full: the least recently written hold belongs to the worker that
+     * has gone longest without being offered a corridor, which is the
+     * one whose walk is least likely to still be under way. */
+    free_slot = oldest;
+  }
+  holds[free_slot].unit = uid;
+  holds[free_slot].tile = tile_index(ptile);
+  holds[free_slot].turn = game.info.turn;
+}
+
+/**********************************************************************//**
+  Record that the source priced the tile a worker was already walking to
+  ('kept' says the sunk-walk premium is why that worker is still walking
+  to it -- without the premium the assignment would have changed).
+**************************************************************************/
+void deep_trunk_hold_census(const struct player *pplayer, bool kept)
+{
+  int pn = player_number(pplayer);
+
+  deep_trunk_c_keep_held[pn]++;
+  if (kept) {
+    deep_trunk_c_keep_kept[pn]++;
+  }
+}
+
+/**********************************************************************//**
+  Record that the keepable-bid gate refused one corridor assignment:
+  the source's best beyond-ceiling candidate outbid the advisor's own
+  champion, so today's code would have assigned it, but it did not
+  clear the floor the unit's own site search set and the assignment was
+  never made. The count is the gate's whole visible effect and is zero
+  whenever the gate is shut, because the floor is then zero and every
+  candidate that beats the champion is picked.
+**************************************************************************/
+void deep_trunk_source_veto(const struct player *pplayer)
+{
+  deep_trunk_c_keep_veto[player_number(pplayer)]++;
+}
+
+/**********************************************************************//**
   One line per player per turn: the links the plan spans, the corridor
   tiles still without a road, how many candidates the want reached and
   the largest it issued. links>0 with hits=0 is the ceiling in
@@ -999,6 +1126,30 @@ void deep_trunk_census(struct player *pplayer)
              deep_trunk_c_div_flip[pn]);
   }
 
+  if (log_do_output_for_level(deep_metric_log_level())
+      && (deep_trunk_c_keep_veto[pn] > 0 || deep_trunk_c_keep_held[pn] > 0)) {
+    /* W12G. veto= corridor assignments the keepable-bid gate refused
+     * this turn: bids that beat the advisor's champion and would have
+     * been made, but did not clear the floor the unit's own site search
+     * set. Each one is an assignment that today's code makes and then
+     * discards inside the same call, so this counts the leak closed
+     * rather than the mechanism running. held= workers the source
+     * priced a corridor tile for that they were already walking to, and
+     * kept= the subset where the sunk-walk premium is what kept them on
+     * it -- the raw bid had lost. held>0 with kept=0 says the margin is
+     * too small to change any auction it was offered, which is a null
+     * rather than a dead knob. Clean zeros with both knobs shut are the
+     * point, not a miss. */
+    log_base(deep_metric_log_level(),
+             "deep-trunkkeep turn=%d player=\"%s\" veto=%d held=%d kept=%d",
+             game.info.turn, player_name(pplayer),
+             deep_trunk_c_keep_veto[pn], deep_trunk_c_keep_held[pn],
+             deep_trunk_c_keep_kept[pn]);
+  }
+
+  deep_trunk_c_keep_veto[pn] = 0;
+  deep_trunk_c_keep_held[pn] = 0;
+  deep_trunk_c_keep_kept[pn] = 0;
   deep_trunk_c_div_pairs[pn] = 0;
   deep_trunk_c_div_links[pn] = 0;
   deep_trunk_c_div_max[pn] = 0.0;
