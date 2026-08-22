@@ -67,6 +67,26 @@ struct deep_trunk_link {
                               * deeptrade's own units. */
 };
 
+/* How a corridor tile's owner stands to the player planning the
+ * corridor. The whole point of the split is that these classes are NOT
+ * interchangeable: what a worker may legally do differs between them
+ * (nothing does, in the core rules -- see deep_trunk_own_class()), what
+ * deep's own policy allows differs between them, and what it costs to
+ * be caught standing there differs most of all.
+ *
+ * Ordering is the log line's field order and nothing else depends on
+ * it. */
+enum deep_trunk_own {
+  DEEP_TRUNK_OWN_NONE = 0,     /* Unclaimed ground. */
+  DEEP_TRUNK_OWN_SELF,         /* Ours. */
+  DEEP_TRUNK_OWN_ALLY,         /* DS_ALLIANCE or DS_TEAM. */
+  DEEP_TRUNK_OWN_PEACE,        /* DS_PEACE or DS_ARMISTICE. */
+  DEEP_TRUNK_OWN_CEASE,        /* DS_CEASEFIRE. */
+  DEEP_TRUNK_OWN_WAR,          /* DS_WAR. */
+  DEEP_TRUNK_OWN_OTHER,        /* DS_NO_CONTACT and anything later. */
+  DEEP_TRUNK_OWN_COUNT
+};
+
 /* The plan, memoised on (turn, player): one link index per tile
  * (0 = none, otherwise link+1) and the links themselves. */
 static int *deep_trunk_tile = NULL;
@@ -112,6 +132,34 @@ static double deep_trunk_c_div_max[MAX_NUM_PLAYER_SLOTS];
  * have assigned a different task (or none) without it. */
 static int deep_trunk_c_div_pick[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_div_flip[MAX_NUM_PLAYER_SLOTS];
+/* W12H: the soft-border ledger, split by the treaty state of the tile
+ * OWNER (deep_trunk_own_class()). plan/work/road are properties of the
+ * plan and are recomputed by every refresh; off/pick accumulate over
+ * the player-turn like every other source counter. */
+static int deep_trunk_c_soft_plan[MAX_NUM_PLAYER_SLOTS]
+                                 [DEEP_TRUNK_OWN_COUNT];
+static int deep_trunk_c_soft_off[MAX_NUM_PLAYER_SLOTS]
+                                [DEEP_TRUNK_OWN_COUNT];
+static int deep_trunk_c_soft_pick[MAX_NUM_PLAYER_SLOTS]
+                                 [DEEP_TRUNK_OWN_COUNT];
+static int deep_trunk_c_soft_work[MAX_NUM_PLAYER_SLOTS]
+                                 [DEEP_TRUNK_OWN_COUNT];
+static int deep_trunk_c_soft_road[MAX_NUM_PLAYER_SLOTS]
+                                 [DEEP_TRUNK_OWN_COUNT];
+
+/* Last refresh's plan tiles and their ownership classes, per player:
+ * what `road=` is measured against. A tile that was in the plan (so
+ * unroaded by construction) and carries a road at the next refresh has
+ * BEEN ROADED -- by us or by its owner, which this cannot distinguish
+ * and does not claim to. `work=` is the attributable half. */
+struct deep_trunk_seen {
+  int *tile;
+  unsigned char *own;
+  int n, alloc;
+};
+
+static struct deep_trunk_seen deep_trunk_prev[MAX_NUM_PLAYER_SLOTS];
+
 /* W12G: corridor bids the founder's own site value refused, corridor
  * tiles a worker was already walking to and that the source priced
  * again this turn, and the subset of those the sunk-walk premium
@@ -166,6 +214,99 @@ bool deep_trunk_tile_roaded(const struct tile *ptile)
   } extra_type_by_cause_iterate_end;
 
   return FALSE;
+}
+
+/**********************************************************************//**
+  Which ownership class this tile falls in for 'pplayer'.
+
+  Recorded here rather than assumed, because the corridor family has
+  twice reasoned from "a worker may not build there" when the rules say
+  no such thing. What the CORE RULES forbid a civilian, by state, is:
+  nothing.
+
+  * Entry. players_non_invade() (common/player.c:1434) is TRUE for
+    DS_PEACE alone -- the in-code comment says armistice is deliberately
+    left open so units can withdraw. Every caller of it guards on
+    !utype_has_flag(utype, UTYF_CIVILIAN): the move test
+    (common/movement.c:773-777, MR_PEACE), the teleport test
+    (movement.c:894-898) and all three pathfinder node initialisers
+    (common/aicore/path_finding.c:302-303, :1053-1054, :2092-2093).
+    Workers and Engineers carry NonMil (data/classic/units.ruleset:474,
+    :523), so a worker may walk into ANY player's borders in ANY state.
+    Even the armistice-ripens purge spares them explicitly
+    (remove_illegal_armistice_units(), server/srv_main.c:915-946, which
+    skips is_enter_borders_unit()).
+  * Building. can_build_road() (common/road.c:302-314) reaches
+    can_build_extra_base() (common/extras.c:413-462, no tile_owner
+    reference at all) and the ruleset reqs; classic's Build Road enabler
+    asks for the Workers flag and CanRoad terrain and nothing else
+    (data/classic/actions.ruleset:1065-1074). tile_owner() enters road
+    building at exactly one place, as the `other` req context
+    (road.c:276-281), which is inert unless a ruleset writes a DiplRel
+    requirement -- and neither classic nor civ2civ3 does. The contrast
+    is player_can_place_extra() (extras.c:487-529), the INFRAPOINTS
+    path, which does demand tile_owner(ptile) == pplayer.
+  * Consequences. No casus belli and no incident is attached to entry
+    or to ACTRES_ROAD: action_consequence_*() is called for spy actions,
+    capture/wipe/expel/conquer-extras/heal, paradrop and -- among worker
+    activities -- ACTIVITY_PILLAGE alone (server/unittools.c:1035-1048).
+    A finished road leaves the tile's owner unchanged; create_extra()
+    re-claims BASES only (server/maphand.c:2549).
+
+  So the ban deep and the advisor both enforce today -- TB_IGNORE on
+  every non-allied owner (autoworkers.c:521-535,
+  deep_settler_tile_behavior()) -- is ADVISOR POLICY, not law. That
+  makes each class below a policy decision this file gets to make on its
+  own merits, and the merit is risk, not legality: a worker on a war
+  enemy's ground dies, a worker on a peace partner's ground does not.
+**************************************************************************/
+static enum deep_trunk_own
+deep_trunk_own_class(const struct player *pplayer, const struct tile *ptile)
+{
+  const struct player *owner = tile_owner(ptile);
+
+  if (owner == NULL) {
+    return DEEP_TRUNK_OWN_NONE;
+  }
+  if (owner == pplayer) {
+    return DEEP_TRUNK_OWN_SELF;
+  }
+  switch (player_diplstate_get(pplayer, owner)->type) {
+  case DS_ALLIANCE:
+  case DS_TEAM:
+    return DEEP_TRUNK_OWN_ALLY;
+  case DS_PEACE:
+  case DS_ARMISTICE:
+    /* One class, because a peace treaty lands as DS_ARMISTICE and
+     * ripens into DS_PEACE by itself (server/diplhand.c:593 and
+     * server/srv_main.c:970-984). Splitting them would make a corridor
+     * appear and vanish on a countdown neither player chose. */
+    return DEEP_TRUNK_OWN_PEACE;
+  case DS_CEASEFIRE:
+    return DEEP_TRUNK_OWN_CEASE;
+  case DS_WAR:
+    return DEEP_TRUNK_OWN_WAR;
+  default:
+    return DEEP_TRUNK_OWN_OTHER;
+  }
+}
+
+/**********************************************************************//**
+  Remember this refresh's plan tiles and their ownership classes, so the
+  next refresh can say which of them gained a road.
+**************************************************************************/
+static void deep_trunk_seen_add(int pn, int idx, enum deep_trunk_own own)
+{
+  struct deep_trunk_seen *seen = &deep_trunk_prev[pn];
+
+  if (seen->n >= seen->alloc) {
+    seen->alloc = MAX(2 * seen->alloc, 64);
+    seen->tile = fc_realloc(seen->tile, seen->alloc * sizeof(*seen->tile));
+    seen->own = fc_realloc(seen->own, seen->alloc * sizeof(*seen->own));
+  }
+  seen->tile[seen->n] = idx;
+  seen->own[seen->n] = (unsigned char) own;
+  seen->n++;
 }
 
 /**********************************************************************//**
@@ -455,6 +596,7 @@ static void deep_trunk_build(const struct player *pplayer)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   const struct civ_map *nmap = &(wld.map);
+  int pn = player_number(pplayer);
   int nown = city_list_size(pplayer->cities);
   int nnodes = nown;
   struct tile **ctile, **path;
@@ -474,6 +616,20 @@ static void deep_trunk_build(const struct player *pplayer)
   }
   deep_trunk_nlinks = 0;
   deep_trunk_nbeyond = 0;
+
+  /* Before the plan is rebuilt: which of last refresh's corridor tiles
+   * have gained a road since. A plan tile is unroaded by construction,
+   * so this is a completion count, not a stock. */
+  memset(deep_trunk_c_soft_plan[pn], 0, sizeof(deep_trunk_c_soft_plan[pn]));
+  memset(deep_trunk_c_soft_work[pn], 0, sizeof(deep_trunk_c_soft_work[pn]));
+  memset(deep_trunk_c_soft_road[pn], 0, sizeof(deep_trunk_c_soft_road[pn]));
+  for (i = 0; i < deep_trunk_prev[pn].n; i++) {
+    if (deep_trunk_tile_roaded(index_to_tile(nmap,
+                                             deep_trunk_prev[pn].tile[i]))) {
+      deep_trunk_c_soft_road[pn][deep_trunk_prev[pn].own[i]]++;
+    }
+  }
+  deep_trunk_prev[pn].n = 0;
 
   if (nown < 1) {
     return;
@@ -587,7 +743,12 @@ static void deep_trunk_build(const struct player *pplayer)
             int idx = tile_index(path[t]);
 
             if (deep_trunk_tile[idx] == 0 && !deep_trunk_tile_roaded(path[t])) {
+              enum deep_trunk_own own
+                = deep_trunk_own_class(pplayer, path[t]);
+
               deep_trunk_tile[idx] = deep_trunk_nlinks + 1;
+              deep_trunk_c_soft_plan[pn][own]++;
+              deep_trunk_seen_add(pn, idx, own);
               if (deep_trunk_nbeyond >= deep_trunk_beyond_alloc) {
                 deep_trunk_beyond_alloc = MAX(2 * deep_trunk_beyond_alloc,
                                               32);
@@ -693,6 +854,21 @@ static void deep_trunk_build(const struct player *pplayer)
     }
     deep_trunk_nbeyond = m;
   }
+
+  /* Own workers actually swinging a shovel on a corridor tile right
+   * now, by whose ground it is. This is the ATTRIBUTABLE half of the
+   * soft-border ledger -- the unit is ours, the activity is a road, and
+   * the tile is on this turn's plan -- so it is what "deep built a road
+   * on a peace partner's tile" should be read from. Sampled here rather
+   * than in the census because the census runs after the plan's
+   * single-slot memoisation may have moved on to another player. */
+  unit_list_iterate(pplayer->units, punit) {
+    if (punit->activity == ACTIVITY_GEN_ROAD
+        && deep_trunk_tile[tile_index(unit_tile(punit))] != 0) {
+      deep_trunk_c_soft_work[pn]
+        [deep_trunk_own_class(pplayer, unit_tile(punit))]++;
+    }
+  } unit_list_iterate_end;
 
   free(ctile);
   free(seen);
@@ -912,6 +1088,8 @@ adv_want deep_trunk_source_want(const struct player *pplayer,
   want = deep_trunk_price(tune, target, ptile, NULL);
   if (want > 0.0) {
     deep_trunk_c_src_off[player_number(pplayer)]++;
+    deep_trunk_c_soft_off[player_number(pplayer)]
+      [deep_trunk_own_class(pplayer, ptile)]++;
     if (deep_trunk_tile_ally(ptile)) {
       deep_trunk_c_ally_off[player_number(pplayer)]++;
     }
@@ -977,6 +1155,7 @@ void deep_trunk_source_pick(const struct player *pplayer,
 
   deep_trunk_c_src_pick[pn]++;
   deep_trunk_c_src_hist[pn][bucket]++;
+  deep_trunk_c_soft_pick[pn][deep_trunk_own_class(pplayer, ptile)]++;
   if (deep_trunk_tile_ally(ptile)) {
     deep_trunk_c_ally_pick[pn]++;
   }
@@ -1179,6 +1358,56 @@ void deep_trunk_census(struct player *pplayer)
              deep_trunk_c_keep_kept[pn]);
   }
 
+  if (log_do_output_for_level(deep_metric_log_level())) {
+    int foreign = 0, c;
+
+    for (c = DEEP_TRUNK_OWN_ALLY; c < DEEP_TRUNK_OWN_COUNT; c++) {
+      foreign += deep_trunk_c_soft_plan[pn][c] + deep_trunk_c_soft_off[pn][c]
+                 + deep_trunk_c_soft_pick[pn][c]
+                 + deep_trunk_c_soft_work[pn][c]
+                 + deep_trunk_c_soft_road[pn][c];
+    }
+    if (foreign > 0) {
+      /* W12H. Every field is the same seven-way ownership tuple, in
+       * deep_trunk_own order:
+       *
+       *   free:self:ally:peace:cease:war:other
+       *
+       * plan= corridor tiles this turn's plan holds, off= the ones the
+       * task source priced, pick= the assignments made on them, work=
+       * own workers building a road on one right now, road= plan tiles
+       * from LAST refresh that carry a road now (by anyone: the owner
+       * builds roads too, which is why work= and not road= is the
+       * attributable count). Printed only when some FOREIGN tile is
+       * involved, so an empire whose corridors stay at home says
+       * nothing at all. */
+      char f[5][DEEP_TRUNK_OWN_COUNT * 12];
+      const int *src[5];
+      int k;
+
+      src[0] = deep_trunk_c_soft_plan[pn];
+      src[1] = deep_trunk_c_soft_off[pn];
+      src[2] = deep_trunk_c_soft_pick[pn];
+      src[3] = deep_trunk_c_soft_work[pn];
+      src[4] = deep_trunk_c_soft_road[pn];
+      for (k = 0; k < 5; k++) {
+        int at = 0;
+
+        for (c = 0; c < DEEP_TRUNK_OWN_COUNT; c++) {
+          at += fc_snprintf(f[k] + at, sizeof(f[k]) - at, "%s%d",
+                            c == 0 ? "" : ":", src[k][c]);
+        }
+      }
+      log_base(deep_metric_log_level(),
+               "deep-trunksoft turn=%d player=\"%s\" plan=%s off=%s"
+               " pick=%s work=%s road=%s",
+               game.info.turn, player_name(pplayer),
+               f[0], f[1], f[2], f[3], f[4]);
+    }
+  }
+
+  memset(deep_trunk_c_soft_off[pn], 0, sizeof(deep_trunk_c_soft_off[pn]));
+  memset(deep_trunk_c_soft_pick[pn], 0, sizeof(deep_trunk_c_soft_pick[pn]));
   deep_trunk_c_keep_veto[pn] = 0;
   deep_trunk_c_keep_held[pn] = 0;
   deep_trunk_c_keep_kept[pn] = 0;
