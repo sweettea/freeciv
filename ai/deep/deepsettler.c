@@ -128,6 +128,43 @@ deep_settler_tile_behavior(const struct tile *ptile,
 }
 
 /**********************************************************************//**
+  W12H: tile behaviour for the CORRIDOR pathfinder alone.
+
+  Same as deep_settler_tile_behavior() except that the ownership test is
+  deep_trunk_soft_open() -- so behind trunk_soft_border_gate a peace
+  partner's tiles are walkable, and with the gate shut this function is
+  the other one exactly (deep_trunk_soft_open() then returns TRUE for
+  precisely the owners pplayers_allied() admits).
+
+  A separate function and not a flag on the shared one, because the
+  corridor leg is the only leg whose destination the plan has already
+  reasoned about. A settler looking for a city site, an idle worker
+  looking for something to do and a fleeing worker have no such reason
+  to be standing on a foreign tile, and this epic does not give them
+  one.
+
+  The permission is real, not assumed: a NonMil unit is exempt from
+  every players_non_invade() check in the tree (common/movement.c:775,
+  common/aicore/path_finding.c:302-303 and the two other node
+  initialisers), so pf will not overrule TB_NORMAL here.
+**************************************************************************/
+static enum tile_behavior
+deep_corridor_tile_behavior(const struct tile *ptile,
+                            enum known_type known,
+                            const struct pf_parameter *param)
+{
+  if (!deep_trunk_soft_open(param->owner, ptile)) {
+    return TB_IGNORE;
+  }
+  if (is_non_allied_unit_tile(ptile, param->owner,
+                              utype_has_flag(param->utype, UTYF_FLAGLESS))) {
+    return TB_IGNORE;
+  }
+
+  return TB_NORMAL;
+}
+
+/**********************************************************************//**
   The overnight-danger bar with a tolerance multiplier. Same
   arithmetic as dai_consider_tile_dangerous() -- the authoritative
   path for AI players inside adv_danger_at() -- copied because the
@@ -1894,7 +1931,11 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
 
   pft_fill_unit_parameter(&parameter, nmap, punit);
   parameter.omniscience = !has_handicap(pplayer, H_MAP);
-  parameter.get_TB = deep_settler_tile_behavior;
+  /* W12H: the corridor leg, and only it, may cross a peace partner's
+   * border -- the same set deep_trunk_walk() lets the plan occupy. With
+   * trunk_soft_border_gate shut this is deep_settler_tile_behavior()
+   * tile for tile. */
+  parameter.get_TB = deep_corridor_tile_behavior;
   pfm = pf_map_new(&parameter);
 
   for (i = 0; i < nbeyond; i++) {
