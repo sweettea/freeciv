@@ -17786,3 +17786,248 @@ Ranked by the size of the number above, not by proximity to `deepwonder.c`:
 Retention: `benchmark/results/wonder-probe/{econ-pv3,econ-base,war-pv3,
 econ-d7}/`, 16 games, `game.log` gzipped after scoring (the report reader
 takes `.gz`). `key.txt` in each cell records config/binary/tuning shas.
+
+---
+
+## CHATTY: deep talks to its allies — outbound only, four classes, one gate (2026-08-22)
+
+Brief: `doc/deep-ai/sessions/S-CHATTY-ally-comms.md`, written from the
+live Europe game and the user's own request ("i'd love to coordinate a
+little better with allies"), which lifts the standing
+no-AI-conversation exclusion **for outbound lines only**. Deep now says
+what it is doing. It still reads nothing anybody says back, so there is
+no protocol here and nothing that can be talked into a decision.
+
+Branch `epic/chatty-ally-comms` (**not merged**), worktree
+`.worktrees/chatty`, 13 commits. Proof binary `freeciv-server` sha
+`ba4b5adb9af190` with `libfreeciv.so` sha `4d92b8d23105ee`; the
+identity control is a binary built from this branch's point of
+departure `c19a389a6f`, sha `cb45fbc747c128`.
+
+### 1. The channel is stock's — the call path, cited
+
+`ai/default/daidiplomacy.c:103`, `dai_diplo_notify()`, is how the stock
+AI has always put player-visible text in a human's chat window:
+
+```
+vpackage_event(&packet, nullptr, E_DIPLOMACY, ftc_chat_private, text, ap)
+lsend_packet_chat_msg(pplayer->connections, &packet)
+event_cache_add_for_player(&packet, pplayer)
+```
+
+`deep_chat_send()` (`ai/deep/deepchat.c`) makes the same three calls in
+the same order against the same public API — `package_event()` instead
+of `vpackage_event()` only because the varargs are already collapsed
+into one line by then. The text therefore arrives in a connected
+client's chat window, addressed from the deep player in stock's own
+`*Name (AI)*` shape, and survives a reconnect through the same event
+cache.
+
+Stock's wrapper is `static`, deep does **not** call it, and **the
+visibility exception was not used**: the wrapper answers to stock's
+`diplomacy_verbose` rather than to deep's gate and it addresses one
+fixed player, so making it non-static would have bought nothing that
+four lines of the public API do not already give. Nothing was copied
+from it but the call sequence, which is the API. `ai/default` and
+`ai/baseline` are untouched by this epic.
+
+Two deliberate departures: the colour is `ftc_chat_ally` (every
+recipient here IS an ally, and that is the colour the client already
+paints ally chat in), and the gate is deep's own.
+
+A benchmark game has no client connected, so the packet stream is
+invisible to it. Every line is therefore also written as a `deep-chat`
+metric line carrying class, recipient, the rate-cap tally and the text
+verbatim — which is what the smoke reads and what `knobcensus.py`
+points at.
+
+### 2. The four classes, and where each is hooked
+
+| class | hook | what it says |
+|---|---|---|
+| 0 corridor | `deep_trunk_refresh()`, after the W12 slice-3 plan is built | "We are building a road toward your city X." / "The road to your city X is finished." |
+| 1 threat | `phase_finished`, own scan of ally cities | "Enemy force approaching your city X: N units of P, nearest eta T." |
+| 2 operation | `deep_op_launch()`, the single funnel both MUSTER→MARCH transitions pass through | "We are marching on X, a city of P." |
+| 3 pact | `phase_finished`, diff of deep's own diplstates | "We are now allied with P." / "We have made peace with P." / "We have declared war on P." |
+
+Verbatim, from the smoke's chatty-on cell:
+
+```
+turn=3  P1 class=0 to="P2"     *P1 (AI)* We are building a road toward your city Tokyo.
+turn=53 P1 class=2 to="allies" *P1 (AI)* We are marching on Vila Real, a city of P6.
+turn=18 P1 class=3 to="allies" *P1 (AI)* We have declared war on P6.
+turn=15 P2 class=3 to="allies" *P2 (AI)* We have made peace with P6.
+turn=37 P1 class=3 to="allies" *P1 (AI)* We are now allied with P3.
+        P1 class=1 to="P2"     *P1 (AI)* Enemy force approaching your city
+                                Hiroshima: 4 units of P4, nearest eta 2.
+```
+
+Honesty properties, stated because they are the point of the epic:
+
+- **Every line is deep's own state.** A corridor deep planned, a threat
+  deep's own sight found, an operation deep just launched, a pact deep
+  just signed. Nothing in the channel is something deep does not
+  already know, so no line can leak and no line can lie.
+- **The threat scan's filter is `can_player_see_unit(pplayer, punit)`**
+  — deep's real sight. It tells an ally nothing a scout of ours
+  standing in the same place could not.
+- **The threat predicate is REACH, not observed motion**: at-war attack
+  units that *could* reach the city within `survival_horizon` turns,
+  which is the same set deep's own danger model insures its own cities
+  against. A stack sitting still two tiles away is reported; the
+  `nearest eta` field is the measured quantity and it is exact.
+  `survival_horizon` is reused rather than knobbed again: it is already
+  deep's answer to "how far off is a threat still a threat".
+- **`deep_city_defence_read()` was deliberately not reused** for the
+  threat class even though it answers a richer question. It memoises
+  per city into the survival cache that deep's own decisions read in
+  the same phase, so running it over an ally's cities would put foreign
+  entries in deep's own cache. The scan allocates nothing and caches
+  nothing.
+- **An operation is announced at LAUNCH, never at muster.** A mustering
+  wave can still be abandoned or re-targeted (ERA 3b counts those), so
+  announcing one would announce something deep has not decided. Launch
+  is also late enough that the announcement cannot change deep's own
+  behaviour: the odds gate has already been cleared.
+- **A relationship never looked at is recorded silently.** That stops
+  the first pass after the gate opens from announcing every
+  relationship deep already had, and stops merely MEETING somebody
+  (first contact writes `DS_WAR` in most rulesets) from being reported
+  as a declaration. `ARMISTICE` ripening into `PEACE` is silent for the
+  same reason: that is the calendar, not a decision.
+
+### 3. The knobs
+
+`chatty_gate` (0 = silent = the tree before this epic) and
+`chatty_max_per_turn` (3, PLACEHOLDER: lines per player per turn,
+counted per LINE and not per recipient).
+
+**`chatty_max_per_turn` owes a TASTE pass, not a tuning pass.** It is
+the first knob on this project that cannot be tuned even in principle:
+what it trades off is a human ally's patience, and no scorelog contains
+that. `benchmark/tune.py` must not be pointed at it. Both knobs are
+classified MODE in `knobcensus.py` for the same reason — an
+output-only mechanism has no score gradient to climb.
+
+- `tune-audit.py`: **CLEAN at 253/253/253/253** (was 251/251/251/251).
+- `knobcensus.py` over `benchmark/results/chatty-smoke`: `chatty_gate`
+  **MODE**, 472 firings; `chatty_max_per_turn` **MODE**, 472. Corpus
+  verdicts `DEAD=28 LIVE=104 MODE=30 NO-CORPUS=36 NO-INSTRUMENT=55`.
+- `meson test -C build`: **6/6 OK** on every commit.
+
+### 4. The proofs
+
+Driver: `benchmark/chatty.sh` (`identity` / `smoke CELL` / `report`),
+resumable on DONE markers, ports 7600-7649, jobs 2, binary pinned per
+stage with `libfreeciv.so` beside it.
+
+**Identity at defaults, gate off — 20/20 scorelogs BYTE-IDENTICAL.**
+`benchmark/configs/smoke.conf`, seeds 1-10, `TUNING=tuning/identity.ini`
+on both sides, head binary vs a binary built from `c19a389a6f`:
+
+```
+comparing .../base/smoke-a4513059b02b/ against .../head/smoke-d85bd37fac7d/
+identity deep:     10/10 byte-identical, 0 differ, 0 missing
+identity mixed_db: 10/10 byte-identical, 0 differ, 0 missing
+provenance: neither arm carries a deep-chat line, as required
+```
+
+Run TWICE, 40 games: once on the pre-wording-fix binary
+(`4cb8de9fa19984`) and again on the shipped one (`ba4b5adb9af190`),
+20/20 both times, so the numbers above belong to the tip and not to an
+intermediate tree.
+
+The mixed cell is the one the brief asked for: deep beside
+default/baseline seats in one game, which is where a stray packet or a
+per-player state confusion would show up first.
+
+**Liveness, and the two gate-ON assertions.** Scripted alliance (two
+deep on one team, hence `DS_TEAM`, hence allied) on a war-forcing venue
+— `configs/tech50war-200.conf`'s recipe (techlevel 50, startunits
+`ccccccccxxwwwwwwwwww`, dispersion 3) on a 32x32 single continent, six
+players, 100 turns, seeds 1-2 per cell:
+
+```
+      class0  class1  class2  class3  total     (0 corridor, 1 threat,
+on        14      87      15      25    141      2 operation, 3 pact)
+on2       14      87      15      25    141
+off        0       0       0       0      0
+d7        12     108      42      28    190
+```
+
+```
+rate cap: 200 lines at said=1/3, 78 at said=2/3, 53 at said=3/3
+cap breaches: 0
+
+assertion: chatty on vs off, same seeds  -> seed-1 IDENTICAL, seed-2 IDENTICAL
+assertion: chatty on vs on repeated      -> seed-1 IDENTICAL, seed-2 IDENTICAL
+```
+
+All four classes fire; the silent cell is silent; the cap is never
+exceeded; **the scorelogs of a talking deep and a silent deep are the
+same bytes**, which is the claim that the channel is output and not a
+decision. `d7` is the Europe rider's own tuning file
+(`derby5/tuning-derby7.ini`, now carrying `chatty_gate = 1` and
+`chatty_max_per_turn = 3`) and it emits all four classes too — 190
+lines in two games — so the Europe game will hear them.
+
+Retention: `benchmark/results/chatty-identity/{base,head}/` (40 games),
+`benchmark/results/chatty-smoke/{on,on2,off,d7}/` (8 games, `key.txt`
+per cell recording tuning and binary shas).
+
+### 5. Surprises
+
+- **The peaceful venue could not prove liveness, and said so.** A
+  40-turn probe of the plain scripted-alliance venue produced 13 lines
+  and only two classes: deep had made peace with every classic player
+  by T21 and was allied to one of them by T37. Two classes have no
+  population in a game nobody fights. The smoke venue took
+  `tech50war-200`'s war-forcing recipe verbatim for that reason, and it
+  is the same venue-sensitivity `trunk_ally_gate` was recorded with.
+- **The threat class is 62% of everything deep says (87 of 141), and
+  most of it is one unit.** The predicate is "an at-war attack unit
+  could be here within `survival_horizon`", and on a crowded
+  techlevel-50 map a single wandering enemy trips it for every ally
+  city it passes. The rate cap and the once-per-(city, enemy) memo keep
+  it bounded, but for a human ally this is the class most likely to
+  read as noise. **Rule 7 says flag rather than invent**: a minimum
+  force size would be a new constant, and "only units that actually
+  moved toward the city" would be a new mechanism. Both are the next
+  taste pass, not this one.
+- **The smoke printed a wart the source could not.** Gettext
+  pluralises on exactly one number, the threat line had two, and the
+  plural was spent on the unit count — so a stack one turn out said
+  "1 turns off". Fixed to "nearest eta 1" and the whole smoke re-run on
+  the corrected binary so the pasted evidence is the shipped wording;
+  the class counts came back bit-identical (141/141), which is itself
+  a small determinism check.
+- **Editing a shell script while it is running corrupts it mid-flight.**
+  The first identity run tripped a syntax error at its very last line
+  because `chatty.sh` was edited (the venue change) while bash was
+  still reading it by byte offset. The stage had already printed every
+  assertion, so nothing was lost — but the next session should treat a
+  running `.sh` as pinned exactly like a running binary.
+- **A glob in the identity assertion reported a pass as a failure.**
+  `run.sh` keys its cell directory on the binary, so re-running
+  identity against a rebuilt head left two `smoke-*` dirs and the
+  `smoke-*` glob expanded to both: "0/10 byte-identical, 10 missing"
+  on 20 games whose scorelogs were in fact identical file for file.
+  Fixed (`f31a6848fb`) to resolve the newest dir per side and print
+  the pair it compares. Worth remembering as a shape: **an assertion
+  that can only fail loudly is not the same as one that can only fail
+  correctly.**
+
+### 6. Next, and explicitly NOT this session
+
+1. **Inbound stays excluded.** Nothing here parses chat. The moment
+   something does, every honesty property in section 2 has to be
+   re-argued from scratch.
+2. **The threat class's noise** (surprise 2). It wants a taste pass
+   with a knob or a motion test, and an opinion from the Europe game
+   about which.
+3. **The rate cap has no taste evidence.** 3 is the compiled
+   placeholder; the Europe game is the only instrument that can price
+   it, and the `said=n/3` field on every line is what to read.
+4. **No score claim is possible from this epic and none is made.** The
+   scorelogs are identical by construction; that identity IS the
+   deliverable.
