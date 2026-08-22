@@ -17236,3 +17236,319 @@ the shipping reference in prediction 3.
   259 KB, and every table above re-derives from what remains.
   `paircmp`'s built-in `lift-*`/`gate-*` counters read 0 in BOTH arms
   as a consequence and evidence nothing.
+
+## S-WARGAP: the war-venue deficit is a combat-conversion gap, not a collapse (2026-08-22)
+
+Brief: `sessions/S-WARGAP-decomposition.md`. Branch
+`epic/wargap-decomposition` (base `951a272adc`), 4 commits.
+**Diagnosis only — no `ai/` code touched, no knobs, no games run.**
+Everything below is mined from artefacts already paid for; three new
+scripts under `benchmark/` (`scorelog.py`, `wargap.py`, `mixseat.py`,
+`armycensus.py`) reproduce every table from those artefacts.
+
+Sources, all retained and all verified paired by `maphash.txt`:
+
+- pv4's tech50war-200 run, seeds 101-116 (**held-out**), arms
+  `baseline` and `report-pv3`, binary `.worktrees/pv4/stage` sha
+  `8e44607a…` — under
+  `/tmp/claude-1000/-home-sweettea-freeciv/05cd0964…/scratchpad/runs/`
+- `benchmark/results/decaytech-holdout/pv3/{baseline,holdout-report}`
+  — the same 32 games with savegames kept
+- `benchmark/results/leanab2/tech50war-200-pv3` — the same again
+- `.worktrees/autopsy/benchmark/results/autopsy-r1/tech50war-200/`
+  `{defaults,full}`, seeds 1-8 (**training**), + the classic arm from
+  `benchmark/results/decaytech-tune/baseline/cfg0/seed-{1..8}`
+- 64 mixed deep-vs-classic tech50war-200 games under pv3.ini
+  (`.worktrees/decay2/…/tech50war-200-1d411042c95a` and
+  `.worktrees/netthreat2/…/tech50war-200-86943cb3ce0f`)
+
+`wargap.py --metric frozen` reproduces the published number exactly
+(-134.8, sem 21.9, t -6.15, 1/16), so the tooling is anchored to the
+pv4 confirm before it is asked anything new.
+
+### 1. When: the gap opens at T60-T90 and never closes
+
+Whole-game score, pv3 minus classic baseline, 16 held-out seeds:
+
+    turn  baseline      pv3      diff    sem       t   wins
+      10     862.6    893.1    +30.4    2.6  +11.77  16/16
+      20     930.6    959.2    +28.6    3.5   +8.17  16/16
+      40    1011.4   1034.2    +22.8    4.5   +5.03  14/16
+      60    1104.8   1110.4     +5.6    9.6   +0.58   9/16
+      80    1211.9   1194.0    -17.9   19.0   -0.94   4/16
+     100    1323.6   1245.2    -78.4   17.9   -4.39   2/16
+     120    1407.4   1314.6    -92.8   15.1   -6.15   1/16
+     140    1468.6   1380.8    -87.9   18.4   -4.78   1/16
+     160    1545.4   1449.7    -95.7   18.7   -5.10   2/16
+     180    1638.1   1513.8   -124.2   20.9   -5.93   1/16
+     201    1731.1   1596.3   -134.8   21.9   -6.15   1/16
+
+Divergence onset: the mean turns negative and stays negative at
+**T64**, t <= -1 from **T81**, t <= -2 from **T86**.
+
+**deep is ahead by +30 for the first 40 turns and gives it all back
+between T60 and T120.** Two thirds of the final deficit (-92.8 of
+-134.8) is already banked by T120; the last 80 turns add the rest at a
+roughly constant rate. This is not a late collapse and not a bad
+opening — it is a middle game.
+
+### 2. What: 55% of the deficit is the kill term
+
+Exact `get_civ_score()` split (citizens is the residual and the six
+terms sum to the logged `score` tag by construction):
+
+    at T90 (the divergence point)      at T201 (the end)
+    component     diff      t  share   component     diff      t  share
+    citizens     -10.7  -1.78    18%   citizens     -24.0  -3.91    18%
+    techs         +5.6  +2.54   -10%   techs        -18.0  -2.59    13%
+    wonders       +2.8  +2.18    -5%   wonders      +13.1  +4.07   -10%
+    unitskilled  -31.8  -9.68    55%   unitskilled  -60.6  -8.50    45%
+    unitsbuilt    -8.2  -7.76    14%   unitsbuilt   -13.9  -5.86    10%
+    culture      -15.9  -1.05    27%   culture      -31.4  -1.77    23%
+    score        -58.2  -2.96   100%   score       -134.8  -6.15   100%
+    = combat     -40.1 -10.14    69%   = combat     -74.4  -8.22    55%
+    = civil      -18.2  -1.01    31%   = civil      -60.3  -2.40    45%
+
+At the divergence point the deficit is **69% combat and the civil half
+is a null** (t -1.01). The civil half only becomes real later: the
+civil-only trajectory is **+17.4 ahead at T60, +14.1 at T80, -30.5 at
+T100, -60.3 at T201** (t -2.40), i.e. it crosses at T86, 26 turns after
+the combat half.
+
+`unitskilled` is the single largest term at every turn and the only one
+with a |t| above 5 throughout. In raw units, deep's games see 367.6
+kills to baseline's 548.8 (0.670x, t -8.48) and 424.4 losses to 637.9
+(0.665x). The raw kill gap is -181.2 for the game and **75% of it
+(-136.7) accrues in T41-T121**:
+
+    window    baseline   pv3    diff       t
+     41-61        52.1  22.9   -29.2   -5.91
+     61-81        77.8  30.4   -47.4  -12.11
+     81-101       80.1  39.3   -40.8   -7.95
+    101-121       64.6  45.2   -19.3   -3.57
+    121-201 (4 windows, total)  -44.6
+
+### 3. Who: seat-uniform, and deep survives slightly better
+
+Seats sorted within each game, so rank r is compared to rank r, T201:
+
+    rank  baseline      pv3     diff    sem       t
+       1     342.6    295.6    -47.0   15.4   -3.06
+       2     261.8    250.2    -11.6    7.7   -1.51
+       3     232.2    217.4    -14.8    5.9   -2.49
+       4     211.9    196.2    -15.7    3.1   -5.12
+       5     194.6    182.5    -12.1    4.2   -2.87
+       6     175.8    168.5     -7.3    5.1   -1.45
+       7     159.4    149.9     -9.5    6.1   -1.56
+       8     143.8    135.9     -7.9    7.7   -1.03
+
+Every rank is behind; ranks 2-8 carry -87.8 of the -134.8 and rank 1
+carries -47.0. In relative terms the leader is hit hardest (-13.7%)
+and the tail least (-5.5%), so the shape is "everyone a bit smaller,
+the biggest empire most", not "some seats died".
+
+**Survival is a wash and if anything favours deep**: 7.75 seats alive
+at T201 vs baseline's 7.69 (t +0.29). Across the 16 games baseline
+lost 5 seats (T78, 153, 153, 153, 177, 178 — six deletions, one of
+which is a civil-war splinter in seed 110 that also *added* a ninth
+player at T171) and deep lost 4 (T54, 160, 169, 192). **The
+collapse-driven hypothesis is dead.**
+
+### 4. Compiled defaults: same shape, slightly worse
+
+Training seeds 1-8, vs the classic arm. This is a cross-binary
+comparison (the classic arm is `.leanab2-bin`, the deep arms are
+autopsy's `.stage-bin`) — same config sha, same runner sha, same maps
+by `maphash`, and `ai/baseline` is frozen, but it is not a same-binary
+contrast and should not be quoted to two significant figures.
+
+    arm         T40    T80    T120    T201     t(201)  onset(t<=-2)
+    defaults  +14.9  -72.0  -121.6  -170.4     -3.37       T66
+    pv3        +20.1  -17.4   -42.0  -141.5     -3.15      T126
+
+    component split at T201    defaults        pv3 (training)
+    unitskilled                -104.6 (61%)   -102.6 (73%)
+    unitsbuilt                  -26.0 (15%)    -23.8 (17%)
+    citizens                    -12.1  (7%)    -18.4 (13%)
+    techs                       -20.8 (12%)    -15.5 (11%)
+    = combat                   -130.6 (77%)   -126.4 (89%)
+    = civil                     -39.8 (23%)    -15.1 (11%)
+
+**The deficit is tuning-independent.** Compiled defaults show the same
+early lead, the same T57-T66 crossover, the same combat-dominated
+split, and are *worse* than pv3 by 28.9/game on the same seeds and the
+same binary (t +0.82, 4/8 — not resolved, but pointing the right way).
+pv3's tuning shaves the deficit and delays its onset from T66 to T126;
+it does not cause it and does not fix it.
+
+### 5. The discriminator: mixed games say deep loses the exchange
+
+An eight-deep game cannot separate "deep loses its fights" from "a
+population of deeps fights less" — every kill is deep-on-deep, and in
+fact kills/lost is identical across arms there (0.871 vs 0.858,
+t +0.91), as a closed system requires. The 64 retained mixed games
+(4 deep + 4 classic on one map, both seat orderings) can:
+
+    T201, per side       deep   classic     diff       t   ratio
+    score               770.5     897.6   -127.1   -5.77   0.858
+    unitskilled         164.4     367.6   -203.2  -12.74   0.447
+    unitslost           254.7     341.2    -86.6   -7.49   0.746
+    unitsbuilt          353.9     431.7    -77.8   -4.59   0.820
+    munits               71.5      82.7    -11.2   -2.47   0.864
+    cities               19.4      22.6     -3.2   -2.66   0.860
+    techout              85.1     128.0    -42.9   -4.38   0.665
+    gold                151.0     902.4   -751.4   -9.91   0.167
+    alive                 3.8       3.8     +0.0   +0.00   1.000
+
+kill:loss, deep vs classic, by turn: **T60 0.94 vs 0.92; T100 0.80 vs
+0.99; T140 0.71 vs 1.04; T201 0.65 vs 1.08.** At T60 deep is not
+losing its fights, it is picking fewer. From T80 on it starts losing
+them as well, and the two effects compound.
+
+### 6. Where the production goes, and what the army looks like
+
+Single-module, T201, whole-game sums (`wargap.py --section counters`):
+
+    counter      baseline      pv3    ratio       t
+    mfg             328.5    294.4    0.896   -4.35
+    unitsbuilt      818.4    676.5    0.827   -6.05
+    unitskilled     548.8    367.6    0.670   -8.48
+    cities           46.0     42.8    0.931   -3.64
+    settlers (T60)   39.2      3.7    0.094   -9.76
+    gold           3290.2    306.1    0.093   -4.20
+    wonders           4.8      7.4    1.553   +4.07
+    munits          168.2    177.6    1.056   +1.19
+
+The losses compound in a specific order. At T60, deep's *capacity* is
+94% of baseline's (mfg 0.941) but its unit output is 82% (unitsbuilt
+0.815) and its kills are 55% (0.548) — and deep's per-city economy is
+*better* at that point (pop/city +0.266, t +2.02; bnp/city +0.375,
+t +2.08). So capacity explains about a sixth of the unit gap and
+almost none of the kill gap. Paired per-game ratios:
+
+    ratio           baseline    pv3    diff       t
+    built/mfg  T60     0.709  0.622  -0.087   -4.39
+    kills/built T60    0.328  0.223  -0.105   -3.71
+    kills/built T120   0.615  0.422  -0.193   -7.40
+    kills/built T201   0.669  0.541  -0.127   -6.83
+
+`armycensus.py` on the 16 retained final saves says the army is not
+small and not outclassed — it is shaped for defence and terraforming:
+
+    units alive   baseline 232.9   pv3 277.6   +44.7  t +4.50
+    Marines             62.0            26.8   -35.2  t -6.19
+    Riflemen            59.8            71.6   +11.8  t +1.53
+    Engineers           13.0            47.1   +34.1  t +8.32
+    Diplomat            33.2            41.9    +8.8  t +4.16
+    Destroyer           24.4            44.4   +20.0  t +3.23
+    Settlers             4.2             0.2    -4.1  t -3.80
+    Idle(0)             99.8           146.8   +47.0  t +7.08
+    Sentry(5)           65.7            36.9   -28.8  t -3.26
+    Irrigate(3)          0.0            14.3   +14.3  t +13.66
+    veteran 0           54.8           118.4   +63.6  t +7.59
+    veteran 1          163.6           120.9   -42.6  t -5.14
+
+Counting Engineers, Workers, Settlers, Explorers and Diplomats as
+non-combat, the two *militaries* come out the same size (baseline
+179.5, deep 183.5, from the 14 listed types which are 99.8% and 99.1%
+of all units) — deep simply spends 41 more of its units on civilians
+and swaps the offensive core for defenders. In civ2civ3 Marines are
+attack 8 / defence 5 and Riflemen attack 5 / defence 4, so trading 35
+Marines for 12 Riflemen is a deliberate move down the attack column.
+The veteran mix follows: deep's army is greener because it fights
+less.
+
+### 7. Hypothesis ranking, every rank citing a number
+
+1. **Offensive under-conversion (the army is built for defence and
+   does not attack).** Carries 45-55% of the deficit on holdout seeds
+   and 61-89% on training seeds, at |t| 8-13 everywhere. kills/built
+   0.541 vs 0.669 (t -6.83) with 1.06x the military units alive;
+   Marines 26.8 vs 62.0 (t -6.19); mixed-game kill:loss 0.65 vs 1.08.
+   Onset T41-T61, which is also when the score curve turns.
+2. **Military allocation of production.** built/mfg 0.622 vs 0.709 at
+   T60 (t -4.39) with only a 6% capacity gap, so deep spends a smaller
+   *share* of a nearly equal economy on units. Wonders 1.55x
+   (t +4.07) and Engineers 3.6x (t +8.32) say where the shields went.
+   Distinct from rank 1: this is what is built, rank 1 is what the
+   built things do.
+3. **The expansion stall at T60.** settlers alive 3.7 vs 39.2 at T60
+   (t -9.76); cities 39.4 vs 42.1 at T60 and 42.8 vs 46.0 at T201
+   (t -3.64); citizens -24.0 (t -3.91, 18% of the deficit). Real but
+   third: it is 3.2 cities, and deep's cities are individually better
+   until T120 (pop/city +0.27 at T60).
+4. **Late economic decay, downstream of 1-3.** techout 0.814, bnp
+   0.854, mfg 0.896 at T201; techs go from +19.1 at T40 (t +7.87) to
+   -18.0 at T201 (t -2.59). The civil half of the deficit is a null at
+   T90 (t -1.01) and only resolves at T172, which is the signature of
+   a consequence rather than a cause.
+5. **Gold conversion.** deep holds 306 gold to baseline's 3290
+   (0.093x, t -4.20) and 151 vs 902 in mixed games. Gold is not in
+   `get_civ_score()` so the hoard costs baseline nothing, but deep
+   spends ~3000 gold a game and ends with a *less* offensive army,
+   which is unexplained and cheap to instrument.
+
+**Rejected by the data:**
+- *Collapse / seats dying.* Survival 7.75 vs 7.69 (t +0.29); deep lost
+  4 seats to baseline's 5. Rank-by-rank every seat is behind.
+- *pv3's tuning.* Compiled defaults are -170.4 on training seeds where
+  pv3 is -141.5, with the same shape and an earlier onset.
+- *A scoring artefact of a quieter world.* It is partly that — a
+  single-module venue pays both sides for kills — but the mixed games
+  settle it: same map, same war, deep kills 0.447x while losing 0.746x.
+- *A bad opening.* deep is +30.4 at T10 (t +11.77) and +22.8 at T40.
+
+### 8. Can the data separate the top two? Yes, and what it cannot
+
+Ranks 1 and 2 are separated arithmetically by the T60 chain: capacity
+0.941 -> unit output 0.815 -> kills 0.548. Multiplicatively that is
+-6% capacity, a further -13% allocation, a further -33% employment.
+The employment step is the largest and is rank 1; the allocation step
+is rank 2. **No probe run is needed to order them.**
+
+What the retained data *cannot* say is why employment is low —
+whether deep's units have no target, refuse the targets they have, or
+lose the fights they pick. That is not a scorelog question and not a
+savegame question; it needs counters that do not exist yet
+(attack attempts, `find_something_to_kill` outcomes, per-engagement
+odds). Specifying those counters is code, i.e. outside a
+diagnosis-only epic, so this epic **runs no games** and hands the next
+one a concrete instrumentation target rather than a guessed fix.
+
+If a run is wanted before that instrumentation lands, the one that
+buys most is: **tech50war-200, mixed_dc + mixed_cd, seeds 17-36, 40
+games, ports 7300-7349, jobs 4**, scored on `unitskilled`/`unitslost`
+per side at T40/T60/T80/T100. It would resolve *when* deep's kill:loss
+crosses classic's (currently estimated at T80 from 64 games at four
+sampled turns) to within ~5 turns. It is not needed to rank the
+hypotheses and was deliberately not run.
+
+### Surprises worth carrying
+
+- **The three "replicate" pv3-vs-baseline runs are byte-identical.**
+  `scorelog.txt` for seed 101 has md5 `6c4aebdb…` in the pv4
+  scratchpad, in `decaytech-holdout/pv3`, and in `leanab2` — three
+  separate directories, dated 14 and 21 Aug, produced by two different
+  binaries (`8e44607a…` and `39da1b97…`). The games are fully
+  deterministic in (config, seed, module, tuning) and independent of
+  build. Good for reproducibility; it also means **n is 16 and no
+  amount of re-running the same seeds will lower the sem**.
+- **`tune.py`'s objective freezes dead seats at their death score.**
+  Summing only living seats gives -118.4 where the objective gives
+  -134.8 on the same games. Both are defensible; they are not the same
+  number, and the -134.8 in the pv4 entry is the frozen one.
+- **`get_civ_score()` pays 1/3 point per kill to the killer**, so in a
+  single-module venue the score total rewards mutual violence. On
+  isolated-150 the combat terms are 37 of 738 points (5%) and pv3 is
+  +9.4; on tech50war-200 they are 258 of 1731 (15%) and pv3 is -74.4
+  on them alone. Some of the venue gap between the two arms is the
+  venue's scoring, not the AI — but not most of it, per §5.
+- **deep builds 3.6x the Engineers** (47.1 vs 13.0, t +8.32) and 14.3
+  of them are irrigating at T201 where baseline has 0.0. Whatever the
+  worker policy is doing, it is doing a lot of it.
+
+Retention: nothing new written. Every table above re-derives from the
+five artefact sets listed at the top with the four committed scripts.
+The pv4 scratchpad path is a `/tmp` scratchpad and **will not survive a
+reboot** — `benchmark/results/decaytech-holdout/pv3/` holds the same 32
+games byte-for-byte plus savegames, so the analysis survives its loss.
