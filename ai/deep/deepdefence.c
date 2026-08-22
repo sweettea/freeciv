@@ -85,6 +85,7 @@
 #include "deepai.h"
 #include "deepcombat.h"
 #include "deepdiplomacy.h"
+#include "deepemploy.h"
 #include "deepexplore.h"
 #include "deepfunnel.h"
 #include "deepidle.h"
@@ -8070,6 +8071,7 @@ void deep_do_last_activities(struct ai_type *ait, struct player *pplayer)
    * anything that was going to re-task a held unit has already had its
    * chance (deepops.c, deep_hold_census). */
   deep_hold_census(ait, pplayer);
+  deep_employ_census(ait, pplayer);
   deep_fort_census(pplayer);
   deep_fort_saturation_census(pplayer);
   deep_worker_class_census(pplayer);
