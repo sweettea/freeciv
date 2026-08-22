@@ -1415,6 +1415,31 @@ MAP = {
         "value, and the goalsteps=/goalwant= fields move with it; only "
         "read when techgoal_deep != 0 (deeptech.c "
         "deep_reselect_research())."),
+
+    # ---------------- CHATTY: outbound ally comms ---------------------
+    "chatty_gate": (
+        "S1", "mode", "direct", [("deep-chat", "")],
+        "A FLAVOUR FLAG, not an optimiser knob: every line the channel "
+        "emits is output only, so there is no score for a tuner to "
+        "climb. deep_chat_open() (deepchat.c) fails on its first "
+        "comparison below the gate and deep-chat is written only after "
+        "a line has actually been sent, so the tag does not exist at "
+        "all in a gate-off game. class= names which of the four "
+        "message classes fired (0 corridor, 1 threat, 2 operation, "
+        "3 pact) and to=/heard= who heard it. VENUE-SENSITIVE like "
+        "trunk_ally_gate and for the same reason: the channel cannot "
+        "fire in a game where deep has no ally, so an absent tag "
+        "evidences the VENUE and not the knob. Read it in a scripted "
+        "alliance (benchmark/chatty.sh smoke)."),
+    "chatty_max_per_turn": (
+        "S1", "mode", "direct", [("deep-chat", "has:said")],
+        "The rate cap, in lines per player per turn. said=n/max on "
+        "every deep-chat line carries the running tally over the cap's "
+        "own value, so the field is literally this knob beside its "
+        "consumption -- but it is CLASSIFIED rather than censused, and "
+        "never optimised: what it trades off is a human ally's "
+        "patience, which no scorelog contains. It owes a taste pass, "
+        "not a tuning pass."),
 }
 
 STAGE_NAME = {
