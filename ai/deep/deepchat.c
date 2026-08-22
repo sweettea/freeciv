@@ -344,6 +344,69 @@ static void deep_chat_ally_threats(struct player *pplayer)
 }
 
 /**********************************************************************//**
+  Message class 4: a pact signed, or a war declared.
+
+  Read as a DIFF of deep's own diplomatic states against the ones it
+  last spoke about, rather than hooked into the treaty machinery: the
+  state is the fact, a treaty is only one of the ways it changes, and a
+  diff cannot report a signing that did not take. Running at
+  phase_finished puts it after diplomacy_actions (srv_main.c:1390), so
+  a pact deep signed this turn is announced this turn.
+
+  A slot never looked at is recorded SILENTLY. That is what stops the
+  first pass after the gate opens from announcing every relationship
+  deep already had, and it is also why merely MEETING somebody is not
+  reported: first contact writes DS_WAR into a slot that was never
+  looked at in most rulesets, and a war deep did not declare is not
+  deep's news.
+**************************************************************************/
+static void deep_chat_pacts(struct player *pplayer)
+{
+  struct deep_plr *dp = deep_plr_data(pplayer);
+
+  if (dp == NULL) {
+    return;
+  }
+
+  players_iterate_alive(aplayer) {
+    enum diplstate_type now, was;
+    signed char seen;
+
+    if (aplayer == pplayer) {
+      continue;
+    }
+    now = player_diplstate_get(pplayer, aplayer)->type;
+    seen = dp->chat_ds_seen[player_index(aplayer)];
+    dp->chat_ds_seen[player_index(aplayer)] = (signed char) now + 1;
+
+    if (seen == 0 || seen == (signed char) now + 1) {
+      /* Never looked, or nothing moved. */
+      continue;
+    }
+    was = (enum diplstate_type) (seen - 1);
+
+    if (now == DS_ALLIANCE) {
+      deep_chat_say(pplayer, DEEP_CHAT_PACT,
+                    _("We are now allied with %s."), player_name(aplayer));
+    } else if ((now == DS_PEACE || now == DS_ARMISTICE)
+               && was != DS_PEACE && was != DS_ARMISTICE) {
+      /* ARMISTICE ripening into PEACE on its own is not news. */
+      deep_chat_say(pplayer, DEEP_CHAT_PACT,
+                    _("We have made peace with %s."), player_name(aplayer));
+    } else if (now == DS_WAR && was != DS_NO_CONTACT) {
+      /* A pact broken, which is the only way war is DECLARED: first
+       * contact is handled by the never-looked rule above. */
+      deep_chat_say(pplayer, DEEP_CHAT_PACT,
+                    _("We have declared war on %s."), player_name(aplayer));
+    }
+
+    if (!deep_chat_open(pplayer)) {
+      return;
+    }
+  } players_iterate_alive_end;
+}
+
+/**********************************************************************//**
   End of this player's phase: the classes deep reads off its own state.
   Placed here rather than at phase_begin because this is after the
   turn's movement and after diplomacy_actions (srv_main.c:1390), so
@@ -355,5 +418,8 @@ void deep_chat_phase_finished(struct player *pplayer)
     return;
   }
 
+  /* Pacts before threats: a relationship changing is rarer and older
+   * news than a stack moving, and the cap is shared. */
+  deep_chat_pacts(pplayer);
   deep_chat_ally_threats(pplayer);
 }

@@ -304,6 +304,12 @@ struct deep_plr {
   int chat_said;
   struct deep_chat_memo chat_memo[DEEP_CHAT_MEMOS];
   int chat_memo_next;
+  /* The diplomatic state deep last SAID something about, per player,
+   * PLUS ONE -- so a zeroed slot means "never looked", which is what
+   * makes the first pass after the gate opens record the world
+   * silently instead of announcing every relationship deep already
+   * had. */
+  signed char chat_ds_seen[MAX_NUM_PLAYER_SLOTS];
 };
 
 static inline struct deep_plr *deep_plr_data(const struct player *pplayer)
