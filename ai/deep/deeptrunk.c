@@ -18,6 +18,7 @@
 #include <math.h>
 
 /* utility */
+#include "fcintl.h"
 #include "log.h"
 #include "mem.h"
 #include "shared.h"
@@ -41,6 +42,7 @@
 #include "advbuilding.h"
 #include "advtools.h"
 
+#include "deepchat.h"
 #include "deeptrade.h"
 #include "deeptuning.h"
 
@@ -62,6 +64,11 @@ struct deep_trunk_link {
                               * speeds movement. */
   bool ally;                 /* Far endpoint is an allied city, not one
                               * of ours (W12 slice 3). */
+  struct tile *far;          /* The endpoint the corridor runs TO. Read
+                              * only by the ally announcement (CHATTY):
+                              * naming the ally city the corridor aims
+                              * at is what makes the line say something
+                              * the ally can act on. */
   double dividend;           /* Discounted caravan route value the
                               * finished link unlocks (W12 slice 4), in
                               * deeptrade's own units. */
@@ -566,6 +573,7 @@ static void deep_trunk_build(const struct player *pplayer)
         link->len = 0;
         link->gap = 0;
         link->ally = is_ally[pick];
+        link->far = ctile[pick];
         link->dividend = 0.0;
         for (t = 0; t < len; t++) {
           link->terr += tile_terrain(path[t])->movement_cost * SINGLE_MOVE;
@@ -709,6 +717,61 @@ deep_trunk_road_target(const struct extra_type *target)
 }
 
 /**********************************************************************//**
+  CHATTY: tell each ally, once, about the corridor deep is planning to
+  their nearest city, and once more when that corridor is finished.
+  Reads the plan that was just built and says what it says; it changes
+  nothing about the plan, and a shut chatty_gate stops it on
+  deep_chat_open()'s first comparison.
+
+  The "planned" memo is claimed on the FIRST sight of a link whatever
+  its state, which is what keeps a corridor that was already fully
+  roaded when the plan first saw it from announcing a completion deep
+  never built: only a link deep has already called planned can later be
+  called finished.
+**************************************************************************/
+static void deep_trunk_chat(const struct player *pplayer)
+{
+  int slot;
+
+  if (!deep_chat_open(pplayer)) {
+    return;
+  }
+
+  for (slot = 0; slot < deep_trunk_nlinks; slot++) {
+    const struct deep_trunk_link *link = &deep_trunk_links[slot];
+    struct city *acity;
+
+    if (!link->ally || link->far == NULL) {
+      continue;
+    }
+    acity = tile_city(link->far);
+    if (acity == NULL || city_owner(acity) == pplayer) {
+      continue;
+    }
+
+    if (deep_chat_once(pplayer, DEEP_CHAT_CORRIDOR, acity->id, 0)) {
+      if (link->gap > 0) {
+        deep_chat_tell(pplayer, city_owner(acity), DEEP_CHAT_CORRIDOR,
+                       _("We are building a road toward your city %s."),
+                       city_name_get(acity));
+      }
+    } else if (link->gap == 0
+               && deep_chat_once(pplayer, DEEP_CHAT_CORRIDOR,
+                                 acity->id, 1)) {
+      deep_chat_tell(pplayer, city_owner(acity), DEEP_CHAT_CORRIDOR,
+                     _("The road to your city %s is finished."),
+                     city_name_get(acity));
+    }
+
+    if (!deep_chat_open(pplayer)) {
+      /* Cap spent. The links left unsaid keep their memos unclaimed,
+       * so they are said on a later turn rather than lost. */
+      return;
+    }
+  }
+}
+
+/**********************************************************************//**
   Build (or reuse) this player's plan for this turn. Memoised on
   (turn, player); also banks the per-turn census counts the build
   determines, so the census line can be emitted after the plan's
@@ -744,6 +807,9 @@ static void deep_trunk_refresh(const struct player *pplayer)
     }
   }
   deep_trunk_c_beyond[pn] = deep_trunk_nbeyond;
+
+  /* Output only, and after every count is banked. */
+  deep_trunk_chat(pplayer);
 }
 
 /* Whether this tile's corridor runs to an allied city, on an
