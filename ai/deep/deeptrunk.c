@@ -292,6 +292,34 @@ deep_trunk_own_class(const struct player *pplayer, const struct tile *ptile)
 }
 
 /**********************************************************************//**
+  W12H: may a corridor cross this tile, given who owns it?
+
+  TRUE for ground the plan and the worker have always been able to use
+  (unowned, ours, an ally's), and additionally -- behind
+  trunk_soft_border_gate -- for a peace partner's. The single definition
+  both legs share: the planner's border clip (deep_trunk_walk()) and the
+  corridor pathfinder's tile behaviour (deep_corridor_tile_behavior(),
+  deepsettler.c) must agree exactly, or the plan values tiles no worker
+  can reach or the workers walk to tiles no plan wants.
+**************************************************************************/
+bool deep_trunk_soft_open(const struct player *pplayer,
+                          const struct tile *ptile)
+{
+  switch (deep_trunk_own_class(pplayer, ptile)) {
+  case DEEP_TRUNK_OWN_NONE:
+  case DEEP_TRUNK_OWN_SELF:
+  case DEEP_TRUNK_OWN_ALLY:
+    return TRUE;
+  case DEEP_TRUNK_OWN_PEACE:
+    return deep_tuning_get()->trunk_soft_border_gate > 0;
+  default:
+    /* War, cease-fire, no contact: a worker out there dies, and the
+     * gate is about safety rather than legality. */
+    return FALSE;
+  }
+}
+
+/**********************************************************************//**
   Remember this refresh's plan tiles and their ownership classes, so the
   next refresh can say which of them gained a road.
 **************************************************************************/
@@ -317,16 +345,16 @@ static void deep_trunk_seen_add(int pn, int idx, enum deep_trunk_own own)
   runs out of land -- a link that has to cross water is not a road link
   and is dropped whole rather than half-marked.
 
-  With 'clip' the walk also stops at the first tile owned by a player
-  'pplayer' is not allied with, returning the corridor up to that
-  border. Building there would be legal -- the classic ruleset's road
+  With 'clip' the walk also stops at the first tile
+  deep_trunk_soft_open() refuses, returning the corridor up to that
+  border. Building anywhere is legal -- the classic ruleset's road
   enabler asks only for the Workers flag and CanRoad terrain
   (actions.ruleset:1066), and ACTRES_ROAD carries no hard ownership
-  requirement (common/actions.c) -- but a worker cannot GET there:
-  both worker pathfinders TB_IGNORE every tile owned by a non-ally
-  (autoworkers.c:521-535, deepsettler.c:99-114). So the reachable
-  border is where the corridor ends, and the tiles past it would be
-  want nobody can spend.
+  requirement (common/actions.c) -- so what the clip encodes is where a
+  worker will be SENT, not where it may go. That is why the two must
+  agree: deep_corridor_tile_behavior() (deepsettler.c) opens exactly the
+  same set to the corridor pathfinder, so a clipped tile is one no
+  worker would path to and an unclipped one is want that can be spent.
 
   Greedy and not pathfinding on purpose. This runs once per city pair
   per turn and its output is a corridor to VALUE, not a route to
@@ -361,13 +389,8 @@ static int deep_trunk_walk(const struct civ_map *nmap,
     if (step == NULL || n >= maxlen) {
       return -1;
     }
-    if (clip) {
-      const struct player *owner = tile_owner(step);
-
-      if (owner != NULL && owner != pplayer
-          && !pplayers_allied(owner, pplayer)) {
-        return n;
-      }
+    if (clip && !deep_trunk_soft_open(pplayer, step)) {
+      return n;
     }
     path[n++] = step;
     cur = step;

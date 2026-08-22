@@ -1025,6 +1025,35 @@ struct deep_tuning {
    * auction is the same auction. PLACEHOLDER: no measured value exists
    * yet, and the knob owes a tuning pass. */
   double trunk_keep_margin;
+  /* W12H: may a corridor cross a PEACE PARTNER's territory (DS_PEACE or
+   * DS_ARMISTICE)? 0 is today's hard clipping.
+   *
+   * The refusal this opens is advisor POLICY and not law. The core
+   * rules stop a NonMil unit nowhere: players_non_invade() is
+   * DS_PEACE-only (common/player.c:1434) and every caller of it exempts
+   * UTYF_CIVILIAN (common/movement.c:773-777, and all three pathfinder
+   * node initialisers, common/aicore/path_finding.c:302-303, :1053-1054,
+   * :2092-2093); building a road reads tile_owner() nowhere that binds
+   * (common/road.c:302-314 -> common/extras.c:413-462, plus classic's
+   * Workers+CanRoad enabler at data/classic/actions.ruleset:1065-1074);
+   * and no casus belli is attached to either (ACTIVITY_PILLAGE is the
+   * only worker activity that calls action_consequence_*(),
+   * server/unittools.c:1035-1048). What stops a worker today is one
+   * pplayers_allied() test in each of the two worker pathfinders
+   * (server/advisors/autoworkers.c:521-535 and
+   * deep_settler_tile_behavior()).
+   *
+   * So the question this gate asks is not "is it legal" but "is it
+   * safe", and the answer differs by state. A peace partner cannot
+   * attack without first declaring war, which is a visible act that
+   * takes a turn; a war enemy needs no such notice and kills the
+   * worker. Peace and armistice therefore open and everything else --
+   * war, cease-fire, no contact -- stays shut, which is today's
+   * behaviour for those states exactly.
+   *
+   * Gate rather than magnitude, like trunk_ally_gate: it changes the
+   * geometry the plan may occupy, and there is nothing in it to tune. */
+  int trunk_soft_border_gate;
 
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).

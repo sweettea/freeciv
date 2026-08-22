@@ -97,6 +97,19 @@ adv_want deep_trunk_source_dividend(const struct player *pplayer,
  * ground is neither in practice, and the corridor is clipped at the
  * first tile of it. */
 
+/* W12H: may a corridor cross this tile, given who owns it? TRUE for
+ * unowned, our own and allied ground always, and for a PEACE PARTNER's
+ * (DS_PEACE or DS_ARMISTICE) behind trunk_soft_border_gate. War,
+ * cease-fire and no-contact ground stays shut in both settings.
+ *
+ * One definition, two callers, because they must agree: the planner's
+ * border clip in deep_trunk_walk() and the corridor pathfinder's tile
+ * behaviour in deepsettler.c. The header block above records why the
+ * question is safety and not legality -- nothing in the core rules
+ * stops a civilian entering or a road being built anywhere. */
+bool deep_trunk_soft_open(const struct player *pplayer,
+                          const struct tile *ptile);
+
 /* W12G, the keepable-bid gate's own instrument: a corridor bid the
  * founder's own site value refused. Called by the task source when the
  * best beyond-ceiling candidate this turn beat the advisor's champion
