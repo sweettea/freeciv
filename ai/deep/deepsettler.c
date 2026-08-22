@@ -60,6 +60,7 @@
 #include "daiunit.h"
 
 #include "deepdefence.h"
+#include "deepfunnel.h"
 #include "deepodds.h"
 #include "deepsite.h"
 #include "deeptechcensus.h"
@@ -1759,13 +1760,23 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
    * and the two champions agree by construction. */
   struct tile *nodiv_tile = NULL;
   adv_want nodiv_value = best_impr;
+  /* The corridor tile this worker already held, watched through the
+   * loop below so the funnel can say WHERE it lost rather than only
+   * that it lost. `prev_stage` is raised by each test the tile passes,
+   * so its final value names the test that refused it -- or, at
+   * DEEP_FUNNEL_ST_LIVE, says the tile was still a priced competitor
+   * and simply did not win. */
+  struct tile *prev_tile = deep_funnel_open(pplayer, punit);
+  int prev_stage = DEEP_FUNNEL_ST_ABSENT;
 
   if (tune->trunk_source_gain <= 0.0 || tune->trunk_road_gain <= 0.0) {
+    deep_funnel_close(pplayer, punit, NULL, prev_stage);
     return best_impr;
   }
 
   nbeyond = deep_trunk_beyond_tiles(pplayer, &beyond);
   if (nbeyond <= 0) {
+    deep_funnel_close(pplayer, punit, NULL, prev_stage);
     return best_impr;
   }
 
@@ -1776,10 +1787,14 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
 
   for (i = 0; i < nbeyond; i++) {
     struct tile *ptile = index_to_tile(nmap, beyond[i]);
+    bool watched = (ptile != NULL && ptile == prev_tile);
     bool taken = FALSE;
 
     if (ptile == NULL
         || !adv_worker_safe_tile(nmap, pplayer, punit, ptile)) {
+      if (watched) {
+        prev_stage = DEEP_FUNNEL_ST_UNSAFE;
+      }
       continue;
     }
 
@@ -1794,8 +1809,21 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
         break;
       }
     } unit_list_iterate_end;
-    if (taken || !pf_map_position(pfm, ptile, &pos)) {
+    if (taken) {
+      if (watched) {
+        prev_stage = DEEP_FUNNEL_ST_TAKEN;
+      }
       continue;
+    }
+    if (!pf_map_position(pfm, ptile, &pos)) {
+      if (watched) {
+        prev_stage = DEEP_FUNNEL_ST_NOPATH;
+      }
+      continue;
+    }
+    if (watched) {
+      /* Reached the pricing loop; raised again below by what it finds. */
+      prev_stage = DEEP_FUNNEL_ST_NOACT;
     }
 
     aw_extra_action_iterate(act) {
@@ -1819,9 +1847,15 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
 
       adv_want nodiv;
 
+      if (watched && prev_stage < DEEP_FUNNEL_ST_PRICE) {
+        prev_stage = DEEP_FUNNEL_ST_PRICE;
+      }
       want = deep_trunk_source_want(pplayer, target, ptile);
       if (want <= 0.0) {
         continue;
+      }
+      if (watched) {
+        prev_stage = DEEP_FUNNEL_ST_LIVE;
       }
       nodiv = want - deep_trunk_source_dividend(pplayer, target, ptile);
       want *= tune->trunk_source_gain;
@@ -1855,6 +1889,7 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
 
   if (pick_tile == NULL) {
     pf_map_destroy(pfm);
+    deep_funnel_close(pplayer, punit, NULL, prev_stage);
     return best_impr;
   }
 
@@ -1866,6 +1901,7 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
   if (*path == NULL) {
     /* Cannot happen for a tile pf_map_position() just priced, but a
      * champion without a path must not replace one with. */
+    deep_funnel_close(pplayer, punit, NULL, prev_stage);
     return best_impr;
   }
 
@@ -1876,6 +1912,7 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
 
   deep_trunk_source_pick(pplayer, pick_tile, pick_dist,
                          nodiv_tile != pick_tile);
+  deep_funnel_close(pplayer, punit, pick_tile, prev_stage);
   log_base(deep_metric_log_level(),
            "deep-trunkpick turn=%d player=\"%s\" unit=%d at=(%d,%d)"
            " tile=(%d,%d) dist=%d ally=%d flip=%d value=%.2f"
@@ -2107,6 +2144,11 @@ FIND_WORK:
         best_act = best_task->act;
         best_target = best_task->tgt;
         best_tile = best_task->ptile;
+        /* A city request short-circuits the whole auction below,
+         * corridor task source included, so a corridor assignment this
+         * worker held ends HERE and the funnel says so by name rather
+         * than folding it into "the source never ran". */
+        deep_funnel_note_request(pplayer, punit);
       } else {
         pcity = NULL;
       }
@@ -2236,6 +2278,11 @@ FIND_WORK:
     if (best_act == ACTIVITY_BASE) {
       deep_fort_note_assignment(pplayer, best_tile);
     }
+    /* TRUE means the worker reached the tile and started the activity
+     * this turn (autoworkers.c:1272-1287), which is the only honest
+     * arrival signal available: everything else in this path is
+     * "was told to go there". */
+    deep_funnel_note_work(pplayer, punit, best_tile);
     if (pcity != NULL) {
       clear_worker_tasks(pcity);
     }
