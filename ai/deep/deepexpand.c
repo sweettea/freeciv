@@ -47,6 +47,7 @@ struct deep_expand_tally {
   int held, vfood, vwonder, vcap;
   int skipwar, skipemerg;
   int contest, contwin;
+  int hold, holdyld;
   int auc, win, lostdom, lostmil, lostmilt;
   /* The magnitudes behind the counts: what a founder bid was worth on
    * the city-turns where it existed, and on the ones where it lost. */
@@ -177,6 +178,25 @@ void deep_expand_note_contest_win(const struct player *pplayer)
 }
 
 /**********************************************************************//**
+  founder_run_hold declined a military switch away from a founder the
+  city is already building. Zero with the gate off.
+**************************************************************************/
+void deep_expand_note_hold(const struct player *pplayer)
+{
+  deep_expand_of(pplayer)->hold++;
+}
+
+/**********************************************************************//**
+  ... and the same run, released because the advisor raised
+  grave_danger. The exception's own counter: a large number here means
+  the hold is being overruled rather than binding.
+**************************************************************************/
+void deep_expand_note_hold_yield(const struct player *pplayer)
+{
+  deep_expand_of(pplayer)->holdyld++;
+}
+
+/**********************************************************************//**
   The auction settled with a founder bid in hand. Three outcomes, each
   charged where it happened: the domestic advisor preferred something
   else, the merge preferred the military choice, or the founder won.
@@ -252,7 +272,7 @@ void deep_expand_census(struct player *pplayer)
            "deep-expand turn=%d player=\"%s\" cities=%d gate=%d norole=%d"
            " fresh=%d stale=%d w0=%d wpos=%d wneg=%d held=%d vfood=%d"
            " vwonder=%d vcap=%d skipwar=%d skipemerg=%d contest=%d"
-           " contwin=%d auc=%d win=%d"
+           " contwin=%d hold=%d holdyld=%d auc=%d win=%d"
            " lostdom=%d lostmil=%d lostmilt=%d wantsum=%.0f bidsum=%.0f"
            " lostsum=%.0f prod=%d born=%d alive=%d found=%d sites=%.2f"
            " freetiles=%d freeshare=%.3f",
@@ -260,7 +280,7 @@ void deep_expand_census(struct player *pplayer)
            t->cities, t->gate, t->norole, t->fresh, t->stale,
            t->w0, t->wpos, t->wneg, t->held, t->vfood, t->vwonder, t->vcap,
            t->skipwar, t->skipemerg, t->contest, t->contwin,
-           t->auc, t->win, t->lostdom,
+           t->hold, t->holdyld, t->auc, t->win, t->lostdom,
            t->lostmil, t->lostmilt, t->wantsum, t->bidsum, t->lostsum,
            prod, born, alive, found,
            deep_remaining_sites(pplayer),

@@ -7491,6 +7491,68 @@ static bool deep_merge_domestic_wins(const struct adv_choice *dom,
 }
 
 /**********************************************************************//**
+  Should this city go on building the founder it is already building,
+  rather than switch to the military unit that just won?
+
+  The funnel (STATUS 2026-08-22 §5) measured 528 founder runs, 48.3%
+  of them exactly one turn long and mean 2.36 turns, against a settler
+  that costs more turns of production than that: 16.49 auction wins per
+  deep player-game, 1.004 production turns each, and zero settlers.
+  About 67% of what a city switched to when a run ended was military.
+  The auction is not re-run and no want is changed here; the switch is
+  simply declined, along with the forfeit it would take out of a stock
+  that has already been paid into.
+
+  Four conditions, all of them readings of state the server already
+  maintains, and one exception:
+
+  - the city is building a founder NOW (this is a run, not a bid);
+  - `shield_stock > 0`, so there is something invested to protect --
+    with nothing in the stock there is no run and no forfeit;
+  - the founder is still legal to build, the same guard the switch
+    hold below uses;
+  - the choice that would replace it is a military unit. A building or
+    another civilian is not the preemption the funnel measured and is
+    left alone.
+
+  The exception is `grave_danger`: the advisor's own signal for a
+  city-taking unit one move away (daicity.h:48, raised in
+  dai_assess_danger(), daimilitary.c:888, and the same field
+  daicity.c:656 empties the treasury on). A city about to fall does
+  not finish its settler. No new danger model and no new constant.
+**************************************************************************/
+static bool deep_founder_run_held(struct player *pplayer, struct city *pcity,
+                                  const struct ai_city *city_data)
+{
+  if (deep_tuning_get()->founder_run_hold <= 0
+      || pcity->shield_stock <= 0
+      || pcity->production.kind != VUT_UTYPE
+      || !utype_is_cityfounder(pcity->production.value.utype)) {
+    return FALSE;
+  }
+
+  if (city_data->choice.type != CT_ATTACKER
+      && city_data->choice.type != CT_DEFENDER) {
+    return FALSE;
+  }
+
+  if (!can_city_build_now(&(wld.map), pcity, &pcity->production,
+                          RPT_CERTAIN)) {
+    return FALSE;
+  }
+
+  /* Last, so that the exception has its own counter: these are the
+   * runs the hold WOULD have kept and grave danger took. If this
+   * number is large the hold is not the mechanism it looks like. */
+  if (city_data->grave_danger > 0) {
+    deep_expand_note_hold_yield(pplayer);
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
+/**********************************************************************//**
   Final build-choice selection for one city. Derived from
   dai_city_choose_build(); the differences (W01) are that the
   military-emergency gate is a want TIER check instead of a magnitude
@@ -7738,6 +7800,26 @@ static void deep_city_choose_build(struct ai_type *ait,
       }
       adv_free_choice(newchoice);
     }
+  }
+
+  /* The run hold. Placed after both paths that can leave a military
+   * choice standing -- the merge and the two skips -- because the
+   * pathology the funnel measured is the SKIP's: the gates do not
+   * have to fire on the turn the founder wins, only on the turn
+   * after. Returning here leaves production untouched, exactly as
+   * the H_AWAY guard above and the switch hold below do. */
+  if (deep_founder_run_held(pplayer, pcity, city_data)) {
+    log_base(deep_metric_log_level(),
+             "deep-runhold turn=%d player=\"%s\" city=%d prod=\"%s\""
+             " stock=%d beat=\"%s\" want=" ADV_WANT_PRINTF
+             " danger=%u urgency=%u",
+             game.info.turn, player_name(pplayer), pcity->id,
+             universal_rule_name(&pcity->production), pcity->shield_stock,
+             adv_choice_rule_name(&city_data->choice),
+             city_data->choice.want, city_data->danger,
+             city_data->urgency);
+    deep_expand_note_hold(pplayer);
+    return;
   }
 
   /* The useful-water gate. A hull is only worth its shields if the

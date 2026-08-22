@@ -1456,6 +1456,13 @@ MAP = {
         "deep-tiercontest line per city-turn where deep's founder_want "
         "outbids the military want; the line cannot be emitted with "
         "the gate off. Default 0: expect no lines at defaults."),
+    "founder_run_hold": (
+        "S3", "mode", "direct", [("deep-runhold", "")],
+        "A/B gate for founder production hysteresis "
+        "(deepdefence.c deep_founder_run_held()). One deep-runhold "
+        "line per declined military switch away from a founder build "
+        "already under way; the line cannot be emitted with the gate "
+        "off. Default 0: expect no lines at defaults."),
 }
 
 STAGE_NAME = {
