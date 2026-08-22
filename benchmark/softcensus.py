@@ -139,17 +139,27 @@ def alignment(arm):
     par = 0
     lonely = 0
     seen_pairs = 0
+    dsum = 0
+    allylinks = 0
     for key, entries in arm.links.items():
         ally = [e for e in entries if e[1] == 1]
+        allylinks += len(ally)
         for i in range(len(ally)):
             for j in range(i + 1, len(ally)):
                 p, q = ally[i], ally[j]
                 if p[0] == q[0]:
                     continue
+                # p aims at a city of q and q at a city of p: p's far
+                # endpoint should BE q's near endpoint, and vice versa.
+                # Slack 12 because the two need not have picked the same
+                # city pair at all -- each side takes its own nearest --
+                # and a pair that is not the same link is exactly what
+                # the mean distance below reports.
                 d = chev(p[3], q[2]) + chev(p[2], q[3])
-                if d > 4:
+                if d > 12:
                     continue
                 seen_pairs += 1
+                dsum += d
                 if d == 0:
                     exact += 1
                 else:
@@ -164,7 +174,8 @@ def alignment(arm):
                         par += 1
                     else:
                         lonely += 1
-    return dict(pairs=seen_pairs, exact=exact, near=near,
+    return dict(allylinks=allylinks, pairs=seen_pairs, exact=exact,
+                near=near, meand=(dsum / seen_pairs if seen_pairs else 0.0),
                 overlap=(ov_num / ov_den if ov_den else 0.0),
                 parallel=par, disjoint=lonely)
 
@@ -210,10 +221,188 @@ def reroute(a, b):
                   % (seed, len(turns)))
 
 
+def read_save(path):
+    if path.endswith(".zst"):
+        import subprocess
+        return subprocess.run(["zstd", "-dc", path], check=True,
+                              stdout=subprocess.PIPE, text=True,
+                              errors="replace").stdout
+    return open(path, errors="replace").read()
+
+
+def savegame_roads(path):
+    """(roads, owner, players) out of a final savegame, in MAP coords.
+
+    A savegame row is in NATIVE coordinates -- savegame3.c calls
+    index_to_native_pos() before writing every position -- while
+    TILE_XY, and so every tile= this epic logs, is in MAP coordinates.
+    On an isometric topology the two differ and comparing them directly
+    puts a fifth of the tiles off the map (the trap the W12 funnel
+    session recorded). NATIVE_TO_MAP_POS (common/map.h:170) is the
+    conversion, copied here from pickfunnel.py's own copy of it.
+    """
+    save = read_save(path)
+    m = re.search(r"^extras_vector=(.*)$", save, re.M)
+    names = [x.strip('"') for x in m.group(1).split(",")]
+    road_idx = [i for i, n in enumerate(names) if n in ("Road", "Railroad")]
+    iso = re.search(r'^"topology","[^"]*ISO[^"]*"', save, re.M) is not None
+    width = max(len(r.group(2))
+                for r in re.finditer(r'^t(\d{4})="([^"]*)"$', save, re.M))
+
+    def to_map(nx, ny):
+        if not iso:
+            return nx, ny
+        mx = (ny + (ny & 1)) // 2 + nx
+        return mx, ny - mx + width
+
+    roads = set()
+    for row in re.finditer(r'^e(\d{2})_(\d{4})="([^"]*)"$', save, re.M):
+        j, y, bits = int(row.group(1)), int(row.group(2)), row.group(3)
+        for idx in road_idx:
+            if idx // 4 != j:
+                continue
+            bit = 1 << (idx % 4)
+            for x, ch in enumerate(bits):
+                if int(ch, 16) & bit:
+                    roads.add(to_map(x, y))
+
+    owner = {}
+    for row in re.finditer(r'^owner(\d{4})="([^"]*)"$', save, re.M):
+        y = int(row.group(1))
+        for x, cell in enumerate(row.group(2).split(",")):
+            owner[to_map(x, y)] = None if cell == "-" else int(cell)
+
+    # Per player: name, module, and the diplstate table. Its rows are
+    # indexed by player number and include the player's own row, so no
+    # off-by-one correction is wanted.
+    players = {}
+    for sec in re.finditer(r"^\[player(\d+)\]$(.*?)(?=^\[|\Z)", save,
+                           re.M | re.S):
+        n = int(sec.group(1))
+        body = sec.group(2)
+        nm = re.search(r'^name="([^"]*)"', body, re.M)
+        ai = re.search(r'^ai_type="?([a-z]*)"?', body, re.M)
+        ds = re.search(r"^diplstate=\{[^\n]*\n(.*?)^\}", body, re.M | re.S)
+        rows = []
+        if ds:
+            for line in ds.group(1).strip().split("\n"):
+                parts = [p.strip().strip('"') for p in line.split(",")]
+                rows.append((parts[0], parts[7] == "TRUE"))
+        players[n] = dict(name=nm.group(1) if nm else str(n),
+                          ai=ai.group(1) if ai else "?", dipl=rows)
+    return roads, owner, players
+
+
+PICK = re.compile(r'deep-trunkpick .*?player="([^"]*)".*?'
+                  r"tile=\((\d+),(\d+)\)")
+
+
+def roads_report(root):
+    """What is ON THE GROUND at game end under every corridor pick.
+
+    The counters say what deep planned and assigned; this says what the
+    world looks like afterwards, and it is the only reading that can
+    call a road on a peace partner's tile a fact rather than an
+    intention. Treaty state is taken from the savegame's own diplstate
+    table at game end, so a state that changed mid-game is reported as
+    it finished -- stated because it is a real limitation, not hidden.
+    """
+    print("== roads on foreign soil, from the final savegame")
+    tot = collections.Counter()
+    for label, log in games(root):
+        d = os.path.dirname(log)
+        saves = [os.path.join(d, "saves", f)
+                 for f in sorted(os.listdir(os.path.join(d, "saves")))
+                 if "final" in f]
+        if not saves:
+            continue
+        roads, owner, players = savegame_roads(saves[0])
+        by_name = {p["name"]: n for n, p in players.items()}
+        picks = collections.defaultdict(set)
+        for line in open(log, errors="replace"):
+            m = PICK.search(line)
+            if m:
+                picks[m.group(1)].add((int(m.group(2)), int(m.group(3))))
+        for pname, tiles in sorted(picks.items()):
+            pn = by_name.get(pname)
+            if pn is None:
+                continue
+            dipl = players[pn]["dipl"]
+            per = collections.Counter()
+            examples = {}
+            for t in tiles:
+                o = owner.get(t)
+                if o is None:
+                    st = "free"
+                elif o == pn:
+                    st = "self"
+                else:
+                    st = dipl[o][0] if o < len(dipl) else "?"
+                key = (st, t in roads)
+                per[key] += 1
+                if t in roads and st not in ("free", "self"):
+                    examples.setdefault(st, (t, o))
+                tot[key] += 1
+            for st in sorted({k[0] for k in per}):
+                if st in ("free", "self"):
+                    continue
+                ex = examples.get(st)
+                print("  %-22s %-6s %-10s picks=%d roaded=%d%s"
+                      % (label, pname, st, per[(st, False)] + per[(st, True)],
+                         per[(st, True)],
+                         "" if ex is None
+                         else "  e.g. %d,%d owned by p%d" % (ex[0][0],
+                                                             ex[0][1], ex[1])))
+    print("  TOTAL by state:")
+    for st in sorted({k[0] for k in tot}):
+        print("    %-12s picks=%d roaded=%d"
+              % (st, tot[(st, False)] + tot[(st, True)], tot[(st, True)]))
+
+
+def vision_report(root):
+    """Do deep allies actually exchange shared vision?
+
+    Relevant to the meet-in-the-middle question only as a REMEDY check:
+    deep inherits stock's CLAUSE_VISION offer (ai/default's
+    dai_diplomacy_actions(), which deep calls at deepai.c:1270), gated by
+    shared_vision_is_safe() (daidiplomacy.c:185). Whether it actually
+    happens is a fact about games, not about code.
+    """
+    print("\n== shared vision between allied deep players (game end)")
+    pairs = both = one = 0
+    for label, log in games(root):
+        d = os.path.dirname(log)
+        sv = [os.path.join(d, "saves", f)
+              for f in sorted(os.listdir(os.path.join(d, "saves")))
+              if "final" in f]
+        if not sv:
+            continue
+        _roads, _owner, players = savegame_roads(sv[0])
+        for a, pa in players.items():
+            for b, pb in players.items():
+                if b <= a or pa["ai"] != "deep" or pb["ai"] != "deep":
+                    continue
+                if a >= len(pb["dipl"]) or b >= len(pa["dipl"]):
+                    continue
+                if pa["dipl"][b][0] not in ("Alliance", "Team"):
+                    continue
+                pairs += 1
+                n = int(pa["dipl"][b][1]) + int(pb["dipl"][a][1])
+                both += (n == 2)
+                one += (n == 1)
+    print("  allied deep pairs=%d  both give vision=%d  one only=%d"
+          % (pairs, both, one))
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
         return 1
+    if argv[1] == "--roads":
+        for root in argv[2:]:
+            roads_report(root)
+            vision_report(root)
+        return 0
     if argv[1] == "--reroute":
         a, b = Arm(argv[2]), Arm(argv[3])
         a.read()
@@ -269,8 +458,11 @@ def main(argv):
     aligns = [alignment(a) for a in arms]
     print("\n== meet in the middle: two allies planning one link")
     print("%-24s%s" % ("", "".join("%14s" % a.name for a in arms)))
-    for k in ("pairs", "exact", "near", "parallel", "disjoint"):
+    for k in ("allylinks", "pairs", "exact", "near", "parallel",
+              "disjoint"):
         print("%-24s%s" % (k, "".join("%14d" % g[k] for g in aligns)))
+    print("%-24s%s" % ("endpoint distance",
+                       "".join("%14.2f" % g["meand"] for g in aligns)))
     print("%-24s%s" % ("tile overlap",
                        "".join("%14.3f" % g["overlap"] for g in aligns)))
     return 0
