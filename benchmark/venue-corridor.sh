@@ -85,6 +85,10 @@ report)
     --pat trunk-picks="deep-trunkpick turn=" \
     --pat ally-turns="deep-trunkally turn=" \
     --pat div-turns="deep-trunkdiv turn="
+
+  echo
+  echo "=== what effect size this venue can resolve ==="
+  "$here/powern.py" "$offdir" "$ondir" --effect 3,4,6,10
   ;;
 *)
   grep '^#' "$0" | sed 's/^# \{0,1\}//'
