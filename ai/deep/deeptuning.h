@@ -970,6 +970,23 @@ struct deep_tuning {
    * disables the term and every pair evaluation with it. Needs trunk_road_gain > 0 for a plan
    * to exist at all. */
   double trunk_trade_gain;
+  /* W12G: do not bid for a worker the founder logic is about to
+   * reclaim. The corridor task source runs inside the UTYF_WORKERS
+   * block of deep_auto_settler_run(), and in the classic ruleset
+   * Settlers carry that flag, so the auction bids for and wins a unit
+   * that is one comparison away from being sent to found a city:
+   * `result->result > best_impr` a few lines later discards the pick
+   * inside the same call. The funnel measured that at 22.4% of every
+   * corridor assignment made (STATUS 2026-08-22), with 43.6% of the
+   * never-renewed picks followed by that unit on a city mission. With
+   * this gate open the site search for a cityfounder runs BEFORE the
+   * auction and its result becomes a floor the corridor bid must clear,
+   * so a pick that the founder search would override is never made --
+   * the same comparison, moved upstream of the assignment, with the
+   * search still run exactly once per unit per call. 0 keeps today's
+   * ordering byte-identically. Needs trunk_source_gain > 0 (and so
+   * trunk_road_gain > 0) for there to be a bid to gate at all. */
+  int trunk_keepable_gate;
 
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).

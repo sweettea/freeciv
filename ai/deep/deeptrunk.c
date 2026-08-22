@@ -112,6 +112,8 @@ static double deep_trunk_c_div_max[MAX_NUM_PLAYER_SLOTS];
  * have assigned a different task (or none) without it. */
 static int deep_trunk_c_div_pick[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_div_flip[MAX_NUM_PLAYER_SLOTS];
+/* W12G: corridor bids the founder's own site value refused. */
+static int deep_trunk_c_keep_veto[MAX_NUM_PLAYER_SLOTS];
 
 /**********************************************************************//**
   Does this tile already carry a road that speeds movement? A corridor
@@ -920,6 +922,20 @@ void deep_trunk_source_pick(const struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Record that the keepable-bid gate refused one corridor assignment:
+  the source's best beyond-ceiling candidate outbid the advisor's own
+  champion, so today's code would have assigned it, but it did not
+  clear the floor the unit's own site search set and the assignment was
+  never made. The count is the gate's whole visible effect and is zero
+  whenever the gate is shut, because the floor is then zero and every
+  candidate that beats the champion is picked.
+**************************************************************************/
+void deep_trunk_source_veto(const struct player *pplayer)
+{
+  deep_trunk_c_keep_veto[player_number(pplayer)]++;
+}
+
+/**********************************************************************//**
   One line per player per turn: the links the plan spans, the corridor
   tiles still without a road, how many candidates the want reached and
   the largest it issued. links>0 with hits=0 is the ceiling in
@@ -999,6 +1015,22 @@ void deep_trunk_census(struct player *pplayer)
              deep_trunk_c_div_flip[pn]);
   }
 
+  if (log_do_output_for_level(deep_metric_log_level())
+      && deep_trunk_c_keep_veto[pn] > 0) {
+    /* W12G. veto= corridor assignments the keepable-bid gate refused
+     * this turn: bids that beat the advisor's champion and would have
+     * been made, but did not clear the floor the unit's own site search
+     * set. Each one is an assignment that today's code makes and then
+     * discards inside the same call, so this counts the leak closed
+     * rather than the mechanism running. A clean zero with the gate
+     * shut is the point, not a miss. */
+    log_base(deep_metric_log_level(),
+             "deep-trunkkeep turn=%d player=\"%s\" veto=%d",
+             game.info.turn, player_name(pplayer),
+             deep_trunk_c_keep_veto[pn]);
+  }
+
+  deep_trunk_c_keep_veto[pn] = 0;
   deep_trunk_c_div_pairs[pn] = 0;
   deep_trunk_c_div_links[pn] = 0;
   deep_trunk_c_div_max[pn] = 0.0;

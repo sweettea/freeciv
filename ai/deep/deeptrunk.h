@@ -97,6 +97,14 @@ adv_want deep_trunk_source_dividend(const struct player *pplayer,
  * ground is neither in practice, and the corridor is clipped at the
  * first tile of it. */
 
+/* W12G, the keepable-bid gate's own instrument: a corridor bid the
+ * founder's own site value refused. Called by the task source when the
+ * best beyond-ceiling candidate this turn beat the advisor's champion
+ * and would have been assigned, but did not clear the floor the site
+ * search set -- which is exactly the assignment the same call used to
+ * make and then discard. Zero by construction when the gate is shut. */
+void deep_trunk_source_veto(const struct player *pplayer);
+
 /* Trunk census: links planned, corridor tiles still missing a road,
  * candidates the want reached, and the largest want issued -- plus,
  * on its own deep-trunkally line, the same for the corridors whose

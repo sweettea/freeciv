@@ -1730,11 +1730,22 @@ static adv_want deep_worker_travel_amortized(adv_want gain, int arrival)
   On a win, replaces the champion in *best_act/*best_target/*best_tile,
   rewrites *path from the source's own pf map, and returns the new
   value; otherwise returns best_impr untouched.
+
+  'keep_floor' is W12G's keepable-bid gate (trunk_keepable_gate): the
+  value this unit's own site search already put on founding a city,
+  passed in by the caller when the unit is a cityfounder and the gate is
+  open, and 0 otherwise. A bid must clear it as well as the champion,
+  because a bid that does not clear it is one the caller is about to
+  discard on the very next comparison -- the funnel measured 22.4% of
+  every corridor assignment ending exactly that way (STATUS
+  2026-08-22). Nothing is re-valued here: the floor IS the site search's
+  own number, computed once per unit per call and used twice.
 **************************************************************************/
 static adv_want deep_trunk_source_task(const struct civ_map *nmap,
                                        struct player *pplayer,
                                        struct unit *punit,
                                        adv_want best_impr,
+                                       adv_want keep_floor,
                                        enum unit_activity *best_act,
                                        struct extra_type **best_target,
                                        struct tile **best_tile,
@@ -1760,6 +1771,11 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
    * and the two champions agree by construction. */
   struct tile *nodiv_tile = NULL;
   adv_want nodiv_value = best_impr;
+  /* The best candidate measured against the champion ALONE, so the gate
+   * can be charged for the assignments it refused rather than assumed
+   * to have refused them. With the floor at 0 this tracks pick_value
+   * exactly and the veto below can never fire. */
+  adv_want top_value = best_impr;
   /* The corridor tile this worker already held, watched through the
    * loop below so the funnel can say WHERE it lost rather than only
    * that it lost. `prev_stage` is raised by each test the tile passes,
@@ -1772,6 +1788,15 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
   if (tune->trunk_source_gain <= 0.0 || tune->trunk_road_gain <= 0.0) {
     deep_funnel_close(pplayer, punit, NULL, prev_stage);
     return best_impr;
+  }
+
+  if (keep_floor > pick_value) {
+    /* A bid must outbid what this unit would otherwise DO, and for a
+     * cityfounder that is founding, not terrain work. Applied to the
+     * counterfactual champion too, so the dividend's flip flag keeps
+     * meaning "the dividend changed the assignment" under the gate. */
+    pick_value = keep_floor;
+    nodiv_value = keep_floor;
   }
 
   nbeyond = deep_trunk_beyond_tiles(pplayer, &beyond);
@@ -1877,6 +1902,9 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
         nodiv_tile = ptile;
       }
 
+      if (value > top_value) {
+        top_value = value;
+      }
       if (value > pick_value) {
         pick_value = value;
         pick_tile = ptile;
@@ -1888,6 +1916,11 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
   }
 
   if (pick_tile == NULL) {
+    if (top_value > best_impr) {
+      /* A candidate outbid the champion and would have been assigned;
+       * only the floor stopped it. That is the leak, counted. */
+      deep_trunk_source_veto(pplayer);
+    }
     pf_map_destroy(pfm);
     deep_funnel_close(pplayer, punit, NULL, prev_stage);
     return best_impr;
@@ -1945,6 +1978,14 @@ void deep_auto_settler_run(struct ai_type *ait, const struct civ_map *nmap,
   struct tile *best_tile = NULL;
   struct pf_path *path = NULL;
   struct city *pcity = NULL;
+  /* W12G's keepable-bid gate: the site search, run BEFORE the worker
+   * auction so the corridor source can be told what founding is worth
+   * to this unit, and held here so the founder block below runs it
+   * once rather than twice. NULL and 0 whenever the gate is shut, which
+   * is what makes the gate's off-state today's ordering exactly. */
+  struct cityresult *keep_site = NULL;
+  bool keep_searched = FALSE;
+  adv_want keep_floor = 0;
 
   /* Time it will take worker to complete its given task */
   int completion_time = 0;
@@ -2129,6 +2170,31 @@ BUILD_CITY:
 
 FIND_WORK:
 
+  {
+    const struct deep_tuning *tune = deep_tuning_get();
+
+    if (tune->trunk_keepable_gate > 0 && tune->trunk_source_gain > 0.0
+        && tune->trunk_road_gain > 0.0 && unit_is_cityfounder(punit)) {
+      /* The comparison that discards a corridor pick lives below, at
+       * `result->result > best_impr`, and by then the pick has been
+       * made, logged, and paid for in walking. Ask the same question
+       * first: the site search runs here, its answer becomes the floor
+       * the corridor bid must clear, and the founder block reuses the
+       * result rather than searching again. Re-entry from BUILD_CITY
+       * (the boatless drop, which sets land_only) discards any held
+       * result first -- the answer depends on land_only. */
+      if (keep_site != NULL) {
+        cityresult_destroy(keep_site);
+        keep_site = NULL;
+      }
+      TIMING_LOG(AIT_SETTLERS, TIMER_START);
+      keep_site = deep_find_best_city_placement(ait, punit, !land_only, FALSE);
+      TIMING_LOG(AIT_SETTLERS, TIMER_STOP);
+      keep_searched = TRUE;
+      keep_floor = keep_site != NULL ? keep_site->result : 0;
+    }
+  }
+
   if (unit_has_type_flag(punit, UTYF_WORKERS)) {
     struct worker_task *best_task;
 
@@ -2165,7 +2231,7 @@ FIND_WORK:
        * which the auction above structurally cannot offer, compete
        * here on the auction's own scale. Inert at the knob's 0. */
       best_impr = deep_trunk_source_task(nmap, pplayer, punit, best_impr,
-                                         &best_act, &best_target,
+                                         keep_floor, &best_act, &best_target,
                                          &best_tile, &path,
                                          &completion_time);
     }
@@ -2176,10 +2242,22 @@ FIND_WORK:
   if (unit_is_cityfounder(punit)) {
     struct cityresult *result;
 
-    /* May use a boat: */
-    TIMING_LOG(AIT_SETTLERS, TIMER_START);
-    result = deep_find_best_city_placement(ait, punit, !land_only, FALSE);
-    TIMING_LOG(AIT_SETTLERS, TIMER_STOP);
+    if (keep_searched) {
+      /* The keepable-bid gate already asked, above the auction and with
+       * this same land_only. Take that answer: a second search would be
+       * the duplicated valuation the gate exists to avoid, and the
+       * search is the expensive half of this function. Ownership moves
+       * here, so the destroy paths below are the only ones. */
+      result = keep_site;
+      keep_site = NULL;
+      keep_searched = FALSE;
+      keep_floor = 0;
+    } else {
+      /* May use a boat: */
+      TIMING_LOG(AIT_SETTLERS, TIMER_START);
+      result = deep_find_best_city_placement(ait, punit, !land_only, FALSE);
+      TIMING_LOG(AIT_SETTLERS, TIMER_STOP);
+    }
     if (result && result->result > best_impr) {
       log_base(deep_metric_log_level(),
                "deep-settler turn=%d player=\"%s\" unit=%d at=(%d,%d)"
