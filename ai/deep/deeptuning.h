@@ -900,6 +900,26 @@ struct deep_tuning {
    * uses for its own travel term (site_travel_discount). 0 disables
    * and restores stock ranking exactly. */
   double worker_travel_discount;
+  /* The backlog-empty worker policy (deepidle.c). 0 = today's carpet,
+   * byte-identically: a worker whose only remaining candidate is a
+   * fortress builds it, which the fortress instrumentation measured at
+   * 10.9% of every working worker-turn and proved price-INSENSITIVE
+   * (2.6x cheaper fortresses moved the want 4x down and the behaviour
+   * not at all, STATUS 2026-08-22). 1 = the worker is held in reserve
+   * or walked home and recycled instead. Policy, not a magnitude, so
+   * 0/1 like trunk_ally_gate. */
+  int idle_policy_gate;
+  /* How many idle workers per CITY the policy holds in reserve against
+   * demand that has not arrived yet; the empire target is this times
+   * the city count, rounded. Everything above it is recycled into a
+   * city's build queue for half its shields.
+   *
+   * DERIVED, not chosen: the demand a reserve exists for is pollution,
+   * and deep-pollute (deepidle.c) measures its mean concurrency per
+   * cluster over a game. Set this from that measurement on the venue
+   * being played; a value picked because it sounds prudent is exactly
+   * what rule 7 forbids. Inert while idle_policy_gate is 0. */
+  double idle_reserve_per_city;
   /* Trunk roads (W12). A road candidate on a tile the empire's
    * minimum spanning tree runs through carries the LINK's worth on top
    * of its own: the movement points the finished link saves on one

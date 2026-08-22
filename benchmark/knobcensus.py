@@ -310,6 +310,31 @@ MAP = {
         "picked= counts the beyond-ceiling tasks actually assigned, "
         "each also a deep-trunkpick line, with hist= their "
         "map-distance histogram."),
+    "idle_policy_gate": (
+        "S3", "gate", "direct", [("deep-idlepol", "held>0"),
+                                 ("deep-idlepol", "disbands>0")],
+        "the backlog-empty worker policy (deepidle.c). empty= counts "
+        "the STATE in both arms -- a worker-turn whose best candidate "
+        "was nothing or a fortress -- so it evidences the venue, not "
+        "the knob. held=, walks=, disbands= and shields= are raised "
+        "only inside deep_idle_policy() past its gate test, so any of "
+        "them nonzero is the gate open. shields= is the exact amount "
+        "the cities received (unit_shield_value with the action the "
+        "server credits). basew=/basef= split the fortress "
+        "worker-turns by whether the unit can found a city: the policy "
+        "deliberately leaves cityfounders alone, so basef is the half "
+        "it cannot move and reads the same in both arms."),
+    "idle_reserve_per_city": (
+        "S3", "mag", "direct", [("deep-idlepol", "target>0")],
+        "target= on deep-idlepol is literally round(knob * cities) "
+        "(deep_idle_turn_start(), deepidle.c), so it is a monotone "
+        "multiple of the knob and zero below 0.5/cities. DERIVED "
+        "rather than tuned: deep-pollute's percity= is the mean "
+        "concurrent pollution events per cluster this reserve is held "
+        "against, and the value shipped for a venue comes from that "
+        "measurement on that venue. Inert while idle_policy_gate is 0, "
+        "so a target>0 with the gate shut is a knob set and not a "
+        "mechanism run."),
     "trunk_ally_gate": (
         "S3", "gate", "direct", [("deep-trunkally", "links>0")],
         "W12 slice 3: deep_trunk_build() appends allied cities to the "

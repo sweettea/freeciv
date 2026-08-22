@@ -87,6 +87,7 @@
 #include "deepdiplomacy.h"
 #include "deepexplore.h"
 #include "deepfunnel.h"
+#include "deepidle.h"
 #include "deephorizon.h"
 #include "deepsite.h"
 #include "deepcm.h"
@@ -8072,6 +8073,8 @@ void deep_do_last_activities(struct ai_type *ait, struct player *pplayer)
   deep_fort_census(pplayer);
   deep_fort_saturation_census(pplayer);
   deep_worker_class_census(pplayer);
+  deep_pollution_census(pplayer);
+  deep_idle_census(pplayer);
   deep_worker_travel_census(pplayer);
   deep_trunk_census(pplayer);
   deep_funnel_census(pplayer);

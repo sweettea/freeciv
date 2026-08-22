@@ -61,6 +61,7 @@
 
 #include "deepdefence.h"
 #include "deepfunnel.h"
+#include "deepidle.h"
 #include "deepodds.h"
 #include "deepsite.h"
 #include "deeptechcensus.h"
@@ -70,6 +71,13 @@
 #include "deepai.h"
 #include "deepops.h"
 #include "deepsettler.h"
+
+/* Switched on for the auction's SECOND pass only (deep_auto_settler_run,
+ * behind idle_policy_gate): while it is set, deep_worker_task_value()
+ * prices a base candidate at its bare tile value and counts nothing, so
+ * the pass answers "what is the best task that is not a fortress" on
+ * the auction's own scale, without doubling any census. */
+static bool deep_base_want_off = FALSE;
 
 /* Log-only fortress bookkeeping, defined with the base want far below
  * and called from the two places a worker is set to work. */
@@ -274,6 +282,55 @@ static bool deep_settler_can_walk_there(struct unit *punit,
 }
 
 /**********************************************************************//**
+  The nearest own city this civilian can walk to, by ARRIVAL TURN, under
+  the same risk parameter deep_settler_goto() will walk with -- so a
+  city this returns is one the mover has already agreed it can reach
+  and would not die reaching. NULL when no own city is safely
+  reachable, which is a real answer and not a failure: deep's civilian
+  pathfinder refuses to plan an overnight stop where visible enemies
+  would likely kill the unit, and early animals alone are enough to
+  wall a worker into a peninsula.
+
+  Nearest by arrival turn is an ordering, not a threshold, so no
+  constant is invented. '*turns' gets the arrival turn, or -1.
+
+  Exported for the idle-worker policy (deepidle.c), whose surplus
+  workers walk home to be recycled: choosing the target with the map
+  the walk will use is what keeps it from picking a city it can see and
+  cannot reach, and then re-picking it every turn forever.
+**************************************************************************/
+struct city *deep_settler_nearest_own_city(struct player *pplayer,
+                                           struct unit *punit, int *turns)
+{
+  struct pf_parameter parameter;
+  struct deep_settler_risk risk;
+  struct pf_map *pfm;
+  struct pf_position pos;
+  struct city *best = NULL;
+  int best_turns = FC_INFINITY;
+  const struct civ_map *nmap = &(wld.map);
+
+  pft_fill_unit_parameter(&parameter, nmap, punit);
+  parameter.omniscience = !has_handicap(pplayer, H_MAP);
+  deep_settler_apply_risk(&parameter, &risk, punit);
+  pfm = pf_map_new(&parameter);
+
+  city_list_iterate(pplayer->cities, pcity) {
+    if (pf_map_position(pfm, city_tile(pcity), &pos)
+        && pos.turn < best_turns) {
+      best_turns = pos.turn;
+      best = pcity;
+    }
+  } city_list_iterate_end;
+
+  pf_map_destroy(pfm);
+
+  *turns = (best != NULL ? best_turns : -1);
+
+  return best;
+}
+
+/**********************************************************************//**
   Decide whether this settler wants a bodyguard for the trip to
   dest_tile, and request or release one accordingly.
 
@@ -356,8 +413,8 @@ static bool deep_settler_bodyguard_needed(struct ai_type *ait,
 
   Returns FALSE iff the settler died.
 **************************************************************************/
-static bool deep_settler_goto(struct ai_type *ait, struct unit *punit,
-                              struct tile *ptile)
+bool deep_settler_goto(struct ai_type *ait, struct unit *punit,
+                       struct tile *ptile)
 {
   struct pf_parameter parameter;
   struct deep_settler_risk risk;
@@ -2169,6 +2226,56 @@ FIND_WORK:
                                          &best_tile, &path,
                                          &completion_time);
     }
+
+    /* "The fortress won" and "there was nothing else" are different
+     * states, and only the second one is the backlog-empty state the
+     * idle policy is for. Ask the auction again with the base want
+     * switched off: whatever wins the second pass is the best REAL
+     * task, and if there is one this worker takes it and the policy
+     * never sees it. Without this pass a base that merely OUTBID a
+     * marginal irrigation would take the worker out of the corps
+     * instead -- measured, and it halved the irrigation and mine
+     * worker-turns of a whole arm.
+     *
+     * Only behind the gate, so nothing runs at the knob's 0, and only
+     * for units that are not cityfounders, which is the same scope the
+     * policy itself keeps: a founder compares best_impr against its
+     * site result a few lines below, and moving that comparison would
+     * change founding rates under a knob that claims not to.
+     *
+     * The corridor source is NOT re-run. It cannot be the champion
+     * here (its picks carry ACTIVITY_GEN_ROAD), and running it twice
+     * in one call would double-count the funnel ledger it maintains. */
+    if (best_tile != NULL && best_act == ACTIVITY_BASE
+        && !unit_is_cityfounder(punit)
+        && deep_idle_policy_on(pplayer)) {
+      enum unit_activity real_act = ACTIVITY_LAST;
+      struct extra_type *real_target = NULL;
+      struct tile *real_tile = NULL;
+      struct pf_path *real_path = NULL;
+      adv_want real_impr;
+
+      deep_base_want_off = TRUE;
+      real_impr = worker_evaluate_improvements(nmap, punit, &real_act,
+                                               &real_target, &real_tile,
+                                               &real_path, state);
+      deep_base_want_off = FALSE;
+
+      if (real_tile != NULL && real_impr > 0) {
+        if (path != NULL) {
+          pf_path_destroy(path);
+        }
+        path = real_path;
+        best_impr = real_impr;
+        best_act = real_act;
+        best_target = real_target;
+        best_tile = real_tile;
+        completion_time = (path != NULL
+                           ? pf_path_last_position(path)->turn : 0);
+      } else if (real_path != NULL) {
+        pf_path_destroy(real_path);
+      }
+    }
     UNIT_LOG(LOG_DEBUG, punit, "impr want " ADV_WANT_PRINTF, best_impr);
     TIMING_LOG(AIT_WORKERS, TIMER_STOP);
   }
@@ -2258,6 +2365,36 @@ FIND_WORK:
     }
   } else {
     /* We are a worker or engineer */
+
+    /* Nothing at all, or nothing but a fortress: both are "the backlog
+     * is empty" seen from inside the auction, and the second one is how
+     * the carpet gets built -- a base want of 1.5 wins as easily as one
+     * of 13.5 when the alternative is zero (STATUS 2026-08-22). The
+     * policy counts the state in both arms and acts only behind its
+     * gate; at the gate's 0 this is a counter and a return. */
+    if (best_tile == NULL || best_act == ACTIVITY_BASE) {
+      int sanity = punit->id;
+      enum deep_idle_verdict verdict = deep_idle_policy(ait, nmap, pplayer,
+                                                        punit);
+
+      if (verdict != DEEP_IDLE_ACT_NONE) {
+        if (game_unit_by_number(sanity) == NULL) {
+          /* Recycled into a city, or died walking home. */
+          if (path != NULL) {
+            pf_path_destroy(path);
+          }
+
+          return;
+        }
+        /* Reserved in place, or under way home: either way this worker
+         * takes no task this turn, and it stays IDLE so that next turn's
+         * auction is offered it again -- which is the reclaim leg. */
+        best_tile = NULL;
+        adv_unit_new_task(punit, AUT_AUTO_WORKER, NULL);
+        goto CLEANUP;
+      }
+    }
+
     if (best_tile == NULL) {
       int sanity = punit->id;
 
@@ -3056,8 +3193,13 @@ static adv_want deep_worker_travel_price(const struct player *pplayer,
   adv_want gain, priced;
 
   /* Counted before the gate, like the base want's offers: "the auction
-   * offered a candidate" and "we discounted it" are separate facts. */
-  deep_local_cand[pn]++;
+   * offered a candidate" and "we discounted it" are separate facts.
+   * The base-suppressed second pass prices identically and counts
+   * NOTHING: it is the same candidates a second time, and doubling
+   * them would say the auction offered twice what it did. */
+  if (!deep_base_want_off) {
+    deep_local_cand[pn]++;
+  }
 
   if (tune->worker_travel_discount <= 0.0 || arrival <= 0) {
     return want;
@@ -3073,9 +3215,11 @@ static adv_want deep_worker_travel_price(const struct player *pplayer,
 
   priced = old_tile_value + deep_worker_travel_amortized(gain, arrival);
 
-  deep_local_disc[pn]++;
-  deep_local_turns[pn] += arrival;
-  deep_local_shave[pn] += want - priced;
+  if (!deep_base_want_off) {
+    deep_local_disc[pn]++;
+    deep_local_turns[pn] += arrival;
+    deep_local_shave[pn] += want - priced;
+  }
 
   return priced;
 }
@@ -3172,7 +3316,7 @@ adv_want deep_worker_task_value(const struct player *pplayer,
 
   addon = deep_trunk_want(pplayer, target, ptile);
 
-  if (act == ACTIVITY_BASE) {
+  if (act == ACTIVITY_BASE && !deep_base_want_off) {
     /* Counted BEFORE any gate: "the advisor offered a base candidate
      * at all" and "we priced it" are different questions, and the
      * first one is the one a zero want has to answer first. */

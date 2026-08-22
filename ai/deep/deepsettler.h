@@ -27,6 +27,21 @@ void deep_auto_settler_run(struct ai_type *ait, const struct civ_map *nmap,
                            struct player *pplayer,
                            struct unit *punit, struct workermap *state);
 
+/* Move a civilian with the protections the site search plans with:
+ * deep's risk parameter plus is_pos_dangerous, which stock's settler
+ * mover never assigns. Exported for the idle-worker policy, whose
+ * surplus workers walk home to be recycled and must walk it the same
+ * way a settler would. Returns FALSE iff the unit died. */
+bool deep_settler_goto(struct ai_type *ait, struct unit *punit,
+                       struct tile *ptile);
+
+/* The nearest own city this civilian can reach under deep's civilian
+ * risk parameter, by arrival turn, or NULL when none is safely
+ * reachable. Same map the mover walks with, so the answer is one the
+ * walk will honour. */
+struct city *deep_settler_nearest_own_city(struct player *pplayer,
+                                           struct unit *punit, int *turns);
+
 /* The overnight-danger bar with a tolerance multiplier -- deep's own
  * civilian risk test, shared with the trade evaluator so that "would a
  * settler refuse to stand here" and "is this caravan's road dangerous"
