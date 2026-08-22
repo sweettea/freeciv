@@ -460,7 +460,8 @@ static void deep_trunk_build(const struct player *pplayer)
   struct tile **ctile, **path;
   bool *seen, *is_ally;
   int *near_to, *near_d;
-  int i, j, maxpath;
+  char *dump;
+  int i, j, maxpath, dumpsz;
 
   if (deep_trunk_tiles != MAP_INDEX_SIZE) {
     /* First call, or a new game with a differently sized map. */
@@ -515,6 +516,11 @@ static void deep_trunk_build(const struct player *pplayer)
    * take more steps than the map is wide plus tall. */
   maxpath = wld.map.xsize + wld.map.ysize;
   path = fc_malloc(maxpath * sizeof(*path));
+  /* The tile list the dump below writes: "x,y;" per corridor tile,
+   * with room for the widest coordinate pair this map can produce. */
+  dumpsz = maxpath * 16 + 1;
+  dump = (log_do_output_for_level(deep_metric_log_level())
+          ? fc_malloc(dumpsz) : NULL);
 
   for (i = 0; i < nnodes; i++) {
     near_to[i] = -1;
@@ -593,6 +599,31 @@ static void deep_trunk_build(const struct player *pplayer)
               deep_trunk_beyond[deep_trunk_nbeyond++] = idx;
             }
           }
+          if (dump != NULL) {
+            /* The plan's own geometry, written once per link per
+             * player-turn: the tiles this corridor actually occupies,
+             * in walk order, in MAP coordinates (TILE_XY). Two plans
+             * of the same link -- one per gate setting, or one per
+             * ally -- are only comparable if the tiles themselves are
+             * on the record, which is what the reroute diff and the
+             * meet-in-the-middle overlap both read. Instrumentation
+             * shape: it changes what the log says, never what any
+             * unit does. */
+            int at = 0;
+
+            for (t = 0; t < len; t++) {
+              at += fc_snprintf(dump + at, dumpsz - at, "%s%d,%d",
+                                t == 0 ? "" : ";", TILE_XY(path[t]));
+            }
+            log_base(deep_metric_log_level(),
+                     "deep-trunklink turn=%d player=\"%s\" link=%d ally=%d"
+                     " len=%d gap=%d from=%d,%d to=%d,%d tiles=%s",
+                     game.info.turn, player_name(pplayer),
+                     deep_trunk_nlinks, link->ally ? 1 : 0,
+                     link->len, link->gap,
+                     TILE_XY(ctile[near_to[pick]]), TILE_XY(ctile[pick]),
+                     dump);
+          }
           if (tune->trunk_trade_gain > 0.0) {
             /* Once per link per player-turn, inside the plan's own
              * (turn, player) memoisation -- which IS the cache the
@@ -669,6 +700,7 @@ static void deep_trunk_build(const struct player *pplayer)
   free(near_to);
   free(near_d);
   free(path);
+  free(dump);
 }
 
 /**********************************************************************//**
