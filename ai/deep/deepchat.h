@@ -90,4 +90,9 @@ bool deep_chat_once(const struct player *pplayer, enum deep_chat_class klass,
 /* Start of this player's phase: the per-turn cap is fresh. */
 void deep_chat_phase_begin(const struct player *pplayer);
 
+/* End of this player's phase: the classes deep reads off its own state
+ * rather than being handed by an event. Runs after the turn's movement
+ * and after diplomacy_actions, so what it reports is settled. */
+void deep_chat_phase_finished(struct player *pplayer);
+
 #endif /* FC__DEEPCHAT_H */

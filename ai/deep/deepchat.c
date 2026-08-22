@@ -23,10 +23,15 @@
 #include "support.h"
 
 /* common */
+#include "city.h"
 #include "featured_text.h"
 #include "game.h"
+#include "map.h"
+#include "movement.h"
 #include "packets.h"
 #include "player.h"
+#include "unit.h"
+#include "unitlist.h"
 
 /* server */
 #include "notify.h"
@@ -252,4 +257,103 @@ void deep_chat_phase_begin(const struct player *pplayer)
     dp->chat_turn = game.info.turn;
     dp->chat_said = 0;
   }
+}
+
+/**********************************************************************//**
+  Message class 2: an enemy force closing on an ALLY's city.
+
+  Deep already asks this question about its own cities every turn --
+  which at-war units can reach this city inside survival_horizon turns
+  (deepdefence.c, deepcombat.c) -- and the answer for an ally's city is
+  the same question asked of the same evidence. The evidence is DEEP'S
+  OWN SIGHT: can_player_see_unit() is the filter, so the warning can
+  only ever repeat something deep can see from where deep stands. It
+  leaks nothing the ally could not have been told by a scout of ours
+  standing in the same place, which is the honesty property of the
+  whole channel.
+
+  Reusing deep_city_defence_read() instead was rejected on purpose: it
+  is deep's own defensive pricing, it memoises per city into the
+  survival cache, and running it over an ally's cities would put
+  entries in a cache deep's own decisions read this phase. This scan
+  allocates nothing, caches nothing, and answers a strictly smaller
+  question -- is anything hostile within reach, and how close.
+
+  The window is survival_horizon and not a knob of its own: it is
+  already deep's answer to "how far ahead is a threat a threat", and a
+  second constant about the same question would be a second law.
+
+  Once per (city, threatening player): the ally is told a thing is
+  coming, not told again every turn while it comes.
+**************************************************************************/
+static void deep_chat_ally_threats(struct player *pplayer)
+{
+  const struct deep_tuning *tune = deep_tuning_for(pplayer);
+
+  players_iterate_alive(aplayer) {
+    if (aplayer == pplayer || !pplayers_allied(pplayer, aplayer)) {
+      continue;
+    }
+
+    city_list_iterate(aplayer->cities, acity) {
+      if (!deep_chat_open(pplayer)) {
+        return;
+      }
+
+      players_iterate_alive(eplayer) {
+        int seen = 0, nearest = FC_INFINITY;
+
+        if (eplayer == pplayer || eplayer == aplayer
+            || !pplayers_at_war(aplayer, eplayer)
+            || pplayers_allied(pplayer, eplayer)) {
+          continue;
+        }
+
+        unit_list_iterate(eplayer->units, punit) {
+          int eta;
+
+          if (!is_attack_unit(punit)
+              || !can_player_see_unit(pplayer, punit)) {
+            continue;
+          }
+          eta = real_map_distance(unit_tile(punit), city_tile(acity))
+                * SINGLE_MOVE / MAX(unit_type_get(punit)->move_rate, 1);
+          if (eta <= tune->survival_horizon) {
+            seen++;
+            nearest = MIN(nearest, eta);
+          }
+        } unit_list_iterate_end;
+
+        if (seen > 0
+            && deep_chat_once(pplayer, DEEP_CHAT_THREAT, acity->id,
+                              player_number(eplayer))) {
+          deep_chat_tell(pplayer, aplayer, DEEP_CHAT_THREAT,
+                         PL_("Enemy force approaching your city %s:"
+                             " %d unit of %s, %d turns off.",
+                             "Enemy force approaching your city %s:"
+                             " %d units of %s, %d turns off.", seen),
+                         city_name_get(acity), seen, player_name(eplayer),
+                         nearest);
+          if (!deep_chat_open(pplayer)) {
+            return;
+          }
+        }
+      } players_iterate_alive_end;
+    } city_list_iterate_end;
+  } players_iterate_alive_end;
+}
+
+/**********************************************************************//**
+  End of this player's phase: the classes deep reads off its own state.
+  Placed here rather than at phase_begin because this is after the
+  turn's movement and after diplomacy_actions (srv_main.c:1390), so
+  what deep reports is what actually happened this turn.
+**************************************************************************/
+void deep_chat_phase_finished(struct player *pplayer)
+{
+  if (!deep_chat_open(pplayer)) {
+    return;
+  }
+
+  deep_chat_ally_threats(pplayer);
 }

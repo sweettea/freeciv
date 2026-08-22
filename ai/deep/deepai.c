@@ -741,6 +741,12 @@ static void dpai_data_phase_finished(struct player *pplayer)
   struct ai_type *deftype = deep_ai_get_self();
   const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
+  /* Before the forwarded call, while this phase's state is still the
+   * one deep decided in: what deep says to its allies about the turn
+   * it just played (CHATTY). Output only, and a no-op while
+   * chatty_gate is 0. */
+  deep_chat_phase_finished(pplayer);
+
   dai_data_phase_finished(deftype, pplayer);
   /* end_phase() has run last_activities for EVERY player by now
    * (srv_main.c:1526 then :1598), so this is the one point at which a
