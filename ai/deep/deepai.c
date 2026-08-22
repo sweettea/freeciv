@@ -62,6 +62,7 @@
 #include "deepcombat.h"
 #include "deepdefence.h"
 #include "deepdiplomacy.h"
+#include "deepfunnel.h"
 #include "deepgov.h"
 #include "deepsettler.h"
 #include "deepsite.h"
@@ -1180,8 +1181,19 @@ static void dpai_auto_settler_cont(struct player *pplayer,
 {
   struct ai_type *deftype = deep_ai_get_self();
   const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
+  /* This hook is the ONE path by which a worker already building loses
+   * its activity to a decision rather than to finishing:
+   * auto_workers_player() sends a non-idle worker here and nowhere else
+   * (autoworkers.c:1399-1408), and all dai_auto_settler_cont() does is
+   * idle it when adv_worker_safe_tile() refuses the ground under it.
+   * Observed, not intercepted -- the call below is unchanged, and the
+   * comparison either side of it costs one enum read. */
+  enum unit_activity before = punit->activity;
 
   dai_auto_settler_cont(deftype, &(wld.map), pplayer, punit, state);
+  if (before != ACTIVITY_IDLE && punit->activity == ACTIVITY_IDLE) {
+    deep_funnel_note_flee(pplayer, punit);
+  }
   deep_tuning_scope_restore(deep_scope);
 }
 

@@ -86,6 +86,7 @@
 #include "deepcombat.h"
 #include "deepdiplomacy.h"
 #include "deepexplore.h"
+#include "deepfunnel.h"
 #include "deephorizon.h"
 #include "deepsite.h"
 #include "deepcm.h"
@@ -8073,6 +8074,7 @@ void deep_do_last_activities(struct ai_type *ait, struct player *pplayer)
   deep_worker_class_census(pplayer);
   deep_worker_travel_census(pplayer);
   deep_trunk_census(pplayer);
+  deep_funnel_census(pplayer);
   /* Before the wipe: tech_want[] is cleared here and refilled by the
    * city loop BELOW the rates, so the only honest read of what
    * research is worth to this empire is last turn's array, taken now

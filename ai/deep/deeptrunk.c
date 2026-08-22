@@ -119,7 +119,7 @@ static int deep_trunk_c_div_flip[MAX_NUM_PLAYER_SLOTS];
   ruleset's later upgrades (rail) are a different question, priced by
   the advisor's own move-cost term on the tile.
 **************************************************************************/
-static bool deep_trunk_roaded(const struct tile *ptile)
+bool deep_trunk_tile_roaded(const struct tile *ptile)
 {
   extra_type_by_cause_iterate(EC_ROAD, pextra) {
     if (tile_has_extra(ptile, pextra)
@@ -332,7 +332,7 @@ static double deep_trunk_link_dividend(const struct player *pplayer,
    * this per candidate extra; here one road stands for the link, which
    * is what makes the dividend a per-link number. */
   for (t = 0; t < len && proad == NULL; t++) {
-    if (!deep_trunk_roaded(path[t])) {
+    if (!deep_trunk_tile_roaded(path[t])) {
       proad = deep_trunk_road_target(next_extra_for_tile(path[t], EC_ROAD,
                                                          pplayer, NULL));
     }
@@ -533,7 +533,7 @@ static void deep_trunk_build(const struct player *pplayer)
         for (t = 0; t < len; t++) {
           link->terr += tile_terrain(path[t])->movement_cost * SINGLE_MOVE;
           link->len++;
-          if (!deep_trunk_roaded(path[t])) {
+          if (!deep_trunk_tile_roaded(path[t])) {
             link->gap++;
           }
         }
@@ -543,7 +543,7 @@ static void deep_trunk_build(const struct player *pplayer)
           for (t = 0; t < len; t++) {
             int idx = tile_index(path[t]);
 
-            if (deep_trunk_tile[idx] == 0 && !deep_trunk_roaded(path[t])) {
+            if (deep_trunk_tile[idx] == 0 && !deep_trunk_tile_roaded(path[t])) {
               deep_trunk_tile[idx] = deep_trunk_nlinks + 1;
               if (deep_trunk_nbeyond >= deep_trunk_beyond_alloc) {
                 deep_trunk_beyond_alloc = MAX(2 * deep_trunk_beyond_alloc,
