@@ -61,6 +61,7 @@
 
 #include "deepdefence.h"
 #include "deepfunnel.h"
+#include "deepidle.h"
 #include "deepodds.h"
 #include "deepsite.h"
 #include "deeptechcensus.h"
@@ -274,6 +275,55 @@ static bool deep_settler_can_walk_there(struct unit *punit,
 }
 
 /**********************************************************************//**
+  The nearest own city this civilian can walk to, by ARRIVAL TURN, under
+  the same risk parameter deep_settler_goto() will walk with -- so a
+  city this returns is one the mover has already agreed it can reach
+  and would not die reaching. NULL when no own city is safely
+  reachable, which is a real answer and not a failure: deep's civilian
+  pathfinder refuses to plan an overnight stop where visible enemies
+  would likely kill the unit, and early animals alone are enough to
+  wall a worker into a peninsula.
+
+  Nearest by arrival turn is an ordering, not a threshold, so no
+  constant is invented. '*turns' gets the arrival turn, or -1.
+
+  Exported for the idle-worker policy (deepidle.c), whose surplus
+  workers walk home to be recycled: choosing the target with the map
+  the walk will use is what keeps it from picking a city it can see and
+  cannot reach, and then re-picking it every turn forever.
+**************************************************************************/
+struct city *deep_settler_nearest_own_city(struct player *pplayer,
+                                           struct unit *punit, int *turns)
+{
+  struct pf_parameter parameter;
+  struct deep_settler_risk risk;
+  struct pf_map *pfm;
+  struct pf_position pos;
+  struct city *best = NULL;
+  int best_turns = FC_INFINITY;
+  const struct civ_map *nmap = &(wld.map);
+
+  pft_fill_unit_parameter(&parameter, nmap, punit);
+  parameter.omniscience = !has_handicap(pplayer, H_MAP);
+  deep_settler_apply_risk(&parameter, &risk, punit);
+  pfm = pf_map_new(&parameter);
+
+  city_list_iterate(pplayer->cities, pcity) {
+    if (pf_map_position(pfm, city_tile(pcity), &pos)
+        && pos.turn < best_turns) {
+      best_turns = pos.turn;
+      best = pcity;
+    }
+  } city_list_iterate_end;
+
+  pf_map_destroy(pfm);
+
+  *turns = (best != NULL ? best_turns : -1);
+
+  return best;
+}
+
+/**********************************************************************//**
   Decide whether this settler wants a bodyguard for the trip to
   dest_tile, and request or release one accordingly.
 
@@ -356,8 +406,8 @@ static bool deep_settler_bodyguard_needed(struct ai_type *ait,
 
   Returns FALSE iff the settler died.
 **************************************************************************/
-static bool deep_settler_goto(struct ai_type *ait, struct unit *punit,
-                              struct tile *ptile)
+bool deep_settler_goto(struct ai_type *ait, struct unit *punit,
+                       struct tile *ptile)
 {
   struct pf_parameter parameter;
   struct deep_settler_risk risk;
@@ -2258,6 +2308,36 @@ FIND_WORK:
     }
   } else {
     /* We are a worker or engineer */
+
+    /* Nothing at all, or nothing but a fortress: both are "the backlog
+     * is empty" seen from inside the auction, and the second one is how
+     * the carpet gets built -- a base want of 1.5 wins as easily as one
+     * of 13.5 when the alternative is zero (STATUS 2026-08-22). The
+     * policy counts the state in both arms and acts only behind its
+     * gate; at the gate's 0 this is a counter and a return. */
+    if (best_tile == NULL || best_act == ACTIVITY_BASE) {
+      int sanity = punit->id;
+      enum deep_idle_verdict verdict = deep_idle_policy(ait, nmap, pplayer,
+                                                        punit);
+
+      if (verdict != DEEP_IDLE_ACT_NONE) {
+        if (game_unit_by_number(sanity) == NULL) {
+          /* Recycled into a city, or died walking home. */
+          if (path != NULL) {
+            pf_path_destroy(path);
+          }
+
+          return;
+        }
+        /* Reserved in place, or under way home: either way this worker
+         * takes no task this turn, and it stays IDLE so that next turn's
+         * auction is offered it again -- which is the reclaim leg. */
+        best_tile = NULL;
+        adv_unit_new_task(punit, AUT_AUTO_WORKER, NULL);
+        goto CLEANUP;
+      }
+    }
+
     if (best_tile == NULL) {
       int sanity = punit->id;
 

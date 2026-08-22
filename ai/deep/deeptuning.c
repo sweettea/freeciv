@@ -144,6 +144,8 @@ static const struct deep_tuning deep_tuning_defaults = {
   .worker_danger_discount = 1.0,        /* PLACEHOLDER, untuned */
   .worker_cross_continent_discount = 1.0, /* PLACEHOLDER, untuned */
   .worker_travel_discount = 0.0,       /* PLACEHOLDER, off by default */
+  .idle_policy_gate = 0,               /* 0 = today's carpet, byte for byte */
+  .idle_reserve_per_city = 0.0,        /* PLACEHOLDER: derive from deep-pollute */
   .trunk_road_gain = 0.0,              /* PLACEHOLDER, off by default */
   .trunk_source_gain = 0.0,            /* PLACEHOLDER, off by default */
   .trunk_ally_gate = 0,                /* 0 = the slice-1 graph exactly */
@@ -465,6 +467,8 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(worker_danger_discount) \
   TUNE_DOUBLE(worker_cross_continent_discount) \
   TUNE_DOUBLE(worker_travel_discount) \
+  TUNE_INT(idle_policy_gate) \
+  TUNE_DOUBLE(idle_reserve_per_city) \
   TUNE_DOUBLE(trunk_road_gain) \
   TUNE_DOUBLE(trunk_source_gain) \
   TUNE_INT(trunk_ally_gate) \

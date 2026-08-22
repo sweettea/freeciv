@@ -34,8 +34,31 @@
  * reserve is DERIVED from the concurrency rather than guessed.
  */
 
+struct ai_type;
+struct civ_map;
 struct player;
+struct unit;
 
 void deep_pollution_census(struct player *pplayer);
+
+/* What the policy did with a worker that has nothing real to do. */
+enum deep_idle_verdict {
+  DEEP_IDLE_ACT_NONE = 0,   /* Policy did not act: caller proceeds as before. */
+  DEEP_IDLE_ACT_RESERVE,    /* Held idle in place, available to the auction. */
+  DEEP_IDLE_ACT_DISBAND     /* Walking home to be recycled -- may be gone. */
+};
+
+/* Call ONLY for a worker whose best task is not real work -- nothing at
+ * all, or a base, which the fortress measurement showed is what "the
+ * backlog is empty" looks like from inside the auction. Counts the
+ * state in both arms; acts only behind idle_policy_gate. */
+enum deep_idle_verdict deep_idle_policy(struct ai_type *ait,
+                                        const struct civ_map *nmap,
+                                        struct player *pplayer,
+                                        struct unit *punit);
+
+/* Reserve, disbands, shields recovered, and the worker corps split by
+ * whether it can found a city -- the policy's own witness line. */
+void deep_idle_census(struct player *pplayer);
 
 #endif /* FC__DEEPIDLE_H */
