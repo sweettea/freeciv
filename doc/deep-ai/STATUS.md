@@ -16932,3 +16932,104 @@ pre-commit-6 branch), `idle-pilot/` (the R derivation),
 Analysis scripts were session-scratch; every counter line is
 self-describing `key=value` and the last line per (game, player) is
 that game's total.
+
+### Addendum (2026-08-22): the same A/B at 32 seeds — score is a WASH, the mechanism is not
+
+Coordinator follow-up after the merge (`2023d85e25`): extend the SAME
+A/B from 16 to 32 mirrored seeds. Same venue, same two arms one key
+apart, **same pinned binary** (`.stage-bin2/freeciv-server` sha256
+`6eb523350e46bf482a2fc4cc…`, lib `71492c0cd84045f78ea67e92…` —
+verified before launching, not rebuilt), same result dirs. The cache
+reused all 32 existing games ("32 games; 16 already done; 16 to run",
+twice), so this is exactly 32 new games. Read-back audit 32/32 in each
+arm; pairing violations 0.
+
+**Score, pooled over 32 seeds:**
+
+    seeds  1-16   mean +22.19   se 13.06   t +1.70   11/16   median +34.0
+    seeds 17-32   mean  -6.06   se  9.72   t -0.62    8/16   median  +0.0
+    seeds  1-32   mean  +8.06   se  8.40   t +0.96   19/32   median +11.0
+
+**Prediction 4's reading in §5 does not survive the second sixteen
+seeds and is superseded here.** The first half was the optimistic half;
+the second half came back slightly negative, and the pooled answer is
++8.06 ± 8.40 — indistinguishable from zero. This is the project's own
+note (twenty seeds are direction, forty are a claim) doing exactly what
+it is for, on a number this entry had already declined to call
+significant.
+
+The rest of the table at n=32, paired, deep seats summed:
+
+    metric          OFF        ON       delta       se       t   wins
+    score        357.38    365.44       +8.06     8.40   +0.96  19/32
+    techs         80.03     81.78       +1.75     1.82   +0.96  17/32
+    cities        17.81     18.31       +0.50     0.64   +0.78  18/32
+    culture     2502.66   2732.59     +229.94   184.37   +1.25  18/32
+    wonders        1.75      2.09       +0.34     0.24   +1.46  14/32
+    mfg           97.12     96.84       -0.28     4.34   -0.06  17/32
+    bnp          134.44    130.59       -3.84     4.74   -0.81  10/32
+    pop          108.78    107.84       -0.94     3.65   -0.26  13/32
+    munits        62.00     57.56       -4.44     2.95   -1.51  12/32
+
+`mfg` (+9.19, t 1.66 at n=16) and `cities` (+1.69, t 1.90) both
+collapse toward zero as well. Nothing in the economy table survives.
+
+**The mechanism columns, pooled over 128 deep player-games per arm,
+are unchanged in size and now rest on twice the data:**
+
+| | OFF | ON |
+|---|---|---|
+| base worker-turns | 3846 | **67** |
+| **base share of working worker-turns** | **9.33%** | **0.31%** |
+| per player-game share med [p75] p90 max | 0.055 [0.126] 0.218 0.296 | 0 [0] 0 0.055 |
+| catchment `bases/tiles` | 982/10830 = 9.07% | 31/11134 = 0.28% |
+| `worked_bases/worked` | 547/3931 = 13.9% | 24/3947 = 0.61% |
+| base tasks assigned / finished | 1434 / 1024 | 27 / 25 |
+| denial tile-turns | 66 | 0 |
+| backlog-empty worker-turns | 11956 | 2854 |
+| `held` / `walks` / `disbands` | 0 / 0 / 0 | 1123 / 978 / **753** |
+| **shields recovered** | 0 | **7530** (58.8 per player-game) |
+| base worker-turns workers / founders | 3820 / 26 | 2 / 65 |
+| workers / founders alive at end | 647 / 16 | 194 / 18 |
+| pollution events / tile-turns / dwell | 4 / 16 / 1.00 | 0 / 0 / — |
+
+Predictions 1 and 2 hold at n=32 with room to spare: base share of
+working worker-turns 9.33% -> 0.31%, base tasks assigned 1434 -> 27,
+and 7530 shields recovered from 753 recycled workers. Prediction 3 is
+still vacuous and for the same reason — four pollution events in 128
+player-games.
+
+**§7's improvement deficit PERSISTS at the larger n, at the same size:**
+
+    class          OFF n=32   ON n=32   ratio     (ratio at n=16)
+    irrigation       15088      7736     1.95x        1.83x
+    mine             14317      8958     1.60x        1.49x
+    road              7942      5033     1.58x        1.47x
+    working turns    41205     21794     1.89x        1.78x
+    travel            6180      9151     0.68x        0.58x
+    workers alive      647       194     3.34x        2.97x
+
+So it is not a sixteen-seed artefact. It also now reads more sharply
+against the score: the gate-on empire does roughly half the terrain
+work of the gate-off one, banks 7530 shields for the difference, and
+comes out level. Whatever the deficit is, it is worth about what the
+shields are worth — which is the same wash the score reports, seen
+from the input side.
+
+**Verdict at n=32.** The policy does what it was built to do, decisively
+and reproducibly: the catchment fortress carpet is gone (9.07% -> 0.28%
+of catchment tiles), and the surplus corps comes back as shields. It
+does not buy score on this venue. The honest one-line summary is
+**mechanism confirmed, score NULL** — `00-context.md` §8's "some fixes
+won't move score" case, not a failure of the policy, and it retires
+this venue as the place to look for the score win.
+
+What that changes in the owed list above: item 1 (forty seeds on the gate)
+is now ANSWERED at thirty-two and should not be re-run here — the
+remaining questions are item 2 (a venue that actually has pollution, so
+the reserve leg is dosed by its own measurement) and item 3 (§7's
+deficit), and item 3 is now the most interesting number this epic
+produced.
+
+Retention: `benchmark/results/idle-ab2/contested-{9556be2b5fea,
+814b2b37ce20}/`, now 32 games per arm, same key.txt as before.
