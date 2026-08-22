@@ -2323,6 +2323,10 @@ static int deep_fort_ring_n[MAX_NUM_PLAYER_SLOTS];
 static int deep_fort_assigned[MAX_NUM_PLAYER_SLOTS];
 static int deep_fort_finished[MAX_NUM_PLAYER_SLOTS];
 
+/* Running sum over the game of catchment base-tiles held by a foreign
+ * unit -- tile-turns of denial, upper bound (see the census). */
+static int deep_fort_denial_turns[MAX_NUM_PLAYER_SLOTS];
+
 /**********************************************************************//**
   Record one positive base want in this player's whole-game histogram.
   Log-only: nothing reads these accumulators back into a decision.
@@ -2768,6 +2772,15 @@ void deep_fort_census(struct player *pplayer)
   catchments carries a base, and how much of the part the cities
   actually work does.
 
+  Also the denial counter: catchment tiles that carry a base AND a
+  foreign unit standing in it. held_anybuilder is the honest name --
+  extras record no builder, so a base an ENEMY built inside our work
+  radius and then garrisoned is counted here exactly like one of ours
+  that an enemy walked into. The count is an upper bound on "we prepaid
+  an attacker's defence"; treat its LEVEL as suspect and its movement
+  with deep's own base-building as the signal. denial_tileturns is the
+  running sum over the game, so the last line of a game is the total.
+
   "Catchment" is the work radius, city centre included, restricted to
   the tiles the city could ever work -- the same city_tile_iterate the
   city manager walks. "worked" is tiles this very city has a citizen
@@ -2786,7 +2799,9 @@ void deep_fort_census(struct player *pplayer)
 void deep_fort_saturation_census(struct player *pplayer)
 {
   const struct civ_map *nmap = &(wld.map);
+  int pn = player_number(pplayer);
   int cities = 0, tiles = 0, bases = 0, worked = 0, worked_bases = 0;
+  int held_anybuilder = 0, held_by_enemy = 0, held_unworked = 0;
 
   if (!log_do_output_for_level(deep_metric_log_level())) {
     return;
@@ -2803,6 +2818,15 @@ void deep_fort_saturation_census(struct player *pplayer)
       tiles++;
       if (has_base) {
         bases++;
+        if (is_non_allied_unit_tile(ptile, pplayer, FALSE)) {
+          held_anybuilder++;
+          if (!is_worked) {
+            held_unworked++;
+          }
+          if (is_enemy_unit_tile(ptile, pplayer)) {
+            held_by_enemy++;
+          }
+        }
       }
       if (is_worked) {
         worked++;
@@ -2813,12 +2837,16 @@ void deep_fort_saturation_census(struct player *pplayer)
     } city_tile_iterate_end;
   } city_list_iterate_end;
 
+  deep_fort_denial_turns[pn] += held_anybuilder;
+
   if (cities > 0) {
     log_base(deep_metric_log_level(),
              "deep-fortsat turn=%d player=\"%s\" cities=%d tiles=%d"
-             " bases=%d worked=%d worked_bases=%d",
+             " bases=%d worked=%d worked_bases=%d held_anybuilder=%d"
+             " held_by_enemy=%d held_unworked=%d denial_tileturns=%d",
              game.info.turn, player_name(pplayer), cities, tiles, bases,
-             worked, worked_bases);
+             worked, worked_bases, held_anybuilder, held_by_enemy,
+             held_unworked, deep_fort_denial_turns[pn]);
   }
 }
 
