@@ -38,6 +38,11 @@
 
 #include "fc_types.h"
 
+/* Does this tile already carry a road that speeds movement? The plan's
+ * own gap test, exported because the funnel ledger (deepfunnel.c) asks
+ * the same question of a tile the plan has since forgotten. */
+bool deep_trunk_tile_roaded(const struct tile *ptile);
+
 /* The trunk want for a candidate road on this tile, or 0.0 when the
  * tile is not on a corridor, the target is not a road that speeds
  * movement, or the knob is off. Builds (and memoises) this player's
