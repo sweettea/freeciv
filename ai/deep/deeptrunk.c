@@ -86,6 +86,13 @@ static int deep_trunk_c_src_off[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_src_pick[MAX_NUM_PLAYER_SLOTS];
 static int
 deep_trunk_c_src_hist[MAX_NUM_PLAYER_SLOTS][DEEP_TRUNK_SRC_HIST + 1];
+/* W12 slice 3, the ally corridors' own instruments: links planned to
+ * an allied city, their corridor tiles still missing a road, and how
+ * many of those the task source offered and picked. */
+static int deep_trunk_c_ally_links[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_ally_gap[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_ally_off[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_ally_pick[MAX_NUM_PLAYER_SLOTS];
 
 /**********************************************************************//**
   Does this tile already carry a road that speeds movement? A corridor
@@ -503,10 +510,30 @@ static void deep_trunk_refresh(const struct player *pplayer)
   deep_trunk_build(pplayer);
   deep_trunk_c_links[pn] = deep_trunk_nlinks;
   deep_trunk_c_gap[pn] = 0;
+  deep_trunk_c_ally_links[pn] = 0;
+  deep_trunk_c_ally_gap[pn] = 0;
   for (slot = 0; slot < deep_trunk_nlinks; slot++) {
     deep_trunk_c_gap[pn] += deep_trunk_links[slot].gap;
+    if (deep_trunk_links[slot].ally) {
+      deep_trunk_c_ally_links[pn]++;
+      deep_trunk_c_ally_gap[pn] += deep_trunk_links[slot].gap;
+    }
   }
   deep_trunk_c_beyond[pn] = deep_trunk_nbeyond;
+}
+
+/* Whether this tile's corridor runs to an allied city, on an
+ * already-refreshed plan. The ally counters' only question. */
+static bool deep_trunk_tile_ally(const struct tile *ptile)
+{
+  int slot;
+
+  if (deep_trunk_tile == NULL) {
+    return FALSE;
+  }
+  slot = deep_trunk_tile[tile_index(ptile)];
+
+  return slot > 0 && deep_trunk_links[slot - 1].ally;
 }
 
 /* The want itself, on an already-refreshed plan: the movement the
@@ -608,23 +635,46 @@ adv_want deep_trunk_source_want(const struct player *pplayer,
   want = deep_trunk_price(tune, target, ptile);
   if (want > 0.0) {
     deep_trunk_c_src_off[player_number(pplayer)]++;
+    if (deep_trunk_tile_ally(ptile)) {
+      deep_trunk_c_ally_off[player_number(pplayer)]++;
+    }
   }
 
   return want;
 }
 
 /**********************************************************************//**
-  Record that a beyond-ceiling task was actually assigned, 'dist' map
-  tiles from where the worker stood. Count and histogram feed the
-  deep-trunksrc census line.
+  Whether this tile sits on a corridor to an allied city, for a caller
+  that wants to say so in its own log line. Builds (and memoises) this
+  player's plan for this turn on first call, like every other public
+  entry point here.
 **************************************************************************/
-void deep_trunk_source_pick(const struct player *pplayer, int dist)
+bool deep_trunk_tile_is_ally(const struct player *pplayer,
+                             const struct tile *ptile)
+{
+  deep_trunk_refresh(pplayer);
+
+  return deep_trunk_tile_ally(ptile);
+}
+
+/**********************************************************************//**
+  Record that a beyond-ceiling task was actually assigned on 'ptile',
+  'dist' map tiles from where the worker stood. Count and histogram
+  feed the deep-trunksrc census line; a pick on an ally corridor also
+  feeds the deep-trunkally line, which is the one instrument that says
+  the gate did work rather than merely being open.
+**************************************************************************/
+void deep_trunk_source_pick(const struct player *pplayer,
+                            const struct tile *ptile, int dist)
 {
   int pn = player_number(pplayer);
   int bucket = CLIP(0, dist, DEEP_TRUNK_SRC_HIST);
 
   deep_trunk_c_src_pick[pn]++;
   deep_trunk_c_src_hist[pn][bucket]++;
+  if (deep_trunk_tile_ally(ptile)) {
+    deep_trunk_c_ally_pick[pn]++;
+  }
 }
 
 /**********************************************************************//**
@@ -672,8 +722,29 @@ void deep_trunk_census(struct player *pplayer)
              deep_trunk_c_src_pick[pn], hist);
   }
 
+  if (log_do_output_for_level(deep_metric_log_level())
+      && (deep_trunk_c_ally_links[pn] > 0 || deep_trunk_c_ally_off[pn] > 0
+          || deep_trunk_c_ally_pick[pn] > 0)) {
+    /* W12 slice 3. links= corridors planned to an allied city this
+     * turn, gap= their tiles still without a road (the demand the
+     * gate exposed), offered= the ally corridor tiles the task source
+     * priced, picked= the ally corridor tasks actually assigned.
+     * links=0 in a game where deep HAS an ally is a miss, not a null:
+     * the mechanism never ran. */
+    log_base(deep_metric_log_level(),
+             "deep-trunkally turn=%d player=\"%s\" links=%d gap=%d"
+             " offered=%d picked=%d",
+             game.info.turn, player_name(pplayer),
+             deep_trunk_c_ally_links[pn], deep_trunk_c_ally_gap[pn],
+             deep_trunk_c_ally_off[pn], deep_trunk_c_ally_pick[pn]);
+  }
+
   deep_trunk_c_links[pn] = 0;
   deep_trunk_c_gap[pn] = 0;
+  deep_trunk_c_ally_links[pn] = 0;
+  deep_trunk_c_ally_gap[pn] = 0;
+  deep_trunk_c_ally_off[pn] = 0;
+  deep_trunk_c_ally_pick[pn] = 0;
   deep_trunk_c_hits[pn] = 0;
   deep_trunk_c_max[pn] = 0.0;
   deep_trunk_c_beyond[pn] = 0;

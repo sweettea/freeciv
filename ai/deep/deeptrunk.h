@@ -52,6 +52,16 @@ adv_want deep_trunk_want(const struct player *pplayer,
  * gap tiles outside every own city radius, the same want pricing, and
  * a pick counter of its own. */
 
+int deep_trunk_beyond_tiles(const struct player *pplayer,
+                            const int **list);
+adv_want deep_trunk_source_want(const struct player *pplayer,
+                                const struct extra_type *target,
+                                const struct tile *ptile);
+void deep_trunk_source_pick(const struct player *pplayer,
+                            const struct tile *ptile, int dist);
+bool deep_trunk_tile_is_ally(const struct player *pplayer,
+                             const struct tile *ptile);
+
 /* W12 slice 3: the node set was pplayer->cities and nothing else, so
  * the network could never leave the shape of deep's own empire --
  * a corridor to the ally next door was exactly as invisible as any
@@ -74,15 +84,11 @@ adv_want deep_trunk_want(const struct player *pplayer,
  * allied ground is therefore both legal and reachable, third-party
  * ground is neither in practice, and the corridor is clipped at the
  * first tile of it. */
-int deep_trunk_beyond_tiles(const struct player *pplayer,
-                            const int **list);
-adv_want deep_trunk_source_want(const struct player *pplayer,
-                                const struct extra_type *target,
-                                const struct tile *ptile);
-void deep_trunk_source_pick(const struct player *pplayer, int dist);
 
 /* Trunk census: links planned, corridor tiles still missing a road,
- * candidates the want reached, and the largest want issued. */
+ * candidates the want reached, and the largest want issued -- plus,
+ * on its own deep-trunkally line, the same for the corridors whose
+ * far endpoint is an allied city. */
 void deep_trunk_census(struct player *pplayer);
 
 #endif /* FC__DEEPTRUNK_H */
