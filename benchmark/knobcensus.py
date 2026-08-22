@@ -325,6 +325,22 @@ MAP = {
         "exists (benchmark/w12c-ally.sh smoke scripts one with the "
         "server's team command); a zero from anywhere else is a miss "
         "to report, not a null to ship."),
+    "trunk_trade_gain": (
+        "S3", "mag", "direct", [("deep-trunkdiv", "pairs>0")],
+        "W12 slice 4: deep_trunk_build() prices no route pair when "
+        "trunk_trade_gain <= 0.0 (deeptrunk.c), so the deep-trunkdiv "
+        "line does not exist at all below the gate. pairs= route "
+        "valuations spent this turn -- the mechanism's whole CPU cost, "
+        "which is why it is the predicate: it fires wherever the knob "
+        "is open and a corridor exists, without also needing a route "
+        "to be worth anything. links= corridors that came out carrying "
+        "a dividend and maxdiv= the largest, both monotone in the "
+        "gain. picked= beyond-ceiling picks on a dividend-priced "
+        "corridor (needs trunk_source_gain > 0 as well) and flipped= "
+        "the subset the dividend actually caused, from the source's "
+        "own dividend-free counterfactual -- pairs>0 with flipped=0 "
+        "is the term being outweighed by the logistics term, a null "
+        "rather than a dead knob."),
 
     # ---------------- Stage 1: economy / horizon / CM ---------------
     "horizon_capacity_weight": (

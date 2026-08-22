@@ -34,9 +34,14 @@
 #include "tile.h"
 #include "world_object.h"
 
+/* server */
+#include "maphand.h"
+
 /* server/advisors */
+#include "advbuilding.h"
 #include "advtools.h"
 
+#include "deeptrade.h"
 #include "deeptuning.h"
 
 #include "deeptrunk.h"
@@ -57,6 +62,9 @@ struct deep_trunk_link {
                               * speeds movement. */
   bool ally;                 /* Far endpoint is an allied city, not one
                               * of ours (W12 slice 3). */
+  double dividend;           /* Discounted caravan route value the
+                              * finished link unlocks (W12 slice 4), in
+                              * deeptrade's own units. */
 };
 
 /* The plan, memoised on (turn, player): one link index per tile
@@ -93,6 +101,17 @@ static int deep_trunk_c_ally_links[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_ally_gap[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_ally_off[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_ally_pick[MAX_NUM_PLAYER_SLOTS];
+/* W12 slice 4, the trade dividend's own instruments: route pairs
+ * actually valued this turn (the CPU cost, visible), links that came
+ * out carrying a dividend, and the largest one. */
+static int deep_trunk_c_div_pairs[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_div_links[MAX_NUM_PLAYER_SLOTS];
+static double deep_trunk_c_div_max[MAX_NUM_PLAYER_SLOTS];
+/* Beyond-ceiling picks that landed on a dividend-priced corridor, and
+ * of those the ones the dividend actually FLIPPED -- the source would
+ * have assigned a different task (or none) without it. */
+static int deep_trunk_c_div_pick[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_div_flip[MAX_NUM_PLAYER_SLOTS];
 
 /**********************************************************************//**
   Does this tile already carry a road that speeds movement? A corridor
@@ -233,6 +252,157 @@ static int deep_trunk_ally_nodes(const struct player *pplayer,
   return added;
 }
 
+/* Defined with the pricing below; the plan needs it to know which road
+ * the corridor would receive. */
+static const struct road_type *
+deep_trunk_road_target(const struct extra_type *target);
+
+/**********************************************************************//**
+  W12 slice 4: what this link is worth in TRADE, over and above the
+  movement it saves -- the caravan routes the finished corridor makes
+  worth walking.
+
+  Deep already amortizes a route by travel time: deep_trade_pair_value()
+  returns what a route is worth at the moment a caravan arrives, and
+  caravan_discount (d) buries that value exponentially in the ETA. Route
+  face value GROWS with distance while d^ETA shrinks with it, so the
+  biggest routes on the map are exactly the ones slow travel suppresses.
+  A road that cuts the walk from 30 turns to 10 multiplies the
+  discounted value by d^-20. That is the dividend, and it is priced here
+  as the brief states it:
+
+    sum over served pairs of  value * (d^ETA_with - d^ETA_without)
+
+  Three bounded approximations, each stated rather than hidden, because
+  the exact answers would each cost a pathfind per pair per corridor and
+  this runs once per link per player-turn:
+
+  1. ETA is arithmetic, not pathfinding. The corridor's own walk
+     measured its terrain cost (link->terr) over its own tiles
+     (link->len), so link->terr / link->len is a MEASURED cost per tile
+     on exactly this ground; the journey to a destination dist tiles
+     away is priced at that rate, and the road subtracts the same
+     'saving' the logistics term is made of. Both ETAs are then that
+     cost over the caravan's own move rate. No constant is minted: every
+     number comes from the corridor the plan just walked or from the
+     ruleset.
+
+  2. The served set is a distance test. A pair (near endpoint ->
+     destination) is served by this corridor when the FAR endpoint is
+     strictly closer to the destination than the near one is -- walking
+     the corridor makes progress toward it. That includes the link's own
+     two cities (the far endpoint is at distance 0 from itself), which
+     is the pair the corridor most obviously serves.
+
+  3. Route life is held at the full horizon rather than horizon - ETA,
+     so the value factored out of the difference is the same on both
+     sides of it. This overstates a distant route's tail; the ETA
+     difference, which is the whole signal here, is unaffected.
+
+  Reuse, deliberately total: the value is deeptrade's valuator, the
+  discount is deeptrade's caravan_discount, and the reach filter is
+  deeptrade's. Nothing about a trade route is decided in this file.
+**************************************************************************/
+static double deep_trunk_link_dividend(const struct player *pplayer,
+                                       const struct deep_trunk_link *link,
+                                       struct tile *from, struct tile *to,
+                                       struct tile **path, int len)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  double discount = tune->caravan_discount;
+  const struct road_type *proad = NULL;
+  /* unit_virtual_create() needs a mutable owner and this is the same
+   * player; the ghost is never added to any list, so nothing about
+   * pplayer changes. Looked up rather than cast away. */
+  struct player *owner = player_by_number(player_number(pplayer));
+  int pn = player_number(pplayer);
+  double per_tile, saving, total = 0.0;
+  struct tile *ends[2];
+  int e, t;
+
+  if (discount <= 0.0 || discount >= 1.0 || link->len <= 0) {
+    /* d = 1 is no discount at all, and with no discount a shorter walk
+     * is worth exactly nothing extra -- the dividend is identically
+     * zero rather than approximately so. */
+    return 0.0;
+  }
+
+  /* The road the corridor would actually receive: whatever the first
+   * tile still missing one would be given. The pricing path re-derives
+   * this per candidate extra; here one road stands for the link, which
+   * is what makes the dividend a per-link number. */
+  for (t = 0; t < len && proad == NULL; t++) {
+    if (!deep_trunk_roaded(path[t])) {
+      proad = deep_trunk_road_target(next_extra_for_tile(path[t], EC_ROAD,
+                                                         pplayer, NULL));
+    }
+  }
+  if (proad == NULL) {
+    return 0.0;
+  }
+
+  saving = (double) (link->terr - link->len * proad->move_cost);
+  if (saving <= 0.0) {
+    return 0.0;
+  }
+  per_tile = (double) link->terr / (double) link->len;
+
+  ends[0] = from;
+  ends[1] = to;
+
+  for (e = 0; e < 2; e++) {
+    struct tile *near_end = ends[e], *far_end = ends[1 - e];
+    struct city *src = tile_city(near_end);
+    struct deep_trade_ghost ghost;
+
+    if (src == NULL || city_owner(src) != pplayer) {
+      /* An allied endpoint's own routes are its own AI's business, and
+       * its caravans are not ours to price. */
+      continue;
+    }
+    if (!deep_trade_ghost_open(&ghost, owner, src) || ghost.move_rate <= 0) {
+      continue;
+    }
+
+    players_iterate_alive(aplayer) {
+      city_list_iterate(aplayer->cities, dest) {
+        struct tile *dtile = city_tile(dest);
+        double without, with, value;
+        int dnear;
+
+        if (dest == src
+            || tile_continent(dtile) != tile_continent(near_end)
+            || !map_is_known(dtile, pplayer)) {
+          /* A caravan walks: another landmass is not served by a road,
+           * and a city we have never seen is not a destination we could
+           * have chosen. */
+          continue;
+        }
+        dnear = real_map_distance(near_end, dtile);
+        if (real_map_distance(far_end, dtile) >= dnear) {
+          /* The corridor is not on the way there. */
+          continue;
+        }
+
+        deep_trunk_c_div_pairs[pn]++;
+        value = deep_trade_pair_value(pplayer, &ghost, src, dest);
+        if (value <= 0.0) {
+          continue;
+        }
+
+        without = dnear * per_tile;
+        with = MAX(without - saving, 0.0);
+        total += value * (pow(discount, with / ghost.move_rate)
+                          - pow(discount, without / ghost.move_rate));
+      } city_list_iterate_end;
+    } players_iterate_alive_end;
+
+    deep_trade_ghost_close(&ghost);
+  }
+
+  return total;
+}
+
 /**********************************************************************//**
   Span this player's cities with a minimum spanning tree on map
   distance and turn its edges into corridors.
@@ -359,6 +529,7 @@ static void deep_trunk_build(const struct player *pplayer)
         link->len = 0;
         link->gap = 0;
         link->ally = is_ally[pick];
+        link->dividend = 0.0;
         for (t = 0; t < len; t++) {
           link->terr += tile_terrain(path[t])->movement_cost * SINGLE_MOVE;
           link->len++;
@@ -384,6 +555,15 @@ static void deep_trunk_build(const struct player *pplayer)
               }
               deep_trunk_beyond[deep_trunk_nbeyond++] = idx;
             }
+          }
+          if (tune->trunk_trade_gain > 0.0) {
+            /* Once per link per player-turn, inside the plan's own
+             * (turn, player) memoisation -- which IS the cache the
+             * brief asks for by (corridor, partner): the pricing path
+             * reads the number, it never recomputes it. */
+            link->dividend
+              = deep_trunk_link_dividend(pplayer, link, ctile[near_to[pick]],
+                                         ctile[pick], path, len);
           }
           deep_trunk_nlinks++;
         }
@@ -512,11 +692,18 @@ static void deep_trunk_refresh(const struct player *pplayer)
   deep_trunk_c_gap[pn] = 0;
   deep_trunk_c_ally_links[pn] = 0;
   deep_trunk_c_ally_gap[pn] = 0;
+  deep_trunk_c_div_links[pn] = 0;
+  deep_trunk_c_div_max[pn] = 0.0;
   for (slot = 0; slot < deep_trunk_nlinks; slot++) {
     deep_trunk_c_gap[pn] += deep_trunk_links[slot].gap;
     if (deep_trunk_links[slot].ally) {
       deep_trunk_c_ally_links[pn]++;
       deep_trunk_c_ally_gap[pn] += deep_trunk_links[slot].gap;
+    }
+    if (deep_trunk_links[slot].dividend > 0.0) {
+      deep_trunk_c_div_links[pn]++;
+      deep_trunk_c_div_max[pn] = MAX(deep_trunk_c_div_max[pn],
+                                     deep_trunk_links[slot].dividend);
     }
   }
   deep_trunk_c_beyond[pn] = deep_trunk_nbeyond;
@@ -542,11 +729,16 @@ static bool deep_trunk_tile_ally(const struct tile *ptile)
  * share it without polluting each other's instruments. */
 static adv_want deep_trunk_price(const struct deep_tuning *tune,
                                  const struct extra_type *target,
-                                 const struct tile *ptile)
+                                 const struct tile *ptile,
+                                 adv_want *div_out)
 {
   const struct deep_trunk_link *link;
   const struct road_type *proad = deep_trunk_road_target(target);
   int saving, slot;
+
+  if (div_out != NULL) {
+    *div_out = 0.0;
+  }
 
   if (proad == NULL) {
     return 0.0;
@@ -563,7 +755,23 @@ static adv_want deep_trunk_price(const struct deep_tuning *tune,
     return 0.0;
   }
 
-  return tune->trunk_road_gain * ((double) saving / SINGLE_MOVE)
+  if (div_out != NULL) {
+    *div_out = tune->trunk_trade_gain * link->dividend / MORT
+               * TRADE_WEIGHTING * amortize(1.0, link->gap);
+  }
+
+  /* Logistics plus, behind trunk_trade_gain, the link's trade dividend
+   * (W12 slice 4). The dividend arrives as a STOCK of discounted trade
+   * points: / MORT turns it into the per-turn flow (amortize()'s own
+   * annuity factor, the conversion deep_trade_merit_want() makes on the
+   * same number), and * TRADE_WEIGHTING prices that flow in the
+   * advisor's tile currency, which is what city_tile_value() pays for
+   * every trade point a tile yields (infracache.c). Both factors are
+   * the advisor's own; neither is minted here. Both terms carry the
+   * same amortize() over the gap, because neither is paid until the
+   * link is whole. */
+  return (tune->trunk_road_gain * ((double) saving / SINGLE_MOVE)
+          + tune->trunk_trade_gain * link->dividend / MORT * TRADE_WEIGHTING)
          * amortize(1.0, link->gap);
 }
 
@@ -582,7 +790,7 @@ adv_want deep_trunk_want(const struct player *pplayer,
 
   deep_trunk_refresh(pplayer);
 
-  want = deep_trunk_price(tune, target, ptile);
+  want = deep_trunk_price(tune, target, ptile, NULL);
   if (want <= 0.0) {
     return 0.0;
   }
@@ -632,7 +840,7 @@ adv_want deep_trunk_source_want(const struct player *pplayer,
 
   deep_trunk_refresh(pplayer);
 
-  want = deep_trunk_price(tune, target, ptile);
+  want = deep_trunk_price(tune, target, ptile, NULL);
   if (want > 0.0) {
     deep_trunk_c_src_off[player_number(pplayer)]++;
     if (deep_trunk_tile_ally(ptile)) {
@@ -641,6 +849,33 @@ adv_want deep_trunk_source_want(const struct player *pplayer,
   }
 
   return want;
+}
+
+/**********************************************************************//**
+  The TRADE DIVIDEND alone out of what deep_trunk_source_want() just
+  said about this tile -- the part of the price W12 slice 4 added.
+
+  It exists so the task source can price its own counterfactual: the
+  champion it would have chosen with this term removed. That is the only
+  honest way to say "the dividend flipped this pick" rather than "this
+  pick happened to land on a corridor the dividend also priced", and it
+  costs one subtraction because the number is already computed.
+**************************************************************************/
+adv_want deep_trunk_source_dividend(const struct player *pplayer,
+                                    const struct extra_type *target,
+                                    const struct tile *ptile)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  adv_want dividend = 0.0;
+
+  if (tune->trunk_road_gain <= 0.0 || tune->trunk_trade_gain <= 0.0) {
+    return 0.0;
+  }
+
+  deep_trunk_refresh(pplayer);
+  deep_trunk_price(tune, target, ptile, &dividend);
+
+  return dividend;
 }
 
 /**********************************************************************//**
@@ -665,15 +900,22 @@ bool deep_trunk_tile_is_ally(const struct player *pplayer,
   the gate did work rather than merely being open.
 **************************************************************************/
 void deep_trunk_source_pick(const struct player *pplayer,
-                            const struct tile *ptile, int dist)
+                            const struct tile *ptile, int dist, bool flipped)
 {
   int pn = player_number(pplayer);
   int bucket = CLIP(0, dist, DEEP_TRUNK_SRC_HIST);
+  int slot = deep_trunk_tile == NULL ? 0 : deep_trunk_tile[tile_index(ptile)];
 
   deep_trunk_c_src_pick[pn]++;
   deep_trunk_c_src_hist[pn][bucket]++;
   if (deep_trunk_tile_ally(ptile)) {
     deep_trunk_c_ally_pick[pn]++;
+  }
+  if (slot > 0 && deep_trunk_links[slot - 1].dividend > 0.0) {
+    deep_trunk_c_div_pick[pn]++;
+  }
+  if (flipped) {
+    deep_trunk_c_div_flip[pn]++;
   }
 }
 
@@ -739,6 +981,29 @@ void deep_trunk_census(struct player *pplayer)
              deep_trunk_c_ally_off[pn], deep_trunk_c_ally_pick[pn]);
   }
 
+  if (log_do_output_for_level(deep_metric_log_level())
+      && (deep_trunk_c_div_pairs[pn] > 0
+          || deep_trunk_c_div_pick[pn] > 0)) {
+    /* W12 slice 4. pairs= route valuations this turn, which is the
+     * mechanism's whole CPU cost made visible; links= corridors that
+     * came out carrying a dividend; maxdiv= the largest, in deeptrade's
+     * own units before the /MORT conversion. pairs>0 with links=0 says
+     * the corridors serve no route worth walking, which is a null
+     * rather than a broken knob. */
+    log_base(deep_metric_log_level(),
+             "deep-trunkdiv turn=%d player=\"%s\" pairs=%d links=%d"
+             " maxdiv=%.2f picked=%d flipped=%d",
+             game.info.turn, player_name(pplayer),
+             deep_trunk_c_div_pairs[pn], deep_trunk_c_div_links[pn],
+             deep_trunk_c_div_max[pn], deep_trunk_c_div_pick[pn],
+             deep_trunk_c_div_flip[pn]);
+  }
+
+  deep_trunk_c_div_pairs[pn] = 0;
+  deep_trunk_c_div_links[pn] = 0;
+  deep_trunk_c_div_max[pn] = 0.0;
+  deep_trunk_c_div_pick[pn] = 0;
+  deep_trunk_c_div_flip[pn] = 0;
   deep_trunk_c_links[pn] = 0;
   deep_trunk_c_gap[pn] = 0;
   deep_trunk_c_ally_links[pn] = 0;

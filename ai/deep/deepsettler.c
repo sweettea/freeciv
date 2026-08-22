@@ -1751,6 +1751,14 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
   enum unit_activity pick_act = ACTIVITY_LAST;
   adv_want pick_value = best_impr;
   int pick_dist = 0;
+  /* The same auction run with W12 slice 4's trade dividend removed --
+   * the counterfactual champion, so the census can say the dividend
+   * FLIPPED this assignment rather than merely that it also priced the
+   * tile that won. Costs one subtraction and one comparison per
+   * candidate; when the dividend is off it is the same auction twice
+   * and the two champions agree by construction. */
+  struct tile *nodiv_tile = NULL;
+  adv_want nodiv_value = best_impr;
 
   if (tune->trunk_source_gain <= 0.0 || tune->trunk_road_gain <= 0.0) {
     return best_impr;
@@ -1809,14 +1817,19 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
         continue;
       }
 
+      adv_want nodiv;
+
       want = deep_trunk_source_want(pplayer, target, ptile);
       if (want <= 0.0) {
         continue;
       }
+      nodiv = want - deep_trunk_source_dividend(pplayer, target, ptile);
       want *= tune->trunk_source_gain;
+      nodiv *= tune->trunk_source_gain;
 
       arrival = pos.turn + (pos.moves_left == 0 ? 1 : 0);
       want = deep_worker_travel_amortized(want, arrival);
+      nodiv = deep_worker_travel_amortized(nodiv, arrival);
 
       delay = pos.turn + get_turns_for_activity_at(punit, activity,
                                                    ptile, target);
@@ -1824,6 +1837,11 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
         delay++;
       }
       value = amortize(want, delay);
+
+      if (nodiv > 0.0 && amortize(nodiv, delay) > nodiv_value) {
+        nodiv_value = amortize(nodiv, delay);
+        nodiv_tile = ptile;
+      }
 
       if (value > pick_value) {
         pick_value = value;
@@ -1856,13 +1874,16 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
   *best_target = pick_target;
   *best_tile = pick_tile;
 
-  deep_trunk_source_pick(pplayer, pick_tile, pick_dist);
+  deep_trunk_source_pick(pplayer, pick_tile, pick_dist,
+                         nodiv_tile != pick_tile);
   log_base(deep_metric_log_level(),
            "deep-trunkpick turn=%d player=\"%s\" unit=%d at=(%d,%d)"
-           " tile=(%d,%d) dist=%d ally=%d value=%.2f beat=" ADV_WANT_PRINTF,
+           " tile=(%d,%d) dist=%d ally=%d flip=%d value=%.2f"
+           " beat=" ADV_WANT_PRINTF,
            game.info.turn, player_name(pplayer), punit->id,
            TILE_XY(unit_tile(punit)), TILE_XY(pick_tile), pick_dist,
            deep_trunk_tile_is_ally(pplayer, pick_tile) ? 1 : 0,
+           nodiv_tile != pick_tile ? 1 : 0,
            (double) pick_value, best_impr);
 
   return pick_value;
