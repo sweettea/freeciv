@@ -16512,3 +16512,206 @@ measured and the `techs` t −3.18 it cost.
   games, saves pruned after reading), identity under
   `/tmp` scratch and reproducible from the two staged binaries named
   above.
+
+## W12G: the corridor leak closes — 3.5 fewer walked turns per road, and score does not follow (2026-08-22)
+
+Brief: `sessions/S-W12G-keepable-bids.md`. Branch
+`epic/w12g-keepable-bids`, 4 commits plus this entry, based at
+`fc137e1b9d` (`epic/w03-horizon-content`: all four W12 slices, the
+corridor-150 venue, the funnel). Own worktree `.worktrees/w12g`, own
+build (`-Daimodules=classic,tex,baseline,deep -Dtools= -Dclients=stub
+-Dfcmp=cli`), one pinned binary staged with its own `libfreeciv.so`
+(`.stage-bin/*/freeciv-server` sha256 `ca45f3d0f37f9c1b…`; base
+`5ff200e0f7f93c26…`), ports 7500-7549, jobs 4. `tune-audit` CLEAN at
+**249** fields (two new knobs). `meson test` 6/6.
+
+| commit | what |
+|---|---|
+| `6b612c456a` | `trunk_keepable_gate`: the site search runs above the auction and its result floors the corridor bid |
+| `86e4dca5a5` | `trunk_keep_margin`: the tile a worker is walking to bids at 1 + margin |
+| `c57589c4f6` | `benchmark/w12g-keepable.sh`, `keepcensus.py`, the ON-arm ini |
+| `4cac7be109` | pin only when the bytes differ (a re-pin SIGBUS'd four live games) |
+| — | this entry |
+
+### 1. The two fixes, and why these two
+
+The funnel said the loss is entirely on the WALK: 91.9% of corridor
+assignments never began work, 22.4% of every pick was overridden by
+`deep_find_best_city_placement()` inside the same call, and mid-build
+preemption was ~zero.
+
+**Gate 1, eligibility (`trunk_keepable_gate`, int 0/1).** The override
+site's comparison is `result->result > best_impr`, made *after* the
+corridor pick exists. The gate moves the same comparison upstream: for
+a cityfounder the site search runs BEFORE the worker auction, its
+result becomes a floor `deep_trunk_source_task()` must clear as well as
+the advisor's champion, and the founder block reuses the held result —
+one search per unit per call, as before, no valuation duplicated. A bid
+the next comparison would discard is therefore never made. Chosen over
+"exclude founders entirely" because that variant also discards the
+77.6% of founder picks the override does NOT take, and in the classic
+ruleset Settlers are most of the worker pool.
+
+**Gate 2, stickiness (`trunk_keep_margin`, float, PLACEHOLDER 0.0).** A
+walking worker is re-decided from scratch every turn
+(`adv_follow_path()` restores IDLE), so the tile it is halfway to has
+no standing in the re-run: `outbid` 13.1% and `switch` 4.5% of drops.
+The held tile now bids at 1 + margin times its value. Invalidity still
+wins outright — unsafe/taken/nopath/noact/replan never reach the
+comparison. The hold ledger lives in `deeptrunk.c`, NOT in
+`deepfunnel.c`, because the funnel allocates nothing unless the metric
+lines are being written and a decision must not depend on logging.
+
+### 2. Identity: both gates default OFF, family ON, 10/10 twice
+
+Base = `git archive fc137e1b9d` built in `.w12g-base/`; both sides ran
+`tuning/w12-div-on.ini`, which names neither new key, so both sit at
+their compiled 0. Ten paired `smoke.conf` seeds, `deep` AND `mixed_db`:
+
+    identity deep:     10/10 byte-identical, 0 differ, 0 missing
+    identity mixed_db: 10/10 byte-identical, 0 differ, 0 missing
+    deep-trunkpick:    269 (base)   269 (branch)   — on-path, equal
+    deep-trunkkeep:      0 lines on either side
+
+### 3. The A/B: 29 mirrored corridor-150 seeds, one binary, two keys
+
+Control = `tuning/w12-div-on.ini` (the family as measured, WITH its
+leak); treatment = `tuning/w12g-keep-on.ini`, the same file plus
+`trunk_keepable_gate = 1` and `trunk_keep_margin = 0.25`. Read-back
+audit 29/29 per arm. `trunk_keep_margin = 0.25` is a **PROBE, not a
+result** — no derivation fixes it, the knob ships at 0.0 registered
+PLACEHOLDER, and **it owes a tuning pass** (rule 7).
+
+**The funnel, both arms, per game (mean over 29 games):**
+
+| stage | OFF (family) | ON (both gates) |
+|---|---|---|
+| 1 picks — assignments made | 274.5 | **184.2** |
+| 2 tiles — distinct tiles wanted | 47.3 | 33.4 |
+| 3 walk — picks that never began work | 253.2 (92.2%) | 164.0 (89.0%) |
+| 4 start — times work began | 21.3 (**7.8%** of picks) | 20.3 (**11.0%**) |
+| 5 wturns — work turns accumulated | 53.8 | 49.8 |
+| 6 done — corridor tiles roaded | 23.2 | 20.3 |
+| 7 dsalv — roaded without deep working | 3.0 | 1.5 |
+| picks per work start | 12.90 | **9.09** |
+
+**Where an assignment ended (per game):**
+
+    cause      OFF            ON
+    norun     60.6  38.5%    6.8   8.6%
+    taken     26.9  17.1%   18.9  24.0%
+    outbid    22.9  14.5%   13.6  17.3%
+    roaded    20.6  13.1%   19.1  24.3%   (not a leak)
+    replan     8.7   5.5%    9.1  11.6%
+    switch     7.4   4.7%    1.0   1.3%
+    gone       6.2   3.9%    5.1   6.4%
+    unsafe     3.3   2.1%    3.2   4.1%
+    nopath     0.7   0.4%    1.6   2.1%
+    stop/flee  0.2           0.2
+    TOTAL    157.4          78.7
+
+`norun` — the cause the funnel named, the unit walking away to found a
+city — falls **60.6 -> 6.8 a game**, and `switch` falls 7.4 -> 1.0.
+Drops halve. The two gates hit exactly the two causes they were
+designed against, and nothing else moved in a way that undoes it.
+
+**The gates' own instruments** (`keepcensus.py`, sums per game):
+
+    arm    veto    held    kept     kept/held
+    OFF     0.0     0.0     0.0     — (no lines at all, 0 of 29 games)
+    ON     50.7   119.9    22.5     18.8%   (29 of 29 games)
+
+`knobcensus` LIVE for both new knobs on this corpus
+(`trunk_keepable_gate` veto>0, `trunk_keep_margin` held>0).
+
+**Paired funnel metrics, seed by seed (ON − OFF, n=29):**
+
+    funnel metric                   OFF       ON    delta      se      t  wins
+    picks                        274.52   184.24   -90.28   26.18  -3.45  4/29
+    start (work begun)            21.28    20.28    -1.00    2.03  -0.49 14/29
+    start-rate %                   8.72    13.21    +4.50    0.86  +5.22 25/29
+    done (roads)                  23.21    20.34    -2.86    1.95  -1.47 13/29
+    walk turns (picks-start)     253.24   163.97   -89.28   24.58  -3.63  4/29
+    walk turns per road           11.23     7.70    -3.53    0.88  -4.02  4/29
+    picks per work start          13.35     8.86    -4.49    0.88  -5.09  4/29
+    dsalv                          2.97     1.48    -1.48    0.37  -4.01  4/29
+
+**The paired A/B table (`paircmp.py`, arm deep, n=29):**
+
+    metric                       OFF        ON     delta      se      t   wins
+    score                     192.95    196.18     +3.23    2.82  +1.15   18/29
+    cities                     24.03     24.43     +0.40    0.65  +0.61   16/29
+    unitsbuilt                129.89    130.56     +0.68    1.45  +0.47   17/29
+    techs                      30.39     30.45     +0.06    0.39  +0.16   11/29
+    pop                        90.61     93.04     +2.43    2.09  +1.16   20/29
+    mean_city_size              4.04      4.04     +0.01    0.06  +0.11   13/29
+    settlers                    8.67      8.03     -0.64    0.54  -1.19    7/29
+    landarea               334482.76 341494.25  +7011.49 6437.60  +1.09   16/29
+    munits                     37.98     40.00     +2.02    1.00  +2.02   20/29
+    wonders                     0.37      0.38     +0.01    0.06  +0.18   10/29
+    unitslost                  21.07     21.90     +0.83    1.19  +0.69   15/29
+    unitskilled                13.57     14.68     +1.11    0.90  +1.23   17/29
+    trunk-picks               274.52    184.24    -90.28   26.18  -3.45    4/29
+    keep-veto                   0.00     42.72    +42.72    2.92 +14.64   29/29
+    keep-held                   0.00     77.00    +77.00    6.14 +12.54   29/29
+    keep-kept                   0.00     15.66    +15.66    2.47  +6.33   29/29
+
+### 4. The four pre-registered predictions, adjudicated in order
+
+1. **Start-rate rises well above 8.1% — YES.** 8.72% -> 13.21% per
+   seed (t **+5.22**, 25/29); 7.8% -> 11.0% pooled. The strongest
+   result in this session.
+2. **Walking turns per completed road fall — YES.** 11.23 -> 7.70
+   (t **-4.02**, 25/29 seeds fell). 89 fewer walked worker-turns a
+   game.
+3. **The techs deficit shrinks — NO.** Within the A/B techs moves
+   +0.06 (t +0.16, 11/29), i.e. flat. Against the shipping AI it is
+   *unchanged to slightly worse*: on the 8 seeds this venue shares with
+   the venue pilot, the family's techs deficit vs `w12-family-off` was
+   -1.29 (t -3.18) and with both gates it is **-1.52 (t -2.12)**.
+   Cheaper corridors did not buy the science back.
+4. **Score moves toward >= 0 — PARTLY, and not resolved.** +3.23
+   (se 2.82, t +1.15, 18/29) — the right sign, under the venue's own
+   resolution bar of ~+6 at |t|>=2. Against shipping on the shared 8
+   seeds the family was -7.25 and is now -4.15 (t -0.53, n=8): still
+   negative.
+
+**Said plainly, as the brief asked:** the funnel is now healthy and the
+score is still not there. Corridors executed well are worth about half
+of what corridors executed badly cost, and the remainder is not visibly
+recovered on this venue. A mechanism this clean that moves score by
++3.23 ± 2.82 is not yet a buy; W12's future on classic-flavoured venues
+should be argued from a further measurement, not from this one.
+
+**Cross-run comparability, checked rather than assumed.** On the 8
+shared seeds my OFF arm reproduces the venue pilot's ON arm *exactly*
+— score 191.23 -> 191.23, techs 30.31 -> 30.31, paired delta 0.00 with
+se 0.00 — which is what licenses reading the pilot's family-off arm as
+the shipping reference in prediction 3.
+
+### 5. For whoever picks this up
+
+- **`trunk_keep_margin` owes a tuning pass.** 0.25 is a probe. The
+  measured envelope it sits in: at 0.25 the premium is decisive for
+  18.8% of the walks it is offered, so both a larger and a smaller
+  value have room to say something.
+- **The two gates were measured TOGETHER**, per the brief. `norun`
+  (gate 1) and `switch` (gate 2) fall separately in the drop table, so
+  their mechanisms are individually visible, but their score effects
+  are not separable from this design.
+- **`done` fell 2.86 roads a game (t -1.47).** Fewer corridor tiles get
+  roaded, with far less walking to get them. That is the honest shape
+  of the trade and it is worth a thought before tuning the margin up:
+  stickiness keeps a worker on a tile, and refusing a founder's bid
+  removes a walker entirely.
+- **A re-pin of an IDENTICAL binary kills live games** (SIGBUS: `cp`
+  truncates and rewrites the text pages a running server has mmap'd).
+  Four games died at turn ~94 before `pin()` learned to compare first.
+  Any resumable stage that re-enters its own pin step needs this.
+- **Retention:** `benchmark/results/w12g-ab` (58 corridor-150 games,
+  both arms) and `benchmark/results/w12g-identity` (40 smoke games).
+  Savegames deleted and every `game.log` filtered to
+  `deep-trunk|deep-tuning` lines after scoring — 47 MB a game became
+  259 KB, and every table above re-derives from what remains.
+  `paircmp`'s built-in `lift-*`/`gate-*` counters read 0 in BOTH arms
+  as a consequence and evidence nothing.
