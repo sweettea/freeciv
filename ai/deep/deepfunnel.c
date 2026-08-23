@@ -229,8 +229,9 @@ void deep_funnel_close(const struct player *pplayer,
     switch (prev_stage) {
     case DEEP_FUNNEL_ST_ABSENT:
       deep_funnel_drop(fp, task,
-                       deep_trunk_tile_roaded(index_to_tile(&(wld.map),
-                                                            task->tile))
+                       deep_trunk_tile_complete(pplayer,
+                                                index_to_tile(&(wld.map),
+                                                              task->tile))
                        ? DFC_ROADED : DFC_REPLAN);
       break;
     case DEEP_FUNNEL_ST_UNSAFE: deep_funnel_drop(fp, task, DFC_UNSAFE); break;
@@ -390,7 +391,8 @@ void deep_funnel_census(struct player *pplayer)
         continue;
       }
       deep_funnel_drop(fp, task,
-                       deep_trunk_tile_roaded(ptile) ? DFC_ROADED : DFC_STOP);
+                       deep_trunk_tile_complete(pplayer, ptile)
+                       ? DFC_ROADED : DFC_STOP);
       continue;
     }
     /* Still walking, and the source never looked at it: the worker was
@@ -402,7 +404,7 @@ void deep_funnel_census(struct player *pplayer)
     int idx = fp->seen[i];
 
     if ((fp->mark[idx] & DFT_DONE) != 0
-        || !deep_trunk_tile_roaded(index_to_tile(nmap, idx))) {
+        || !deep_trunk_tile_complete(pplayer, index_to_tile(nmap, idx))) {
       continue;
     }
     fp->mark[idx] |= DFT_DONE;
