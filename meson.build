@@ -364,6 +364,7 @@ else
       'ai/deep/deepstance.c',
       'ai/deep/deeptech.c',
       'ai/deep/deeptechcensus.c',
+      'ai/deep/deepchain.c',
       'ai/deep/deepterra.c',
       'ai/deep/deeptrade.c',
       'ai/deep/deepemploy.c',

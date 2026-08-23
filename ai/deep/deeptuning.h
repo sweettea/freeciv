@@ -2874,6 +2874,44 @@ struct deep_tuning {
    * No new danger model and no new constant; 0 restores today's
    * behaviour exactly. */
   int founder_run_hold;
+
+  /* W29: does deep price a terrain-changing worker action by the best
+   * terrain the CHAIN reaches, or by the one terrain the action itself
+   * produces?
+   *
+   * adv_calc_cultivate() and adv_calc_plant() answer the second
+   * question, which is RC1's corollary exactly: in civ2civ3 neither
+   * Grassland->Plains nor Plains->Grassland is a legal step, both are
+   * two steps through Forest, and a city that wants the far one can
+   * never buy it because the near one -- Forest -- is a loss on its own
+   * and so never outbids anything. The chain is 25 worker-turns, which
+   * is also the length W28 measured stacking to pay on: its join
+   * refusals were 65% `late`, the job finished before the joiner
+   * arrived, and a 3.5-turn road is that job while a 25-turn cultivate
+   * chain is not.
+   *
+   * Above the gate deep_terra_reach() searches the cultivate/plant
+   * graph from the tile's terrain with the action as its forced first
+   * step, and the action is worth the best city_tile_value() any
+   * reachable terrain has, amortized over the turns BEYOND this first
+   * step (the consumer already amortizes the first step and the walk to
+   * it). Every terrain is valued bare, the immediate one included, so
+   * the only thing that changes is that terrain two steps away becomes
+   * visible at all -- nothing is added to the near terrain's price and
+   * nothing is taken from it.
+   *
+   * Gate rather than magnitude, and no companion weight: the price is
+   * the advisor's own city_tile_value() through the advisor's own
+   * amortize(), and the chain length is the ruleset's activity times.
+   * There is no free parameter in it to tune. 0 is today's one-step
+   * valuation exactly -- the hook returns the value it was handed, the
+   * counters still publish their denominator, and the tile auction is
+   * the auction it was.
+   *
+   * Deliberately not applied to ACTIVITY_TRANSFORM: that path has its
+   * own chain valuation in adv_calc_transform(), and civ2civ3 gates
+   * Transform behind Fusion Power anyway. Counter: deep-terrachain. */
+  int terrain_chain_gate;
 };
 
 void deep_tuning_init(void);

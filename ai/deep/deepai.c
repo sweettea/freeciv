@@ -67,6 +67,7 @@
 #include "deepsettler.h"
 #include "deepsite.h"
 #include "deepspy.h"
+#include "deepchain.h"
 #include "deepchat.h"
 #include "deepstance.h"
 #include "deeptechcensus.h"
@@ -1491,6 +1492,7 @@ static void dpai_sanity_check(struct player *pplayer)
 bool fc_ai_deep_setup(struct ai_type *ai)
 {
   aw_set_task_value_hook(deep_worker_task_value);
+  deep_chain_register();
 
   struct dai_private_data *private;
 
