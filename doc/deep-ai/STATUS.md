@@ -19401,3 +19401,288 @@ Retention: `benchmark/results/tierfix-ab/` -- 80 games in four arms,
 `game.log.gz` per game (both gates' counters are in them), scorelogs,
 final saves. Every table above re-derives from that directory with
 `expandfunnel.py` and `seatgap.py`.
+
+## S-POX: own-empire crowding was the unpriced quantity, its price is derived, and the personality does not yet separate seats (2026-08-23)
+
+Brief: `sessions/S-POX-spacing-personality.md`. Branch `epic/pox-spacing`
+(base `bd3e0462e2`). Seven commits: two instruments, the price, the
+axis, the coupling, the drivers, the Europe rider. tune-audit CLEAN at
+**260/260**, `meson test` **6/6**, and both new knobs census **LIVE** on
+the liveness corpus (`site_own_overlap` via `charged>0` on
+deep-sitespace, 1 770 cell-hits; `stance_pox_gain` via `pox_gate>0` on
+deep-stance, 3 556).
+
+### 0. The brief's citation does not exist; the evidence does
+
+The brief points at "STATUS 2026-08-23, the smallpox table". **No such
+entry exists on any branch.** What exists is what it was drawn from:
+`play-0822-2253/`, the user's live Europe game. Its T110 autosave was
+decoded here rather than trusted (topology `""`, wrap `""` -- square,
+non-iso, unwrapped, so native coords ARE map coords and
+`real_map_distance` is `max(|dx|,|dy|)`; classic radius_sq 5 = 21 tiles;
+`citymindist` 2):
+
+    seat              ai       cities  NN med  NN mean  d<=2  size med  overlap
+    Deep_Carthago     deep         25     2.0     2.20    20       4.0    73.0%
+    Deep_Osmanli      deep         34     2.0     2.44    20       2.0    65.0%
+    Deep_Gallia       deep          6     5.0     4.33     2       6.0    15.9%
+    Deep_Hellas       deep         39     2.0     2.08    37       2.0    81.9%
+    Deep_Anglia       deep         11     2.0     2.45     7       2.0    62.8%
+    Deep_Rus          deep         36     2.0     2.67    26       2.0    61.6%
+    Def_Polska        classic      13     2.0     2.15    11       7.0    69.2%
+    Def_Germania      classic      17     2.0     2.35    13       5.0    65.3%
+    Def_Iberia        classic      11     3.0     3.27     4       5.0    29.9%
+    Martti (HUMAN)    -            12     4.0     4.33     0       7.5     0.8%
+
+Five of six deep seats sit exactly on the legal floor. **So does the
+stock AI** (Def_Polska 69% overlap, Def_Germania 65%), which the brief
+did not say and which changes what this is: not a deep regression, an
+unpriced quantity both modules inherit.
+
+### 1. Why it was free, read from the code
+
+Everything in the evaluator prices proximity to SOMEONE ELSE.
+`nclaim * site_claim_bonus` PAYS for founding into a rival's catchment;
+`site_rival_pressure` charges for a contested border. Own-empire
+proximity was priced only as a side effect: `deep_catchment_stream()`
+drops a tile one of our cities reaches FIRST, and a founding citizen
+arrives on turn 0, so a new city wins nearly every race and concedes
+nearly nothing.
+
+### 2. The price is DERIVED -- and the obvious derivation has the wrong sign
+
+Bucketing the 98 `deep-settler ... pick` events of the live game by
+spacing says a d=2 pick is worth 501.5 and a d=4 pick 670.0: a NEGATIVE
+margin, i.e. "no penalty needed". That reading is wrong, and the reason
+it is wrong is the finding: picks at different spacings come from
+different searches, in different places, at different times. **The
+comparison the question asks is WITHIN one search**, and nothing logged
+it.
+
+So the search now logs it: `deep-sitespace` per search (candidates, best
+value and that best candidate's overlap, per spacing bucket) and
+`deep-sitecand` per scored candidate at LOG_VERBOSE. Probe: the user's
+T110 save, 4 turns, all six deep seats, derby-7 tuning -- **1 079 scored
+candidates in 76 searches**.
+
+    d       n   total med   share med   coast%
+    2     541       536.7        14.0      7.9
+    3     354       623.2         6.0      5.9
+    4     140       684.1         2.0     15.7
+    5      35       694.2         0.0     28.6
+
+    searches offering BOTH a d<=2 and a d>=4 candidate:      32
+      of which the TIGHT site outscores the loose one:       15  (47%)
+
+Within those 15 -- where packing is a valuation verdict rather than a
+geography one -- at median site quality:
+
+    want(d<=2)  = 792.5      share(d<=2)  = 10
+    want(d>=4)  = 526.7      share(d>=4)  =  2
+    margin      = 265.8      dshare       =  8
+
+    site_own_overlap = 265.8 / 8 = 33.2 want per shared catchment tile
+
+The same ratio per search: p25 17.2, p50 25.7, p75 33.8, mean 26.6.
+33.2 is the price at which the MEDIAN tight site stops winning; the
+params range (0, 60) brackets the quartiles. It is a price in the
+site-value currency and must be re-derived if `site_stream_weight`
+moves.
+
+### 3. The personality: one axis, one gate
+
+`struct deep_stance` gains `expand = 1 + span * (idx(EXPANSIONIST) -
+idx(BUILDER)) / 2` -- the difference the econ axis throws away by
+averaging EXPANSIONIST, BUILDER and TRADER. Exactly 0 when two traits
+sit at the same relative position, so under `traitdistribution FIXED`
+(the shipping default) the axis is exactly 1.0 and every consumer inert.
+Gate 7 is `expand ^ -stance_pox_gain` on the price: the only gate of the
+seven reading ONE axis against identity rather than a ratio of two,
+because empire shape has no opposing axis.
+
+### 4. Identity: 20/20
+
+10 smoke seeds x 2 arms, base `9e11128a...` (git-archive build of
+`bd3e0462e2`) against `be31eb31...`, tuning `none` both sides, each
+binary run with its own `libfreeciv.so`:
+
+    arm        scorelog byte-identical   maphash equal
+    deep                        10/10           10/10
+    mixed_dc                    10/10           10/10
+
+All 216 `deep-sitespace` lines in the new binary's identity games carry
+`charged=0` -- the gate proving it ran ungated rather than merely quiet.
+
+### 5. Liveness: the PRICE moves spacing, the PERSONALITY does not separate seats
+
+Venue `smoke-traits.conf` (4 deep seats, `traitdistribution EVEN`, 10
+seeds = ~38 seat-games per arm), four arms one tuning key apart.
+"floor" is d=3, civ2civ3's `citymindist`.
+
+    arm    seats  cities  mean d  floor%   d4+%    gated   neg%  picks
+    off       38     298   4.752    40.9   59.1        0    0.0   1926
+    flat      37     273   5.385    18.7   81.3        0    3.8   1743
+    on        37     268   5.194    19.0   81.0    10774    7.3   1654
+    soft      37     260   5.273    18.5   81.5    11053    5.4   1806
+
+Paired on the SAME seed and SAME seat -- two arms one key apart play the
+same map with the same trait draws, so a seat is its own control:
+
+    contrast        delta mean spacing     se       t    n   cities
+    off  -> flat            +0.657      0.196   +3.36   37   -6.2%
+    flat -> on              -0.192      0.154   -1.25   37   -1.8%
+    flat -> soft            -0.082      0.142   -0.58   37  -10.3%
+
+**The price is live and large**: +0.657 tiles of nearest-neighbour
+spacing, floor share 40.9% -> 18.7%, d4+ 59.1% -> 81.3%, at a cost of
+6.2% of the cities founded. That is the mechanism doing exactly what it
+was priced to do.
+
+**The personality is live and does not show up in the outcome.** Gate 7
+scaled 10 774 charges in the `on` arm and 0 in the controls, so it
+executes. Split by the shape axis, the flat->coupled contrast:
+
+    contrast        expansionist (expand>1)     builder (expand<1)
+    flat -> on       -0.285  se 0.204  t -1.47   -0.059  se 0.243  t -0.24
+    flat -> soft     -0.216  se 0.200  t -1.08   +0.071  se 0.209  t +0.34
+
+The DIRECTION is right in both arms -- expansionists tighten more than
+builders -- and in `soft` the two signs separate, which is the shape the
+design predicts. The MAGNITUDE, ~0.3 tiles between the two groups
+against se ~0.2 each, is not resolvable at 37 seats.
+`corr(expand, spacing delta)` is -0.102 (`on`) and -0.081 (`soft`).
+**The brief's acceptance criterion -- two seats with opposite draws
+producing measurably different spacing -- is NOT met.**
+
+Between-seat readings are worse than useless here and the control says
+so: the strong-builder minus strong-expansionist spacing gap is -0.08
+tiles in the OFF arm, where no consumer of the axis exists at all, and
+-0.43 in FLAT, where no personality exists either. The gap is a
+confound (BUILDER also raises the econ axis, which raises settler want
+through gate 4), and only the paired within-seat contrast is readable.
+
+### 6. Why the builder half saturates: the clamp, measured
+
+`stance_pox_gain = 1.0` (the placeholder, shared with the other six
+gates) makes the multiplier `expand^-1`, which at this venue's observed
+axis floor (expand 0.22 at span 0.9) is **4.5x**. A builder seat then
+charges 33.2 * 10 shared tiles * 4.5 = **1 494 want against a median
+site worth 536.7**. `deep_cityresult_fill` ends with
+`result->total = MAX(0, ...)`, so every overlapped candidate lands on
+the clamp and the evaluator stops RANKING sites and starts TYING them.
+
+The counter shows it: candidates scoring non-positive after costs run
+0.0% (off) -> 3.8% (flat) -> **7.3% (on)**, and searches that produce a
+pick fall 1926 -> 1743 -> 1654. That is why the builder end does not
+space FURTHER under the coupling: past the clamp, more price buys no
+more discrimination.
+
+The `soft` arm is that bound made explicit, and its exponent is derived
+rather than picked:
+
+    mult_max = 536.7 / (33.2 * 10)      = 1.617   (charge <= median site)
+    gain     = ln(1.617) / ln(1 / 0.22) = 0.317
+
+At 0.317 the non-positive share falls back to 5.4% and picks recover to
+1806, and the two groups' signs separate. `stance_pox_gain` stays at its
+1.0 PLACEHOLDER in the compiled defaults and in the Europe rider --
+0.317 is derived from ONE venue's median site value and axis floor, and
+the knob is registered (range 0-3) for a tuning pass to settle.
+
+### 7. Asked mid-session: where does the shoreline price?
+
+Measured on the same 1 079 candidates, since `deep-sitecand` carries
+terrain and ocean adjacency:
+
+    group                             n   total med   share med   d med
+    ocean-adjacent Plains            72       815.6         9.0     2.0
+    ocean-adjacent, any terrain      99       861.5         7.0     3.0
+    inland, any terrain             980       572.3        10.0     2.0
+    inland Plains                   235       650.7         7.0     3.0
+
+    at equal spacing        d=2      d=3      d=4      d=5
+    coastal total med     815.6    764.8    876.5    881.2
+    inland  total med     526.5    591.1    640.0    621.2
+    coastal share med      11.0      4.0      1.5      0.0
+    inland  share med      15.0      6.0      2.0      0.0
+
+**The evaluator prices the shore ABOVE the interior at every spacing.**
+Whatever buries the Barbary coast, it is not the base pricing. For
+Deep_Carthago specifically, 7 of its 89 scored candidates in four turns
+were coastal, and those 7 score a median 488.2 against 349.2 inland --
+its best candidate of the probe (870.5) is an ocean-adjacent Plains at
+d=5. Its `deep-siteladder` lines show `nomin` (citymindist against an
+existing city) eating 152 of 275 tiles seen per search: the coast is
+under-OFFERED, not under-priced.
+
+Two corrections to the framing that came with the question. The derby-7
+ini this game runs sets `site_enough_result = 1600`, not 145.42 (that is
+pv3's value); and the probe's best NET scores are 300-400, so **the
+satisficing shortcut never fires in the Europe game at all** and cannot
+be what buried the coast there.
+
+And the guard the question asked for: at equal spacing coastal
+candidates carry FEWER shared tiles than inland ones (11 vs 15 at d=2,
+4 vs 6 at d=3, 1.5 vs 2 at d=4), so the overlap charge falls more
+lightly on coastal strips than on the interior. It moves picks toward
+the shore, not away.
+
+### 8. Recommendation: poxiness is two-dimensional, and the second dimension is not free
+
+Asked whether spacing tolerance and site selectivity
+(`site_enough_result`) should scale off the same axis. In direction,
+yes: expansionist = satisfice and pack, builder = search and space, both
+readings of one disposition. Three things to settle first, all measured
+here:
+
+1. **Order of operations, since it was asked explicitly.** The overlap
+   price is applied INSIDE `deep_cityresult_fill` (into `wspecials`, so
+   into `result->total`), and the satisficing break tests
+   `best->result`, which is derived from that total. **The penalty
+   therefore applies BEFORE the enough-comparison** and mechanically
+   makes the bar harder to clear. The effect is small here: tiles seen
+   per search 246.4 (off) -> 251.6 (flat) -> 245.7 (on) -> 252.6 (soft),
+   i.e. +2% at the compiled bar of 250, and exactly zero on the Europe
+   ini where the bar is 1600 and nothing ever reaches it.
+
+2. **The clamp is the real interaction, not the CPU.** Both dimensions
+   push the same way on a builder -- higher bar AND lower scores -- and
+   section 6 shows what happens at the end of that: ties instead of
+   rankings, and 14% fewer searches producing a pick. Any epic coupling
+   the second dimension should carry the non-positive share as an
+   acceptance criterion, not just the spacing.
+
+3. **`site_enough_result` is read in two places.** It is the in-loop
+   break AND (deepsettler.c) the gate deciding whether an overseas
+   search happens at all. Scaling it by the shape axis would make an
+   expansionist LESS willing to look overseas, which is backwards for
+   the personality that should be colonising. Split the two readings
+   before coupling either.
+
+### Surprises worth carrying
+
+- **The obvious derivation had the wrong sign.** Bucketing picks by
+  spacing says "no penalty needed"; the within-search comparison says
+  33.2 per tile. The two differ because a pick is the argmax of its own
+  search and comparing argmaxes across searches compares neighbourhoods,
+  not sites. Building the instrument was the whole epic.
+- **The stock AI smallpoxes too.** The brief framed the table as a deep
+  defect. Two classic seats in the same game run 65-69% catchment
+  overlap. The mechanism belongs in deep either way, but the diagnosis
+  "deep is broken" was not what the save says.
+- **A placeholder that is right for six gates is wrong for the
+  seventh.** `1.0` is the identity exponent everywhere else because
+  those gates scale WANTS, which are unbounded. This one scales a PRICE
+  against a value that has a floor at zero, and at the axis extreme it
+  multiplies past it. Gates that price rather than value need their
+  gains bounded by the thing being priced.
+- **A ps(1) inside the sandbox sees only its own namespace.** Twice
+  during this session `ps aux | grep freeciv-server` returned nothing
+  while ten games were running; only DONE-marker counts are a truth
+  source for "is the batch alive" here.
+
+Retention: `benchmark/results/pox-identity/` (40 games, 4 arms) and
+`benchmark/results/pox-live/` (40 games, 4 arms, `game.log` per game
+carrying deep-spacing, deep-sitespace and deep-stance). The T110 probe
+that funds section 2 and section 7 re-derives from
+`play-0822-2253/saves/freeciv-T0110-*.zst` with a 4-turn `-d 4` run.

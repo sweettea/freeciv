@@ -14,7 +14,7 @@
 # Three arms, one key apart each:
 #   off   trait-seeded stance, own-crowding price OFF   (control)
 #   flat  the derived price, personality OFF            (does the price move spacing?)
-#   pox   the derived price scaled by the shape axis    (does the personality separate seats?)
+#   on    the derived price scaled by the shape axis    (does the personality separate seats?)
 set -uo pipefail
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 SERVER=${1:?server binary}
@@ -23,7 +23,7 @@ OUT=${2:-$here/results/pox-live}
 mkdir -p "$OUT"
 : > "$OUT/progress.txt"
 ok=1
-for arm in off flat pox; do
+for arm in off flat on soft; do
   TUNING=$here/tuning/pox-$arm.ini \
   LD_LIBRARY_PATH=$(dirname "$SERVER") \
     "$here/run.sh" --count 10 --config "$here/configs/smoke-traits.conf" \
