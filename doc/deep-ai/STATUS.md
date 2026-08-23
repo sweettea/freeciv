@@ -21457,3 +21457,333 @@ not start from the brief:
 deleted by the driver), `capstake-identity` and `capstake-identity-r1`
 (40 smoke games each pair). Every table above re-derives from those
 with `benchmark/capstake.py`.
+
+## S-IMPROVABLE: the starve gate refused sites for a wait nobody priced, and the potential term beside it is an upper bound (2026-08-23)
+
+Branch `epic/site-improvable` off `c644628cb8`, tip `72123b792e`. The
+user's call from the Carthago debrief -- *"we can improve crappy sites
+after we build them with autoworkers tho"* -- against a site evaluator
+that judges tiles as-is. Two gates, `site_improvable_gate` and
+`site_starve_price_gate`, both shipped at 0, both live in the Europe
+rider. One binary throughout: `f191765accab1b64` (base
+`baba0e3143a17836`).
+
+### 1. The complaint, in the live game's own ladder
+
+Deep_Carthago in `play-0823-1226`, turns 191-206, 69 settler searches:
+
+    seen    nofound   mindist   starve   scored   neg   found
+   20488       9944      5370     4449      725    59      69
+
+`nofound` is 100% `nomin` (citymindist against a real city) and
+`mindist` is the reservation scan, so 74.7% of every tile the pathfinder
+offers is refused on GEOMETRY, which no valuation can move. `starve` is
+21.7% and 6.1x `scored`, and it is the only large bucket a price can
+reach. **The brief's expectation that the mindist buckets would also
+fall is not something either gate can deliver** -- if anything they
+rise, because founding more cities creates more citymindist rings.
+Measured below: 1457 -> 1448 on the corpus, i.e. flat. Recorded rather
+than chased.
+
+### 2. Two halves, and they push opposite ways
+
+**Half A, `site_improvable_gate`.** The potential term is
+
+    potentials[i] = MAX(irrigation_food_incr * food_priority,
+                        mining_shield_incr  * shield_priority)
+                    * site_potential_weight
+
+read straight off the terrain. It never asks whether the tile can take
+that improvement or has already taken it, it cannot see a cultivate or
+plant chain, and it charges nothing for the worker-turns. The gate
+replaces it with the best of {irrigate, mine, every terrain
+`deep_terra_reach()` reaches}, each amortized over the ruleset's own
+activity time.
+
+**Half B, `site_starve_price_gate`.** `food_starvation()` and
+`shield_starvation()` ask two tiles what they yield today and DROP the
+site. The gate offers each of those two tiles a second time as the tile
+a worker has finished with, takes the cheapest combination that clears
+the bar as a WAIT, and charges `amortize(total, wait)`; only a site no
+improvement ever feeds is still dropped.
+
+They were briefed as one mechanism and gated as one until the first
+smoke pair measured them. Half A can only take want off tiles (section
+3); half B only puts candidates back on the ladder. One switch over both
+would have produced a single A/B number nobody could attribute, so they
+were split before any batch ran -- and the 2x2 in section 6 is why that
+mattered.
+
+### 3. The discount is DERIVED, and here is the arithmetic
+
+No constant was invented; neither gate has a companion magnitude. Three
+pieces, all already in the tree:
+
+1. `amortize(benefit, delay) = benefit x (1 - 1/MORT)^delay` with
+   `MORT 24` (`server/advisors/advtools.h:19`, `advtools.c:32-38`), so
+   the per-turn factor is **23/24 = 0.958333**. This is the discounter
+   the catchment stream already uses for a citizen's arrival turn, W03
+   for a building's time to go, and W29's chain valuation for the
+   worker-turns beyond its first step. Using anything else here would
+   have been the invented constant.
+2. A ruleset activity time IS a turn count for the reference worker:
+   `tile_activity_time()` returns `ruleset_time x ACTIVITY_FACTOR`
+   points and a green worker whose move_rate is SINGLE_MOVE delivers
+   exactly `ACTIVITY_FACTOR` points a turn (`common/unit.c`). That is
+   deepterra.h's own derivation for cultivate_time/plant_time, reused
+   unchanged for irrigation_time/mining_time.
+3. The weights are `adv->food_priority` / `shield_priority` /
+   `science_priority`: FOOD_WEIGHTING 30, SHIELD_WEIGHTING 17
+   (`server/advisors/advbuilding.h:19-21`), the same three the evaluator
+   already sums tiles in.
+
+    q^5 = 0.80832   q^10 = 0.65338   q^15 = 0.52814   q^25 = 0.34508
+
+civ2civ3, per terrain, as-is potential against the best gated option:
+
+    terrain    as-is                best gated option          delta
+    Desert     max(30,17) = 30      irr  30 x q^5  = 24.2       -5.8
+    Grassland  max(30, 0) = 30      irr  30 x q^5  = 24.2       -5.8
+    Plains     max(30, 0) = 30      irr  30 x q^5  = 24.2       -5.8
+    Swamp      max(30, 0) = 30      irr  30 x q^5  = 24.2       -5.8
+    Hills      max(30,34) = 34      mine 34 x q^10 = 22.2      -11.8
+    Mountains  max( 0,34) = 34      mine 34 x q^10 = 22.2      -11.8
+    Tundra     max( 0,17) = 17      mine 17 x q^5  = 13.7       -3.3
+    Glacier    max( 0,17) = 17      mine 17 x q^10 = 11.1       -5.9
+    Forest     max( 0, 0) =  0      ->Plains -17 x q^10 < 0        0
+                                    ->Grass   -4 x q^15 < 0
+    Jungle     max( 0, 0) =  0      ->Swamp  -17 x q^10 < 0        0
+
+**In civ2civ3 half A cannot raise a single tile's price, and that is
+arithmetic rather than a measurement.** The as-is expression is the
+undiscounted maximum of the only two one-step options, so discounting
+can only lower it; and every cultivate/plant edge in this ruleset trades
+one output for another at a loss in this currency (Forest->Grassland is
++1 food, -2 shield = -4 before any discount). The batch agrees exactly:
+**5 139 756 tile-prices in the `both` arm, 0 lifted, 2 501 732 cut.**
+
+The instrument was built one-sided at first -- `lifted` only -- and
+reported the mechanism DEAD across 93 327 smoke tile-prices. It now
+reports `cut` and a SIGNED `gain` beside it. A knob whose honest value
+is normally lower than what it replaces needs a two-sided census, and a
+`lifted`-only reading would have retired a live mechanism.
+
+Where a chain does win is where the one-step extra is ILLEGAL because it
+is already built: an already-irrigated Plains still collects its full
+as-is credit of 30 (the un-gated term never asks) while the gated price
+is plant->Forest, +1 shield at 10 turns = 17 x q^10 = 11.1. `chain=`
+counts that; it is 853 of 5.1M, i.e. rare, and 0 on the Europe corpus.
+
+### 4. Identity: 10/10 twice, including the mixed cell
+
+    identity deep:     10/10 byte-identical, 0 differ, 0 missing
+    identity mixed_dc: 10/10 byte-identical, 0 differ, 0 missing
+    IDENTITY OK
+
+base `baba0e3143a17836` (the branch point, pinned before a line was
+written) against head `f191765accab1b64`, no tuning file in either arm,
+`smoke.conf`. The `mixed_dc` cell shares one server and one RNG stream
+between a deep seat and a classic seat, which is the arm that catches an
+accidental extra `fc_rand()`. Both directions of the token check pass:
+the base arm emits no `deep-siteimprove` line, and neither does head at
+compiled defaults.
+
+### 5. Liveness on the user's own position -- the headline
+
+`play-0823-1226` T201 (Deep_Carthago at the stall) replayed three turns
+twice from the identical save, one key apart, `benchmark/improvable.sh
+corpus`. Deep_Carthago's own ladder, summed over the replay:
+
+    arm     seen  nofound  mindist   starve   scored     neg   found
+    off     5533     2734     1457     1179      163      12      17
+    on      5495     2725     1448      114     1208     623      17
+
+    all deep seats
+    off     6215     2981     1640     1315      279      13      24
+    on      6145     2968     1624      175     1378     623      24
+
+**Starve drops fall 90.3% (1179 -> 114) and scored candidates rise 7.4x
+(163 -> 1208)** on the exact position the user complained about. The
+geometry buckets do not move (mindist 1457 -> 1448, nofound 2734 ->
+2725), which is section 1's point measured rather than argued.
+
+`neg` rising 12 -> 623 is the honest other half: the sites are now
+EVALUATED instead of refused, and most of them still do not survive the
+settler cost plus the walk. That is the correct place for that verdict
+to be made -- a valuation, not a gate -- and `found` is unchanged at
+17/24, so in these three turns the champion never changed.
+
+The gates' own instrument on the same replay:
+
+    on   tiles=26442 lifted=0 cut=25739 gain=-241503 chain=0
+         starvepriced=1120 starveturns=6385 starvehard=175
+
+1 120 candidates put back on the ladder at a mean wait of **5.7 turns**,
+175 that no improvement feeds still refused, and 97.3% of tile-prices
+cut. Mean founder want 605.8 -> 583.1 (-3.7%), which is half A's
+deflation showing up where it should.
+
+### 6. The 2x2 on isolated-150, 16 training seeds, one pinned binary
+
+Ladder drop causes, summed over 16 games per arm:
+
+    arm            seen    nofound    mindist   starve     scored    neg
+    off         8801537    7876525     454010    34711     266030     66
+    pricing     8353616    7426702     454106    30356     246281    162
+    starve      8987005    8005122     456295     5296     309176    981
+    both        9169140    8247901     462511     4625     281014    755
+
+    starve refusals per arm, vs off:  pricing -12.5%  starve -84.7%
+                                      both -86.7%
+    scored candidates,     vs off:    pricing  -7.4%  starve +16.2%
+                                      both     +5.6%
+
+Census (the off arm emits no `deep-siteimprove` line at all, which is
+the gate-shut proof rather than a zero):
+
+    pricing  tiles=4977456 lifted=0 cut=2433383 gain=-28008723 chain=931
+    starve   tiles=0 starvepriced=28223 starveturns=243950 starvehard=5055
+    both     tiles=5139756 lifted=0 cut=2501732 gain=-28755914 chain=853
+             starvepriced=25196 starveturns=215835 starvehard=4625
+
+Mean starve wait charged: 243950/28223 = **8.64 turns** (starve arm),
+215835/25196 = **8.57** (both).
+
+Per-seed mean score over the arm's four deep seats:
+
+      seed      off  pricing   starve     both   d-pric  d-starve   d-both
+         1    150.2    136.5    174.2    136.5    -13.8     +24.0    -13.8
+         2    214.0    192.8    143.5    168.8    -21.2     -70.5    -45.2
+         3    206.5    184.5    221.5    199.2    -22.0     +15.0     -7.2
+         4    206.8    220.2    206.8    214.2    +13.5      +0.0     +7.5
+         5    200.0    218.5    165.0    217.5    +18.5     -35.0    +17.5
+         6    190.8    190.8    172.0    194.5     +0.0     -18.8     +3.8
+         7    184.5    183.2    201.5    209.0     -1.2     +17.0    +24.5
+         8    191.5    204.8    201.0    207.8    +13.2      +9.5    +16.2
+         9    163.5    149.0    156.8    183.2    -14.5      -6.8    +19.8
+        10    189.8    195.0    189.8    203.2     +5.2      +0.0    +13.5
+        11    205.0    182.0    210.0    188.2    -23.0      +5.0    -16.8
+        12    183.8    186.0    186.2    181.2     +2.2      +2.5     -2.5
+        13    187.8    185.0    170.8    172.8     -2.8     -17.0    -15.0
+        14    174.8    181.8    169.2    182.2     +7.0      -5.5     +7.5
+        15    183.8    193.8    182.0    187.8    +10.0      -1.8     +4.0
+        16    154.2    155.8    182.5    176.8     +1.5     +28.2    +22.5
+      mean    186.7    185.0    183.3    188.9
+
+    off -> pricing   -1.70  se 3.36  t -0.51   8/16
+    off -> starve    -3.38  se 6.04  t -0.56   7/16
+    off -> both      +2.27  se 4.61  t +0.49  10/16
+
+**All three are null.** Not "small and positive" -- null: every |t| is
+below 0.6 and every interval covers zero comfortably. Per 00-context
+section 6 a paired design at rho ~0.8 needs ~110 seeds for a 5% effect,
+and 16 seeds against a spread of 70 points a seed cannot see one. What
+these numbers license is "no detectable harm", and nothing more.
+
+The one shape worth writing down, and it is a hypothesis rather than a
+result: the mains sum to -5.08 while `both` is +2.27, an interaction of
+**+7.35** in the same units. It is not significant either, but it is the
+direction the mechanism predicts -- half B floods the ladder with
+marginal candidates (scored +16.2%, `neg` 66 -> 981) and half A is the
+term that prices the marginal ones down again. If that is real, the two
+belong together or not at all, and the Europe rider ships them together
+for exactly that reason.
+
+Other movers worth recording: `unitsbuilt` +7.78 (se 2.27, **t +3.43**,
+12/16) in the starve arm and +4.91 (t +1.97) in `both` -- more settlers
+walking to more evaluated sites is the mechanism doing what it says.
+`settlers` in stock +0.69/+0.70/+0.89 across the three arms (t ~1.6-1.9,
+consistent sign). Neither converts to score at this sample size.
+
+Execution counters, per seed, all 16/16: `improve-cut` 0 -> 513.4
+(t +14.9) and `starve-priced` 0 -> 363.7 (t +13.0).
+
+### 7. Where the brief and the code disagreed
+
+- **"REUSING W29's chain valuation" reads as if the chain valuation were
+  a function to call.** It is a hook CONSUMER (`deep_chain_value`,
+  registered on `adv_terrain_value_hook_set`) that prices an ACTIVITY
+  for a REAL city through `city_tile_value()`. A site evaluator has a
+  virtual city, a different currency (adv priorities, not
+  FOOD_WEIGHTING-with-bonuses) and tens of thousands of candidate tiles
+  a turn. What is genuinely shared -- and what this epic calls -- is the
+  layer underneath: `deep_terra_reach()` in deepterra.c, the graph
+  search with cumulative worker-turns, plus its amortize convention. One
+  terrain model, two consumers.
+- **Transform stays excluded**, W29's reason unchanged: civ2civ3 gates
+  Transform Terrain behind Fusion Power, so following transform edges
+  would import that gate as an unpriced promise into an ancient-era
+  valuation.
+- **The legality test does less than its first comment claimed, and the
+  comment was corrected in its own commit (`dede4d0f29`).**
+  `player_can_build_extra()` -- the same call the advisors' own
+  `adv_calc_extra()` values an extra through -- sees the extra's own
+  reqs and `can_build_extra_base`. civ2civ3's Irrigation extra has an
+  EMPTY reqs block: the water-source condition lives in the ACTION
+  ENABLERS' target_reqs (`enabler_irrigate_src_ocean_*`, "TerrainClass
+  Oceanic CAdjacent"). A dry inland desert therefore still reads as
+  irrigable. What the test does catch is real and is a defect in the
+  term it replaces: an extra already present (so the un-gated term
+  credits an already-irrigated tile a second time), a conflicting one
+  present, a terrain that takes no such improvement, and the extra's own
+  reqs -- civ2civ3's Mine has a tech and a terrain class.
+- **`mindist` cannot fall.** Section 1, measured in section 5.
+
+### 8. Follow-ups, ranked
+
+1. **Enabler-aware feasibility.** The discriminating half of half A --
+   "this desert has no water beside it" -- needs action enablers
+   evaluated with no actor unit in hand. Nothing in the tree does that
+   yet, so it wants its own epic rather than a first attempt inside the
+   site loop. This is the change most likely to turn half A's uniform
+   deflation into actual tile-vs-tile discrimination.
+2. **`site_potential_weight` re-level, then re-measure.** Half A lowers
+   the mean potential by construction (-28.0M want over 5.0M
+   tile-prices, i.e. -5.6 per tile at weight 1.5); the weight (1.5,
+   "= PERFECTION/2, untuned") is the knob that restores the level. The
+   gate was judged here at the OLD weight, which loads the comparison
+   with a scale change it did not intend. They should be tuned together.
+3. **The starve test's second tile.** `best_other` is chosen by weighted
+   SUM and the tile that feeds a site is not always the tile that scores
+   highest. Deliberately NOT changed here -- two changes cannot be read
+   from one A/B -- but it is a real second complaint about the same
+   three lines, and a smoke run with the looser reading showed ~90% of
+   starve verdicts flipping at wait 0, i.e. the test is naming the wrong
+   tile more often than it is naming a wait.
+4. **`neg` 66 -> 981 wants a look.** Half B is producing a lot of
+   candidates that score and then die against settler cost. Cheap to
+   evaluate, but if the CPU shows up it is the satisficing break
+   (`site_enough_result`), not the gate, that should absorb it.
+5. **The tuning read-back is truncated.** `deep-tuning file=...` is
+   built into an 8192-byte buffer and at 270 fields it now cuts off at
+   `op_take_target`, so the audit every epic uses to prove which file an
+   arm loaded is blind to the last ~130 knobs. Confirmed byte-identical
+   on the PRE-epic binary, so it is inherited, not caused here.
+
+### Machine lessons
+
+- **`setsid` from an on-disk driver survives a quota kill.** This
+  session was terminated mid-turn at the session limit and the reaper
+  took every tracked background command with it; `improvable.sh go`,
+  launched `setsid bash ./benchmark/improvable.sh go` from the worktree
+  root, was still running 36 minutes later with game logs growing. The
+  filesystem, not the process table, is what says so -- `pgrep` inside
+  the sandbox reports its own namespace.
+- **A replay is not a benchmark game and does not inherit its
+  environment.** The corpus arms ran the server with CWD inside the
+  result dir and died on "Could not find a readable effects.ruleset",
+  because `FREECIV_DATA_PATH` is exported by `run-game.sh`, which a
+  replay does not go through.
+- **A worktree does not have the user's saves.** The play-* directories
+  are untracked, so they exist only in the main checkout; resolve them
+  through git's common git-dir rather than `$ROOT`.
+
+### Retention
+
+`benchmark/results/improvable-identity/{base,head}` (40 smoke games),
+`benchmark/results/improvable-ab/{off,pricing,starve,both}` (64
+isolated-150 games, 16 paired seeds x 4 arms, one binary
+`f191765accab1b64`), `benchmark/results/improvable-corpus/{off,on}` (the
+T201 Europe replay pair, saves deleted by the driver). Every table above
+re-derives with `benchmark/improvable.sh report` and
+`benchmark/improvable.sh corpus`.
