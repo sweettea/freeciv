@@ -9,7 +9,7 @@ because deep refuses a target it cannot ground, which is the honesty
 property, so a name picked at random would only ever prove the refusal.
 
 Three tables in the save carry all of it:
-  player<N>.c=      that player's own cities (id, name)
+  player<N>.c=      that player's own cities (id, x, y, name)
   player<N>.dc=     the cities that player REMEMBERS, i.e. its own
                     knowledge of the map (owner, id, name) -- this is
                     the struct player_tile / vision_site store, which
@@ -64,8 +64,10 @@ def main(path, me):
         elif line.startswith("c={"):
             hdr = split_row(line[3:])
             k_id, k_nm = hdr.index("id"), hdr.index("name")
+            k_x, k_y = hdr.index("x"), hdr.index("y")
             own.setdefault(sec, []).extend(
-                [(r[k_id], r[k_nm]) for r in table(lines, i + 1)])
+                [(r[k_id], r[k_x], r[k_y], r[k_nm])
+                 for r in table(lines, i + 1)])
         elif line.startswith("diplstate={") and names.get(sec) == me:
             hdr = split_row(line[len("diplstate={"):])
             k_cur = hdr.index("current")
@@ -89,7 +91,8 @@ def main(path, me):
     # closes a hand-quoted string and makes the shell try to run the
     # rest of the line as a command. It did.
     mine = own.get(mysec, [])
-    print("OWN_CITIES=%s" % shlex.quote(";".join("%s,%s" % c for c in mine)))
+    print("OWN_CITIES=%s"
+          % shlex.quote(";".join("%s,%s,%s,%s" % c for c in mine)))
 
     # An ally city: any player on our team. The save does not spell the
     # team out in a form worth parsing here, so the smoke passes the
@@ -98,7 +101,8 @@ def main(path, me):
         if sec != mysec:
             print("CITIES_%s=%s"
                   % (names[sec],
-                     shlex.quote(";".join("%s,%s" % c for c in plist))))
+                     shlex.quote(";".join("%s,%s,%s,%s" % c
+                                          for c in plist))))
 
     # Enemy cities we have SEEN: in our own dc table, owned by somebody
     # who is not us.

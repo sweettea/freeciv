@@ -149,22 +149,70 @@ run_game() {
 # The names the smoke has to be able to type, read out of the save
 # rather than guessed: an enemy city deep has NOT seen is refused by
 # design, so a guessed name would only ever prove the refusal.
+#
+# It also has to pick things deep is NOT ALREADY DOING. On the first
+# run every cell picked what happened to be first, and deep was already
+# roading to that ally city and already marching on that enemy city --
+# so all three cells asked for the status quo and proved nothing. The
+# control cell runs first and its log says what the status quo IS, so
+# the picks below read it and choose something else. A request that
+# agrees with the plan is a legitimate outcome; it is not evidence.
 pick_names() {
-  local save=$1
+  local save=$1 ctl_log=$2
   eval "$(python3 "$ROOT/benchmark/chatty2-names.py" "$save" "$ME")"
-  MY_CITY=${OWN_CITIES%%;*}; MY_CITY=${MY_CITY#*,}
+  MY_CITY=${OWN_CITIES%%;*}; MY_CITY=${MY_CITY##*,}
   eval "ALLY_LIST=\${CITIES_$ALLY:-}"
-  ALLY_CITY=${ALLY_LIST%%;*}; ALLY_CITY=${ALLY_CITY#*,}
+
+  # The ally cities the control run already builds a corridor to. The
+  # corridor message names the city, which is the only place a NAME for
+  # the chosen endpoint appears -- deep-trunklink prints map
+  # coordinates and the savegame stores native ones.
+  local roaded=""
+  if [ -r "$ctl_log" ]; then
+    roaded=$(grep -h "deep-chat .*player=\"$ME\" class=0" "$ctl_log" \
+             | sed -E 's/.*toward your city (.*)\."$/\1/' | sort -u)
+  fi
+  # while-read, not `for c in $(...)`: city names contain spaces (Rio
+  # de Janeiro, Sao Paulo) and word splitting would shred them.
+  ALLY_CITY=""
+  local c
+  while IFS= read -r c; do
+    [ -n "$c" ] || continue
+    if ! printf '%s\n' "$roaded" | grep -qxF "$c"; then
+      ALLY_CITY=$c; break
+    fi
+  done <<EOF
+$(printf '%s' "$ALLY_LIST" | tr ';' '\n' | cut -d, -f4-)
+EOF
+  # Every one of them is already roaded to: fall back to the first, and
+  # the cell then shows agreement rather than movement. Reported, not
+  # hidden.
+  if [ -z "$ALLY_CITY" ]; then
+    ALLY_CITY=${ALLY_LIST%%;*}; ALLY_CITY=${ALLY_CITY##*,}
+  fi
   # The first SEEN city whose owner we are actually AT WAR with. Not
   # "the first city of somebody who is not us": deep answers a target
   # whose owner it is at peace with with an honest refusal naming the
   # owner, so a war-blind pick proves the refusal and never the effect.
   # It did, on the first run -- `attack Sapporo` came back "we are not
   # at war with P4, who holds Sapporo", which was true.
+  # ... and not the city the control run is already marching on.
+  local targeted=""
+  if [ -r "$ctl_log" ]; then
+    targeted=$(grep -h "deep-op .*player=\"$ME\"" "$ctl_log" \
+               | grep -oE 'target=[0-9]+' | cut -d= -f2 | sort -u)
+  fi
   FOE_CITY=""; FOE_PLAYER=""
+  local w id nm
   for w in $AT_WAR; do
-    FOE_CITY=$(printf '%s' "$SEEN" | tr ';' '\n' \
-               | awk -F, -v w="$w" '$1 == w { print $3; exit }')
+    while IFS=, read -r ow id nm; do
+      [ "$ow" = "$w" ] || continue
+      printf '%s\n' "$targeted" | grep -qxF "$id" && continue
+      FOE_CITY=$nm
+      break
+    done <<EOF
+$(printf '%s' "$SEEN" | tr ';' '\n')
+EOF
     if [ -n "$FOE_CITY" ]; then
       FOE_PLAYER=$(printf '%s' "$PLAYER_NAMES" | tr ';' '\n' \
                    | awk -F, -v w="$w" '$1 == w { print $2; exit }')
@@ -331,7 +379,8 @@ smoke)
       rm -rf "$d"; mkdir -p "$d/saves"
       cp -f "$save" "$d/saves/"
       base=$(basename "$save")
-      pick_names "$save"
+      pick_names "$save" \
+                 "$ROOT/benchmark/results/chatty2-smoke/ctl/seed-$seed/game.log"
       {
         echo "load saves/$base"
         echo "set endturn $SMOKE_END"
@@ -434,43 +483,83 @@ report)
     | sed -E 's/^3: //' | head -30 || true
 
   echo
-  echo "=== EFFECT 1 defend: danger for the named city, def vs ctl ==="
+  echo "=== EFFECT 1 defend: the named city's danger, def vs ctl ==="
+  # deep-prodswitch, NOT deep-def. deep-def carries the RAW stock figure
+  # and says so in its own source comment ("deep\'s injected fears land
+  # after this line"), so it cannot show this effect and does not show
+  # any of the other injected fears either. It cost a run to learn.
   city=$(grep -h "verdict=defend " "$OUT/def/seed-$seed/game.log" 2>/dev/null \
          | grep -oE 'city=[0-9]+' | head -1 | cut -d= -f2)
-  echo "requested city id=$city"
-  for c in def ctl; do
+  echo "requested city id=$city (chatty_defend_fear = 50.0)"
+  for c in ctl def; do
     printf '%-4s ' "$c"
-    grep -h "deep-def .*city=$city " "$OUT/$c/seed-$seed/game.log" 2>/dev/null \
-      | grep -oE 'turn=[0-9]+ |danger=[0-9]+' | paste - - | head -8 \
+    grep -h "deep-prodswitch .*city=$city " \
+      "$OUT/$c/seed-$seed/game.log" 2>/dev/null \
+      | grep -oE 'turn=[0-9]+|danger=[0-9]+' | paste - - | head -5 \
+      | tr '\n' ' '
+    echo
+  done
+  echo "and the want it buys (deep-switchcost, the city's own walls):"
+  for c in ctl def; do
+    printf '%-4s ' "$c"
+    grep -h "deep-switchcost .*city=$city " \
+      "$OUT/$c/seed-$seed/game.log" 2>/dev/null \
+      | grep -oE 'turn=[0-9]+|want=[0-9.]+' | paste - - | head -5 \
       | tr '\n' ' '
     echo
   done
 
   echo
-  echo "=== EFFECT 2 attack: the operation target, atk vs ctl ==="
+  echo "=== EFFECT 2 attack: the operation's retarget, atk vs ctl ==="
   city=$(grep -h "verdict=attack-city " "$OUT/atk/seed-$seed/game.log" \
          2>/dev/null | grep -oE 'city=[0-9]+' | head -1 | cut -d= -f2)
-  echo "requested city id=$city"
-  for c in atk ctl; do
+  echo "requested city id=$city (chatty_attack_gain = 0.5)"
+  echo "read alt= (what the retarget would move TO) and changed="
+  for c in ctl atk; do
     printf '%-4s ' "$c"
     grep -h "deep-anchor .*player=\"$ME\"" "$OUT/$c/seed-$seed/game.log" \
-      2>/dev/null | grep -oE 'turn=[0-9]+|target=[0-9]+' | paste - - \
-      | head -8 | tr '\n' ' '
+      2>/dev/null | grep -oE 'turn=[0-9]+|target=[0-9]+|alt=[0-9]+|changed=[0-9]+' \
+      | paste - - - - | head -4 | tr '\n' ' '
     echo
   done
 
   echo
   echo "=== EFFECT 3 road: the ally corridor endpoint, road vs ctl ==="
-  for c in road ctl; do
-    printf '%-4s ' "$c"
+  echo "the ALLY endpoints the plan holds, and the work they imply:"
+  for c in ctl road; do
+    printf '%-4s endpoints: ' "$c"
     grep -h "deep-trunklink .*player=\"$ME\" .*ally=1" \
       "$OUT/$c/seed-$seed/game.log" 2>/dev/null \
-      | grep -oE 'turn=[0-9]+|to=[0-9]+,[0-9]+' | paste - - | head -8 \
-      | tr '\n' ' '
+      | grep -oE 'to=[0-9]+,[0-9]+' | sort | uniq -c | tr '\n' ' '
+    echo
+    printf '%-4s plan:      ' "$c"
+    grep -h "deep-trunkally .*player=\"$ME\"" \
+      "$OUT/$c/seed-$seed/game.log" 2>/dev/null | sed 's/^3: //' \
+      | head -2 | tr '\n' ' '
+    echo
+  done
+  echo "and what deep TOLD the ally it was roading to:"
+  for c in ctl road; do
+    printf '%-4s ' "$c"
+    grep -h "deep-chat .*player=\"$ME\" class=0" \
+      "$OUT/$c/seed-$seed/game.log" 2>/dev/null \
+      | sed -E 's/.*toward your city (.*)\."$/\1/' | sort -u | tr '\n' ' '
     echo
   done
 
   echo
+  echo "=== WHAT A HUMAN ALLY SEES IN THEIR CLIENT ==="
+  # The benchmark has no client attached, so this reconstructs the two
+  # halves of the exchange: what the human typed (the ordinary private
+  # -message form, echoed back by handchat.c) and the line deep sent,
+  # which is the text= field verbatim.
+  grep -h 'deep-request \|deep-chat .*class=4' \
+    "$OUT/all/seed-$seed/game.log" 2>/dev/null \
+    | sed -E \
+        -e 's/^3: deep-request .*from="([^"]*)".* text="(.*)"$/  <\1 types>   \1 to P1: \2/' \
+        -e 's/^3: deep-chat .*to="([^"]*)".* text="(.*)"$/  <\1 sees>    \2/' \
+    | head -30
+
   echo "=== rate cap: any turn over the cap? (said=n/max per line) ==="
   awk '{ if (match($0, /said=([0-9]+)\/([0-9]+)/)) {
            split(substr($0, RSTART + 5, RLENGTH - 5), a, "/");
