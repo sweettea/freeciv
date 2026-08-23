@@ -1507,6 +1507,26 @@ MAP = {
         "line per declined military switch away from a founder build "
         "already under way; the line cannot be emitted with the gate "
         "off. Default 0: expect no lines at defaults."),
+    "terrain_chain_gate": (
+        "S1", "gate", "direct", [("deep-terrachain", "lift>0")],
+        "W29: below the gate a cultivate or plant is worth the terrain "
+        "it produces, above it the best terrain the cultivate/plant "
+        "graph reaches from that tile, amortized over the turns beyond "
+        "the first step (deepchain.c). The deep-terrachain line exists "
+        "in BOTH settings because cand= and multi= -- candidates priced "
+        "at all, and those with a chain to find -- are counted before "
+        "the gate: that is deliberate, so the OFF arm publishes the "
+        "denominator the ON arm's rate is taken against. lift= is the "
+        "count of prices actually raised and is zero by construction "
+        "with the gate shut, so it and nothing else is the knob. "
+        "tiles=/work=/done= follow the lifted TILES to an outcome, so a "
+        "null is readable: lift>0 with work=0 says the raise never won "
+        "the auction, which is a statement about the magnitude, while "
+        "multi=0 says the RULESET has no chains and cand=0 says the "
+        "venue offered no terrain change at all. VENUE-SENSITIVE in one "
+        "further way worth stating: civ2civ3 gates Transform Terrain "
+        "behind Fusion Power, so the chains this knob can find there "
+        "are the cultivate/plant ones and never a transform."),
 }
 
 STAGE_NAME = {
