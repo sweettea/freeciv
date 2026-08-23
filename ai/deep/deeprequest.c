@@ -115,9 +115,10 @@ static void deep_request_store(struct player *pplayer,
 }
 
 /**********************************************************************//**
-  A city deep is ALLOWED to be asked to defend: one of its own, or one
-  of the asker's. Not "any city with that name" -- deep must not learn
-  from a sentence that a city exists somewhere it has never been.
+  A city deep can be asked to defend. Not "any city with that name" --
+  deep must not learn from a sentence that a city exists somewhere it
+  has never been -- so the search is our own cities and then the
+  asker's, and the caller tells the two apart.
 **************************************************************************/
 static struct city *deep_request_own_or_ally_city(struct player *pplayer,
                                                   struct player *sender,
@@ -378,6 +379,24 @@ void deep_request_hear(struct player *pplayer, struct player *sender,
       deep_chat_reply(pplayer, sender, DEEP_CHAT_REPLY,
                      _("We hold no city called %s, and neither do you."),
                      arg);
+      return;
+    }
+    if (city_owner(pcity) != pplayer) {
+      /* The brief allowed "the ally's city or deep's own" here, and the
+       * source does not: the seam this command is priced through is
+       * city_data->danger, which exists once per city deep OWNS and is
+       * spent on what that city builds. Deep has no mechanism at all
+       * for raising the defence of a city somebody else garrisons, and
+       * inventing one is a workstream, not a slice. So the honest
+       * answer is a refusal with the reason -- which the brief also
+       * asked for, and which is better than saying "we will reinforce
+       * Neapolis" and then doing nothing whatsoever about Neapolis.
+       * Recorded in STATUS as a place the plan met the source. */
+      deep_request_log(pplayer, sender, buf, "not-ours", pcity->id, 0);
+      deep_chat_reply(pplayer, sender, DEEP_CHAT_REPLY,
+                      _("We cannot garrison %s -- it is yours to hold."
+                        " Name a city of ours and we will thicken it."),
+                      city_name_get(pcity));
       return;
     }
     if (!deep_request_same_landmass(pplayer, pcity)) {

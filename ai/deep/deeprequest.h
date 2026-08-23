@@ -55,7 +55,9 @@ struct tile;
  * commands; `status` is answered on the spot and stores nothing, so it
  * has no kind here. */
 enum deep_request_kind {
-  DEEP_REQ_DEFEND = 0,          /* defend <city> */
+  DEEP_REQ_DEFEND = 0,          /* defend <city>, one of OURS -- see the
+                                 * refusal in deep_request_hear() for
+                                 * why an ally's own city is not one */
   DEEP_REQ_ATTACK,              /* attack <city|player> */
   DEEP_REQ_ROAD,                /* road to <city> */
 };
