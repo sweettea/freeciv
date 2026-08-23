@@ -25,7 +25,8 @@ DEF = re.compile(
     r'deep-def turn=(\d+) player="([^"]*)" city=(\d+) danger=(\d+)'
     r' urgency=(\d+) defense=(-?\d+) ndef=(\d+).*capital=(\d+)')
 STAKE = re.compile(
-    r'deep-capstake turn=(\d+) player="([^"]*)" city=(\d+) prob=(-?\d+)'
+    r'deep-capstake turn=(\d+) player="([^"]*)" city=(\d+)'
+    r' site="(?P<site>[^"]*)" prob=(-?\d+)'
     r' odds=([\d.]+) cands=(\d+) flips=(\d+) pool=([\d.]+)'
     r' exposure=([\d.]+) worth=([\d.]+) mult=([\d.]+)'
     r' danger=(\d+) staked=(\d+) clipped=(\d+)')
@@ -48,9 +49,10 @@ def read_arm(d):
             for line in fh:
                 m = STAKE.search(line)
                 if m:
-                    stakes.append((int(m.group(6)), float(m.group(5)),
-                                   float(m.group(11)), int(m.group(12)),
-                                   int(m.group(13)), int(m.group(14))))
+                    stakes.append((int(m.group(7)), float(m.group(6)),
+                                   float(m.group(12)), int(m.group(13)),
+                                   int(m.group(14)), int(m.group(15)),
+                                   m.group("site")))
                     continue
                 m = DEF.search(line)
                 if m:
@@ -78,24 +80,31 @@ def main():
         print("%-5s %6d %8d %8.3f %8.3f %8.3f %9.1f %9.1f"
               % (arm, games, len(stakes), mean([s[2] for s in stakes]),
                  mean(cap), mean(other), mean(capd), mean(othd)))
-    # The stake's own factors, on whichever arm priced them.
+    # The stake's own factors, split by SITE: the ledger's view runs
+    # after the incoming-defence credit and often has nothing left to
+    # scale, while the build choice re-assesses and is what the
+    # defender is bought from.
     for arm in ("off", "on"):
         d = root / arm
         if not d.is_dir():
             continue
         _, stakes, _, _, _, _ = read_arm(d)
-        if stakes:
-            bit = [s for s in stakes if s[3] > 0]
-            print("\n%s arm: %d priced city-turns, mean candidates %.1f,"
-                  " mean P(civil war) %.3f, mean multiplier %.3f"
-                  % (arm, len(stakes), mean([s[0] for s in stakes]),
-                     mean([s[1] for s in stakes]),
-                     mean([s[2] for s in stakes])))
-            print("%s arm: %d of them had danger to scale (mean %.1f ->"
-                  " %.1f), %d hit the quadratic clip"
-                  % (arm, len(bit), mean([s[3] for s in bit]),
+        for site in ("ledger", "build"):
+            here = [s for s in stakes if s[6] == site]
+            if not here:
+                continue
+            bit = [s for s in here if s[3] > 0]
+            print("\n%s arm, %s site: %d priced city-turns, mean"
+                  " candidates %.1f, mean P(civil war) %.3f, mean"
+                  " multiplier %.3f"
+                  % (arm, site, len(here), mean([s[0] for s in here]),
+                     mean([s[1] for s in here]),
+                     mean([s[2] for s in here])))
+            print("%s arm, %s site: %d of them had danger to scale"
+                  " (mean %.1f -> %.1f), %d hit the quadratic clip"
+                  % (arm, site, len(bit), mean([s[3] for s in bit]),
                      mean([s[4] for s in bit]),
-                     sum(s[5] for s in stakes)))
+                     sum(s[5] for s in here)))
 
 
 if __name__ == "__main__":

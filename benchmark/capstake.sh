@@ -64,11 +64,15 @@ replay() {
 
   rm -rf "$out"; mkdir -p "$out/saves"
   zstdcat "$CORPUS" > "$save" || { mark "$out" FAIL; return 1; }
-  # The user's own tuning plus the gate, written here rather than in
-  # derby5/tuning-derby7.ini so the probe cannot be mistaken for the
-  # rider. `capital_stake_gate` cannot already be in that file for the
-  # append to be legal, and the awk below is the check.
-  { cat "$WT/derby5/tuning-derby7.ini"
+  # The user's own tuning with the gate set HERE, so the probe cannot
+  # be mistaken for the rider and cannot be broken by it. The filter is
+  # not decoration: once the rider landed in derby5/tuning-derby7.ini,
+  # a plain append produced the key TWICE, secfile_load refused the
+  # WHOLE file, and both arms silently ran on compiled defaults with no
+  # derby-7 tuning and no gate. The awk below is the check that catches
+  # it; it must print nothing.
+  { grep -v '^[[:space:]]*capital_stake_gate' \
+         "$WT/derby5/tuning-derby7.ini"
     echo "capital_stake_gate = $gate"
   } > "$out/tuning.ini"
   awk -F= '/^[a-z]/{gsub(/ /,"",$1); if(seen[$1]++){print "DUP:"$1}}' \
