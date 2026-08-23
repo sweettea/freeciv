@@ -43,6 +43,16 @@
  * the same question of a tile the plan has since forgotten. */
 bool deep_trunk_tile_roaded(const struct tile *ptile);
 
+/* And the question the plan asks above trunk_upgrade_gate: is the tile
+ * finished, or merely roaded? A corridor tile is incomplete while some
+ * road this player could build here would cross cheaper than what the
+ * tile already delivers -- road < railroad < whatever the ruleset
+ * offers, derived from move_cost and player_can_build_extra() rather
+ * than from a named extra. Identical to deep_trunk_tile_roaded() with
+ * the gate shut. */
+bool deep_trunk_tile_complete(const struct player *pplayer,
+                              const struct tile *ptile);
+
 /* The trunk want for a candidate road on this tile, or 0.0 when the
  * tile is not on a corridor, the target is not a road that speeds
  * movement, or the knob is off. Builds (and memoises) this player's
