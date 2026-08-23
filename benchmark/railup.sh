@@ -3,8 +3,8 @@
 # the player can now build): the proofs this epic owes, re-runnable
 # rather than described.
 #
-#   ./benchmark/railup.sh venue [N] [JOBS]   N (default 4) corridor-150
-#                                            seeds, gate ON, to answer
+#   ./benchmark/railup.sh venue [N] [JOBS]   N (default 4) seeds on the
+#                                            venue, gate ON, to answer
 #                                            ONE question before any
 #                                            batch is spent: does this
 #                                            venue ever finish a trunk
@@ -24,15 +24,24 @@
 #                                            gate
 #   ./benchmark/railup.sh report             the tables, both arms
 #
-# VENUE is a variable and not a constant, deliberately: the mechanism
-# cannot fire where railroad never arrives, and finding that out after a
-# 32-game batch is the failure this stage exists to prevent. Set
-# RAILUP_CONFIG to override; the default is corridor-150, the venue the
-# rest of the corridor family is measured on.
+# VENUE is a variable and not a constant, deliberately, and the venue
+# stage is what settled it. The mechanism needs TWO things: a finished
+# trunk, and a better road buildable. `corridor-150` -- the venue the
+# rest of the corridor family is measured on -- delivers the first and
+# not the second: Railroad is 26 techs deep in classic (Steam Engine +
+# Bridge Building) and corridor-150 seats end T150 holding 20-39 techs.
+# The probe was stopped at T96/T107/T124 of 150 on three seeds, having
+# emitted 49/105/57 census lines with whole>0 and links=0 on every one:
+# no seat had a better road to lay by then, and the tech arithmetic says
+# most never would. `lategame-80` delivers both from about T10 --
+# techlevel 50 and ten workers put the roads down before the corridor
+# plan can want them, which is exactly what corridor-150's own header
+# criticises it for AS A BUILD-PHASE VENUE and exactly what an UPGRADE
+# phase needs. The venue that is wrong for slice 1 is the right one for
+# this slice, for the same reason. Set RAILUP_CONFIG to override.
 #
 # Machine budget: ports 7650-7699, jobs <= 3, this worktree's own build/
-# and its own pinned binary. corridor-150 runs ~20 min a game, so the
-# A/B is ~4 h at jobs 3; it resumes off run.sh's DONE markers, so
+# and its own pinned binary. It resumes off run.sh's DONE markers, so
 # re-running the same command after a background kill continues it.
 #
 # The A/B's control arm is tuning/w12g-keep-on.ini -- the corridor
@@ -61,11 +70,19 @@ BASE_TREE=$ROOT/.railup-base/base-$BASE_SHA
 BASE_BUILD=$BASE_TREE/build/freeciv-server
 ON=$here/tuning/railup-on.ini
 OFF=$here/tuning/w12g-keep-on.ini
-CONFIG=${RAILUP_CONFIG:-$here/configs/corridor-150.conf}
+CONFIG=${RAILUP_CONFIG:-$here/configs/lategame-80.conf}
 CELL=$(basename "$CONFIG" .conf)
 
 MESON_OPTS="-Dclients= -Dfcmp= -Dtools= -Dnls=false -Daudio=none
             -Dreadline=false -Daimodules=classic,tex,baseline,deep"
+
+# Every GAME process runs at nice 10 (2026-08-23 directive: a human is
+# playing on this box and background batches were starving the
+# interactive server). The niceness is applied at the run.sh call, so it
+# is inherited by run-game.sh and by every freeciv-server it forks --
+# run-game.sh itself is left alone deliberately, because run.sh hashes
+# it into the result cache key and editing it would fork the shared
+# harness for every other epic.
 
 # Pin the binary a run executes by copying it -- WITH libfreeciv.so,
 # whose RUNPATH is $ORIGIN/ -- out of build/ before a single game
@@ -128,7 +145,7 @@ venue)
   bin=$(pin "$BUILD" venue)
   echo "=== venue probe: $SEEDS $CELL seeds, gate ON, jobs $JOBS ==="
   echo "server=$bin sha256=$(sha256sum "$bin" | cut -d' ' -f1)"
-  TUNING=$ON "$here/run.sh" --count "$SEEDS" --config "$CONFIG" \
+  TUNING=$ON nice -n 10 "$here/run.sh" --count "$SEEDS" --config "$CONFIG" \
     --arms deep --jobs "$JOBS" --portbase 7680 \
     --server "$bin" --out "$OUT" || exit 1
   d=$(ls -d "$OUT"/"$CELL"-* 2>/dev/null | head -1)
@@ -181,7 +198,7 @@ identity)
       base) bin=$base_bin; port=7650;;
       head) bin=$head_bin; port=7650;;
     esac
-    TUNING=$OFF "$here/run.sh" --count "$SEEDS" --arms deep,mixed_db,classic \
+    TUNING=$OFF nice -n 10 "$here/run.sh" --count "$SEEDS" --arms deep,mixed_db,classic \
       --config "$here/configs/smoke.conf" --server "$bin" --jobs 3 \
       --portbase "$port" --out "$OUT/$side" || exit 1
   done
@@ -236,7 +253,7 @@ ab)
     tun=$OFF; port=7650
     [ "$arm" = on ] && { tun=$ON; port=7680; }
     echo "--- arm $arm ($(basename "$tun")) ---"
-    TUNING=$tun "$here/run.sh" --count "$SEEDS" --config "$CONFIG" \
+    TUNING=$tun nice -n 10 "$here/run.sh" --count "$SEEDS" --config "$CONFIG" \
       --arms deep --jobs "$JOBS" --portbase "$port" \
       --server "$bin" --out "$OUT/$arm" || exit 1
   done
