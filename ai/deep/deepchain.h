@@ -52,4 +52,20 @@
  * denominator the open arm's rate is taken against. */
 void deep_chain_register(void);
 
+/* End of this player's phase: follow the tiles whose price was raised
+ * by a chain and print the funnel line. Called from
+ * deep_do_last_activities() beside the other censuses.
+ *
+ * The funnel a VALUATION owes is not the one a task source owes. This
+ * code assigns nobody: it raises a price, the advisor's own auction
+ * decides, and what happens next is a worker's business. So the ledger
+ * follows TILES rather than assignments -- the tiles whose price was
+ * raised -- and asks of each only what a tile can answer: did its
+ * terrain ever change, did it reach the terrain the price was paid for,
+ * did it change to something off the chain instead, is it still ours.
+ * `cand` and `multi` are counted with the gate SHUT as well as open, so
+ * the closed arm publishes the denominator the open arm's rate is taken
+ * against, and `lift` is zero by construction while it is shut. */
+void deep_chain_census(struct player *pplayer);
+
 #endif /* FC__DEEPCHAIN_H */
