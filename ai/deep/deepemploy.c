@@ -41,6 +41,7 @@
 #include "daiunit.h"
 
 #include "deepai.h"
+#include "deepdefence.h"
 #include "deepops.h"
 #include "deeptuning.h"
 
@@ -340,6 +341,205 @@ void deep_employ_op_end(const struct player *pplayer, int oi,
              ? game.info.turn - ep->op[oi].launch_turn : 0,
            ep->op[oi].members0, ep->op[oi].peak, members,
            ep->op[oi].kills, ep->op[oi].losses, why, dep);
+}
+
+/* THE POACH LEDGER. One entry per blade the defence takes off a
+ * forming wave, resolved `survival_horizon` turns later against what
+ * the claim turned out to be worth. Shape borrowed from the write-off
+ * ledger next door (deepdefence.c), for the same reasons: it allocates
+ * only when a poach happens, it is dropped on a reload without costing
+ * anything but the open entries, and the verdict is taken at a fixed
+ * distance from the call so a long siege cannot re-arm its own clock. */
+struct deep_poach_memo {
+  int plr_no;
+  int city_id;                  /* the claiming city */
+  int unit_id;
+  int utype_id;
+  int turn;                     /* when the blade was taken */
+  int due;                      /* turn the verdict is taken */
+  /* The claim, as the defence priced it. */
+  double p;                     /* city survival without this blade */
+  double dworth;                /* city worth at the defence multiplier */
+  double risk;                  /* dworth * (1 - p): what it bid */
+  int adj0;                     /* at-war units adjacent at claim time */
+  int kept;                     /* -1 unsettled, 0 abandoned, 1 deployed */
+  double relief;                /* survival the force it joined reaches */
+  int wave;
+  int pool;
+  /* The operation, as it priced the same blade. */
+  int oi;
+  int muster;                   /* the muster flag, not the state */
+  int age;                      /* turns since the op formed */
+  int members;                  /* members BEFORE the blade was taken */
+  double take;                  /* conquest worth * odds at its eta */
+  double odds;
+  int eta;
+  int target;
+  /* The aftermath, sampled once a turn. */
+  int hp0;
+  int hp_lo;
+  int samples;
+  int adjmax;                   /* high-water enemy units at the walls */
+  int home;                     /* samples with the blade in the city */
+  int reclaim;                  /* an operation claimed it again */
+  int gone;                     /* dead, captured or otherwise not ours */
+  int fell;                     /* the claiming city stopped being ours */
+};
+
+static struct deep_poach_memo *deep_poaches = NULL;
+static int deep_poach_n = 0, deep_poach_cap = 0;
+
+/**********************************************************************//**
+  Open one poach entry. Everything but the aftermath is known here, and
+  every value of it was computed by the decision this sits inside.
+**************************************************************************/
+void deep_employ_poach_claim(const struct player *pplayer, int city_id,
+                             int unit_id, int utype_id, double p_survival,
+                             double dworth, double risk, int oi, bool muster,
+                             int age, int members_before, double take,
+                             double odds, int eta, int target)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct city *pcity = player_city_by_number(pplayer, city_id);
+  struct unit *punit = game_unit_by_number(unit_id);
+  struct deep_poach_memo *e;
+
+  if (!log_do_output_for_level(deep_metric_log_level())) {
+    return;
+  }
+  if (deep_poach_n >= deep_poach_cap) {
+    deep_poach_cap = MAX(32, deep_poach_cap * 2);
+    deep_poaches = fc_realloc(deep_poaches,
+                              deep_poach_cap * sizeof(*deep_poaches));
+  }
+  e = &deep_poaches[deep_poach_n++];
+  memset(e, 0, sizeof(*e));
+  e->plr_no = player_number(pplayer);
+  e->city_id = city_id;
+  e->unit_id = unit_id;
+  e->utype_id = utype_id;
+  e->turn = game.info.turn;
+  e->due = game.info.turn + MAX(1, tune->survival_horizon);
+  e->p = p_survival;
+  e->dworth = dworth;
+  e->risk = risk;
+  e->adj0 = pcity != NULL ? deep_enemy_adjacent(pcity) : 0;
+  e->kept = -1;
+  e->relief = p_survival;
+  e->oi = oi;
+  e->muster = muster ? 1 : 0;
+  e->age = age;
+  e->members = members_before;
+  e->take = take;
+  e->odds = odds;
+  e->eta = eta;
+  e->target = target;
+  e->hp0 = punit != NULL ? punit->hp : 0;
+  e->hp_lo = e->hp0;
+}
+
+/**********************************************************************//**
+  The claiming city's relief decision closed. A poach whose force was
+  never deployed is the one case where the offence paid and the defence
+  did not even collect: the blade left the wave and the city was written
+  off in the same pass.
+**************************************************************************/
+void deep_employ_poach_settle(const struct player *pplayer, int unit_id,
+                              bool kept, double relief, int wave, int pool)
+{
+  int i;
+
+  for (i = deep_poach_n - 1; i >= 0; i--) {
+    struct deep_poach_memo *e = &deep_poaches[i];
+
+    if (e->plr_no == player_number(pplayer) && e->unit_id == unit_id
+        && e->kept < 0) {
+      e->kept = kept ? 1 : 0;
+      e->relief = relief;
+      e->wave = wave;
+      e->pool = pool;
+      return;
+    }
+  }
+}
+
+/**********************************************************************//**
+  Print one resolved poach: what the defence bid, what the offence lost,
+  and what the window says about both.
+**************************************************************************/
+static void deep_employ_poach_verdict(const struct player *pplayer,
+                                      const struct deep_poach_memo *e)
+{
+  const struct unit_type *ut = utype_by_number(e->utype_id);
+
+  log_base(deep_metric_log_level(),
+           "deep-employpoach turn=%d player=\"%s\" city=%d called=%d"
+           " unit=\"%s\" p=%.3f wave=%d pool=%d adj0=%d dworth=%.1f"
+           " risk=%.1f kept=%d relief=%.3f op=%d muster=%d age=%d"
+           " members=%d target=%d odds=%.3f take=%.1f eta=%d"
+           " samples=%d adjmax=%d home=%d dmg=%d gone=%d fell=%d"
+           " reclaim=%d",
+           game.info.turn, player_name(pplayer), e->city_id, e->turn,
+           ut != NULL ? utype_rule_name(ut) : "?", e->p, e->wave, e->pool,
+           e->adj0, e->dworth, e->risk, e->kept, e->relief, e->oi,
+           e->muster, e->age, e->members, e->target, e->odds, e->take,
+           e->eta, e->samples, e->adjmax, e->home, e->hp0 - e->hp_lo,
+           e->gone, e->fell, e->reclaim);
+}
+
+/**********************************************************************//**
+  One turn of aftermath for this player's open entries, and the verdict
+  for every entry whose window has run out.
+
+  Called at the same point in the turn the claims are made, so a sample
+  is exactly one turn of game after the last one and the window is the
+  `survival_horizon` turns the claim was made over.
+**************************************************************************/
+void deep_employ_poach_tick(struct player *pplayer)
+{
+  int i = 0;
+
+  while (i < deep_poach_n) {
+    struct deep_poach_memo *e = &deep_poaches[i];
+    struct city *pcity;
+    struct unit *punit;
+
+    if (e->plr_no != player_number(pplayer)) {
+      i++;
+      continue;
+    }
+    pcity = player_city_by_number(pplayer, e->city_id);
+    punit = game_unit_by_number(e->unit_id);
+    e->samples++;
+    if (pcity == NULL) {
+      e->fell = 1;
+    } else {
+      int adj = deep_enemy_adjacent(pcity);
+
+      if (adj > e->adjmax) {
+        e->adjmax = adj;
+      }
+    }
+    if (punit == NULL || unit_owner(punit) != pplayer || punit->hp <= 0) {
+      e->gone = 1;
+    } else {
+      if (punit->hp < e->hp_lo) {
+        e->hp_lo = punit->hp;
+      }
+      if (pcity != NULL && same_pos(unit_tile(punit), city_tile(pcity))) {
+        e->home++;
+      }
+      if (deep_op_claiming(pplayer, e->unit_id) >= 0) {
+        e->reclaim = 1;
+      }
+    }
+    if (game.info.turn < e->due) {
+      i++;
+      continue;
+    }
+    deep_employ_poach_verdict(pplayer, e);
+    deep_poaches[i] = deep_poaches[--deep_poach_n];
+  }
 }
 
 /**********************************************************************//**

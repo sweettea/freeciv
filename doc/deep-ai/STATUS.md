@@ -21028,3 +21028,231 @@ Retention: `benchmark/results/defaults-holdout/` — four arm trees with
 per-seed scorelogs, arm logs with the HOLDOUT report lines, DONE
 markers recording SUCCESS; per-seed tables above re-derive with
 `final_score()` from tune.py over `<arm>/holdout-report/cfg0/seed-*/`.
+## S-POACHPRICE: three quarters of the poaches are a transaction neither side collects on (2026-08-23)
+
+Branch `epic/poach-price`, 4 commits plus this entry, based at
+`50ca21b736`. Own worktree `.worktrees/poachprice`, own build
+(`-Daimodules=classic,tex,baseline,deep -Dtools= -Dclients= -Dfcmp=`),
+one pinned binary staged with its own `libfreeciv.so`
+(`.stage-bin/arms/freeciv-server` sha256 `f11eb0bc6158f738…`; identity
+base `f29d73fcabf5d5ae…`), ports 7400-7449, jobs 3. `meson test` 7/7.
+**No knob touched and no constant invented** — this epic is diagnosis
+only, and the one window it needs is derived below.
+
+### What the departure-cause addendum left open
+
+It settled that 89.4% of wave member departures are
+`deep_op_poach_defender()`, and said in as many words what it could not
+settle: whether the poach is RIGHT. "89% of departures are poaches" is
+equally consistent with "the defence is right and the offence should
+never have formed". Every poach is a priced decision; nothing on disk
+carried the value it paid or what the payment bought.
+
+### The instrument
+
+One `deep-employpoach` line per poach, opened where the blade is taken
+(`deepops.c:4481`) and printed `survival_horizon` turns later:
+
+- **the claim** — city, survival without the blade, the wave the
+  survival model saw, the reachable relief pool, the worth the defence
+  bid, the enemy already at the walls, and whether the relief force the
+  blade joined was actually DEPLOYED;
+- **the loss** — the operation, its muster flag, its age, its member
+  count before the take, and `take` = expected conquest worth × odds at
+  the wave's own eta, hoisted out of the comparison the poach already
+  makes rather than recomputed (so `deep_conquest_worth()` is still
+  called exactly once per candidate op and its culture counter is
+  untouched);
+- **the aftermath** — sampled once a turn at the same point in the turn
+  the claim was made: enemy at the walls (high water), the blade
+  standing in the city, damage taken, gone, the city fallen, re-claimed
+  by another operation.
+
+**The window is `survival_horizon` = 3 and it is derived, not chosen.**
+The claim *is* a statement about the next `survival_horizon` turns —
+`deep_city_stack_survival()` prices the city over exactly that span, and
+the poach refuses any blade whose arrival time exceeds it — and the
+write-off ledger next door already adjudicates at
+`turn + MAX(1, horizon)`. Same span, same knob.
+
+**`kept` is sharper than it looks.** The poach is called only after the
+whole free relief pool has failed to lift the city to
+`survival_target`, and the poached blade is appended LAST. A force that
+then clears the bar clears it *because* of that blade — the poach was
+decisive. A force that still falls short is written off in the same
+pass without deploying anybody, while the blade has already been
+removed from the operation.
+
+### Identity — and the corpus is the same corpus, twice over
+
+- 2 full-length games a side, this tip against the same tree with the
+  ledger commit removed: **2/2 scorelogs byte-identical**, and the base
+  side emits no `deep-employpoach` token, so the proof cannot pass by
+  both sides being HEAD.
+- ON arm: **40/40 scorelogs byte-identical to
+  `benchmark/results/employ-muster/`**, all 40 `maphash.txt` equal —
+  across a binary change AND two merges on the branch (pox-spacing,
+  W28), both of which are inert on this venue.
+- OFF arm: **40/40 byte-identical to `benchmark/results/employ-probe/`**,
+  the 2026-08-22 probe.
+- `employ.py --section depart` reproduces the addendum to the unit:
+  4297 operations, 6681 poach departures, 89.4%, 167.03 a game.
+
+So this is not a re-measurement of the same venue. It is the same
+eighty games, read with a richer log.
+
+### THE POACH-PRICE TABLE
+
+ON arm (`pv3-muster.ini`, sha `82cfdc67…`), 6667 adjudicated poaches
+over 40 games, 166.7 a game:
+
+    all poaches                6667
+      city fell in window        31    0.5%
+      enemy at the walls        975   14.6%
+      danger never came        5683   85.2%
+      force never deployed     5070   76.0%
+      blade reached city       2378   35.7%
+      blade took damage         139    2.1%
+      blade gone in window      360    5.4%
+      re-claimed by an op      3579   53.7%
+      IDLED UN-ATTACKED        2010   30.1%
+      mean p / relief         0.059   0.334
+      mean wave / pool         12.45   0.65
+      mean op age / members     2.21   2.90
+
+The three exclusive verdicts, both arms:
+
+    verdict                              ON     share      OFF    share
+      paid and needed (decisive,        151      2.3%       82     3.3%
+        and the danger came)
+      paid and unneeded (decisive,     1446     21.7%      679    27.7%
+        danger never came)
+      paid for nothing (city           5070     76.0%     1690    69.0%
+        written off in the same pass)
+      of which, from an op whose       1634     24.5%     1072    43.7%
+        own priced take was > 0        (40.9/game)   (26.8/game)
+
+The price ratio, defence bid over offence bid at claim time. It is
+bounded below by 1 by construction — the poach fires only when city
+risk exceeds the op's take — so it says how lopsided, not which way:
+
+    bucket                     ON    share       OFF    share
+      offence bid exactly 0  4523    67.8%       887    36.2%
+      1 - 2                   720    10.8%       598    24.4%
+      2 - 5                   289     4.3%       219     8.9%
+      5 - 10                  165     2.5%        92     3.8%
+      10 - 100                393     5.9%       267    10.9%
+      100 - 1000              315     4.7%       202     8.2%
+      1000 - inf              262     3.9%       186     7.6%
+      median (positive take)  6.4                4.2
+      median risk / take   1209.7 / 0.0      1260.3 / 7.3
+
+Muster vs formed wave, inside the ON arm (n=3921 / 2746): the verdict
+barely differs — 76.1% / 76.0% paid for nothing — but what the blade
+then does differs a lot. A muster's blade reaches the claiming city
+46.4% of the time and idles un-attacked 39.1%; a formed wave's reaches
+it 20.4% and idles 17.4%. The muster is closer to home and less use
+when it arrives.
+
+### The OFF arm, which the addendum could only infer about
+
+Measured now, on this binary, same 40 games as `employ-probe`: 748
+operations, 2373 poach departures = **79.2% of all member departures**
+(against 89.4% ON), 61.3 adjudicated poaches a game against 166.7. The
+muster does not create the phenomenon; it multiplies it 2.7x. With
+musters off, the offence's bid is real far more often (36.2% zero
+against 67.8%), and the consequence is that the *absolute* count of
+blades taken from a positively-priced operation and then discarded is
+26.8 a game against 40.9 — the same defect, less diluted.
+
+### Verdict: (c) MIXED, and the two halves are not symmetric
+
+**The dominant term is not a pricing question at all.** 76.0% of
+poaches (69.0% OFF) take the blade off the wave and then deploy nobody:
+the claiming city fails to reach `survival_target` even with it and is
+written off in the same pass. 1634 of those (24.5% of all ON poaches,
+40.9 a game; 1072 and 43.7% OFF) came from an operation whose own
+priced take was positive. **No arbitration term fixes that, because
+both sides lose:** the wave is a blade lighter, the city is written off
+anyway, and the blade spends the window idle — 30.1% of all poached
+blades idle un-attacked and 53.7% are re-claimed by another operation
+inside three turns, which is the churn the addendum inferred from the
+0.28% accumulation rate.
+
+**The second term is (a), the defence over-claiming, and it is
+inherited rather than local.** 21.7% of poaches ARE decisive, and 85.2%
+of all poaches answer a danger the window never confirms: no enemy on
+any adjacent tile at any sample, the city does not fall, the blade is
+not scratched. The signal they are priced from is the one the write-off
+ledger scores, and over these same games that ledger reads **34 039
+write-offs against 173 cities actually lost — 0.51%** (OFF: 32 313 and
+163, 0.50%). Even its exhausted slice — every response tried, enemy
+adjacent, treasury unable to rush — is 59/1551 = 3.8%. A claim priced
+off a 99.5%-false alarm will over-claim whatever its arithmetic does.
+
+**(b) holds in a specific form.** 67.8% of poached operations had
+priced their own expected take at exactly zero (odds 0.000 at the
+wave's eta). The poach did not outbid a claim; there was no claim to
+outbid. Those are overwhelmingly musters, and a muster is by
+construction a wave that formed with the odds refused — in this arm
+with `op_muster_home = 0`, i.e. with the muster's own home-defence
+check switched off. The blades a muster holds are blades it has no
+priced entitlement to, and the poach is what re-imposes, one blade at a
+time and in a different currency, the floor that knob switched off.
+
+### Seams, sketched, not implemented
+
+1. **The sequencing defect** — `deepdefence.c:3635`. Split "find the
+   blade" from "take the blade": ask the poach for a candidate, price
+   the force with it, and remove it from the operation only on the exit
+   that actually deploys. The write-off exit at `deepdefence.c:3646`
+   already holds the arithmetic (`relieved` vs `survival_target`).
+   Cheapest fix in the set, invents nothing, and it is what three
+   quarters of the events are.
+2. **The arbitration term** — `deep_op_poach_defender()`
+   (`deepops.c:4392`) compares the city's TOTAL risk
+   `worth × defence_worth_mult × (1 − p)` against the op's take. It
+   never asks what THIS blade buys the city, which is exactly the
+   marginal question the garrison draft next door already prices in
+   probability space (`deepops.c:3905`, `with − held > cost`). Two
+   claimants on one blade, priced by two different questions, is the
+   arbitration gap.
+3. **The formation floor** — the FREE BLADE rule (`deepops.c:3905`,
+   `muster_feed && cost <= 0.0`) admits a blade that costs its city
+   nothing AT FORMATION, and the only re-ask is
+   `deep_muster_abandon()`'s HOME trigger (`deepops.c:4957`), which is
+   `op_muster_home`-gated and OFF in the measured arm.
+
+**Ordering matters.** 1 changes only whether a blade the city cannot
+use is taken at all, and it should land before 2 or 3, because it
+removes three quarters of the events either of those would otherwise be
+tuned against.
+
+### Surprises
+
+- **The corpus reproduced byte for byte across a moved branch**, both
+  arms, so the re-run is simultaneously the identity proof and the
+  measurement. Worth knowing that tech50war-200 is insensitive to the
+  pox-spacing and W28 merges.
+- **Only 2.3% of poaches are the thing the mechanism exists for.** The
+  brief anticipated an over-claim or an unentitled offence; the largest
+  category is neither — it is a transaction neither side collects on.
+- **`pool` at the claim is 0.65.** The city doing the poaching usually
+  has no other reachable blade at all. It is not choosing the wave's
+  blade over a free one; it is reaching for the only one there is, and
+  three times in four it cannot use it either.
+- **A once-a-turn adjacency sample is the honest limit of the aftermath.**
+  An attacker that arrives, strikes and dies inside another player's
+  phase leaves no adjacency trace. The blade's own damage and the city
+  falling are event-true and are both in the "danger came" union, so
+  the 85.2% is an upper bound on "never came" rather than a certainty
+  — but the write-off ledger's 0.51% independently says the same thing
+  from a different instrument.
+
+### Retention
+
+`benchmark/results/poach-price/{identity,on,off}` — 4 + 40 + 40 games.
+Saves dropped, every `game.log` filtered to `deep-employ*`,
+`deep-writeoff` and `kill-dyad` lines. Every table above re-derives
+with `benchmark/employ.py --section poach` and the batch itself with
+`benchmark/poach-price.sh`.

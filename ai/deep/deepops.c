@@ -4419,7 +4419,7 @@ struct unit *deep_op_poach_defender(struct ai_type *ait,
     struct unit *stream[DEEP_OP_MEMBERS];
     struct unit *blade = NULL;
     int blade_i = -1, ns = 0, eta;
-    double odds;
+    double odds, take;
 
     if (op->state != DEEP_OP_MUSTER || op->kind != DEEP_OPK_ASSAULT) {
       continue;
@@ -4440,7 +4440,11 @@ struct unit *deep_op_poach_defender(struct ai_type *ait,
     }
     eta = deep_op_eta(pplayer, op, target);
     odds = deep_take_odds_at_arrival(nmap, target, stream, ns, eta);
-    if (city_risk <= deep_conquest_worth(ait, pplayer, target) * odds) {
+    /* Hoisted, not recomputed: the same one call the comparison always
+     * made, kept so the ledger can print the offence's own bid beside
+     * the defence's instead of inferring it. */
+    take = deep_conquest_worth(ait, pplayer, target) * odds;
+    if (city_risk <= take) {
       continue;                 /* The op's claim outbids the city. */
     }
     for (i = 0; i < op->n_members; i++) {
@@ -4474,6 +4478,13 @@ struct unit *deep_op_poach_defender(struct ai_type *ait,
                game.info.turn, player_name(pplayer), oi,
                unit_rule_name(blade), pcity->id, op->target_city, odds,
                raw_own, raw_own * dmult, city_risk);
+      deep_employ_poach_claim(pplayer, pcity->id, blade->id,
+                              utype_number(unit_type_get(blade)),
+                              p_survival, raw_own * dmult, city_risk, oi,
+                              op->muster != 0,
+                              game.info.turn - op->formed_turn,
+                              op->n_members, take, odds, eta,
+                              op->target_city);
       op->members[blade_i] = op->members[--op->n_members];
       deep_employ_op_depart(pplayer, oi, DED_POACH);
       return blade;

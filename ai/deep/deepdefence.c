@@ -3261,7 +3261,7 @@ struct deep_writeoff_memo {
   window" test, and the only one of the compound conditions that is
   about the enemy rather than about us.
 **************************************************************************/
-static int deep_enemy_adjacent(const struct city *pcity)
+int deep_enemy_adjacent(const struct city *pcity)
 {
   const struct civ_map *nmap = &(wld.map);
   const struct player *pplayer = city_owner(pcity);
@@ -3514,6 +3514,9 @@ static void deep_defend_counter_claims(struct ai_type *ait,
   /* Before this turn's verdicts, so an entry is never adjudicated on
    * the turn it is written. */
   deep_writeoff_adjudicate(pplayer);
+  /* Same reason, same place in the turn: an aftermath sample is one
+   * full turn of game after the claim that opened it. */
+  deep_employ_poach_tick(pplayer);
   if (deep_evac_cands > 0) {
     log_base(deep_metric_log_level(),
              "deep-evac-sum turn=%d player=\"%s\" cands=%d moved=%d",
@@ -3530,6 +3533,7 @@ static void deep_defend_counter_claims(struct ai_type *ait,
   city_list_iterate(pplayer->cities, pcity) {
     struct unit *cand[DEEP_RELIEF_MAX], *force[DEEP_RELIEF_MAX];
     struct city *backfill[DEEP_RELIEF_MAX];
+    struct unit *poached = NULL;
     int n_cand = 0, n_force = 0, i, j;
     int wave = 0;
     double p, relieved;
@@ -3636,6 +3640,7 @@ static void deep_defend_counter_claims(struct ai_type *ait,
         relieved = deep_city_stack_survival_with(nmap, pcity,
                                                  tune->survival_horizon,
                                                  force, n_force, NULL);
+        poached = poach;
       }
     }
     if (relieved < tune->survival_target) {
@@ -3647,7 +3652,19 @@ static void deep_defend_counter_claims(struct ai_type *ait,
       deep_writeoff_record(pplayer, pcity, p, relieved, wave, n_cand,
                            tune->survival_horizon);
       deep_evacuate_civilians(ait, pplayer, pcity, p, relieved, wave);
+      /* The blade has already left the wave -- the poach removes it
+       * before it returns -- and this exit deploys nobody. Settled as
+       * NOT kept so the ledger can count the poaches that bought
+       * nothing at all. */
+      if (poached != NULL) {
+        deep_employ_poach_settle(pplayer, poached->id, FALSE, relieved,
+                                 wave, n_cand);
+      }
       continue;   /* Cannot be held tonight: do not feed it blades. */
+    }
+    if (poached != NULL) {
+      deep_employ_poach_settle(pplayer, poached->id, TRUE, relieved,
+                               wave, n_cand);
     }
 
     for (i = 0; i < n_force; i++) {
