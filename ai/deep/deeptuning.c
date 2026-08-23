@@ -307,6 +307,7 @@ static const struct deep_tuning deep_tuning_defaults = {
                                          * while chatty_gate is 0 */
   .founder_tier_gate = 0,               /* 0 = today's arbitration exactly */
   .founder_run_hold = 0,                /* 0 = today's preemption exactly */
+  .terrain_chain_gate = 0,              /* 0 = one-step valuation exactly */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -604,7 +605,8 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(chatty_gate) \
   TUNE_INT(chatty_max_per_turn) \
   TUNE_INT(founder_tier_gate) \
-  TUNE_INT(founder_run_hold)
+  TUNE_INT(founder_run_hold) \
+  TUNE_INT(terrain_chain_gate)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 

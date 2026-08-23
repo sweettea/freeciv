@@ -38,6 +38,39 @@ adv_want amortize(adv_want benefit, int delay)
   return benefit * pow(discount, delay);
 }
 
+/* The registered terrain-change valuation consumer, or NULL. One per
+ * server: the consumer is a MODULE (ai/deep registers it at setup), and
+ * which player is asking is answerable from the city the callback is
+ * handed, so a per-player registry would carry no more information. */
+static adv_terrain_value_fn adv_terrain_value_consumer = NULL;
+
+/**********************************************************************//**
+  Register (or, with NULL, withdraw) the terrain-change valuation
+  consumer. See advtools.h: with none registered nothing changes.
+**************************************************************************/
+void adv_terrain_value_hook_set(adv_terrain_value_fn fn)
+{
+  adv_terrain_value_consumer = fn;
+}
+
+/**********************************************************************//**
+  Ask the registered consumer what 'act' is worth on 'ptile' for 'pcity',
+  given the one-step value the caller computed. Returns 'one_step'
+  unchanged when nobody is registered.
+**************************************************************************/
+adv_want adv_terrain_value(const struct city *pcity,
+                           const struct tile *ptile,
+                           enum unit_activity act,
+                           const struct terrain *result,
+                           adv_want one_step)
+{
+  if (adv_terrain_value_consumer == NULL) {
+    return one_step;
+  }
+
+  return adv_terrain_value_consumer(pcity, ptile, act, result, one_step);
+}
+
 /**********************************************************************//**
   Walk the transform chain from 'from': fill chain[] with successive
   terrains and total_time[] with cumulative worker-turn points to reach

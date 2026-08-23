@@ -58,10 +58,26 @@ def main():
         total += changed
         games += 1
 
-    # A pair is chain-evidence when the destination is not the origin's
-    # immediate transform_result (one-step pairs are stock-plausible).
-    ONE_STEP = {"m>h", "h>p", "f>h", "j>f", "s>g", "d>p", "t>p",
-                "g>+", "p>+", "a>+", " >g", "+>g"}
+    # A pair is chain-evidence when the destination is not reachable
+    # from the origin in ONE worker action (one-step pairs are
+    # stock-plausible). The table was transform-only and
+    # classic-derived, which mislabelled every civ2civ3 CULTIVATE and
+    # PLANT result as a chain -- f>g, Forest planted to Grassland, is
+    # the move an auto-worker makes constantly there and it is one step
+    # (W29, 2026-08-22; STATUS had flagged the table as wrong).
+    #
+    # The set is the UNION over the two shipped rulesets, so a pair
+    # that is one step in either is not counted as evidence. That
+    # direction is deliberate: it can only under-count chains, and an
+    # under-count is the safe error for a claim that says "this
+    # happened".
+    ONE_STEP = {
+        # transform_result
+        "m>h", "h>p", "f>h", "j>f", "s>g", "d>p", "t>p",
+        "g>+", "p>+", "a>+", " >g", "+>g",
+        # cultivate_result / plant_result, both rulesets
+        "f>p", "f>s", "f>g", "g>f", "j>g", "j>s", "p>f", "s>f",
+    }
     chained = sum(v for k, v in origins.items() if k not in ONE_STEP)
     print(f"TOTAL,,{total} over {games} games "
           f"({total / games if games else 0:.1f}/game) pairs="
