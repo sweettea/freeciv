@@ -1149,6 +1149,47 @@ struct deep_tuning {
    * 0) for a corridor bid to exist at all. */
   int trunk_stack_gate;
 
+  /* W12 rail upgrade: is a corridor tile that already carries a road
+   * DONE, or merely done for now?
+   *
+   * deep_trunk_tile_roaded() answers the first (deeptrunk.c) and its own
+   * comment admits the second: "the ruleset's later upgrades (rail) are
+   * a different question, priced by the advisor's own move-cost term on
+   * the tile". That term is adv_workers_road_bonus()'s, which prices one
+   * tile's own movement and knows nothing about the two cities the tile
+   * sits between -- exactly the hole slice 1 opened this file to fill.
+   * So an international trunk fossilises at the tech level it was built
+   * at: the corridor plan drops a finished link entirely and never looks
+   * at it again, however much better a road the player could now lay.
+   *
+   * Above the gate the gap predicate becomes deep_trunk_tile_complete():
+   * a corridor tile is incomplete while some road the player CAN build
+   * here would cross cheaper than what the tile already delivers. In
+   * classic that is railroad over road; in any ruleset it is whatever
+   * the ruleset offers, because the test is on move_cost and
+   * player_can_build_extra() rather than on a named extra.
+   *
+   * Two-phase, and the phase is per LINK, which is what keeps upgrades
+   * from starving unbuilt corridor: while any tile of a link still lacks
+   * a road the link is in its BUILD phase and the gap is today's
+   * unroaded set exactly. Upgrading a tile on a link that still has a
+   * hole buys the link nothing -- a traversal still pays full terrain
+   * cost at the hole -- so only a WHOLE link enters its UPGRADE phase.
+   *
+   * The want is the same want. deep_trunk_price() measures a link's
+   * worth as (what crossing it costs now) - (what it would cost roaded
+   * end to end), and the upgrade phase changes only the first half from
+   * link->terr (bare terrain) to link->cur (the roads actually there).
+   * An upgrade is therefore worth the DIFFERENCE and not the whole, and
+   * the trade dividend inherits the same base.
+   *
+   * 0 is today's plan exactly: no link ever enters the upgrade phase,
+   * link->cur is never read, and every gap is the unroaded set. Needs
+   * trunk_road_gain > 0 for a plan to exist at all, and
+   * trunk_source_gain > 0 for a worker to be dispatched to a corridor
+   * tile outside every city radius. */
+  int trunk_upgrade_gate;
+
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).
    * upkeep_gold_weight charges a building's gold upkeep against its
