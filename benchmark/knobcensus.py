@@ -1620,6 +1620,28 @@ MAP = {
         "tuning pass on it is asking whether a civil war costs more "
         "or less than the cities it moves. mult= on deep-capstake is "
         "monotone in it, which is what makes this direct."),
+    "site_improvable_gate": (
+        "S3", "mode", "direct", [("deep-siteimprove", "tiles>0")],
+        "0 = the potential term is MAX(irrigation_food_incr, "
+        "mining_shield_incr) undiscounted, as it has always been, and "
+        "the deep-siteimprove line is never written at all -- so the "
+        "tag's ABSENCE is the off arm's proof. tiles= counts the "
+        "catchment tiles priced through the achievable path; lifted= "
+        "and cut= are the two directions the new price can differ in "
+        "and gain= is their signed sum. Read cut= rather than lifted= "
+        "for liveness: the un-gated expression is an upper bound on "
+        "its own arithmetic, so the honest price is normally lower "
+        "and a lifted-only reading would call a live mechanism dead."),
+    "site_starve_price_gate": (
+        "S3", "mode", "direct", [("deep-siteimprove", "starvepriced>0")],
+        "0 = a site that starves at founding is dropped, as before. "
+        "starvepriced= counts the candidates put back on the ladder "
+        "with a wait charged instead, starveturns= is the wait, and "
+        "starvehard= the residue no improvement feeds, which is still "
+        "dropped and still counted in deep-siteladder's starve=. "
+        "VENUE-SENSITIVE only in the weak sense that it needs a map "
+        "with poor ground somewhere; every venue measured so far has "
+        "some."),
 }
 
 STAGE_NAME = {

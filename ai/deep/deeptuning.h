@@ -3070,6 +3070,72 @@ struct deep_tuning {
    * creates a hostile neighbour -- but not derivable, so not the
    * default). */
   double capital_stake_gain;
+
+  /* SITE-IMPROVABLE (deepsite.c): price a candidate site by what
+   * workers can MAKE of its tiles, not only by what those tiles yield
+   * on the day the settler arrives.
+   *
+   * The potential term reads `MAX(irrigation_food_incr,
+   * mining_shield_incr)` off the terrain -- an increment the tile may
+   * not be able to take, or may already have taken, never a cultivate
+   * or plant chain, and with no notion of how many worker-turns any of
+   * it costs. That made the user's Carthago stall at 23 cities while
+   * its "room" was unimproved desert.
+   *
+   * 0 (default) = today's arithmetic exactly: the same two increments,
+   * no legality test, no chains, no worker-turns. != 0: a catchment
+   * tile's potential is the best of {irrigate, mine, every terrain
+   * reachable by cultivating and planting}, each valued in the site
+   * evaluator's own weighted-output currency and amortized over the
+   * RULESET's own activity time for it.
+   *
+   * A GATE with no companion magnitude, for the same reason
+   * terrain_chain_gate has none: every number in it is read rather than
+   * chosen. The terrains and their times are the ruleset's, the
+   * reachability is deepterra.c's graph (the W29 search, reused rather
+   * than re-modelled), the weights are adv_data's own food/shield/trade
+   * priorities, and the discount is amortize() -- the one discounter
+   * this project prices every delay with, at MORT 24. The two existing
+   * knobs keep their meanings: site_potential_weight still scales the
+   * increment and site_potential_discount still discounts it inside the
+   * stream.
+   *
+   * DIRECTION, measured rather than assumed: the un-gated expression is
+   * an upper bound on its own arithmetic, so the honest price is
+   * usually LOWER (2 smoke games, 93 327 tile-prices: 0 lifted, 39 162
+   * cut, net -520 006 want). What the gate buys is discrimination
+   * between tiles, not a uniform uplift, and site_potential_weight is
+   * the knob that re-levels the mean. Counter: deep-siteimprove. */
+  int site_improvable_gate;
+
+  /* SITE-IMPROVABLE's second half, gated SEPARATELY (deepsite.c).
+   *
+   * Stock's food_starvation()/shield_starvation() ask two tiles what
+   * they yield TODAY and DROP the site when the answer is short, so a
+   * site five worker-turns of irrigation away from feeding itself is
+   * refused on the same terms as one no amount of work ever feeds. That
+   * is the other half of why the user's Carthago stalled at 23 cities:
+   * 36 starve drops a turn against room the user could see was
+   * colonisable.
+   *
+   * 0 (default) = the drop, exactly as before. != 0: the same two
+   * outputs over the same two tiles against the same two bars, except
+   * that each tile may also be offered as the tile a worker has
+   * finished with, at the ruleset's price in worker-turns. The cheapest
+   * combination that clears becomes a WAIT and the site is charged
+   * amortize(total, wait) -- the shape and the discounter the travel
+   * term already charges a walk with. Only a site no improvement ever
+   * feeds is still dropped.
+   *
+   * Its own gate rather than a second effect of site_improvable_gate
+   * because the two push OPPOSITE ways on site value -- the pricing
+   * half takes want off tiles, this one puts candidates back on the
+   * ladder -- and two effects under one switch cannot be read from one
+   * A/B (CLAUDE.md, "parallelise scheduling, not attribution"). Also a
+   * pure gate with no magnitude: the wait is the ruleset's activity
+   * time and the discount is amortize() at MORT 24. Counter:
+   * deep-siteimprove, starvepriced/starveturns/starvehard. */
+  int site_starve_price_gate;
 };
 
 void deep_tuning_init(void);
