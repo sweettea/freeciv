@@ -244,6 +244,17 @@ static int deep_trunk_c_stk_save[MAX_NUM_PLAYER_SLOTS];
  * the upgrade phase is read against and the one number that says
  * whether a venue ever finishes a trunk at all. */
 static int deep_trunk_c_up_whole[MAX_NUM_PLAYER_SLOTS];
+/* And the upgrade phase's own instruments: the links that entered it,
+ * their upgradable tiles, the candidates the advisor's hook and deep's
+ * task source priced on one, the assignments made, and the largest want
+ * an upgrade tile ever issued. Zero by construction with the gate
+ * shut. */
+static int deep_trunk_c_up_links[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_up_gap[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_up_hits[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_up_off[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_up_pick[MAX_NUM_PLAYER_SLOTS];
+static double deep_trunk_c_up_max[MAX_NUM_PLAYER_SLOTS];
 
 /* W12G: which corridor tile each worker is walking to.
  *
@@ -1394,8 +1405,14 @@ static void deep_trunk_refresh(const struct player *pplayer)
   deep_trunk_c_ally_gap[pn] = 0;
   deep_trunk_c_div_links[pn] = 0;
   deep_trunk_c_div_max[pn] = 0.0;
+  deep_trunk_c_up_links[pn] = 0;
+  deep_trunk_c_up_gap[pn] = 0;
   for (slot = 0; slot < deep_trunk_nlinks; slot++) {
     deep_trunk_c_gap[pn] += deep_trunk_links[slot].gap;
+    if (deep_trunk_links[slot].upgrade) {
+      deep_trunk_c_up_links[pn]++;
+      deep_trunk_c_up_gap[pn] += deep_trunk_links[slot].gap;
+    }
     if (deep_trunk_links[slot].ally) {
       deep_trunk_c_ally_links[pn]++;
       deep_trunk_c_ally_gap[pn] += deep_trunk_links[slot].gap;
@@ -1424,6 +1441,21 @@ static bool deep_trunk_tile_ally(const struct tile *ptile)
   slot = deep_trunk_tile[tile_index(ptile)];
 
   return slot > 0 && deep_trunk_links[slot - 1].ally;
+}
+
+/* Whether this tile's corridor is in its UPGRADE phase, on an
+ * already-refreshed plan -- the tile already carries a road and the want
+ * on it is for a better one. The upgrade counters' only question. */
+static bool deep_trunk_tile_upgrade(const struct tile *ptile)
+{
+  int slot;
+
+  if (deep_trunk_tile == NULL) {
+    return FALSE;
+  }
+  slot = deep_trunk_tile[tile_index(ptile)];
+
+  return slot > 0 && deep_trunk_links[slot - 1].upgrade;
 }
 
 /* The want itself, on an already-refreshed plan: the movement the
@@ -1519,6 +1551,10 @@ adv_want deep_trunk_want(const struct player *pplayer,
   if (want > deep_trunk_c_max[pn]) {
     deep_trunk_c_max[pn] = want;
   }
+  if (deep_trunk_tile_upgrade(ptile)) {
+    deep_trunk_c_up_hits[pn]++;
+    deep_trunk_c_up_max[pn] = MAX(deep_trunk_c_up_max[pn], want);
+  }
 
   return want;
 }
@@ -1567,6 +1603,11 @@ adv_want deep_trunk_source_want(const struct player *pplayer,
       [deep_trunk_own_class(pplayer, ptile)]++;
     if (deep_trunk_tile_ally(ptile)) {
       deep_trunk_c_ally_off[player_number(pplayer)]++;
+    }
+    if (deep_trunk_tile_upgrade(ptile)) {
+      deep_trunk_c_up_off[player_number(pplayer)]++;
+      deep_trunk_c_up_max[player_number(pplayer)]
+        = MAX(deep_trunk_c_up_max[player_number(pplayer)], want);
     }
   }
 
@@ -1633,6 +1674,12 @@ void deep_trunk_source_pick(const struct player *pplayer,
   deep_trunk_c_soft_pick[pn][deep_trunk_own_class(pplayer, ptile)]++;
   if (deep_trunk_tile_ally(ptile)) {
     deep_trunk_c_ally_pick[pn]++;
+  }
+  if (deep_trunk_tile_upgrade(ptile)) {
+    /* An assignment on a tile that ALREADY CARRIES A ROAD -- the job
+     * that could not exist below the gate, because the plan dropped the
+     * link the moment its last tile was roaded. */
+    deep_trunk_c_up_pick[pn]++;
   }
   if (slot > 0 && deep_trunk_links[slot - 1].dividend > 0.0) {
     deep_trunk_c_div_pick[pn]++;
@@ -1893,6 +1940,35 @@ void deep_trunk_census(struct player *pplayer)
   }
 
   if (log_do_output_for_level(deep_metric_log_level())
+      && (deep_trunk_c_up_whole[pn] > 0 || deep_trunk_c_up_links[pn] > 0)) {
+    /* Rail upgrade. whole= links whose every tile already carries a
+     * road, counted in BOTH settings of trunk_upgrade_gate -- it is the
+     * denominator, and on its own it is the venue statement: whole=0
+     * says this venue never finishes a trunk and no upgrade could
+     * possibly be claimed here whatever the knob does. links= the whole
+     * links that entered the UPGRADE phase (whole= minus links= is
+     * whole links with nothing better buildable yet -- no railroad tech,
+     * or already railed end to end), gap= their tiles below the best
+     * road this player could lay, hits= upgrade candidates the advisor's
+     * task-value hook priced, offered= the ones deep's own task source
+     * priced beyond the ceiling, picked= assignments actually made ON A
+     * TILE THAT ALREADY CARRIES A ROAD, and maxwant= the largest want an
+     * upgrade tile issued.
+     *
+     * whole>0 with links=0 is the gate shut and is exactly what the OFF
+     * arm must show; links>0 with picked=0 is upgrades priced and
+     * outbid, which is a null rather than a dead knob. */
+    log_base(deep_metric_log_level(),
+             "deep-trunkup turn=%d player=\"%s\" whole=%d links=%d gap=%d"
+             " hits=%d offered=%d picked=%d maxwant=%.2f",
+             game.info.turn, player_name(pplayer),
+             deep_trunk_c_up_whole[pn], deep_trunk_c_up_links[pn],
+             deep_trunk_c_up_gap[pn], deep_trunk_c_up_hits[pn],
+             deep_trunk_c_up_off[pn], deep_trunk_c_up_pick[pn],
+             deep_trunk_c_up_max[pn]);
+  }
+
+  if (log_do_output_for_level(deep_metric_log_level())
       && deep_trunk_c_duty_seen[pn] > 0) {
     /* W12H exposure. on= workers standing on a corridor tile at this
      * turn's refresh; seen= worker-turns of corridor duty so far;
@@ -2022,6 +2098,13 @@ void deep_trunk_census(struct player *pplayer)
   deep_trunk_c_hits[pn] = 0;
   deep_trunk_c_max[pn] = 0.0;
   deep_trunk_c_beyond[pn] = 0;
+  deep_trunk_c_up_whole[pn] = 0;
+  deep_trunk_c_up_links[pn] = 0;
+  deep_trunk_c_up_gap[pn] = 0;
+  deep_trunk_c_up_hits[pn] = 0;
+  deep_trunk_c_up_off[pn] = 0;
+  deep_trunk_c_up_pick[pn] = 0;
+  deep_trunk_c_up_max[pn] = 0.0;
   deep_trunk_c_src_off[pn] = 0;
   deep_trunk_c_src_pick[pn] = 0;
   memset(deep_trunk_c_src_hist[pn], 0,
