@@ -26,6 +26,7 @@
 #include "support.h"
 
 /* common */
+#include "ai.h"
 #include "chat.h"
 #include "game.h"
 #include "packets.h"
@@ -214,6 +215,17 @@ static void chat_msg_to_player(struct connection *sender,
   }
 
   event_cache_add_for_players(&packet, players);
+
+  /* Everything above delivered to CONNECTIONS. An AI player holds none --
+   * the 'dest' search above ends with dest == nullptr for one -- so a
+   * message addressed to an AI has, until this line, been delivered to
+   * nobody at all. Offer it to the module that plays them. Observation
+   * only: nothing above is conditional on it, no packet changes, and the
+   * hook is nullptr for every AI module in tree but ai/deep, so a server
+   * built without one behaves exactly as before. */
+  if (is_ai(pdest)) {
+    CALL_PLR_AI_FUNC(player_chat_msg, pdest, pdest, sender->playing, msg);
+  }
 }
 
 /**********************************************************************//**
