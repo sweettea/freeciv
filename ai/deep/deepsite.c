@@ -24,12 +24,14 @@
 /* common */
 #include "city.h"
 #include "effects.h"
+#include "extras.h"
 #include "game.h"
 #include "government.h"
 #include "improvement.h"
 #include "map.h"
 #include "movement.h"
 #include "player.h"
+#include "terrain.h"
 #include "tile.h"
 #include "unit.h"
 #include "unittype.h"
@@ -62,6 +64,7 @@
 #include "deepexpand.h"
 #include "deepsettler.h"
 #include "deepstance.h"
+#include "deepterra.h"
 #include "deeptuning.h"
 
 #include "deepdefence.h"
@@ -105,6 +108,31 @@ static int deep_site_last_share = 0;
 static int deep_site_own_charged = 0;
 static double deep_site_own_want = 0.0;
 
+/* SITE-IMPROVABLE's own census, per settler search. `tiles` is the
+ * catchment tiles priced through the improvable path at all.
+ *
+ * The next three are TWO-SIDED on purpose. The un-gated term is an
+ * upper bound on its own arithmetic -- an undiscounted increment, taken
+ * whether or not the tile can receive it -- so the honest price is
+ * usually LOWER, and a census that only counted the times it came out
+ * higher would report a live mechanism as dead. `lifted` is the tiles
+ * where the achievable price beat the as-is one (a chain the crude term
+ * cannot see, or a terrain with no increment at all), `cut` the tiles
+ * where it came in under (the worker-turn discount, or an irrigation
+ * the ground cannot take), and `gain` is the SIGNED sum of the
+ * difference, so its sign is the direction the gate moved this search's
+ * valuation. `chain` counts the tiles whose WINNING option was a
+ * cultivate/plant chain rather than a one-step extra, whichever side of
+ * the as-is price it landed on -- the part of the mechanism that could
+ * not exist before W29.
+ *
+ * Zero on every line with the gate at 0. */
+static int deep_site_imp_tiles = 0;
+static int deep_site_imp_lifted = 0;
+static int deep_site_imp_cut = 0;
+static double deep_site_imp_gain = 0.0;
+static int deep_site_imp_chain = 0;
+
 /* What an existing city of ours will man, and when: its catchment
  * tiles ranked best-first, with the turn each one gets a citizen (0 if
  * it has one already, -1 if the city never reaches it). Cached for one
@@ -131,6 +159,56 @@ static void deep_claim_destroy(struct deep_claim *pclaim)
 
 static struct deep_claim_hash *deep_claims = NULL;
 static int deep_claims_turn = -1;
+
+/* SITE-IMPROVABLE. What a worker can make of one tile, and how long it
+ * takes. Everything here is READ: the increments and the activity times
+ * are the ruleset's, the reachable terrains are deepterra.c's graph
+ * (W29's search, reused rather than re-modelled), and the weights are
+ * the same adv_data priorities the site evaluator already sums tiles
+ * in. Nothing in this struct is a chosen number.
+ *
+ * `gain` is the best single option's weighted-output improvement over
+ * the tile as it stands, ALREADY amortized over the worker-turns that
+ * option costs -- which is why an irrigation five turns out and a
+ * two-step cultivate twenty-five turns out do not count the same, the
+ * omission that made the un-gated potential term a statement about
+ * terrain rather than about work.
+ *
+ * `food`/`shield` are the best EXTRA food and the best extra shield any
+ * one option delivers, with their own turns, because the starve
+ * question is asked per output and the option that feeds a site is
+ * rarely the option that forges it. */
+struct deep_improve {
+  int gain;                     /* Best amortized weighted-output gain. */
+  bool chain;                   /* That best came from a terrain chain. */
+  int food;                     /* Best extra food, and its worker-turns. */
+  int foodturns;
+  int shield;                   /* Best extra shield, and its turns. */
+  int shieldturns;
+};
+
+static void deep_improve_destroy(struct deep_improve *pimp)
+{
+  free(pimp);
+}
+
+#define SPECHASH_TAG deep_improve
+#define SPECHASH_INT_KEY_TYPE
+#define SPECHASH_IDATA_TYPE struct deep_improve *
+#define SPECHASH_IDATA_FREE deep_improve_destroy
+#include "spechash.h"
+
+/* One answer per tile per player-turn. The answer depends on the tile
+ * (its terrain, and whether an irrigation or a mine can legally be
+ * built there) and on the asking player's adv_data priorities, both of
+ * which are fixed for the duration of that player's phase -- so the
+ * cache is exact rather than approximate, in the same sense and for the
+ * same reason as deep_claims above. Without it the site search would
+ * re-run a requirements evaluation for every catchment tile of every
+ * candidate the pf map offers, which is tens of thousands per settler. */
+static struct deep_improve_hash *deep_improves = NULL;
+static int deep_improves_turn = -1;
+static int deep_improves_plr = -1;
 
 /* Site evaluation (W02, W02b). Stock cityresult_fill() values a site as
  * two tiles (city centre + single best other) plus everything else
@@ -463,6 +541,186 @@ void deep_site_free(void)
     deep_claims = NULL;
   }
   deep_claims_turn = -1;
+  if (deep_improves != NULL) {
+    deep_improve_hash_destroy(deep_improves);
+    deep_improves = NULL;
+  }
+  deep_improves_turn = -1;
+  deep_improves_plr = -1;
+}
+
+/**********************************************************************//**
+  Can an extra of this cause actually be built on this tile by this
+  player -- eventually? RPT_POSSIBLE, so a requirement we have not met
+  yet (a tech) does not refuse the tile, while one we can never meet on
+  this ground (civ2civ3's Irrigation wants a water source beside it)
+  does. That distinction is the whole reason the un-gated potential term
+  is wrong about desert: it credits every desert tile with the +1 food
+  of an irrigation the tile may have no way to receive.
+**************************************************************************/
+static bool deep_improve_extra_ok(const struct player *pplayer,
+                                  const struct tile *ptile,
+                                  enum extra_cause cause)
+{
+  extra_type_by_cause_iterate(cause, pextra) {
+    if (player_can_build_extra(pextra, pplayer, ptile)) {
+      return TRUE;
+    }
+  } extra_type_by_cause_iterate_end;
+
+  return FALSE;
+}
+
+/**********************************************************************//**
+  Offer one improvement option to the running best: a change of
+  (dfood, dshield, dtrade) that costs 'turns' reference worker-turns.
+
+  THE DISCOUNT, and it is derived rather than picked. amortize() is this
+  project's one discounter -- the catchment stream amortizes a tile by
+  the turn its citizen arrives, W03 amortizes a building credit by its
+  time to go, and W29's chain valuation amortizes a far terrain by the
+  worker-turns beyond the first step. It is benefit x (1 - 1/MORT)^delay
+  with MORT 24, i.e. 0.958333^delay, and nothing here chooses either
+  factor: the delay is the ruleset's own activity time, which IS a turn
+  count for the reference worker (see deepterra.h on why), and the rate
+  is the one every other delay in ai/deep is priced at.
+**************************************************************************/
+static void deep_improve_offer(struct deep_improve *imp,
+                               const struct adv_data *adv, bool chain,
+                               int dfood, int dshield, int dtrade, int turns)
+{
+  int gain;
+
+  if (turns < 0) {
+    return;
+  }
+  gain = (int) amortize((adv_want) (dfood * adv->food_priority
+                                    + dtrade * adv->science_priority
+                                    + dshield * adv->shield_priority),
+                        turns);
+  if (gain > imp->gain) {
+    imp->gain = gain;
+    imp->chain = chain;
+  }
+  /* Per output, the biggest gain, and among equal gains the soonest --
+   * these two feed the starve question, which asks "how long until this
+   * site can eat", not "what is this tile worth". */
+  if (dfood > imp->food
+      || (dfood == imp->food && dfood > 0 && turns < imp->foodturns)) {
+    imp->food = dfood;
+    imp->foodturns = turns;
+  }
+  if (dshield > imp->shield
+      || (dshield == imp->shield && dshield > 0 && turns < imp->shieldturns)) {
+    imp->shield = dshield;
+    imp->shieldturns = turns;
+  }
+}
+
+/**********************************************************************//**
+  Everything a worker could do to this tile, priced. The options are
+  irrigating it, mining it, and every terrain reachable from it by
+  cultivating and planting -- the last of which is deep_terra_reach(),
+  W29's own graph search, called here rather than re-derived, so there
+  is exactly one terrain model in ai/deep and the site evaluator and the
+  worker auction agree about what a tile can become.
+
+  Terrain-change options are valued as the DIFFERENCE of the two
+  terrains' base outputs rather than by re-deriving the tile's yield
+  from scratch: the tile's realised extras and resource already speak
+  through the yield this delta is added to, which is the same
+  composition the un-gated term uses when it adds an irrigation
+  increment to a tile's current food.
+
+  Transform is deliberately absent, for W29's reason: civ2civ3 gates
+  Transform Terrain behind Fusion Power, so following transform edges
+  would import that gate as an unpriced promise into a valuation made in
+  the ancient era.
+**************************************************************************/
+static void deep_improve_fill(const struct player *pplayer,
+                              const struct tile *ptile,
+                              const struct adv_data *adv,
+                              struct deep_improve *imp)
+{
+  static const enum unit_activity acts[2] = {
+    ACTIVITY_CULTIVATE, ACTIVITY_PLANT
+  };
+  const struct terrain *cur = tile_terrain(ptile);
+  int a, i;
+
+  imp->gain = 0;
+  imp->chain = FALSE;
+  imp->food = 0;
+  imp->foodturns = 0;
+  imp->shield = 0;
+  imp->shieldturns = 0;
+
+  if (cur == NULL) {
+    return;
+  }
+
+  if (cur->irrigation_food_incr != 0 && cur->irrigation_time > 0
+      && deep_improve_extra_ok(pplayer, ptile, EC_IRRIGATION)) {
+    deep_improve_offer(imp, adv, FALSE, cur->irrigation_food_incr, 0, 0,
+                       cur->irrigation_time);
+  }
+  if (cur->mining_shield_incr != 0 && cur->mining_time > 0
+      && deep_improve_extra_ok(pplayer, ptile, EC_MINE)) {
+    deep_improve_offer(imp, adv, FALSE, 0, cur->mining_shield_incr, 0,
+                       cur->mining_time);
+  }
+
+  for (a = 0; a < 2; a++) {
+    struct deep_terra_step reach[DEEP_TERRA_REACH_MAX];
+    int n = deep_terra_reach(cur, acts[a], reach);
+
+    for (i = 0; i < n; i++) {
+      const struct terrain *pt = reach[i].pterrain;
+
+      if (terrain_has_flag(pt, TER_NO_CITIES)) {
+        /* The same refusal deepchain.c makes: a chain that ends on
+         * ground a city cannot stand on is not an option for the tile
+         * the city stands on. Conservative for a catchment tile, exact
+         * for the centre, and free in both rulesets we run -- no
+         * cultivate or plant result in either carries the flag. */
+        continue;
+      }
+      deep_improve_offer(imp, adv, TRUE,
+                         pt->output[O_FOOD] - cur->output[O_FOOD],
+                         pt->output[O_SHIELD] - cur->output[O_SHIELD],
+                         pt->output[O_TRADE] - cur->output[O_TRADE],
+                         reach[i].turns);
+    }
+  }
+}
+
+/**********************************************************************//**
+  The cached improvable answer for one tile, built on first ask each
+  player-turn.
+**************************************************************************/
+static const struct deep_improve *deep_tile_improve(const struct player *pplayer,
+                                                    const struct tile *ptile,
+                                                    const struct adv_data *adv)
+{
+  struct deep_improve *imp;
+
+  if (deep_improves == NULL) {
+    deep_improves = deep_improve_hash_new();
+  }
+  if (deep_improves_turn != game.info.turn
+      || deep_improves_plr != player_number(pplayer)) {
+    deep_improve_hash_clear(deep_improves);
+    deep_improves_turn = game.info.turn;
+    deep_improves_plr = player_number(pplayer);
+  }
+  if (deep_improve_hash_lookup(deep_improves, tile_index(ptile), &imp)) {
+    return imp;
+  }
+  imp = fc_calloc(1, sizeof(*imp));
+  deep_improve_fill(pplayer, ptile, adv, imp);
+  deep_improve_hash_insert(deep_improves, tile_index(ptile), imp);
+
+  return imp;
 }
 
 /**********************************************************************//**
@@ -636,7 +894,6 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
    * tiles that survive the yield filter would report a site wedged
    * between two of our cities as uncrowded. */
   int nshare = 0;
-
   /* Contest context: a non-allied city close enough that this site
    * fights for space with it (W07-lite). Under that pressure the
    * long-term terms are compressed -- potential pays out on a shorter
@@ -738,6 +995,7 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
       const struct terrain *pterrain = tile_terrain(ptile);
       int pot_irr = pterrain->irrigation_food_incr * adv->food_priority;
       int pot_min = pterrain->mining_shield_incr * adv->shield_priority;
+      int pot = MAX(pot_irr, pot_min);
 
       sums[ncatch] = ptdc->sum;
       foods[ncatch] = ptdc->food;
@@ -748,8 +1006,30 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
        * `PERFECTION / 2` above, which is x1. The same expression means
        * two different things depending on where the parentheses fall.
        * The placeholder preserves the 1.5. */
-      potentials[ncatch] = MAX(pot_irr, pot_min)
-                           * deep_tuning_get()->site_potential_weight;
+      if (deep_tuning_get()->site_improvable_gate > 0) {
+        /* ACHIEVABLE yield, not terrain trivia: the best of irrigating,
+         * mining and every cultivate/plant chain, each discounted by
+         * the worker-turns it costs. The as-is expression above is what
+         * this replaces, and it is kept beside it -- unused arithmetic
+         * on two ints -- so the census can say how far the two differ
+         * rather than only that a different branch ran. */
+        const struct deep_improve *imp = deep_tile_improve(pplayer, ptile,
+                                                           adv);
+
+        deep_site_imp_tiles++;
+        if (imp->gain > pot) {
+          deep_site_imp_lifted++;
+        } else if (imp->gain < pot) {
+          deep_site_imp_cut++;
+        }
+        if (imp->chain) {
+          deep_site_imp_chain++;
+        }
+        deep_site_imp_gain += (imp->gain - pot)
+                              * deep_tuning_get()->site_potential_weight;
+        pot = imp->gain;
+      }
+      potentials[ncatch] = pot * deep_tuning_get()->site_potential_weight;
       if (pressured) {
         potentials[ncatch] *= deep_tuning_get()->site_pressure_factor;
       }
@@ -1623,6 +1903,11 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
   deep_site_space_bestshr = -1;
   deep_site_own_charged = 0;
   deep_site_own_want = 0.0;
+  deep_site_imp_tiles = 0;
+  deep_site_imp_lifted = 0;
+  deep_site_imp_cut = 0;
+  deep_site_imp_gain = 0.0;
+  deep_site_imp_chain = 0;
 
   pfm = pf_map_new(parameter);
   pf_map_move_costs_iterate(pfm, ptile, move_cost, FALSE) {
@@ -1898,6 +2183,30 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
               && deep_site_wait_alt != best->tile) ? 1 : 0,
              best != NULL ? index_to_map_pos_x(tile_index(best->tile)) : -1,
              best != NULL ? index_to_map_pos_y(tile_index(best->tile)) : -1);
+  }
+
+  /* SITE-IMPROVABLE's census, on the same one-line-per-SEARCH contract.
+   *
+   * `lifted` and `cut` are how often the achievable price came in above
+   * and below the as-is one, and `gain` is the SIGNED want the swap is
+   * worth, so a gate that runs and changes nothing is distinguishable
+   * here from a gate that moves the ranking -- the distinction the
+   * wait-discount census had to be rebuilt to make (STATUS, W36-DIM).
+   * `chain` is how often the WINNING option was a cultivate/plant
+   * chain rather than a one-step extra, counted whichever side of the
+   * as-is price it landed on -- how much of the answer W29's graph is
+   * responsible for, which is a question about the ruleset as much as
+   * about the map.
+   *
+   * Emitted only when something fired, so a search under the shut gate
+   * writes nothing. */
+  if (deep_site_imp_tiles > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-siteimprove turn=%d player=\"%s\" unit=%d tiles=%d"
+             " lifted=%d cut=%d gain=%.1f chain=%d",
+             game.info.turn, player_name(pplayer), punit->id,
+             deep_site_imp_tiles, deep_site_imp_lifted, deep_site_imp_cut,
+             deep_site_imp_gain, deep_site_imp_chain);
   }
 
   /* Section 3.4's number: candidates taxed for a city we are already
