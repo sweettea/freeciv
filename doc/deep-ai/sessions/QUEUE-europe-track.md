@@ -38,3 +38,16 @@
   stake, no invented constants. NEXT WAVE, high rank - this is a
   score-track epic (civil war is catastrophic on any venue), not just
   flavour.
+- **OCEAN-FILL expeditions** (user design note 2026-08-23): a transform
+  chain that STARTS on ocean is not a worker job, it is a small
+  expedition — the engineer needs a hull to stand on. Design
+  constraints fixed now: (a) the chain's want must EMIT transport
+  demand through the hull-commission/lift machinery (founder_berth_route
+  precedent) or it prices a chain that can never execute — the ferry
+  chicken-and-egg one level up; (b) gather + crossing ETA charges into
+  the chain's worker-turn discount; (c) this is W28 stacking's real
+  use-case (one lift, N engineers, one mega-job — the close-out said
+  stacking needs long jobs; ocean fill is the longest job there is);
+  (d) engineers parked offshore for 20 turns need the escort thread.
+  Check the ruleset's reclaim/adjacency requirements before designing.
+  BLOCKED BEHIND: archipelago/late-game venue + capability census.
