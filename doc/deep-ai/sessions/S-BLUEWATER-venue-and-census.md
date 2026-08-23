@@ -27,6 +27,21 @@ compatible, sized so a game finishes in reasonable wall-clock (state
 the measured minutes/game). Configs live in benchmark/configs/ with
 comments naming their purpose.
 
+**Equal-start craft (user directive 2026-08-23): do not pay pre-flight
+turns.** Prefer, in order of increasing craft and only as far as the
+venue needs: (a) pure settings — techlevel/gold/startunits reach the
+target era at T0; (b) a SYMMETRIC scenario map with fixed startpos
+(europe.sav precedent) so seat equality holds by construction;
+(c) a generated mid-game save — a committed script that writes the
+sav secfile directly, stamping equal pre-placed cities (size,
+buildings, harbors, units) per seat, so turn 1 is already the era
+under test. If you ship (b) or (c), the generator script is a
+deliverable (benchmark/ or data/scenarios/, documented), the save
+must load on the pinned binary and both ai modules without warnings,
+and STATUS must note the methodology trade: a fixed map narrows
+variance to AI decisions (maximum sensitivity, less generality), so
+census tables must say which venue kind produced them.
+
 ## Deliverable 2: the census
 
 On each venue, a small batch (e.g. 8-10 seeds, deep-vs-stock mixed
