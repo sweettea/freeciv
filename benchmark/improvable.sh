@@ -20,6 +20,7 @@
 #   ./benchmark/improvable.sh report     drop-cause counts per arm, the
 #                                        improvable census, and the
 #                                        paired score comparisons
+#   ./benchmark/improvable.sh go         all four, in order, sequential
 #
 # Machine budget: ports 7600-7649, jobs <= 3, this worktree's own build/
 # and its own pinned binary pair. The subcommands run SEQUENTIALLY and
@@ -405,6 +406,23 @@ report)
       --pat improve-cut="deep-siteimprove .*cut=[1-9]" \
       --pat starve-priced="deep-siteimprove .*starvepriced=[1-9]"
   done
+  ;;
+
+go)
+  # Everything, in order, sequentially -- so the box never sees more
+  # than JOBS games from this epic at once. Launch detached from the
+  # worktree root:
+  #   setsid bash ./benchmark/improvable.sh go
+  OUT=$here/results
+  rm -f "$OUT/improvable-GO-DONE" "$OUT/improvable-GO-FAILED"
+  ok=1
+  for step in identity corpus ab; do
+    echo "########## $step ##########"
+    bash "$0" "$step" || ok=0
+  done
+  bash "$0" report || ok=0
+  [ "$ok" -eq 1 ] && echo SUCCESS > "$OUT/improvable-GO-DONE" \
+                  || echo FAILED > "$OUT/improvable-GO-FAILED"
   ;;
 
 *)
