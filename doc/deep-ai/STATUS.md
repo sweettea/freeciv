@@ -19401,3 +19401,333 @@ Retention: `benchmark/results/tierfix-ab/` -- 80 games in four arms,
 `game.log.gz` per game (both gates' counters are in them), scorelogs,
 final saves. Every table above re-derives from that directory with
 `expandfunnel.py` and `seatgap.py`.
+
+## S-FERRY: the boat was never the problem -- 99.2% of site searches never reached the sea gate (2026-08-23)
+
+Brief: `sessions/S-FERRY-chicken-egg.md`. Branch `epic/ferry-diagnosis`
+(base `81c39bbf7a`). DIAGNOSIS ONLY -- no code, no knobs. Corpus: the
+user's Europe game `play-0822-2253` (`game.log`, 55 MB, T40-T128,
+six deep seats on the derby-7 spicy tuning) and its T110 save.
+
+### 1. What `boat=` in the ladder actually is
+
+`deep-siteladder ... boat=N` prints `boat_cost`, the **argument** of
+`deep_settler_map_iterate()` (`deepsite.c:1381`, logged at
+`deepsite.c:1608`) -- the shield price of the hull the search is
+pricing, zero on the on-continent leg. So `boat=0` does not mean "no
+boat exists"; it means **this search was the land search**. A
+boat-borne evaluation shows up as a *second* ladder line with
+`boat>0`. The brief's symptom is therefore "the second line almost
+never appears", and that is a statement about a gate, not about a
+fleet.
+
+### 2. The census: where the 2 018 searches went
+
+Every `deep-siteladder` occurrence in the game, parsed. `shortcut` is
+`found=1 && best_net > site_enough_result` -- the condition at
+`deepsettler.c:1014` that returns `cr1` before phase 2 exists. The
+tuning in force (`derby5/tuning-derby7.ini:29`) sets
+`site_enough_result = 145.421815`.
+
+    player          land  shortcut  ->phase2  boat-ladders  best_net(sea)
+    Deep_Anglia      214       206         8             6         1400.9
+    Deep_Carthago    302       302         0             0            ---
+    Deep_Gallia       92        84         8             8         1167.5
+    Deep_Hellas      465       465         0             0            ---
+    Deep_Osmanli     471       470         1             1         1423.7
+    Deep_Rus         474       474         0             0            ---
+    TOTAL           2018      2001        17            15
+
+**2 001 of 2 018 on-continent searches (99.2%) returned at the
+"enough" gate.** Seventeen got past it in 89 turns; fifteen produced a
+boat-borne evaluation. That is 0.74% of searches, and it is the whole
+of the symptom.
+
+Why the gate always trips, in one column -- `best_net` over the 2 018
+land searches:
+
+    min   p10   p25   p50   p75   p90    max
+    0.0  321.8 437.4 583.4 813.5 1002.0 1487.1
+
+Per seat, the *minimum* land result across the whole game:
+
+    Deep_Rus       min 265.0 over 474 searches   (never once below the gate)
+    Deep_Hellas    min 148.9 over 465
+    Deep_Carthago  min 147.9 over 302
+    Deep_Osmanli   min   0.0 over 471   (one found=0 search: its 1 phase-2)
+
+The gate is 145.4. Rus's *worst* site on the map is 1.8x it.
+
+### 3. The suspected cycle is refuted, by the corpus's own contrast
+
+The hypothesis was: no boat -> no overseas evaluation -> no overseas
+want -> no ferry want -> no boat. The two seats that ran boat-borne
+evaluations are **the two with the fewest hulls**, and the seat with
+the largest fleet ran none:
+
+    seat        deep-lift lines  with boats>0  mean fleet  boat-ladders
+    Deep_Rus                 90             0        0.00             0
+    Deep_Gallia              90             0        0.00             8
+    Deep_Carthago            90            89        2.78             0
+
+Deep_Rus held **zero hulls on every one of its 90 logged
+`deep-lift` lines** -- the
+exact condition the cycle says causes the blackout -- and still ran
+zero overseas evaluations, because all 474 of its land searches
+cleared 145.4. Deep_Carthago held two to five hulls from T42 to T124
+(`deep-lift`, `boats>=2` on 89 of 90 lines, `psng=0` on 80 of them,
+both together on 79)
+and also ran zero. **Both arms of the boat/no-boat contrast are
+already in this log and both are zero.** The scripted-transport probe
+the brief authorised would have reproduced the Carthago arm; it was
+not run, for that reason.
+
+The cycle is not imaginary in the code -- it is drawn below -- but it
+has a **deliberate breaker already installed**, and the breaker fires
+at exactly 0 boats. `deepsettler.c:1024`, `passengers >= boats`, is
+true at `0 >= 0`, and the branch beneath it (`:1044-1076`) runs a
+virtual-hull *demand probe* whose only job is to publish
+`dp->colony_want` when the fleet is empty. Gallia's 8 evaluations and
+5 of Anglia's 6 are that probe. It works. It is upstream-gated to
+death like everything else.
+
+### 4. The dependency graph, every edge cited
+
+    cr1 = land search                        deepsettler.c:1009
+      |
+      v  cr1->result > site_enough_result --> RETURN cr1   [G]
+      |                                       deepsettler.c:1014-1016
+      |                                       knob deeptuning.h:131,
+      |                                       also read as the in-loop
+      |                                       early break deepsite.c:1592
+      v  look_for_boat == FALSE ------------> RETURN cr1   [N]
+      |                                       call sites: deepsite.c:1729
+      |                                       (look=use=is_coastal),
+      |                                       deepsettler.c:2483, 2600
+      |                                       (use_virt_boat = FALSE)
+      v
+    passengers >= boats ?                     deepsettler.c:1024
+      |                                                     |
+      | YES (incl. 0>=0)                                    | NO
+      v                                                     v
+    DEMAND PROBE [P]                              aiferry_find_boat [F]
+    deepsettler.c:1044-1076                       deepsettler.c:1080
+    virtual hull, map_iterate(boat_cost>0)          |         |
+      -> dp->colony_want   :1064                    | hull    | none
+      -> RETURN cr1        :1076                    v         v
+         (founder_want stays LAND)          map_iterate(boat_cost>0) [V]
+      |                                     deepsettler.c:1099-1138
+      |                                       requires use_virt_boat
+      |                                       + tile_city + coastal
+      |                                       + L_FERRYBOAT known
+      |                                             |
+      v                                             v
+    colony_want ---> colony lift want [C]      cr2, overseas=TRUE
+      |              deepdefence.c:5477-5527,       |
+      |              5726-5750 (colony_lift_weight  v
+      |              = 0.335524)               founder_want / founder_boat
+      |                                        deepsite.c:1741-1743
+      +------------> hull commission [H]             |
+                     deepdefence.c:5627-5723         v
+                     (hull_commission_weight   settler built -> mission
+                      = 0.0, ABSENT from the         |
+                      ini -> term dead all game)     v
+                                               deep_settler_gothere
+    fleet size ---> boat_idle_damping [D]      !can_walk   :690-696
+                    deepdefence.c:8254-8270          |
+                    (0.913884; 143 Carthago          v
+                     ferry choices damped)     founder_berth_route [B]
+                                               deepsettler.c:637
+
+Directions worth stating out loud:
+
+- **[G] dominates everything.** It sits before the `look_for_boat`
+  block, so no fleet state, no knob below it, and no amount of demand
+  can be reached while it holds. 99.2%.
+- **[P] does not feed the founder want.** The probe returns `cr1`
+  (`:1076`), so `founder_boat` stays FALSE and the *city* never learns
+  it wants a colony -- only the *hull* want hears about it. Confirmed
+  in the log: Gallia published `deep-colony demand=1254` on 8 turns
+  and `deep-founder ... boat=1` on none.
+- **[P] and [F]/[V] are mutually exclusive**, and the switch is fleet
+  size. Own one idle hull with nobody queued (Carthago, 79 lines of
+  `boats>=2 psng=0`) and the probe that publishes colony demand is
+  **silenced**, while [F] finds no *free* hull for a virtual settler
+  and [V] is the only survivor. Verified at the boundary: Anglia's
+  five `boats=0` turns took [P] (demand lines), its `boats=1 psng=0`
+  turn T100 took [V] -- and T100 is the source of the **single**
+  `deep-founder ... boat=1` line in 1 837 (want=1400).
+- **Real settlers cannot go to sea on a virtual hull.** Both real-unit
+  call sites pass `use_virt_boat = FALSE` (`deepsettler.c:2483, 2600`),
+  so [V] is build-side only. **All 18 boat-borne ladders in the game
+  were `unit=0`.** A real settler reaches the sea only through [F].
+- **[B], `founder_berth_route=1`, is downstream of a mission that does
+  not exist.** It fires inside `deep_settler_gothere()` only when
+  `!can_walk` (`deepsettler.c:690-696`), i.e. for a settler already
+  holding an overseas target. `deep-berth` and `deep-berthroute`
+  occurrences in the game: **0**. The knob was inert by construction,
+  not by failure.
+- **[H] was off.** `hull_commission_weight` defaults to 0.0
+  (`deeptuning.c:221`) and the derby-7 ini does not set it.
+  `deep-commission` lines: 0.
+- **[C] fired 149 times and 88 of them were not about colonies.**
+  Carthago published `colony_want` never, yet emitted 88
+  `deep-colony ... city= lift=` lines -- they come from the amphibious
+  muster's berth shortfall (`deepdefence.c:5545-5578`,
+  `lift_demand = MAX(lift_demand, worth)`), which is military lift
+  sharing the settlement counter's log line.
+
+### 5. Verdict
+
+**The gate is elsewhere, one rung upstream, and it is
+`site_enough_result`.** Not the cycle (§3 refutes it with the log's
+own natural experiment), and not "the want is too small" -- when the
+overseas search did run, it came back with `best_net` 1167.5, 1400.9
+and 1423.7 against land medians of 412-670 for the same seats. The
+overseas site was **two to three times** the best thing at home on
+every occasion the AI was allowed to look. It was allowed to look
+fifteen times in 2 033 searches.
+
+The knob's own documentation predicted this, at `deeptuning.h:122-131`:
+*"a compile-time constant that decides whether colonisation is even
+evaluated, which makes it one of the highest-leverage numbers in the
+expansion pipeline and the kind of inherited magic the project exists
+to question."* The placeholder is 250.0 (stock's `RESULT_IS_ENOUGH`,
+`daisettler.h:46`). **The derby-7 tuner moved it to 145.42 -- the
+wrong way** -- and nothing in the tuning loop could see the cost,
+because the tuner optimises score and the thing it closed had already
+been closed at 250 on this map.
+
+The mechanism of the miss is the dual use, already flagged in a
+comment at `deepsite.c:1580-1590`: the same number is the **in-loop
+early break** (`deepsite.c:1592`) and the **phase-2 gate**
+(`deepsettler.c:1014`). Lowering it makes searches stop sooner and
+pick nearer sites -- a plausible local win the tuner can measure --
+and as a side effect makes colonisation unreachable, which the tuner
+cannot.
+
+### 6. The cheapest link to break, and what its A/B needs
+
+**Split the dual use.** One new tunable, `site_overseas_gate`, read
+only at `deepsettler.c:1014`; `site_enough_result` keeps the in-loop
+break at `deepsite.c:1592`. Default the new knob to the same
+placeholder (250.0) so a tuning file that sets only the old key is
+**bit-identical** to today -- the identity arm is free. ~10 lines in
+`deeptuning.{c,h}` plus one line in `deepsettler.c`; no new mechanism,
+no new evaluation, nothing added to the search. It is upstream of
+every other candidate fix in §4, so any of them is untestable until it
+lands.
+
+Rule 7: `site_overseas_gate` is a **placeholder**, not a chosen
+number. It wants a tuning pass on a venue with real water.
+
+Cheaper-looking alternatives, and why they lose:
+
+- *Fix [P]'s inverted trigger* (publish colony demand when the fleet
+  is idle, not only when it is oversubscribed). Correct, but
+  unreachable: [G] returns before `:1024`.
+- *Let [V] serve real settlers* (`use_virt_boat = TRUE` at
+  `deepsettler.c:2483, 2600`). Also downstream of [G], and it commits
+  a real unit to a crossing on a hull that does not exist.
+- *Raise the whole knob.* One line, but it confounds the break with
+  the gate -- see §7.
+
+**The counter the A/B needs, and it does not exist.** Today the only
+way to attribute a missing overseas evaluation is what this session
+did: re-derive the threshold from the ini and compare `best_net`
+line by line. That cannot distinguish `look_for_boat=FALSE`, an
+inland city, an unknown `L_FERRYBOAT`, or the probe/ferry branch --
+it only reconstructs [G]. Design (NOT implemented; `deepsite.c` and
+`deepsettler.c` are a sibling epic's):
+
+    deep-phase2 turn=%d player="%s" city=%d unit=%d cr1=%d why=%s
+                ran=%d cr2=%d chose=%s
+
+one line per call to `deep_find_best_city_placement()`, with `why` in
+
+    enough | nolook | nocoast | nocity | noferrytype
+           | oversub_probe | oversub_noprobe | realferry | virtboat
+
+and `chose` in `land | sea | none`. The buckets **partition every
+call**, which gives the same arithmetic self-check `deep-siteladder`
+already carries, plus one cross-check the ladder cannot do alone:
+`sum(ran) == count(deep-siteladder with boat>0)`. `chose=sea` is the
+A/B's actual outcome variable -- the fraction of reached searches that
+prefer the sea -- and today its only proxy is
+`deep-founder ... boat=1`, which fired **once in 1 837 lines**.
+
+### 7. The ini-only experiment for the next game
+
+One line, no rebuild, no branch: `derby5/tuning-derby7.ini:29`.
+
+    site_enough_result = 145.421815      ->   1600
+
+1 600 is above the **observed** ceiling of the land search on this
+map (max `best_raw` 1 552.7, max `best_net` 1 487.1 over 2 018
+searches), so [G] cannot trip and every coastal city-turn reaches
+phase 2. Read three counters against the numbers above:
+
+    deep-siteladder ... boat=<nonzero>     baseline 15 of 2 033
+    deep-colony ... demand=                baseline 13
+    deep-founder ... boat=1                baseline 1 of 1 837
+
+**Stated confound:** the knob is dual-use, so this also disables the
+in-loop early break (`deepsite.c:1592`) and every search runs to
+exhaustion -- slower turns, and site *choice* moves for reasons that
+have nothing to do with the sea. It answers "does the machinery work
+at all", not "is this a good setting". It is a mechanism probe.
+
+Two smaller ini lines, if the user wants the supply half live too:
+
+- `hull_commission_weight` is **absent** from the derby-7 ini and
+  defaults to 0.0 -- the commission term (`deepdefence.c:5627`) never
+  ran a single time this game. Its tuned value is unknown; adding it
+  is a second experiment, not a rider on the first.
+- `boat_idle_damping = 0.913884` damped **143** Carthago ferry choices
+  (Caravel 57, Frigate 71, Galleon 15; e.g. T60 city 892,
+  152.4 -> 53.9), and 214 across all deep seats. `0` is the documented
+  off-switch (`deepdefence.c:8248`).
+
+### Surprises worth carrying
+
+- **The seat with the biggest fleet evaluated the sea least.** Carthago
+  held 2-5 hulls for 83 consecutive turns and never once priced an
+  overseas site; Gallia and Rus held none all game. The correlation
+  the hypothesis predicted runs backwards, and the reason is that
+  owning one idle hull *silences* the demand probe
+  (`passengers >= boats` is false at `0 >= 2`) while providing no
+  *free* hull for `aiferry_find_boat()`. **The middle of the fleet
+  distribution is a hole**: zero boats has a breaker, many boats has a
+  ferry, one idle boat has neither.
+- **A `boat=` field that is a price, not a count.** The symptom that
+  opened this session reads naturally as "no boat" and means "this is
+  the land leg". One `grep` of the format string at `deepsite.c:1608`
+  reframed the whole question, and it was the first thing done.
+- **The tuner walked a dual-use knob the wrong way and nothing could
+  notice.** Both readers are legitimate, both are in files the tuner
+  never opens, and the coupling is documented in a comment
+  (`deepsite.c:1580-1590`) that the tuning loop cannot read. Any knob
+  read from two decisions with opposite senses is a bug waiting for a
+  tuning pass; that is a class, not an instance. That comment also
+  reasons only about *raising* the knob ("a tuner that raised the knob
+  made the phase-2 gate more demanding"); the direction that actually
+  happened is not considered, and the cross-reference it carries
+  (`deepsettler.c:711`) is **stale** -- the gate is at
+  `deepsettler.c:1014` in this tree.
+- **Zero settlers alive at T110, for every player in the game**
+  (parsed from `freeciv-T0110-Y00180-auto.sav.zst`, all 16 seats),
+  against 365 deep `deep-prodswitch to="Settlers"` starts. The ferry
+  question sits downstream of the expansion stall S-EXPAND-FIX
+  measured, and fixing the sea gate buys nothing until a settler
+  survives its own build -- but the two are independent leaks and this
+  one is one line of code.
+- **`founder_berth_route=1` could not have done anything.** It is
+  gated on a mission that needs a hull, and zero such missions were
+  formed: `deep-berth` occurrences, 0. The BERTH A/B's own verdict
+  (STATUS 2026-08-14) said the mechanism is causal and the population
+  absent; this game is the population being absent for a *different*
+  reason, two rungs further up.
+
+Retention: nothing new. Every table re-derives from
+`play-0822-2253/game.log` and `play-0822-2253/saves/freeciv-T0110-*.zst`
+with `grep`/`awk` one-liners quoted inline above.
