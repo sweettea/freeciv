@@ -22,6 +22,7 @@
 #include "deepchat.h"
 #include "deepops.h"
 #include "deeprates.h"
+#include "deeprequest.h"
 #include "deepstance.h"
 
 struct ai_type;
@@ -310,6 +311,21 @@ struct deep_plr {
    * silently instead of announcing every relationship deep already
    * had. */
   signed char chat_ds_seen[MAX_NUM_PLAYER_SLOTS];
+  /* CHATTY slice 2 (deeprequest.c): everything deep needs to remember
+   * about what it has been ASKED. The live requests with the turn each
+   * stops counting on, the per-ally tally of requests taken this turn
+   * (the rate cap), and four census counters. Not saved: a request is
+   * a few turns of preference and the honest behaviour after a reload
+   * is to have forgotten it, which an ally can fix by asking again.
+   * The whole structure is inert while chatty_inbound_gate is 0. */
+  struct deep_request chat_req[DEEP_REQUESTS];
+  int chat_req_next;
+  int chat_req_turn;            /* the turn chat_req_heard[] belongs to */
+  short chat_req_heard[MAX_NUM_PLAYER_SLOTS];
+  int req_heard;                /* commands from allies, cap permitting */
+  int req_taken;                /* ... of those, accepted and stored */
+  int req_capped;               /* dropped: this ally's turn tally spent */
+  int req_refused_stranger;     /* commands from somebody not allied */
 };
 
 static inline struct deep_plr *deep_plr_data(const struct player *pplayer)

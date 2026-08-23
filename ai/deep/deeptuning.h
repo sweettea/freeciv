@@ -2874,6 +2874,51 @@ struct deep_tuning {
    * No new danger model and no new constant; 0 restores today's
    * behaviour exactly. */
   int founder_run_hold;
+
+  /* CHATTY slice 2 -- deep LISTENS to its allies (deeprequest.c).
+   *
+   * chatty_inbound_gate = 0 (default): deep_request_hear() returns on
+   * its first comparison, no chat line is ever parsed, and the tree is
+   * byte-identical to the one before this epic. != 0: four exact-match
+   * commands from an ALLIED player -- defend <city>, attack
+   * <city|player>, road to <city>, status -- are read and answered.
+   *
+   * Unlike chatty_gate this one is NOT output-only: an accepted
+   * request moves a want. It is still a MODE flag rather than a tuning
+   * target, because what it buys is an ally's ability to be listened
+   * to and no scorelog contains that either -- the seats it will be
+   * used in are the ones with a human in them. */
+  int chatty_inbound_gate;
+
+  /* How many turns an accepted request keeps counting for. Every
+   * effect below decays to nothing when it passes, and every effect
+   * also dies the moment the alliance does. PLACEHOLDER: it trades an
+   * ally's patience ("I asked and nothing happened") against deep's
+   * own judgement, and the number is the tuning pile's, not a choice. */
+  int chatty_request_turns;
+
+  /* `defend <city>`: fear added to that city's danger figure while the
+   * request lives, in the same currency as every other injected fear
+   * in deepdefence.c. A TERM and not an override -- a city under real
+   * siege still outbids one that was merely asked about. 0.0 = the
+   * command is heard, answered honestly and then priced at nothing,
+   * which is a legitimate seat. PLACEHOLDER. */
+  double chatty_defend_fear;
+
+  /* `attack <city|player>`: multiplier 1 + gain on the operation
+   * target score, which is a pure ranking quantity (worth per tile),
+   * so this re-orders candidates and can never clear an odds gate.
+   * 0.0 = off and the multiply is skipped rather than done, so the off
+   * arm keeps the previous ordering byte-identically. PLACEHOLDER. */
+  double chatty_attack_gain;
+
+  /* `road to <city>`: how much closer a requested ally city is
+   * PRETENDED to be when the trunk planner picks which of that ally's
+   * cities the corridor runs to -- the distance is divided by 1 + gain
+   * for the requested city only. A preference over an endpoint deep
+   * was going to choose anyway, so with trunk_ally_gate shut there is
+   * nothing to prefer and this is inert. PLACEHOLDER. */
+  double chatty_road_gain;
 };
 
 void deep_tuning_init(void);

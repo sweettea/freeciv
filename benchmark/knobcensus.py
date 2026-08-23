@@ -1507,6 +1507,47 @@ MAP = {
         "line per declined military switch away from a founder build "
         "already under way; the line cannot be emitted with the gate "
         "off. Default 0: expect no lines at defaults."),
+    "chatty_inbound_gate": (
+        "S1", "mode", "direct", [("deep-request", "")],
+        "Slice 2's gate: 0 = deep_request_hear() returns on its first "
+        "comparison, no chat line is parsed, no request can be stored "
+        "and the four prices below are unreachable = byte-identical. "
+        "deep-request is written once per line HEARD, carrying the "
+        "verdict (defend / attack-city / attack-player / road / "
+        "status / not-ally / rate-capped / no-such-city / unreachable "
+        "/ not-at-war / no-such-target / not-your-city / "
+        "no-land-route), so the tag cannot exist in a gate-off game. "
+        "MODE and not a magnitude: what it buys is an ally's ability "
+        "to be listened to. VENUE-SENSITIVE twice over -- it needs an "
+        "ally AND it needs somebody to type. Read it in "
+        "benchmark/chatty2.sh smoke."),
+    "chatty_request_turns": (
+        "S1", "mode", "direct", [("deep-requests", "live>0")],
+        "How many turns an accepted request keeps counting. "
+        "deep-requests carries live= and retired= per player per turn, "
+        "which is the decay itself. PLACEHOLDER; it trades an ally's "
+        "patience against deep's own judgement and is a taste pass, "
+        "not a tuning pass."),
+    "chatty_defend_fear": (
+        "S1", "mag", "proxy", [("deep-request", "verdict=defend")],
+        "Fear added to a requested city's danger while the request "
+        "lives, in deepdefence.c's own currency. A TERM, so a city "
+        "under real siege still outbids one merely asked about; the "
+        "movement is read on deep-bid's mil= for that city. Proxy "
+        "rather than direct: no line prints the injected term on its "
+        "own. PLACEHOLDER."),
+    "chatty_attack_gain": (
+        "S1", "mag", "proxy", [("deep-request", "verdict=attack-city")],
+        "Multiplier 1+gain on the operation target score, which is a "
+        "pure ranking quantity, so it can re-order targets and can "
+        "never clear an odds gate. Read the effect on deep-op "
+        "form/target= and deep-anchor target=. PLACEHOLDER."),
+    "chatty_road_gain": (
+        "S1", "mag", "proxy", [("deep-request", "verdict=road")],
+        "How much closer a requested ally city is PRETENDED to be when "
+        "the trunk planner picks the alliance's corridor endpoint. "
+        "Needs trunk_ally_gate; read the effect on deep-trunklink "
+        "ally=1 to=. PLACEHOLDER."),
 }
 
 STAGE_NAME = {

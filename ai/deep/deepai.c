@@ -698,6 +698,12 @@ static void dpai_data_phase_begin(struct player *pplayer, bool is_new_phase)
      * (CHATTY). Output only, and a no-op while chatty_gate is 0. */
     deep_chat_phase_begin(pplayer);
 
+    /* And retire the ally requests whose window has closed, before any
+     * decision this turn reads them (CHATTY slice 2). A no-op while
+     * chatty_inbound_gate is 0, because nothing can ever have been
+     * stored. */
+    deep_request_phase_begin(pplayer);
+
     /* Before the turn's movement, so a unit that marches out today is
      * counted where it slept (NETTHREAT item 3's cadence). */
     deep_cadence_sample(pplayer);
@@ -1476,6 +1482,21 @@ static void dpai_revolution_start(struct player *pplayer)
 /**********************************************************************//**
   Call default ai with deep ai type as parameter.
 **************************************************************************/
+/**********************************************************************//**
+  A chat line addressed to this deep player, from the server's own idea
+  of who typed it. The per-seat tuning scope is entered here because
+  chat arrives OUTSIDE any phase -- a human can type between turns --
+  so nothing else has set the scope for us.
+**************************************************************************/
+static void dpai_player_chat_msg(struct player *pplayer,
+                                 struct player *sender, const char *msg)
+{
+  const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
+
+  deep_request_hear(pplayer, sender, msg);
+  deep_tuning_scope_restore(deep_scope);
+}
+
 static void dpai_sanity_check(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
@@ -1602,6 +1623,13 @@ bool fc_ai_deep_setup(struct ai_type *ai)
 
   ai->funcs.revolution_start = dpai_revolution_start;
   ai->funcs.check_sanity = dpai_sanity_check;
+
+  /* CHATTY slice 2: the inbound channel. server/handchat.c calls this
+   * for a chat line ADDRESSED to a deep player -- the only way any
+   * text reaches a module, since an AI player holds no connection for
+   * the ordinary delivery paths to walk. The parser behind it returns
+   * on its first comparison while chatty_inbound_gate is 0. */
+  ai->funcs.player_chat_msg = dpai_player_chat_msg;
 
   return TRUE;
 }

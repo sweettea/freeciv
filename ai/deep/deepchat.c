@@ -209,6 +209,64 @@ bool deep_chat_tell(const struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Answer one player who addressed us, whether or not they are an ally.
+
+  Same three calls, same shape, same cap as everything else here; the
+  only differences are that the recipient is not required to be an ally
+  and the colour follows the relationship (ally chat for an ally,
+  private for anybody else), because that is the colour the client
+  already paints each in.
+
+  It exists for exactly one thing: slice 2's protocol has to be able to
+  refuse a stranger, and a refusal delivered to the alliance instead of
+  to the person who asked would be neither an answer nor honest.
+**************************************************************************/
+bool deep_chat_reply(const struct player *pplayer, struct player *who,
+                     enum deep_chat_class klass, const char *text, ...)
+{
+  const struct deep_tuning *tune = deep_tuning_for(pplayer);
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  struct packet_chat_msg packet;
+  char body[MAX_LEN_MSG], line[MAX_LEN_MSG];
+  va_list args;
+
+  if (who == NULL || who == pplayer || dp == NULL
+      || tune->chatty_gate <= 0 || tune->chatty_max_per_turn <= 0
+      || (dp->chat_turn == game.info.turn
+          && dp->chat_said >= tune->chatty_max_per_turn)) {
+    return FALSE;
+  }
+
+  va_start(args, text);
+  fc_vsnprintf(body, sizeof(body), text, args);
+  va_end(args);
+  fc_snprintf(line, sizeof(line), _("*%s (AI)* %s"),
+              player_name(pplayer), body);
+
+  package_event(&packet, NULL, E_DIPLOMACY,
+                pplayers_allied(pplayer, who) ? ftc_chat_ally
+                                              : ftc_chat_private,
+                "%s", line);
+  lsend_packet_chat_msg(who->connections, &packet);
+  event_cache_add_for_player(&packet, who);
+
+  if (dp->chat_turn != game.info.turn) {
+    dp->chat_turn = game.info.turn;
+    dp->chat_said = 0;
+  }
+  dp->chat_said++;
+
+  log_base(deep_metric_log_level(),
+           "deep-chat turn=%d player=\"%s\" class=%d to=\"%s\" heard=%d"
+           " said=%d/%d text=\"%s\"",
+           game.info.turn, player_name(pplayer), (int) klass,
+           player_name(who), 1, dp->chat_said, tune->chatty_max_per_turn,
+           line);
+
+  return TRUE;
+}
+
+/**********************************************************************//**
   TRUE the first time this player raises this subject, FALSE ever
   after. The ring is bounded (DEEP_CHAT_MEMOS) and overwrites its
   oldest entry, so the failure mode of a very long game is one repeated
