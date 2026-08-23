@@ -18,7 +18,7 @@ Three tables in the save carry all of it:
 
 Output is shell-sourceable KEY=value lines.
 """
-import csv, io, subprocess, sys
+import csv, io, shlex, subprocess, sys
 
 
 def load(path):
@@ -78,21 +78,26 @@ def main(path, me):
     mysec = mysec[0]
     myidx = int(mysec[len("player"):])
 
+    # shlex.quote, not a bare single-quoted string: freeciv city names
+    # routinely contain an apostrophe (Nit'ahende, Ch'laande), which
+    # closes a hand-quoted string and makes the shell try to run the
+    # rest of the line as a command. It did.
     mine = own.get(mysec, [])
-    print("OWN_CITIES='%s'" % ";".join("%s,%s" % c for c in mine))
+    print("OWN_CITIES=%s" % shlex.quote(";".join("%s,%s" % c for c in mine)))
 
     # An ally city: any player on our team. The save does not spell the
     # team out in a form worth parsing here, so the smoke passes the
     # ally's player name in and we look that up.
     for sec, plist in own.items():
         if sec != mysec:
-            print("CITIES_%s='%s'"
-                  % (names[sec], ";".join("%s,%s" % c for c in plist)))
+            print("CITIES_%s=%s"
+                  % (names[sec],
+                     shlex.quote(";".join("%s,%s" % c for c in plist))))
 
     # Enemy cities we have SEEN: in our own dc table, owned by somebody
     # who is neither us nor an ally the caller named.
-    print("SEEN='%s'" % ";".join(
-        "%d,%s,%s" % k for k in known if k[0] != myidx))
+    print("SEEN=%s" % shlex.quote(";".join(
+        "%d,%s,%s" % k for k in known if k[0] != myidx)))
 
 
 if __name__ == "__main__":
