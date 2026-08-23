@@ -20,7 +20,7 @@ interesting case: seat -> module comes from commands.serv, so every
 counter is attributable to the module that produced it and seat bias
 cancels when both orderings are present.
 
-Sections: census, funnel, sortie, ops, wait, dyad.
+Sections: census, funnel, sortie, ops, depart, poach, wait, dyad.
 """
 
 import argparse
@@ -91,6 +91,7 @@ class Game:
         self.funnel = {}          # player -> last cumulative dict
         self.sortie = {}          # player -> last cumulative dict
         self.ops = []             # dicts, one per resolved operation
+        self.poach = []           # dicts, one per adjudicated poach
         self.dyad = []            # (turn, killerai, victimai)
         for line in open(os.path.join(gdir, "game.log"), errors="replace"):
             if "deep-employ " in line:
@@ -103,6 +104,8 @@ class Game:
                 self.sortie[d.get("player")] = d
             elif "deep-employop " in line:
                 self.ops.append(kv(line))
+            elif "deep-employpoach " in line:
+                self.poach.append(kv(line))
             elif "kill-dyad " in line:
                 d = kv(line)
                 self.dyad.append((num(d, "turn"), d.get("killerai", "none"),
@@ -316,6 +319,176 @@ def section_depart(games, module):
     print()
 
 
+# ----------------------------------------------------------------- poach
+
+
+def fnum(d, k, default=0.0):
+    """Float value of `k`."""
+    try:
+        return float(d.get(k, default))
+    except ValueError:
+        return default
+
+
+def pct(n, d):
+    return "%6.1f%%" % (100.0 * n / d) if d else "     --"
+
+
+def poach_rows(games, module):
+    return [p for g in games for p in g.poach
+            if g.module(p.get("player")) == module]
+
+
+def poach_table(rows, label):
+    """One slice of the poach ledger, both sides of the price and the
+    window's verdict on each."""
+    n = len(rows)
+    if not n:
+        print("  %-22s        no poaches" % label)
+        return
+    # The claim, adjudicated. `fell` is the city changing hands, adjmax
+    # the high-water enemy count ON an adjacent tile at any sample in
+    # the window, adj0 the same at claim time. "Never came" is the
+    # slice where none of the three ever happened: the claimed wave was
+    # a forecast that the window did not confirm.
+    fell = sum(1 for p in rows if num(p, "fell"))
+    walls = sum(1 for p in rows if num(p, "adjmax") > 0 or num(p, "adj0") > 0)
+    never = sum(1 for p in rows
+                if not num(p, "fell") and num(p, "adjmax") == 0
+                and num(p, "adj0") == 0)
+    # The blade.
+    kept0 = sum(1 for p in rows if num(p, "kept", -1) == 0)
+    arrived = sum(1 for p in rows if num(p, "home") > 0)
+    hurt = sum(1 for p in rows if num(p, "dmg") > 0)
+    gone = sum(1 for p in rows if num(p, "gone"))
+    reclaim = sum(1 for p in rows if num(p, "reclaim"))
+    idle = sum(1 for p in rows
+               if num(p, "home") > 0 and num(p, "adjmax") == 0
+               and num(p, "dmg") == 0 and not num(p, "gone"))
+    print("  %-22s %8d" % (label, n))
+    print("    city fell in window   %8d %s" % (fell, pct(fell, n)))
+    print("    enemy at the walls    %8d %s" % (walls, pct(walls, n)))
+    print("    danger never came     %8d %s" % (never, pct(never, n)))
+    print("    force never deployed  %8d %s" % (kept0, pct(kept0, n)))
+    print("    blade reached city    %8d %s" % (arrived, pct(arrived, n)))
+    print("    blade took damage     %8d %s" % (hurt, pct(hurt, n)))
+    print("    blade gone in window  %8d %s" % (gone, pct(gone, n)))
+    print("    re-claimed by an op   %8d %s" % (reclaim, pct(reclaim, n)))
+    print("    IDLED UN-ATTACKED     %8d %s" % (idle, pct(idle, n)))
+    print("    mean p / relief       %8.3f %7.3f"
+          % (mean([fnum(p, "p") for p in rows]),
+             mean([fnum(p, "relief") for p in rows])))
+    print("    mean wave / pool      %8.2f %7.2f"
+          % (mean([num(p, "wave") for p in rows]),
+             mean([num(p, "pool") for p in rows])))
+    print("    mean op age / members %8.2f %7.2f"
+          % (mean([num(p, "age") for p in rows]),
+             mean([num(p, "members") for p in rows])))
+
+
+RATIO_BUCKETS = [1.0, 2.0, 5.0, 10.0, 100.0, 1000.0]
+
+
+def poach_ratio(rows):
+    """Defence bid over offence bid, at claim time.
+
+    Both sides are read off the line as the poach itself computed them:
+    `risk` = city worth * defence_worth_mult * (1 - p_survival), and
+    `take` = conquest worth * odds at the wave's own eta. The poach
+    fires only when risk > take, so the ratio is bounded below by 1 by
+    construction and the question the distribution answers is HOW
+    lopsided, not which way.
+    """
+    zero, fin = 0, []
+    for p in rows:
+        take = fnum(p, "take")
+        if take <= 0.0:
+            zero += 1
+        else:
+            fin.append(fnum(p, "risk") / take)
+    n = len(rows)
+    print("  defence-worth / offence-worth at claim time (n=%d)" % n)
+    print("    offence bid exactly 0 %8d %s" % (zero, pct(zero, n)))
+    if not fin:
+        return
+    fin.sort()
+    lo = 0.0
+    for hi in RATIO_BUCKETS + [float("inf")]:
+        k = sum(1 for r in fin if lo <= r < hi)
+        print("    ratio %6s - %-8s%8d %s"
+              % ("%.0f" % lo if lo else "0", "%.0f" % hi if hi < 1e9
+                 else "inf", k, pct(k, n)))
+        lo = hi
+    print("    median ratio          %8.1f   mean %.1f"
+          % (fin[len(fin) // 2], mean(fin)))
+    print("    median risk / take    %8.1f / %.1f"
+          % (sorted(fnum(p, "risk") for p in rows)[n // 2],
+             sorted(fnum(p, "take") for p in rows)[n // 2]))
+
+
+def section_poach(games, module):
+    rows = poach_rows(games, module)
+    ng = len(games)
+    if not rows:
+        print("# 8. POACH PRICE: no deep-employpoach lines (older binary)\n")
+        return
+    print("# 8. POACH PRICE -- %d adjudicated poaches over %d games (%.1f/game)"
+          % (len(rows), ng, len(rows) / ng))
+    print("  window = survival_horizon turns after the claim; poaches"
+          " still open when\n  the game ends never adjudicate and are not"
+          " here.")
+    poach_table(rows, "all poaches")
+    print()
+    poach_table([p for p in rows if num(p, "muster")], "from a muster")
+    print()
+    poach_table([p for p in rows if not num(p, "muster")], "from a formed wave")
+    print()
+    poach_ratio(rows)
+    print()
+    # The adjudication crossed with what the claim bought.
+    #
+    # `kept` is sharper than it looks. The poach is called only after
+    # the whole free pool has failed to lift the city to
+    # survival_target, and the blade is appended LAST -- so a force
+    # that clears the bar clears it BECAUSE of the poached blade
+    # (kept=1: the blade was decisive), and a force that still falls
+    # short is written off in the same pass without deploying anybody
+    # (kept=0: the wave lost its blade and the city got nothing).
+    print("  THE POACH-PRICE TABLE")
+    print("    %-34s %8s %8s %10s" % ("", "n", "share", "take=0"))
+    cats = [
+        ("paid and needed (kept, danger came)",
+         lambda p: num(p, "kept", -1) == 1 and danger(p)),
+        ("paid and unneeded (kept, no danger)",
+         lambda p: num(p, "kept", -1) == 1 and not danger(p)),
+        ("paid for nothing (city written off)",
+         lambda p: num(p, "kept", -1) == 0),
+        ("unsettled (neither exit ran)",
+         lambda p: num(p, "kept", -1) < 0),
+    ]
+    for lab, f in cats:
+        sel = [p for p in rows if f(p)]
+        z = sum(1 for p in sel if fnum(p, "take") <= 0.0)
+        print("    %-34s %8d %s %s"
+              % (lab, len(sel), pct(len(sel), len(rows)), pct(z, len(sel))))
+    print()
+
+
+def danger(p):
+    """Did the claimed danger materialise inside the window?
+
+    The union of the three things a siege leaves behind: the enemy
+    standing on a tile adjacent to the city at the claim or at any
+    sample, and the city changing hands. Adjacency is sampled once a
+    turn at deep's own phase, so an attacker that arrives, strikes and
+    dies inside another player's phase leaves no adjacency trace -- the
+    blade's own damage and the city falling are the two event-true
+    signals, and both are in the union.
+    """
+    return (num(p, "adjmax") > 0 or num(p, "adj0") > 0 or num(p, "fell")
+            or num(p, "dmg") > 0)
+
+
 # ------------------------------------------------------------------ wait
 
 WAIT_BUCKET = {
@@ -458,6 +631,8 @@ def main():
         section_ops(games, args.module)
     if want in ("all", "depart"):
         section_depart(games, args.module)
+    if want in ("all", "poach"):
+        section_poach(games, args.module)
     if want in ("all", "wait"):
         section_wait(games, args.module)
         if args.windows:
