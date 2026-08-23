@@ -107,8 +107,14 @@ identity)
   # makes the inertness checkable rather than asserted.
   for side in base head; do
     case $side in
+      # 30 games take 30 ports (run.sh assigns one per game), and the
+      # two sides run SEQUENTIALLY, so they share one range. What must
+      # not be shared is the range the `live` arms use -- an identity
+      # batch and a liveness batch running at once collided on 7671 and
+      # three base games died on 'Address already in use', which is a
+      # missing scorelog and a failed proof rather than a wrong one.
       base) bin=$base_bin; port=7650;;
-      head) bin=$head_bin; port=7665;;
+      head) bin=$head_bin; port=7650;;
     esac
     TUNING= "$here/run.sh" --count "$SEEDS" --arms deep,mixed_db,classic \
       --config "$here/configs/smoke.conf" --server "$bin" --jobs 2 \
@@ -163,8 +169,8 @@ live)
   # ON first: if the mechanism does not fire on this venue the
   # comparison is void, and that is worth learning in the first arm.
   for arm in on off; do
-    tun=; port=7670
-    [ "$arm" = on ] && { tun=$ON; port=7680; }
+    tun=; port=7684
+    [ "$arm" = on ] && { tun=$ON; port=7692; }
     echo "--- arm $arm (${tun:-compiled defaults}) ---"
     TUNING=$tun "$here/run.sh" --count "$SEEDS" --config "$CONFIG" \
       --arms deep --jobs "$JOBS" --portbase "$port" \
