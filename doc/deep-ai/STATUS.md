@@ -20981,3 +20981,50 @@ of stacking.
   deleted and every `game.log` filtered to `deep-trunk|deep-stack|
   deep-tuning|deep-workturn` lines after scoring; every table above
   re-derives from what remains with the two committed readers.
+
+## 2026-08-23 — Paradox-A resolved on holdout: the tuned knobs trade econ for war, and the war gap survives out-of-sample
+
+The night batch (`benchmark/night-defaults-holdout.sh`, binary
+`.nightrun-bin` sha `11e0b9e3f87e5458`, all four arms SUCCESS) played
+compiled defaults and pv3 on the 16 **holdout** seeds (101–116), both
+venues, each arm paired against a same-seed stock-baseline arm. The
+question on the table since PLAN-wave-2026-08-22 ranked it #1: is pv3's
+tuning actually worth anything out-of-sample, or did the tuner overfit?
+
+    arm        venue            mean paired diff vs baseline (16 seeds)
+    defaults   isolated-150     +39.4
+    pv3        isolated-150      +9.4
+    defaults   tech50war-200   -223.0
+    pv3        tech50war-200   -134.8
+
+Head-to-head per-seed pairs (same seed, same venue, defaults − pv3):
+
+    econ: defaults better by +30.1/seed, wins 11/16   (stdev 63.4)
+    war:  pv3      better by +88.2/seed, wins 12/16   (stdev 103.1)
+
+**Verdict.** Paradox-A is not a paradox; it is a trade. The pv3 knobs
+carry real out-of-sample value on the war venue (+88/seed, 12/16) and
+*negative* value on the econ venue (−30/seed, 5/16). Neither tuning
+dominates; equal-weighting the venues, pv3 is still worth ~+29/seed net,
+so pv3 keeps its place as the shipping default, but every econ-venue
+point it gives back is recoverable in principle.
+
+**The larger finding is the war rows.** Deep loses to stock baseline on
+the held-out war venue under BOTH tunings — the war gap is not a
+training-seed artefact, it is out-of-sample real, and at −135/seed
+(best case) it dwarfs the econ trade. This is consistent with the
+employment-leak chain (odds gate → pool starvation → 89.4% self-poach)
+and is exactly what the poach-price epic now in flight is instrumenting.
+The cheapest big win on the board is still closing the war gap, not
+re-splitting the econ knobs.
+
+**In flight from the same night**: `benchmark/results/defaults-tune-g`
+— the G family re-tuned from compiled defaults on econ training seeds
+(round 0 block best +62.2 at time of writing). If it holds on holdout,
+it answers whether econ's +30 can be recovered without touching the
+war-bearing knobs.
+
+Retention: `benchmark/results/defaults-holdout/` — four arm trees with
+per-seed scorelogs, arm logs with the HOLDOUT report lines, DONE
+markers recording SUCCESS; per-seed tables above re-derive with
+`final_score()` from tune.py over `<arm>/holdout-report/cfg0/seed-*/`.
