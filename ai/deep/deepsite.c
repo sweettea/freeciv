@@ -96,6 +96,13 @@ static double deep_site_contest_want = 0.0;
  * enough: the evaluator scores one candidate at a time. */
 static int deep_site_last_share = 0;
 
+/* And the own-crowding price actually charged during this search:
+ * candidates that paid it, and the want it took off them. Zero on
+ * every line with the knob at 0.0 -- the gate's own proof that the
+ * identity arm ran ungated rather than merely quietly. */
+static int deep_site_own_charged = 0;
+static double deep_site_own_want = 0.0;
+
 /* What an existing city of ours will man, and when: its catchment
  * tiles ranked best-first, with the turn each one gets a citizen (0 if
  * it has one already, -1 if the city never reaches it). Cached for one
@@ -870,6 +877,28 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
                    * MAX(0.0, 1.0 - deep_tuning_get()->site_rival_crowding
                                     * deep_land_pressure());
     }
+    if (deep_tuning_get()->site_own_overlap > 0.0 && nshare > 0) {
+      /* OWN-empire crowding. Everything above prices proximity to
+       * SOMEONE ELSE -- nclaim pays for taking a rival's ground,
+       * site_rival_pressure charges for standing on a contested
+       * border. Being near OURSELVES was priced only as a side effect:
+       * deep_catchment_stream() drops a tile a neighbour of ours
+       * reaches FIRST, and at founding time the new city's own
+       * citizens arrive on turn 0, so it wins nearly every race and
+       * concedes nearly nothing. The result is that packing at the
+       * citymindist floor is very close to free, which is what the
+       * live game shows.
+       *
+       * This is the direct charge: one price per catchment tile a city
+       * we already hold could work too, whoever gets there first. No
+       * new geometry -- deep_city_covers() is the same radius test the
+       * claim schedule is built on. */
+      double charge = nshare * deep_tuning_get()->site_own_overlap;
+
+      wspecials -= charge;
+      deep_site_own_charged++;
+      deep_site_own_want += charge;
+    }
     if (deep_tuning_get()->site_choke_bonus > 0.0
         && deep_site_is_choke(&(wld.map), result->tile)) {
       /* A gate city closes a continent; worth most when crowded. */
@@ -1014,9 +1043,11 @@ static double deep_site_wait_alt_result = 0.0;
  *
  * Buckets are 2 (the citymindist floor in both rulesets we run), 3, 4
  * and 5-or-more; a candidate with no city of ours anywhere is in none
- * of them and is counted in `far`. `shr` is the mean own-overlap tile
- * count in the bucket -- the quantity the overlap penalty prices, so
- * the census and the mechanism read the same number.
+ * of them and is counted in `far`. `shr` is the own-overlap tile count
+ * of the bucket's BEST candidate -- the quantity the overlap penalty
+ * prices, reported for the same candidate `raw` reports, so that
+ * (raw, shr) is one site and the price that would reverse two buckets
+ * is arithmetic on the line rather than on two populations.
  *
  * Computed only when the metric level is on (the deep-sitedef pattern):
  * a tuning run must not pay for a census. */
@@ -1489,9 +1520,9 @@ static struct cityresult *deep_city_desirability(struct ai_type *ait,
       deep_site_space_far++;
     } else {
       deep_site_space_n[b]++;
-      deep_site_space_share[b] += deep_site_last_share;
       if ((double) cr->total > deep_site_space_best[b]) {
         deep_site_space_best[b] = (double) cr->total;
+        deep_site_space_share[b] = deep_site_last_share;
       }
     }
 
@@ -1573,6 +1604,8 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
   deep_site_space_far = 0;
   deep_site_space_bestd = -1;
   deep_site_space_bestshr = -1;
+  deep_site_own_charged = 0;
+  deep_site_own_want = 0.0;
 
   pfm = pf_map_new(parameter);
   pf_map_move_costs_iterate(pfm, ptile, move_cost, FALSE) {
@@ -1794,23 +1827,18 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
              "deep-sitespace turn=%d player=\"%s\" unit=%d boat=%d"
              " n2=%d n3=%d n4=%d n5=%d far=%d"
              " raw2=%.1f raw3=%.1f raw4=%.1f raw5=%.1f"
-             " shr2=%.2f shr3=%.2f shr4=%.2f shr5=%.2f"
-             " bestd=%d bestshr=%d",
+             " shr2=%d shr3=%d shr4=%d shr5=%d"
+             " bestd=%d bestshr=%d charged=%d charge=%.1f",
              game.info.turn, player_name(pplayer), punit->id, boat_cost,
              deep_site_space_n[0], deep_site_space_n[1],
              deep_site_space_n[2], deep_site_space_n[3],
              deep_site_space_far,
              deep_site_space_best[0], deep_site_space_best[1],
              deep_site_space_best[2], deep_site_space_best[3],
-             deep_site_space_n[0] > 0
-             ? (double) deep_site_space_share[0] / deep_site_space_n[0] : 0.0,
-             deep_site_space_n[1] > 0
-             ? (double) deep_site_space_share[1] / deep_site_space_n[1] : 0.0,
-             deep_site_space_n[2] > 0
-             ? (double) deep_site_space_share[2] / deep_site_space_n[2] : 0.0,
-             deep_site_space_n[3] > 0
-             ? (double) deep_site_space_share[3] / deep_site_space_n[3] : 0.0,
-             deep_site_space_bestd, deep_site_space_bestshr);
+             deep_site_space_share[0], deep_site_space_share[1],
+             deep_site_space_share[2], deep_site_space_share[3],
+             deep_site_space_bestd, deep_site_space_bestshr,
+             deep_site_own_charged, deep_site_own_want);
   }
 
   /* One census line per SEARCH -- a few hundred a game, against the
