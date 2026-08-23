@@ -63,8 +63,14 @@ BASE_BUILD=$BASE_TREE/build/freeciv-server
 BASE_PIN=$ROOT/.imp-bin/base/freeciv-server
 ON=$here/tuning/improvable-on.ini
 CONFIG=$here/configs/isolated-150.conf
-# The user's Europe game, the turn the stall was reported from.
-CORPUS=${CORPUS:-$ROOT/play-0823-1226/saves/freeciv-T0201-Y01500-auto.sav.zst}
+# The user's Europe game, the turn the stall was reported from. It
+# lives in the MAIN checkout: the play-* directories are untracked, so a
+# worktree does not have them and $ROOT is the wrong place to look.
+MAIN=$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir)
+MAIN=$(dirname "$MAIN")
+CORPUS_REL=play-0823-1226/saves/freeciv-T0201-Y01500-auto.sav.zst
+CORPUS=${CORPUS:-$MAIN/$CORPUS_REL}
+[ -r "$CORPUS" ] || CORPUS=$ROOT/$CORPUS_REL
 
 MESON_OPTS="-Dclients= -Dfcmp= -Dtools= -Dnls=false -Daudio=none
             -Dreadline=false -Daimodules=classic,tex,baseline,deep"
