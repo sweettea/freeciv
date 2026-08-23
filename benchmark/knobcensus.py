@@ -456,6 +456,26 @@ MAP = {
         "is dec= idle-dominated, a venue statement rather "
         "than a dead knob. Needs trunk_source_gain > 0 (and "
         "trunk_road_gain > 0) for a corridor bid to exist at all."),
+    "trunk_upgrade_gate": (
+        "S3", "gate", "direct", [("deep-trunkup", "links>0")],
+        "Rail upgrade: deep_trunk_build() drops a link the moment every "
+        "tile of it carries a road, so a trunk fossilises at the tech "
+        "level it was built at (deeptrunk.c). Above this gate a WHOLE "
+        "link enters an UPGRADE phase and its gap becomes the tiles "
+        "below the best road the player could now lay -- railroad over "
+        "road in classic, derived from move_cost and "
+        "player_can_build_extra() rather than from a named extra. The "
+        "deep-trunkup line exists in BOTH settings because whole=, the "
+        "finished links, is counted before the gate: that is deliberate, "
+        "so the OFF arm publishes the denominator and whole=0 is read as "
+        "a venue statement rather than as a dead knob. links= is zero by "
+        "construction with the gate shut and is therefore the knob "
+        "itself; picked= is an assignment made on a tile that ALREADY "
+        "CARRIES A ROAD, the job that cannot exist below the gate. "
+        "links>0 with picked=0 is upgrades priced and outbid, a null. "
+        "Needs trunk_road_gain > 0 for a plan to exist at all, and "
+        "trunk_source_gain > 0 for a worker to be dispatched to a "
+        "corridor tile outside every city radius."),
 
     # ---------------- Stage 1: economy / horizon / CM ---------------
     "horizon_capacity_weight": (
