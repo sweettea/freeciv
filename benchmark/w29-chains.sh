@@ -43,7 +43,7 @@ set -uo pipefail
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$here/.." && pwd)
 
-BASE_SHA=6e2bc86cca                 # epic/w03-horizon-content, branch point
+BASE_SHA=9af8e85966                 # epic/w03-horizon-content, branch point
 BUILD=$ROOT/build/freeciv-server
 BASE_TREE=$ROOT/.w29-base/base-$BASE_SHA
 BASE_BUILD=$BASE_TREE/build/freeciv-server
