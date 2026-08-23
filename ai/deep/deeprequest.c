@@ -147,7 +147,7 @@ static struct city *deep_request_enemy_city(struct player *pplayer,
   players_iterate_alive(aplayer) {
     struct city *pcity;
 
-    if (aplayer == pplayer || !pplayers_at_war(pplayer, aplayer)) {
+    if (aplayer == pplayer) {
       continue;
     }
     pcity = city_list_find_name(aplayer->cities, name);
@@ -437,6 +437,17 @@ void deep_request_hear(struct player *pplayer, struct player *sender,
       deep_chat_reply(pplayer, sender, DEEP_CHAT_REPLY,
                      _("We have not seen a city called %s, nor met anybody"
                        " of that name."), arg);
+      return;
+    }
+    if (!pplayers_at_war(pplayer, city_owner(pcity))) {
+      /* We have SEEN it, so naming its owner back tells the ally
+       * nothing it could not have got from a scout of ours; and "we
+       * have not seen it" would have been a lie, which is the whole
+       * reason this branch is separate from the one above. */
+      deep_request_log(pplayer, sender, buf, "not-at-war", pcity->id, 0);
+      deep_chat_reply(pplayer, sender, DEEP_CHAT_REPLY,
+                      _("We are not at war with %s, who holds %s."),
+                      player_name(city_owner(pcity)), city_name_get(pcity));
       return;
     }
     deep_request_store(pplayer, kind, pcity->id, -1, sender);
