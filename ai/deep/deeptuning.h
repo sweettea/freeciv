@@ -3067,6 +3067,34 @@ struct deep_tuning {
    * the knob that re-levels the mean. Counter: deep-siteimprove. */
   int site_improvable_gate;
 
+  /* SITE-IMPROVABLE's second half, gated SEPARATELY (deepsite.c).
+   *
+   * Stock's food_starvation()/shield_starvation() ask two tiles what
+   * they yield TODAY and DROP the site when the answer is short, so a
+   * site five worker-turns of irrigation away from feeding itself is
+   * refused on the same terms as one no amount of work ever feeds. That
+   * is the other half of why the user's Carthago stalled at 23 cities:
+   * 36 starve drops a turn against room the user could see was
+   * colonisable.
+   *
+   * 0 (default) = the drop, exactly as before. != 0: the same two
+   * outputs over the same two tiles against the same two bars, except
+   * that each tile may also be offered as the tile a worker has
+   * finished with, at the ruleset's price in worker-turns. The cheapest
+   * combination that clears becomes a WAIT and the site is charged
+   * amortize(total, wait) -- the shape and the discounter the travel
+   * term already charges a walk with. Only a site no improvement ever
+   * feeds is still dropped.
+   *
+   * Its own gate rather than a second effect of site_improvable_gate
+   * because the two push OPPOSITE ways on site value -- the pricing
+   * half takes want off tiles, this one puts candidates back on the
+   * ladder -- and two effects under one switch cannot be read from one
+   * A/B (CLAUDE.md, "parallelise scheduling, not attribution"). Also a
+   * pure gate with no magnitude: the wait is the ruleset's activity
+   * time and the discount is amortize() at MORT 24. Counter:
+   * deep-siteimprove, starvepriced/starveturns/starvehard. */
+  int site_starve_price_gate;
 };
 
 void deep_tuning_init(void);

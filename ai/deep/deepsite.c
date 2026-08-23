@@ -126,12 +126,26 @@ static double deep_site_own_want = 0.0;
  * the as-is price it landed on -- the part of the mechanism that could
  * not exist before W29.
  *
- * Zero on every line with the gate at 0. */
+ * `starve` is the other half: candidates the starve gate would have
+ * dropped that were charged for the wait instead, the turns charged,
+ * and `hard` the ones no improvement chain ever feeds, which are still
+ * dropped. Zero on every line with the gate at 0. */
 static int deep_site_imp_tiles = 0;
 static int deep_site_imp_lifted = 0;
 static int deep_site_imp_cut = 0;
 static double deep_site_imp_gain = 0.0;
 static int deep_site_imp_chain = 0;
+static int deep_site_starve_priced = 0;
+static int deep_site_starve_turns = 0;
+static int deep_site_starve_hard = 0;
+
+/* Worker-turns until the LAST candidate filled stops starving, -1 when
+ * no chain of improvements ever feeds it (and -1 whenever the gate is
+ * shut, which is what makes the shut arm take the drop it always took).
+ * A file static for deep_site_last_share's reason: the evaluator scores
+ * one candidate at a time, and its caller reads this in the same call.
+ */
+static int deep_site_last_starve_wait = -1;
 
 /* What an existing city of ours will man, and when: its catchment
  * tiles ranked best-first, with the turn each one gets a citizen (0 if
@@ -724,6 +738,45 @@ static const struct deep_improve *deep_tile_improve(const struct player *pplayer
 }
 
 /**********************************************************************//**
+  Worker-turns until a two-tile pair out-produces 'need' of one output,
+  or -1 if it never does.
+
+  Each side offers exactly two options -- the tile as it stands (free,
+  now) and the tile after its best single improvement (its own
+  worker-turns) -- and the wait is the cheapest of the four combinations
+  that clears the bar. Two options a side is not an approximation of a
+  scheduling problem, it is the whole problem: `best` already IS the
+  argmax over every option that tile has, so no third combination can
+  clear a bar these four do not.
+
+  Returning 0 is a real answer and means "it does not actually starve":
+  stock's test picks its second tile by weighted SUM, and a site whose
+  best-sum tile is a mine and whose best-FOOD tile is a plain reads as
+  starving there while it eats perfectly well here.
+**************************************************************************/
+static int deep_starve_wait(int a_now, int a_best, int a_turns,
+                            int b_now, int b_best, int b_turns, int need)
+{
+  const int av[2] = { a_now, a_best }, at[2] = { 0, a_turns };
+  const int bv[2] = { b_now, b_best }, bt[2] = { 0, b_turns };
+  int best = -1, i, j;
+
+  for (i = 0; i < 2; i++) {
+    for (j = 0; j < 2; j++) {
+      if (av[i] + bv[j] > need) {
+        int t = MAX(at[i], bt[j]);
+
+        if (best < 0 || t < best) {
+          best = t;
+        }
+      }
+    }
+  }
+
+  return best;
+}
+
+/**********************************************************************//**
   Value of the workable catchment (excluding the city centre) as a
   stream of discounted citizen-turns: every tile earns its yield from
   the turn the citizen who works it arrives, and is discounted by
@@ -859,6 +912,7 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
   fc_assert_ret_val(center != NULL, NULL);
 
   deep_site_last_share = 0;
+  deep_site_last_starve_wait = -1;
   pplayer->government = adv->goal.govt.gov;
 
   /* Create a city result and set default values. */
@@ -1051,6 +1105,54 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
   } city_tile_iterate_index_end;
 
   deep_site_last_share = nshare;
+
+  /* SITE-IMPROVABLE: how long until this site stops starving.
+   *
+   * Asked of exactly what stock's food_starvation() and
+   * shield_starvation() ask of: the same two outputs, over the same two
+   * tiles (the centre and best_other, whichever tile that turned out to
+   * be), against the same two bars -- more than food_cost of food, more
+   * than zero shields. Nothing about WHICH tiles are consulted changes,
+   * so the only difference between the two arms is the one this epic is
+   * about: each tile may ALSO be offered as the tile a worker has
+   * finished with, at the ruleset's price in worker-turns for finishing
+   * it.
+   *
+   * Deliberately not re-picked as "the best FOOD tile", which would be
+   * a defensible second complaint about the same test (best_other is
+   * chosen by weighted SUM, and the tile that feeds a site is not
+   * always the tile that scores highest). Two changes cannot be read
+   * from one A/B; that one belongs to its own epic.
+   *
+   * -1 out of either output means no improvement ever clears that bar,
+   * and that is the hard drop the gate keeps. */
+  if (deep_tuning_get()->site_starve_price_gate > 0
+      && result->city_center.tdc != NULL
+      && result->best_other.tdc != NULL) {
+    const struct deep_improve *ci = deep_tile_improve(pplayer, result->tile,
+                                                      adv);
+    /* A best_other the city could not actually work (reserved, unseen,
+     * or already worked by somebody -- the tdc the fill loop scored -1)
+     * is offered no improvement: its yield is zero in the test above
+     * for a reason, and crediting work on it would be a promise about
+     * ground that is not ours to improve. */
+    bool workable = (result->best_other.tdc->sum >= 0);
+    const struct deep_improve *oi
+      = (workable ? deep_tile_improve(pplayer, result->best_other.tile, adv)
+                  : NULL);
+    int cf = result->city_center.tdc->food;
+    int cs = result->city_center.tdc->shield;
+    int bf = result->best_other.tdc->food;
+    int bs = result->best_other.tdc->shield;
+    int fw = deep_starve_wait(cf, cf + ci->food, ci->foodturns,
+                              bf, bf + (oi ? oi->food : 0),
+                              oi ? oi->foodturns : 0, game.info.food_cost);
+    int sw = deep_starve_wait(cs, cs + ci->shield, ci->shieldturns,
+                              bs, bs + (oi ? oi->shield : 0),
+                              oi ? oi->shieldturns : 0, 0);
+
+    deep_site_last_starve_wait = (fw < 0 || sw < 0) ? -1 : MAX(fw, sw);
+  }
 
   /* We need a city center. */
   if (result->city_center.tdc == NULL) {
@@ -1729,9 +1831,30 @@ static struct cityresult *deep_city_desirability(struct ai_type *ait,
   /*** Alright: Now consider building a new city ***/
 
   if (food_starvation(cr) || shield_starvation(cr)) {
-    deep_site_lad_starve++;
-    cityresult_destroy(cr);
-    return NULL;
+    /* SITE-IMPROVABLE: a site that cannot feed itself TODAY is not the
+     * same thing as a site that cannot be fed. The gate turns the drop
+     * into a price -- amortize(total, worker-turns), the same shape and
+     * the same discounter the travel term charges a walk with, because
+     * a wait for a worker is a delay exactly as a walk is a delay --
+     * and keeps the drop only where no chain of improvements ever
+     * clears the bar.
+     *
+     * Charged on the WHOLE site value rather than on the food term
+     * alone: a city that cannot grow until its first irrigation is
+     * finished has its entire growth stream pushed back by that wait,
+     * which is what sliding `total` by it says. */
+    int wait = (deep_tuning_get()->site_starve_price_gate > 0
+                ? deep_site_last_starve_wait : -1);
+
+    if (wait < 0) {
+      deep_site_lad_starve++;
+      deep_site_starve_hard++;
+      cityresult_destroy(cr);
+      return NULL;
+    }
+    cr->total = amortize(cr->total, wait);
+    deep_site_starve_priced++;
+    deep_site_starve_turns += wait;
   }
 
   {
@@ -1908,6 +2031,9 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
   deep_site_imp_cut = 0;
   deep_site_imp_gain = 0.0;
   deep_site_imp_chain = 0;
+  deep_site_starve_priced = 0;
+  deep_site_starve_turns = 0;
+  deep_site_starve_hard = 0;
 
   pfm = pf_map_new(parameter);
   pf_map_move_costs_iterate(pfm, ptile, move_cost, FALSE) {
@@ -2198,15 +2324,22 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
    * responsible for, which is a question about the ruleset as much as
    * about the map.
    *
-   * Emitted only when something fired, so a search under the shut gate
-   * writes nothing. */
-  if (deep_site_imp_tiles > 0) {
+   * `starvepriced` and `starveturns` are candidates the starve gate
+   * would have dropped and the wait they were charged instead;
+   * `starvehard` is the residue that no chain feeds, which is still
+   * dropped and is also counted in the ladder's `starve`. Emitted only
+   * when something fired, so a search under the shut gate writes
+   * nothing. */
+  if (deep_site_imp_tiles > 0 || deep_site_starve_priced > 0) {
     log_base(deep_metric_log_level(),
              "deep-siteimprove turn=%d player=\"%s\" unit=%d tiles=%d"
-             " lifted=%d cut=%d gain=%.1f chain=%d",
+             " lifted=%d cut=%d gain=%.1f chain=%d starvepriced=%d"
+             " starveturns=%d starvehard=%d",
              game.info.turn, player_name(pplayer), punit->id,
              deep_site_imp_tiles, deep_site_imp_lifted, deep_site_imp_cut,
-             deep_site_imp_gain, deep_site_imp_chain);
+             deep_site_imp_gain, deep_site_imp_chain,
+             deep_site_starve_priced, deep_site_starve_turns,
+             deep_site_starve_hard);
   }
 
   /* Section 3.4's number: candidates taxed for a city we are already
