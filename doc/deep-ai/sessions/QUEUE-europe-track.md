@@ -51,3 +51,12 @@
   (d) engineers parked offshore for 20 turns need the escort thread.
   Check the ruleset's reclaim/adjacency requirements before designing.
   BLOCKED BEHIND: archipelago/late-game venue + capability census.
+- **STRAITS scenario world** (2026-08-23): naval bridges / ocean fill /
+  canal chokepoints need specific geography that map generators will
+  not reliably produce — hand-craft a small scenario map (europe.sav
+  precedent): two rich continents, one narrow channel, a shallow shelf
+  worth filling. Belongs to bluewater or a sibling design epic, NOT
+  the mechanical grower. The endgame family (nuke-era snapshots from
+  the air grow runs, second selection rule) and the pollution venue
+  (the air worlds ARE industrial economies at snapshot) are already
+  covered without new growth.
