@@ -311,6 +311,11 @@ struct deep_plr {
    * silently instead of announcing every relationship deep already
    * had. */
   signed char chat_ds_seen[MAX_NUM_PLAYER_SLOTS];
+  /* Threat warnings this player DECLINED to send because a
+   * lower-numbered allied deep player, seeing the same units, is the
+   * designated warner for that (city, threat). The taste counter for
+   * the Europe game's nine-messages-where-one-would-do. */
+  int chat_warn_yielded;
   /* CHATTY slice 2 (deeprequest.c): everything deep needs to remember
    * about what it has been ASKED. The live requests with the turn each
    * stops counting on, the per-ally tally of requests taken this turn

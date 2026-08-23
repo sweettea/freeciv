@@ -21,6 +21,10 @@
 #                                       #   all   all four + both
 #                                       #         refusals (the
 #                                       #         transcript cell)
+#   ./benchmark/chatty2.sh warner       # FOUR deep players on one team:
+#                                       # one threat must produce ONE
+#                                       # warning and a nonzero yield
+#                                       # counter on the others
 #   ./benchmark/chatty2.sh report       # the triples and the assertions
 #
 # Machine budget: ports 7600-7649, jobs <= 2, this worktree's own
@@ -350,6 +354,60 @@ smoke)
     run_game "$d" "$port"
     port=$((port + 1))
   done
+  ;;
+
+warner)
+  # The Europe defect's own shape, reproduced small: FOUR deep players
+  # on one team, so a threat to any one of them is visible to three
+  # possible warners at once. The two-deep venue every other cell uses
+  # cannot show this at all -- deep_chat_ally_threats() skips the city's
+  # own owner, so with two allies there is only ever one candidate.
+  OUT=$ROOT/benchmark/results/chatty2-warner
+  pin_server warner
+  export FREECIV_DATA_PATH="$ROOT/data${FREECIV_DATA_PATH:+:$FREECIV_DATA_PATH}"
+  export FREECIV_DEEP_TUNING=$ROOT/benchmark/tuning/chatty2-on.ini
+  port=7647
+  for seed in $(grep -E '^[0-9]+$' benchmark/seeds/train.txt \
+                | head -n "$SMOKE_SEEDS"); do
+    d=$OUT/seed-$seed
+    if [ ! -f "$d/DONE" ]; then
+      rm -rf "$d"; mkdir -p "$d/saves"
+      venue_lines "$seed" "$SMOKE_END" \
+        | sed -e 's/^create P3 classic$/create P3 deep/' \
+              -e 's/^create P4 classic$/create P4 deep/' \
+              -e 's/^team P3 "Team 2"$/team P3 "Team 1"/' \
+              -e 's/^team P4 "Team 3"$/team P4 "Team 1"/' \
+        > "$d/commands.serv"
+      sha256sum "$SERVER" > "$d/key.txt"
+    fi
+    run_game "$d" "$port"
+    port=$((port + 1))
+  done
+
+  echo "=== assertion: one warning per (ally city, threat), not four ==="
+  fail=0
+  for d in "$OUT"/seed-*; do
+    s=$(basename "$d")
+    # Every threat line names the city and the threatening player; the
+    # subject is that pair, and the pair must be spoken about ONCE
+    # across the whole alliance rather than once per member.
+    dup=$(grep -h 'deep-chat .*class=1 ' "$d/game.log" 2>/dev/null \
+          | sed -E 's/.*text="[^ ]* \(AI\)\* Enemy force approaching your city ([^:]*):.*of ([^,]*), .*/\1|\2/' \
+          | sort | uniq -c | awk '$1 > 1' | head -5)
+    warn=$(grep -hc 'deep-chat .*class=1 ' "$d/game.log" 2>/dev/null || true)
+    yield=$(grep -h 'deep-warner ' "$d/game.log" 2>/dev/null | wc -l)
+    echo "$s: warnings=$warn yields=$yield"
+    if [ -n "$dup" ]; then
+      echo "$s: DUPLICATE SUBJECTS still emitted:"; echo "$dup"; fail=1
+    else
+      echo "$s: no (city, threat) subject warned about twice"
+    fi
+    [ "$yield" -gt 0 ] || { echo "$s: NO yields -- election never bound"; }
+  done
+  echo "=== who yielded to whom (last 10) ==="
+  grep -h 'deep-warner ' "$OUT"/seed-*/game.log 2>/dev/null \
+    | sed -E 's/^3: //' | tail -10 || true
+  [ "$fail" -eq 0 ] || { echo "STOP: election did not bind." >&2; exit 1; }
   ;;
 
 report)
