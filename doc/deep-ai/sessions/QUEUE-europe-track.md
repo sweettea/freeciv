@@ -26,3 +26,15 @@
 - **NAVAL-FOUNDING for Europe** (same debrief): Carthago evaluated
   boat=0 sites all game facing Sicily/Sardinia; site_naval_gate=0 in
   derby-7. One-line ini experiment next game; weights already tuned.
+- **CAPITAL-STAKE defence** (user live-play 2026-08-23: Osmanli lost
+  its capital T~123, civil war split 31 cities -> 16, "permanently
+  fucked"): the defence ledger priced the capital like any city
+  (danger=7233 urgency=67 seen, no palace term). Design: a capital
+  defence stake = f(empire size x civil-war expectation) feeding the
+  existing danger/urgency machinery (W11 seams), plus possibly a
+  palace-relocation want when the capital is indefensible. The
+  employment probe's disposition census (garrison columns) is the
+  instrument; the user's T110-T125 game is the corpus. Gate + derived
+  stake, no invented constants. NEXT WAVE, high rank - this is a
+  score-track epic (civil war is catastrophic on any venue), not just
+  flavour.
