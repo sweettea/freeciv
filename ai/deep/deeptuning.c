@@ -600,7 +600,7 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(techgoal_deep) \
   TUNE_DOUBLE(techgoal_distance_power) \
   TUNE_INT(chatty_gate) \
-  TUNE_INT(chatty_max_per_turn)
+  TUNE_INT(chatty_max_per_turn) \
   TUNE_INT(founder_tier_gate) \
   TUNE_INT(founder_run_hold)
 
