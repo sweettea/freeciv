@@ -1497,6 +1497,56 @@ static void dpai_player_chat_msg(struct player *pplayer,
   deep_tuning_scope_restore(deep_scope);
 }
 
+/**********************************************************************//**
+  The AI console, `aicmd <player> <command>` (server/stdinhand.c:5918,
+  ALLOW_ADMIN). Deep implements exactly one verb:
+
+    aicmd <deep player> chat <sender> <the line>
+
+  and it exists so a benchmark game can exercise the inbound protocol
+  at all. A benchmark game has NO CLIENT CONNECTED, so no chat packet
+  can ever arrive; without this the four commands could be reasoned
+  about and never run.
+
+  Say plainly what is and is not proved through it. The line goes into
+  deep_request_hear() unmodified, so the parse, the alliance test, the
+  city grounding, the rate cap, the reply and all three prices are the
+  real ones -- <sender> is looked up as a real player and the alliance
+  test is against the real diplomatic state, so "allies only" is
+  genuinely exercised, refusal included. What is NOT the real one is
+  the ATTRIBUTION: over a socket the sender is the connection's own
+  player and cannot be chosen, whereas here the operator names it. That
+  is why the verb is behind an ADMIN-only server command and not behind
+  anything a player can reach.
+**************************************************************************/
+static void dpai_player_console(struct player *pplayer, const char *cmd)
+{
+  const struct deep_tuning *deep_scope;
+  char buf[MAX_LEN_MSG], *rest;
+  struct player *sender;
+
+  if (cmd == NULL || 0 != fc_strncasecmp(cmd, "chat ", 5)) {
+    log_normal("deep aicmd: only \"chat <sender> <line>\" is understood");
+    return;
+  }
+  sz_strlcpy(buf, cmd + 5);
+  rest = strchr(buf, ' ');
+  if (rest == NULL) {
+    log_normal("deep aicmd: \"chat\" wants a sender and a line");
+    return;
+  }
+  *rest++ = '\0';
+  sender = player_by_name(buf);
+  if (sender == NULL) {
+    log_normal("deep aicmd: no player named \"%s\"", buf);
+    return;
+  }
+
+  deep_scope = deep_tuning_scope_set(pplayer);
+  deep_request_hear(pplayer, sender, rest);
+  deep_tuning_scope_restore(deep_scope);
+}
+
 static void dpai_sanity_check(struct player *pplayer)
 {
   struct ai_type *deftype = deep_ai_get_self();
@@ -1630,6 +1680,7 @@ bool fc_ai_deep_setup(struct ai_type *ai)
    * the ordinary delivery paths to walk. The parser behind it returns
    * on its first comparison while chatty_inbound_gate is 0. */
   ai->funcs.player_chat_msg = dpai_player_chat_msg;
+  ai->funcs.player_console = dpai_player_console;
 
   return TRUE;
 }
