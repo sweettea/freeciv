@@ -1083,6 +1083,46 @@ struct deep_tuning {
    * PLACEHOLDER: nothing measures what a point of standing fear is
    * worth in move fragments, and the knob owes a tuning pass. */
   double trunk_risk_weight;
+  /* W28: may a corridor task JOIN a tile one of our own workers is
+   * already building the same road on?
+   *
+   * deep_trunk_source_task() skips every occupied corridor tile
+   * outright (deepsettler.c), and the funnel charged 28.2 dropped
+   * assignments a game -- 19.0% of all drops, the second-largest cause
+   * -- to exactly that skip (STATUS 2026-08-22, corridor-150). The
+   * advisor's own tile auction has valued joining since W28's first
+   * half; this is the one remaining site that refuses it, and it is the
+   * site the LONG roads go through, because a corridor tile between two
+   * distant cities is never inside a city radius and so is never
+   * offered to the advisor at all.
+   *
+   * Above the gate an occupied tile is not skipped but PRICED as a
+   * join, by the same marginal arithmetic the advisor uses: the
+   * completion turns this worker's activity rate would shave off
+   * total_activity()'s shared progress, worth the difference between
+   * amortizing the corridor want over the joined completion and over
+   * the unjoined one, and worth nothing at all unless a WHOLE turn is
+   * saved. Nothing else changes: the bid still has to beat the
+   * advisor's champion, the keepable floor and every rival corridor
+   * tile on the same scale.
+   *
+   * That marginal test is what makes this demand-driven rather than
+   * piling. A join is worth something only where the remaining work is
+   * long enough for another rate to shorten it and the want is large
+   * enough for the shortening to outbid real work elsewhere, which on a
+   * corridor is the last tiles of a link -- deep_trunk_price() carries
+   * amortize(1.0, gap), so a link's whole worth arrives when its gap
+   * closes. It is also self-limiting: each further joiner shaves fewer
+   * turns, and the whole-turn rule refuses the one that would shave
+   * none. No cap is needed and none is invented.
+   *
+   * Gate rather than magnitude: the source either prices occupied tiles
+   * or does not, and the price itself is the advisor's own formula with
+   * nothing free in it. 0 is today's skip exactly -- the join branch is
+   * never entered, the counters stay zero, and the auction is the
+   * auction it was. Needs trunk_source_gain > 0 (and trunk_road_gain >
+   * 0) for a corridor bid to exist at all. */
+  int trunk_stack_gate;
 
   /* Ruleset-upkeep awareness (2026-07-28 civ2civ3 analysis: deep
    * bankrupted itself head-to-head, gold ratio 0.13-0.55 vs stock).

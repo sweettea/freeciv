@@ -1789,6 +1789,79 @@ static adv_want deep_worker_travel_amortized(adv_want gain, int arrival)
 }
 
 /**********************************************************************//**
+  W28: how many turns until the worksite on 'ptile' finishes if this
+  worker joins it, and (through 'without_out') how many if it does not.
+  Returns -1 when joining buys nothing, which is the whole cap on
+  stacking and is structural rather than tuned.
+
+  The rule being exploited is total_activity() (server/unittools.c): it
+  sums activity_count across every unit on the tile performing the SAME
+  activity on the SAME target, so committed rates add and progress
+  already made is shared. The three refusals, in the order they bind:
+
+    - nothing left to do, no rate of our own, or nobody actually working
+      here (a worker standing on the tile doing something else commits
+      no rate to this job, and total_activity() would not credit it);
+    - the job finishes before we could arrive, so our rate never
+      applies;
+    - the join saves no WHOLE turn. Worker-turns are conserved and only
+      delay is bought, so a fractional saving spends a worker to buy
+      nothing. This is also what stops a pile forming: each further
+      joiner shortens the job less, and the first one that shortens it
+      by less than a turn is refused.
+
+  Rates are counted over every unit on the tile, not only our own,
+  because that is exactly whose progress total_activity() sums; in
+  practice only an ally can be there.
+**************************************************************************/
+static int deep_trunk_join_turns(const struct unit *punit,
+                                 struct tile *ptile,
+                                 enum unit_activity activity,
+                                 struct extra_type *target,
+                                 int arrival, int *without_out,
+                                 enum deep_trunk_stack_stage *why)
+{
+  bool tgt_matters = activity_requires_target(activity);
+  int points = tile_activity_time(activity, ptile, target);
+  int remaining = points - total_activity(ptile, activity, target);
+  int my_rate = get_activity_rate(punit);
+  int join_rate = 0;
+  int turns_without, at_arrival, turns_joined;
+
+  unit_list_iterate(ptile->units, aunit) {
+    if (aunit->id != punit->id
+        && aunit->activity == activity
+        && (!tgt_matters || aunit->activity_target == target)) {
+      join_rate += get_activity_rate(aunit);
+    }
+  } unit_list_iterate_end;
+
+  if (points <= 0 || remaining <= 0 || my_rate <= 0 || join_rate <= 0) {
+    *why = DEEP_TRUNK_STK_DEC_IDLE;
+
+    return -1;
+  }
+
+  turns_without = (remaining - 1) / join_rate + 1;
+  at_arrival = remaining - join_rate * arrival;
+  if (at_arrival <= 0) {
+    *why = DEEP_TRUNK_STK_DEC_LATE;
+
+    return -1;
+  }
+  turns_joined = arrival + (at_arrival - 1) / (join_rate + my_rate) + 1;
+  if (turns_joined >= turns_without) {
+    *why = DEEP_TRUNK_STK_DEC_PART;
+
+    return -1;
+  }
+
+  *without_out = turns_without;
+
+  return turns_joined;
+}
+
+/**********************************************************************//**
   W12 slice 2: source worker tasks from the trunk corridor tiles the
   advisor's enumeration ceiling hides.
 
@@ -1871,6 +1944,9 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
   enum unit_activity pick_act = ACTIVITY_LAST;
   adv_want pick_value = best_impr;
   int pick_dist = 0;
+  /* W28: whole turns the winning bid was priced to shave off a worksite
+   * already under way, or 0 when the winner was an unoccupied tile. */
+  int pick_saved = 0;
   /* The same auction run with W12 slice 4's trade dividend removed --
    * the counterfactual champion, so the census can say the dividend
    * FLIPPED this assignment rather than merely that it also priced the
@@ -1954,7 +2030,13 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
     /* Same guard as deep_idle_scan(): the enroute reservation lives in
      * the advisors' opaque workermap, so the on-tile check here plus
      * auto_worker_setup_work()'s displacement is what keeps a pool of
-     * workers from converging on one corridor tile. */
+     * workers from converging on one corridor tile.
+     *
+     * W28: behind trunk_stack_gate the tile is not skipped but PRICED
+     * as a join instead, and the marginal test below is what keeps the
+     * pool from converging -- a joiner that shortens nothing is worth
+     * nothing. `taken` still means "occupied"; what changes is what
+     * happens next. */
     unit_list_iterate(ptile->units, aunit) {
       if (unit_owner(aunit) == pplayer && aunit->id != punit->id
           && unit_has_type_flag(aunit, UTYF_WORKERS)) {
@@ -1963,10 +2045,13 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
       }
     } unit_list_iterate_end;
     if (taken) {
-      if (watched) {
-        prev_stage = DEEP_FUNNEL_ST_TAKEN;
+      deep_trunk_stack_note(pplayer, DEEP_TRUNK_STK_SEEN, 0);
+      if (tune->trunk_stack_gate <= 0) {
+        if (watched) {
+          prev_stage = DEEP_FUNNEL_ST_TAKEN;
+        }
+        continue;
       }
-      continue;
     }
     if (!pf_map_position(pfm, ptile, &pos)) {
       if (watched) {
@@ -1982,8 +2067,12 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
     aw_extra_action_iterate(act) {
       enum unit_activity activity = action_id_get_activity(act);
       struct extra_type *target;
-      adv_want want, value;
+      adv_want want, value, nodiv_at;
       int arrival, delay;
+      /* W28, meaningful only while `taken`: the completion turn this
+       * worker's rate would buy, and the one the tile would reach
+       * without it. */
+      int joined = -1, without = 0;
 
       if (activity_to_extra_cause(activity) != EC_ROAD) {
         continue;
@@ -2023,7 +2112,36 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
       if (pos.moves_left == 0) {
         delay++;
       }
-      value = amortize(want, delay);
+
+      if (taken) {
+        /* W28: the tile is already being worked, so what this worker
+         * can sell is not the road but the turns it brings the road
+         * forward by. Priced as the difference between amortizing the
+         * corridor want over the joined completion and over the one
+         * that would happen anyway -- the marginal present value, the
+         * same shape consider_worker_action() uses for the advisor's
+         * own joins (autoworkers.c) -- and refused outright when no
+         * whole turn is bought. */
+        enum deep_trunk_stack_stage why = DEEP_TRUNK_STK_DEC_IDLE;
+
+        joined = deep_trunk_join_turns(punit, ptile, activity, target,
+                                       arrival, &without, &why);
+        if (joined < 0) {
+          deep_trunk_stack_note(pplayer, why, 0);
+          if (watched) {
+            /* Refused for being occupied after all, so the funnel keeps
+             * charging it to `taken` and the drop table stays
+             * comparable between the two settings of the gate. A later
+             * action that does price a join raises the stage again. */
+            prev_stage = DEEP_FUNNEL_ST_TAKEN;
+          }
+          continue;
+        }
+        deep_trunk_stack_note(pplayer, DEEP_TRUNK_STK_OFFER, 0);
+        value = amortize(want, joined) - amortize(want, without);
+      } else {
+        value = amortize(want, delay);
+      }
 
       if (ptile == held_tile) {
         /* The walk already spent on this tile, priced: a rival has to
@@ -2040,8 +2158,15 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
         rival_top = value;
       }
 
-      if (nodiv > 0.0 && amortize(nodiv, delay) > nodiv_value) {
-        nodiv_value = amortize(nodiv, delay);
+      /* The dividend-free counterfactual, priced the same way this
+       * candidate was: marginally for a join, over the completion for a
+       * claim. With `taken` false this is the single amortize() it has
+       * always been. */
+      nodiv_at = (taken
+                  ? amortize(nodiv, joined) - amortize(nodiv, without)
+                  : amortize(nodiv, delay));
+      if (nodiv > 0.0 && nodiv_at > nodiv_value) {
+        nodiv_value = nodiv_at;
         nodiv_tile = ptile;
       }
 
@@ -2054,6 +2179,7 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
         pick_target = target;
         pick_act = activity;
         pick_dist = real_map_distance(unit_tile(punit), ptile);
+        pick_saved = (taken ? without - joined : 0);
       }
     } aw_extra_action_iterate_end;
   }
@@ -2106,6 +2232,9 @@ static adv_want deep_trunk_source_task(const struct civ_map *nmap,
   *best_target = pick_target;
   *best_tile = pick_tile;
 
+  if (pick_saved > 0) {
+    deep_trunk_stack_note(pplayer, DEEP_TRUNK_STK_PICK, pick_saved);
+  }
   deep_trunk_source_pick(pplayer, pick_tile, pick_dist,
                          nodiv_tile != pick_tile);
   deep_funnel_close(pplayer, punit, pick_tile, prev_stage);

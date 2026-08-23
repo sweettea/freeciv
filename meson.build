@@ -360,6 +360,7 @@ else
       'ai/deep/deeprates.c',
       'ai/deep/deepsite.c',
       'ai/deep/deepspy.c',
+      'ai/deep/deepstack.c',
       'ai/deep/deepstance.c',
       'ai/deep/deeptech.c',
       'ai/deep/deeptechcensus.c',

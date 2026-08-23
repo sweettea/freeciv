@@ -424,6 +424,25 @@ MAP = {
         "boat-shadow term -- that one is zero until some at-war player "
         "floats a transport, which is the term's own precondition and "
         "not a miss."),
+    "trunk_stack_gate": (
+        "S3", "gate", "direct", [("deep-trunkstack", "offered>0")],
+        "W28: deep_trunk_source_task() skips an occupied corridor tile "
+        "outright below this gate and prices it as a JOIN above it "
+        "(deepsettler.c). The deep-trunkstack line exists in BOTH "
+        "settings because seen=, the occupied tiles met at all, is "
+        "counted before the gate -- that is deliberate, so the OFF arm "
+        "publishes the denominator the ON arm's rate is taken against. "
+        "offered= is the count of joins actually priced and is zero by "
+        "construction with the gate shut, so it and nothing else is the "
+        "knob. declined= is joins refused, split by dec=idle:late:part "
+        "so a null can be read: only the third is the marginal test "
+        "turning down a real opportunity, while the first says nobody "
+        "was working the tile at all and today's skip was right. "
+        "picked=/saved= are the joins assigned and the whole turns they "
+        "were priced to shave. seen>0 with offered=0 and the gate OPEN "
+        "is dec= idle-dominated, a venue statement rather "
+        "than a dead knob. Needs trunk_source_gain > 0 (and "
+        "trunk_road_gain > 0) for a corridor bid to exist at all."),
 
     # ---------------- Stage 1: economy / horizon / CM ---------------
     "horizon_capacity_weight": (
