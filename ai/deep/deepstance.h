@@ -85,5 +85,10 @@ double deep_stance_assault_mult(const struct player *pplayer);
  * military want, and it is where an early-war and an early-peace
  * personality first differ. */
 double deep_stance_floor_mult(const struct player *pplayer);
+/* Gate 7 (S-POX) is the odd one out and has to be: it reads ONE axis
+ * against identity, as expand^-gain, because empire shape has no
+ * opposing axis to form a ratio with. It scales the own-crowding PRICE,
+ * so below 1.0 means "pack tighter". */
+double deep_stance_pox_mult(const struct player *pplayer);
 
 #endif /* FC__DEEPSTANCE_H */

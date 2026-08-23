@@ -1906,6 +1906,16 @@ struct deep_tuning {
    * benchmark baseline is a uniform floor; a pinned or trait-seeded
    * stance turns it into an early-war / early-peace personality. */
   double stance_floor_gain;
+  /* Gate 7 (S-POX): exponent on the SHAPE axis scaling the own-empire
+   * crowding price, as expand ^ -gain. The only gate that reads one
+   * axis against identity rather than a ratio of two, because empire
+   * shape has no opposing axis. 1.0 is the placeholder for the same
+   * reason the other six carry it -- it is the exponent that leaves
+   * the axis speaking at its own scale -- and 0.0 disables the
+   * coupling while leaving the price flat, which is the arm an A/B
+   * needs. Identity at an identity axis whatever the gain, so every
+   * byte-identity proof in the layer still holds. PLACEHOLDER. */
+  double stance_pox_gain;
   /* SOURCE 2 (W34 E34.4, A.4 step 3): how far the POSITION and the
    * RESEARCH LEAN may move an axis off the trait prior, in index units
    * -- the same units stance_trait_span then scales, so the clamp that

@@ -239,6 +239,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .stance_expand_gain = 1.0,            /* PLACEHOLDER, untuned */
   .stance_assault_gain = 1.0,           /* PLACEHOLDER, untuned */
   .stance_floor_gain = 1.0,             /* PLACEHOLDER, untuned */
+  .stance_pox_gain = 1.0,               /* PLACEHOLDER, untuned */
   .stance_position_gain = 0.5,          /* PLACEHOLDER, untuned */
   .stance_techlean_gain = 0.5,          /* PLACEHOLDER, untuned */
   .stance_pressure_ref = 4.0,           /* PLACEHOLDER, untuned */
@@ -547,6 +548,7 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(stance_expand_gain) \
   TUNE_DOUBLE(stance_assault_gain) \
   TUNE_DOUBLE(stance_floor_gain) \
+  TUNE_DOUBLE(stance_pox_gain) \
   TUNE_DOUBLE(stance_position_gain) \
   TUNE_DOUBLE(stance_techlean_gain) \
   TUNE_DOUBLE(stance_pressure_ref) \

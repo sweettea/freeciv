@@ -58,8 +58,10 @@
 #include "daiplayer.h"
 #include "daisettler.h"
 
+#include "deepai.h"
 #include "deepexpand.h"
 #include "deepsettler.h"
+#include "deepstance.h"
 #include "deeptuning.h"
 
 #include "deepdefence.h"
@@ -893,11 +895,22 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
        * we already hold could work too, whoever gets there first. No
        * new geometry -- deep_city_covers() is the same radius test the
        * claim schedule is built on. */
-      double charge = nshare * deep_tuning_get()->site_own_overlap;
+      /* And the PERSONALITY (gate 7): what this price is worth to THIS
+       * player. An expansionist forgives crowding and settles at the
+       * legal floor; a builder pays for elbow room. One multiplier on
+       * a price that already exists, reading the shape axis the stance
+       * layer seeds from the same two traits the poles are named
+       * after -- no second personality model, and exactly 1.0 for a
+       * player whose traits leave the axis at identity. */
+      double mult = deep_stance_pox_mult(pplayer);
+      double charge = nshare * deep_tuning_get()->site_own_overlap * mult;
 
       wspecials -= charge;
       deep_site_own_charged++;
       deep_site_own_want += charge;
+      if (mult != 1.0) {
+        deep_plr_data(pplayer)->stance_pox_gated++;
+      }
     }
     if (deep_tuning_get()->site_choke_bonus > 0.0
         && deep_site_is_choke(&(wld.map), result->tile)) {

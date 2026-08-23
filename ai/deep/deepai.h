@@ -92,6 +92,11 @@ struct deep_plr {
      floor injections actually scaled by a non-identity stance. Same
      contract as the other five. */
   int stance_floor_gated;
+  /* And for gate 7 (S-POX): candidate sites whose own-crowding price
+     was actually scaled by a non-identity SHAPE axis. Same contract as
+     the other six -- zero means the personality never reached the
+     price, whatever the axes on the stance line say. */
+  int stance_pox_gated;
   /* And for SOURCE 2 (W34 E34.4): turns on which position or research
      lean actually moved an axis off the trait prior it modulates.
      Same contract as the gate counters -- zero at stance_source 0 and

@@ -613,7 +613,7 @@ void deep_stance_log(struct player *pplayer)
            " cult=%.3f expand=%.3f src=%s mode=%s preset=%s identity=%d"
            " trait_exp=%d trait_bld=%d trait_trd=%d trait_agg=%d"
            " fear_gate=%d op_gate=%d growth_gate=%d expand_gate=%d"
-           " assault_gate=%d floor_gate=%d"
+           " assault_gate=%d floor_gate=%d pox_gate=%d"
            " land=%.3f war=%.3f threat=%.3f press=%.2f lean=%+.3f"
            " tech_mil=%d tech_econ=%d pos_moved=%d",
            game.info.turn, player_name(pplayer),
@@ -642,6 +642,7 @@ void deep_stance_log(struct player *pplayer)
            plr_data->stance_expand_gated,
            plr_data->stance_assault_gated,
            plr_data->stance_floor_gated,
+           plr_data->stance_pox_gated,
            /* Source 2's own census: the position and tech signals as
             * read, and the cumulative count of turns on which they
             * actually moved an axis off the trait prior. Zero on every
@@ -761,6 +762,47 @@ double deep_stance_floor_mult(const struct player *pplayer)
 {
   return deep_stance_mil_mult(pplayer,
                               deep_tuning_get()->stance_floor_gain);
+}
+
+/**********************************************************************//**
+  Gate 7 (S-POX): the multiplier on the OWN-EMPIRE CROWDING price -- the
+  want a candidate site is charged per catchment tile one of our
+  existing cities could work too.
+
+  This is the axis the other six do not have: every one of them reads a
+  RATIO of two axes, because econ and mil bid for one shield budget and
+  only their ratio is meaningful. Empire shape has no such partner. It
+  is read against identity directly, as expand ^ -gain:
+
+    expansionist (expand > 1)  ->  multiplier < 1, crowding forgiven,
+                                   cities packed at the legal floor
+    builder      (expand < 1)  ->  multiplier > 1, crowding punished,
+                                   fewer cities with room to grow
+
+  Exactly 1.0 at an identity axis whatever the gain -- pow(1.0, y) is
+  1.0 for every finite y in IEEE 754 -- so the byte-identity gate holds
+  by the same argument the other six use, and a zero gain disables the
+  coupling without touching the axis, which is the per-gate off-switch
+  an A/B needs.
+
+  It scales a PRICE rather than a want, so the direction reads
+  backwards from gates 2-4 at first glance: a personality that wants
+  more cities is served by making each one cheaper to place, not by
+  raising anything.
+**************************************************************************/
+double deep_stance_pox_mult(const struct player *pplayer)
+{
+  const struct deep_plr *plr_data = deep_plr_data(pplayer);
+  double gain = deep_tuning_get()->stance_pox_gain;
+
+  if (plr_data == NULL) {
+    return 1.0;
+  }
+  if (plr_data->stance.expand <= 0.0 || gain == 0.0) {
+    return 1.0;
+  }
+
+  return pow(plr_data->stance.expand, -gain);
 }
 
 /**********************************************************************//**

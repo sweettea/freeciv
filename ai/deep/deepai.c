@@ -234,6 +234,8 @@ static void dpai_player_save(struct player *pplayer,
                      "player%d.deep_state.stance_assault_gated", plrno);
   secfile_insert_int(file, plr_data->stance_floor_gated,
                      "player%d.deep_state.stance_floor_gated", plrno);
+  secfile_insert_int(file, plr_data->stance_pox_gated,
+                     "player%d.deep_state.stance_pox_gated", plrno);
   secfile_insert_int(file, plr_data->stance_pos_moved,
                      "player%d.deep_state.stance_pos_moved", plrno);
 
@@ -364,6 +366,10 @@ static void dpai_player_load(struct player *pplayer,
   plr_data->stance_floor_gated
     = secfile_lookup_int_default(file, 0,
                                  "player%d.deep_state.stance_floor_gated",
+                                 plrno);
+  plr_data->stance_pox_gated
+    = secfile_lookup_int_default(file, 0,
+                                 "player%d.deep_state.stance_pox_gated",
                                  plrno);
   plr_data->stance_pos_moved
     = secfile_lookup_int_default(file, 0,
