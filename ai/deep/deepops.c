@@ -57,6 +57,7 @@
 
 #include "deepai.h"
 #include "deepchat.h"
+#include "deeprequest.h"
 #include "deepcombat.h"
 #include "deepdefence.h"
 #include "deepdiplomacy.h"
@@ -2997,9 +2998,15 @@ static struct city *deep_op_pick_target(struct ai_type *ait,
        * opportunist posture and is the compiled default, and the
        * multiply is skipped rather than done so the off arm keeps the
        * previous ordering byte-identically. */
-      if (partner) {
-        score *= 1.0 - deep_tuning_get()->trade_partner_target_discount;
-        deep_plr_data(pplayer)->trade_partner_spared++;
+      /* CHATTY slice 2: an ally asked us to hit this city, or this
+       * city's owner. Third multiplier on the same score and the same
+       * shape as the two above -- skipped rather than done when the
+       * gate is shut, so the off arm keeps the previous ordering
+       * byte-identically. It re-orders candidates deep had already
+       * gathered for itself; it cannot add one, because the candidate
+       * loop's map_is_known() test ran before this line. */
+      if (deep_tuning_get()->chatty_inbound_gate > 0) {
+        score *= deep_request_attack_mult(pplayer, acity);
       }
       if (score > best_score) {
         best_score = score;
@@ -4274,6 +4281,16 @@ static bool deep_op_retarget(struct ai_type *ait, struct player *pplayer,
         continue;
       }
       score = def_ai_city_data(acity, ait)->worth / (1.0 + ceta);
+      /* The same request bias as at formation. Retarget is a SECOND,
+       * independent pricing site -- it does not call
+       * deep_op_pick_target() -- so an ally's request that survived
+       * only at formation would be undone the first time the operation
+       * looked around, which is not a request honoured for
+       * chatty_request_turns turns. The odds gate above is untouched:
+       * a target that failed op_take_target has already been skipped. */
+      if (tune->chatty_inbound_gate > 0) {
+        score *= deep_request_attack_mult(pplayer, acity);
+      }
       if (score > alt_score) {
         alt = acity;
         alt_odds = codds;
