@@ -18714,3 +18714,216 @@ per game (the funnel is in them), scorelogs, turn-1 and final saves.
 Every table above re-derives from that directory with the three
 committed readers, plus `mixseat.py` on the retained 64 mixed games
 for §6b and §7.
+
+## S-EXPAND-FIX: the tier was never the comparator, and the fix is a mechanism win and an outcome wash (2026-08-23)
+
+Brief: `sessions/S-EXPAND-FIX-tier-arbitration.md`. Branch
+`epic/expand-fix-tier` (base `68d215c681`). Two gated mechanisms
+(`founder_tier_gate`, `founder_run_hold`), one comment correction, one
+reader extension, one new A/B tool. tune-audit CLEAN at 255/255,
+`meson test` 6/6.
+
+### 1. The brief's premise did not survive reading the seam
+
+The funnel charged the military EMERGENCY tier with discarding founder
+wants that stock's magnitude rule would have seated: 48.5% of the
+city-turns carrying a positive founder want had the military side in
+that tier, median want discarded 1 225, **43.7% of which would have
+won a magnitude comparison** by a median margin of 411. The brief asked
+for that comparison to be restored at the merge.
+
+**It cannot be restored at the merge, because deep's order and stock's
+already agree there.** `domestic_advisor_choose_build()` clamps
+whatever it returns to `DAI_WANT_DOMESTIC_MAX` (daidomestic.c:631 =
+750.075), and `deep_want_from_choice()` is monotone in the raw want. A
+domestic bid therefore ARRIVES at the merge below the emergency tier's
+floor of 1 000, and deep's (tier, value) lexicographic order and
+stock's `adv_better_choice()` magnitude order give the same verdict on
+every comparison that reaches that seam.
+
+Largest winning want per pick, one probe game:
+
+    Destroyer 58588.6   Cavalry 52112.7   Transport 31622.0
+    Riflemen   1234.0   Settlers  750.1   Caravan     750.1
+
+Every domestic pick tops out at exactly the clamp. **W01's tier
+substitution is not the regression the funnel charged it with, at
+either fire site**; the clamp predates this project and stock discards
+the same wants for the same reason. `lostmilt`'s comment is corrected
+in place: it counts merge losses with the military in the emergency
+tier, not losses a magnitude rule would have avoided.
+
+What the funnel's 43.7% actually compares is deep's own `founder_want`
+(median 1 225, pre-clamp) against the military want -- a comparison
+neither stock nor deep performs anywhere. `founder_tier_gate` performs
+it, one stage before the clamp.
+
+### 2. Identity
+
+10 smoke seeds x 2 arms (`deep` and the mixed cell `mixed_dc`), base
+binary `de2e570a...` (a git-archive build of `68d215c681`) against
+`e0399a87...`: **`scorelog.txt` byte-identical 20/20**, maphash equal
+on all 20, tuning `none` both sides.
+
+### 3. Provenance: the OFF arm IS the funnel probe
+
+The OFF `mixed_dc` arm was re-run on this branch's binary rather than
+reused, because the probe's server predates the w12h and employ merges.
+It reproduces the published funnel table **exactly** -- 82 148
+city-turns, skipemerg 21 859 (26.6%), skipwar 11 059 (13.5%), gate
+10 488 (12.8%), w0 9 304 (11.3%), lostdom 4 864, vfood 3 965, lostmil
+725, vwonder 624, win 1 319, found 450. The games are the same games.
+The lineage worry was unfounded, and re-running is what made that
+checkable rather than assumed.
+
+### 4. Funnel vs funnel, both orderings
+
+tech50war-200, seeds 37-56, pv3 (`9396e8e3`) against pv3-tierfix
+(`f9cdbcac`), 20 games per arm, 80 games total, 0 pairing violations,
+every game at turn 201.
+
+    mixed_dc                OFF            ON        mixed_cd        OFF            ON
+    city-turns           82148         83518                       74104         73894
+    skipemerg     21859 (26.6%) 22358 (26.8%)                18877 (25.5%) 19882 (26.9%)
+    skipwar       11059 (13.5%) 10860 (13.0%)                 5554 ( 7.5%)  8768 (11.9%)
+    gate          10488 (12.8%) 11665 (14.0%)                 4915 ( 6.6%) 11003 (14.9%)
+    w0             9304 (11.3%)  9911 (11.9%)                 8902 (12.0%)  8374 (11.3%)
+    lostdom        4864 ( 5.9%)  3312 ( 4.0%)                 3969 ( 5.4%)  3524 ( 4.8%)
+    vfood          3965 ( 4.8%)  2238 ( 2.7%)                 3070 ( 4.1%)  3106 ( 4.2%)
+    lostmil         725 ( 0.9%)   374 ( 0.4%)                  582 ( 0.8%)   313 ( 0.4%)
+    win                   1319          1926                        1094          1837
+    found                  450           462                         408           404
+    contest                  0          1151                           0          1055
+    contwin                  0           945                           0           814
+    hold                     0           497                           0           490
+    holdyld                  0           115                           0            97
+    prod/win             1.005         1.262                       1.007         1.278
+
+Both gates are live and large. The founder wins **46% more auctions**
+in `mixed_dc` (1319 -> 1926) and **68% more** in `mixed_cd` (1094 ->
+1837), and its runs are **26-27% longer**. `contwin/contest` is 82%
+(dc) and 77% (cd): when the contest is raised the founder usually takes
+the build. Every counter is identically 0 in both OFF arms, which is
+the gates' own proof that the control ran ungated.
+
+### 5. The four pre-registered predictions, adjudicated
+
+**(1) `born` > 0 after T20 -- FAILED.** `mixed_dc` 0 -> 0.
+`mixed_cd` 1 -> 2. Across 40 ON games and 160 deep player-games the
+zero does not break.
+
+**(2) founder runs survive > 1.004 turns -- MET.** prod/win 1.005 ->
+1.262 (`mixed_dc`) and 1.007 -> 1.278 (`mixed_cd`). Real, and nowhere
+near enough: a 30-shield Settlers needs six to ten turns of production
+in these cities, and 1.27 is not six.
+
+**(3) the cities gap shrinks -- NOT MET, null in both orderings.**
+Four-seat gap, deep minus classic, paired on seed:
+
+    ordering   turn   gapOFF   gapON    delta     sem       t   wins
+    mixed_dc    201    +1.35   +1.00    -0.35    1.76   -0.20   9/20
+    mixed_cd    201    -2.65   -3.80    -1.15    2.27   -0.51   9/20
+    mixed_dc     60    +2.10   +3.15    +1.05    0.97   +1.08  10/20
+    mixed_cd     60    -1.55   -1.70    -0.15    0.99   -0.15   7/20
+
+The T60 `mixed_dc` cell is the only one that leans, and at t +1.08 on
+one of four pre-specified cells it is noise. The seat interaction the
+funnel found (OFF +1.35 against -2.65 at T201) reproduces exactly and
+**the fix does not touch it in either ordering**.
+
+**(4) score, kills, gold -- reported whatever they say.** Same
+convention, T201:
+
+    metric        mixed_dc OFF      ON     delta     sem       t   wins
+    score              -35.75  -72.55    -36.80   34.24   -1.07   7/20
+    unitskilled       -113.60 -141.30    -27.70   26.09   -1.06   7/20
+    unitslost          -48.60  -48.30     +0.30   17.37   +0.02   8/20
+    gold              -907.65 -839.30    +68.35  172.41   +0.40  12/20
+
+    metric        mixed_cd OFF      ON     delta     sem       t   wins
+    score             -110.90 -117.20     -6.30   33.78   -0.19  10/20
+    unitskilled       -199.25 -204.80     -5.55   25.04   -0.22  11/20
+    unitslost          -95.25  -73.50    +21.75   20.29   +1.07  11/20
+    gold              -971.65 -778.25   +193.40  350.59   +0.55  11/20
+
+**Verdict: an outcome WASH.** Not one of the 24 reported cells reaches
+|t| = 1.1, and the two orderings disagree on the sign of score, kills
+and losses. The honest reading of the score column is that a -36.8
+point mean with se 34.2 in one ordering and -6.3 with se 33.8 in the
+other is one distribution centred near zero, not a trade the epic
+bought. There is no evidence here that more founder auctions cost
+military tempo, and none that they buy cities.
+
+### 6. Why the zero does not break: the measured chain
+
+The gates fix the arbitration and the arbitration was not the binding
+constraint. Founder-build STARTS (`deep-prodswitch to="Settlers"`),
+with the share in a city that could actually finish one (civ2civ3
+Settlers `pop_cost` = 2, so size must exceed 2):
+
+    mixed_dc  OFF  554 starts, 78.3% big enough    ON  473 starts, 61.9%
+    mixed_cd  OFF  495 starts, 78.4% big enough    ON  485 starts, 61.2%
+
+And the partition of every switch AWAY from a founder build in the ON
+arm (`mixed_cd`, n = 483), which is what the hold does and does not
+catch:
+
+    to a building or wonder -- outside the hold by design   127  26.3%
+    empty shield stock, nothing invested                     19   3.9%
+    city too small to finish (size <= 2)                    180  37.3%
+    residual, i.e. grave_danger                             157  32.5%
+
+**A third of the founder builds deep starts are in cities that cannot
+deliver a settler at any run length**, and the server keeps their
+shields while they sit (`city_build_unit()`, server/cityturn.c:3062).
+Another quarter are lost to a building the hold was never asked to
+refuse, and a third to grave danger, which is the exception the brief
+specified. What remains is a run of 1.27 turns against a six-to-ten
+turn build.
+
+### 7. What the next epic should do
+
+1. **Refuse the founder WANT where the city cannot build one.** Not
+   arbitration -- formation. A third of starts are structurally
+   undeliverable and nothing in deep or in `ai/default` tests city size
+   against `pop_cost` before bidding. This is the largest single leak
+   the funnel has ever measured that no gate addresses.
+2. **Make the run survive a building, not only a soldier.** 26% of the
+   remaining leak is a building outbidding a settler mid-build; the
+   hold deliberately does not cover it and the switch-cost machinery
+   evidently does not bind.
+3. **Leave the emergency tier alone.** §1 settles it: the tier is not
+   the comparator, and two epics have now been aimed at it.
+4. **The seat-order interaction is still unexplained and still
+   larger than the stall** (+1.35 against -2.65 cities at T201,
+   reproduced here exactly). It is not an expansion question.
+
+### Surprises worth carrying
+
+- **The comparator that could not fire.** The funnel's headline
+  counterfactual is arithmetic on two numbers that never meet in the
+  code. It was found by reading `daidomestic.c` before writing the
+  patch, and confirmed by one grep over one game log -- every domestic
+  pick topping out at exactly 750.1. A gated fix that is provably a
+  no-op is the most expensive kind of green tick.
+- **The pop-cost trap, caught by a one-game probe.** The first hold
+  had no size test, and on the probe game city 271 held Settlers from
+  turn 8 to turn 19 with the stock climbing 33 to 66 against a
+  30-shield unit, refusing a defender at urgency 4 the whole time.
+  Running one game before committing four hours of A/B is what caught
+  it; the A/B would have reported the damage as a score regression and
+  not as a bug.
+- **The re-run OFF arm reproduced the funnel probe byte for byte.**
+  The re-run was ordered because provenance could not be established
+  from the key files; it cost 20 games and converted an assumption
+  into a check. Worth repeating whenever an arm is inherited.
+- **An arm-level DONE marker written regardless of exit code is a
+  silent truncation.** `tierfix-ab.sh` wrote `on-dc.DONE` carrying
+  `exit=1` after a power loss cut its `run.sh` short, and the next
+  supervisor pass duly skipped the arm at 16/20 games. Arm markers
+  must record success, not completion of the call.
+
+Retention: `benchmark/results/tierfix-ab/` -- 80 games in four arms,
+`game.log.gz` per game (both gates' counters are in them), scorelogs,
+final saves. Every table above re-derives from that directory with
+`expandfunnel.py` and `seatgap.py`.
