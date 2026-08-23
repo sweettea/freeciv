@@ -21457,3 +21457,381 @@ not start from the brief:
 deleted by the driver), `capstake-identity` and `capstake-identity-r1`
 (40 smoke games each pair). Every table above re-derives from those
 with `benchmark/capstake.py`.
+
+---
+
+## W12 rail upgrade: a finished trunk stops being finished (2026-08-23)
+
+Branch `epic/rail-upgrade`, 11 commits, based at `c644628cb8`. `ai/deep`
++ `benchmark` + one tuning file; zero `ai/default`, `ai/baseline` or
+`server/advisors` changes.
+
+The user's own follow-up to the international trunk road: *"perfect. and
+then we'll also want to upgrade to better road types if we've already
+built an international road"*. The QUEUE named the defect exactly.
+`deep_trunk_build()` drops a link the moment every tile of it carries a
+road (`link->gap == 0`, and the link is not even counted), and
+`deep_trunk_tile_roaded()`'s own comment concedes what that leaves out:
+
+    /* ... the ruleset's later upgrades (rail) are a different
+     * question, priced by the advisor's own move-cost term on the
+     * tile. */
+
+The advisor's move-cost term is `adv_workers_road_bonus()`, which prices
+one tile's own movement and knows nothing about the two cities the tile
+sits between — which is exactly the hole W12 slice 1 opened this file to
+fill. So an international trunk fossilises at the tech level it was
+built at.
+
+**Brief drift, reported rather than worked around.** The session brief
+places the corridor machinery in `deepterra.c`. It is in
+`ai/deep/deeptrunk.c` (1868 lines before this epic); `deepterra.c` is
+148 lines of terrain-change valuation and has nothing to do with
+corridors. Everything else in the brief matched the tree.
+
+### 1. What landed
+
+| # | Commit | What |
+|---|---|---|
+| 1 | `abc958bd25` | `trunk_upgrade_gate` in `struct tuning`, at 0 |
+| 2 | `f57a4edb40` | the gap predicate: `deep_trunk_tile_complete()` and the per-link phase |
+| 3 | `51b5c8b9d7` | the price: `link->cur` for `link->terr` in the upgrade phase |
+| 4 | `81e16953f3` | `deep-trunkup`, the census line |
+| 5 | `29da368c5d` | the funnel's drop cause reads completion, not road presence |
+| 6 | `55dadcb525` | `benchmark/railup.sh` + `upcensus.py` + `tuning/railup-on.ini` |
+| 7 | `d9569ab8eb` | the Europe rider in `derby5/tuning-derby7.ini` |
+| 8 | `1d2f9ea772` | `work=`, worker-turns of upgrade construction |
+| 9 | `74a11d902e` | the A/B venue moved to `lategame-80`, with the probe's reason |
+| 10 | `d9dd39423b` | a signalled stage records FAIL, not SUCCESS |
+| 11 | this entry | |
+
+### 2. The mechanism: one predicate, one phase, one substitution
+
+**The predicate.** `deep_trunk_tile_complete()` replaces
+`deep_trunk_tile_roaded()` as the plan's gap test above the gate. A
+corridor tile is incomplete while some road this player CAN build here
+would cross cheaper than what the tile already delivers:
+
+    cost(t) = min(terrain->movement_cost * SINGLE_MOVE,
+                  cheapest move-bonus road the tile CARRIES)
+    best(t) = min(cost(t),
+                  cheapest move-bonus road the player CAN BUILD here)
+    complete(t)  <=>  best(t) >= cost(t)
+
+Nothing names railroad. `road < railroad < whatever the ruleset offers`
+falls out of `move_cost`, and `player_can_build_extra()` is the same
+test `next_extra_for_tile()` makes when given no unit
+(`common/extras.c:788`) — and `next_extra_for_tile()` is what the
+advisor (`autoworkers.c:676`) and deep's own task source
+(`deepsettler.c:2080`) already use to decide WHICH road a worker builds
+here. So a tile this calls upgradable is a tile they would offer the
+upgrade on, and no second notion of "buildable" exists. (Checked
+against the ruleset: classic's Railroad extra requires the Railroad
+tech at Player range, the Road extra on the tile, Land terrain and the
+Workers unit flag at Local range; `player_can_build_extra()` evaluates
+at `RPT_POSSIBLE` with no unit in the context, so the Local flag reads
+as "possible" and the tech and the Road extra are what actually gate
+it.)
+
+Two consequences of the same definition, stated rather than discovered
+later:
+
+- A tile no road can be built on stops counting as a gap the plan could
+  ever close. Below the gate it counted forever.
+- `move_mode` is ignored, exactly as `deep_trunk_price()` has always
+  ignored it. The corridor is a straight-line valuation and not a path,
+  and River (`RMM_CARDINAL`, `move_cost` 1 in classic) is the only
+  extra for which the two differ. A river tile therefore reads as
+  complete until railroad arrives, which is also what the old predicate
+  said about it.
+
+**The phase, which is the answer to "upgrades must not starve unbuilt
+gaps".** The phase is per LINK. While any tile of a link still lacks a
+road the link is in its BUILD phase and its gap is today's unroaded set
+exactly — no upgrade is considered at all. Laying a better road on a
+link that still has a hole buys the link nothing, because a traversal
+still pays full terrain cost at the hole. Only a WHOLE link enters the
+UPGRADE phase. So an upgrade tile and an unbuilt corridor tile are
+never tiles of the same link, and the two can never appear in one
+link's want.
+
+The walk, the claim, the beyond-ceiling subtraction, the ally clip, the
+soft-border clip and W28's stacking branch are untouched. Only the
+predicate they consult moved — the brief's "extend the gap predicate,
+do not fork the walk", literally.
+
+**The substitution.** `deep_trunk_price()` has always been
+
+    saving = base - len * proad->move_cost          [move fragments]
+    want   = trunk_road_gain * (saving / SINGLE_MOVE)
+             * amortize(1.0, gap)
+
+with `base = link->terr`, the corridor's bare terrain cost. In the
+upgrade phase that is no longer what a traveller pays, so `base`
+becomes `link->cur` — the same sum, taken over each tile's cheapest
+EXISTING road. One substitution; every other factor is the one it was,
+and the trade dividend (`deep_trunk_link_dividend()`) takes the same
+`base` for both its `per_tile` rate and its `saving`, so a caravan's
+ETA is quoted over the roads that are actually on the ground.
+
+### 3. The want arithmetic, and where the ordering comes from
+
+Every number is the ruleset's. `SINGLE_MOVE` = `move_fragments` = 3
+(`data/classic/terrain.ruleset:69`); Road `move_cost` = 1 fragment
+(`:2066`); Railroad `move_cost` = 0 (`:2078`); `amortize(v, d)` =
+`v * (23/24)^d`, `MORT` = 24 (`advtools.h:19`).
+
+A link of L tiles on flat ground (`movement_cost` 1, so 3 fragments a
+tile):
+
+    BUILD phase, nothing roaded
+      base = link->terr = 3L
+      saving(Road)     = 3L - L*1 = 2L fragments = 2L/3 movement points
+
+    UPGRADE phase, the same link finished
+      base = link->cur  = L*1 = L
+      saving(Railroad) = L  - L*0 = L  fragments = L/3 movement points
+
+The unbuilt corridor prices at exactly **twice** its own rail upgrade,
+out of classic's own move costs, with no constant minted. Rougher
+ground widens it, because the terrain half of `link->terr` grows while
+the road half of `link->cur` does not:
+
+    terrain movement_cost      1      2      3
+    build   saving (frag)     2L     5L     8L
+    upgrade saving (frag)      L      L      L
+    ratio                    2:1    5:1    8:1
+
+What that guarantees and what it does not, said plainly:
+
+- **Guaranteed.** No link ever offers an upgrade while it still has an
+  unroaded tile (the phase), and length for length on the same ground
+  an unbuilt link prices 2x–8x its upgrade.
+- **NOT guaranteed**, and it would be dishonest to claim it: a long
+  finished trunk can outbid a short unbuilt stub. 20 flat tiles
+  upgrading are 20 fragments = 6.67 MP at `amortize(1,20)` = 0.427, so
+  2.85 x `trunk_road_gain`; 3 flat tiles unroaded are 6 fragments =
+  2 MP at `amortize(1,3)` = 0.880, so 1.76 x. That is the corridor
+  family's EXISTING ordering — a long link has always outbid a short
+  one, because the want is the LINK's worth — and this epic does not
+  change its kind. If that ever needs changing it is a change to slice
+  1's pricing, not to this gate.
+
+No "no open gaps anywhere" gate was added, and it would be the wrong
+shape: one unfinished stub in a far corner of the empire would freeze
+every finished trunk the empire has.
+
+### 4. Identity
+
+10 paired smoke seeds against the branch point `c644628cb8`, in three
+cells, corridor family ON in both arms (`tuning/w12g-keep-on.ini`) so
+the gate is inert on a path the corridor code actually walks. The new
+key appears in neither file, so it sits at its compiled 0.
+
+    base sha256 b93047bc275d898ac00c71b6d9819de991c950b23d6fdbbf018cff1fcb428371
+    head sha256 098936121d36f6d31438c5bd80a1b28dc40dc50c5aac54b76e56aa3d5e374379
+
+    identity deep:     10/10 byte-identical, 0 differ, 0 missing
+    identity mixed_db: 10/10 byte-identical, 0 differ, 0 missing
+    identity classic:  10/10 byte-identical, 0 differ, 0 missing
+
+`classic` has no deep seat at all and is what makes "the default server
+still behaves identically" checkable rather than asserted. The head
+arm's own census over its 30 games, gate shut:
+
+    MEAN/game   lines 58.5   whole 93.1   links 0   gap 0
+                hits 0   offered 0   picked 0   work 0
+
+`whole>0` with everything else 0 IS the gate: the denominator is
+published in both settings and only the knob's own fields are zero.
+
+### 5. Venue: corridor-150 cannot host this, lategame-80 can
+
+The brief required the venue be checked BEFORE the batch. It was, and
+that is why the batch is not on corridor-150.
+
+The mechanism needs two things: a finished trunk, and a better road
+buildable. Railroad in classic is **26 techs deep** (Steam Engine +
+Bridge Building; transitive closure computed from
+`data/classic/techs.ruleset`), and the retained W28 corridor-150
+scorelogs show seats ending T150 holding **20–39** techs. The 4-game
+probe on corridor-150 (gate ON) bore it out and was stopped once it
+had:
+
+    seed     reached   deep-trunkup lines   sum whole   lines with links>0
+    seed-1     T125            59              59              0
+    seed-2     T96             50              59              0
+    seed-3     T107           107             146              0
+
+`whole>0` throughout — corridor-150 does finish trunks — and `links=0`
+on every single player-turn: no seat ever had a better road to lay.
+
+`lategame-80` delivers both from about T10, and the reason is the same
+fact corridor-150's own header holds against it: `techlevel 50` plus
+ten starting workers *"has the roads laid before the corridor plan can
+want them"*. That is fatal for a BUILD-phase venue and it is exactly
+what an UPGRADE phase needs. The venue that is wrong for slice 1 is the
+right one for this slice, for the same property of it.
+
+### 6. Liveness
+
+16 `lategame-80` seeds per arm, one pinned binary
+(`sha256 098936121d36f6d31438c5bd80a1b28dc40dc50c5aac54b76e56aa3d5e374379`,
+`freeciv-server` + `libfreeciv.so`), read-back audit confirming 16 games
+on each tuning file. `deep-trunkup`, summed over every player-turn of
+each game:
+
+    OFF arm (trunk_upgrade_gate = 0)
+      MEAN/game  lines 366.1  whole 950.9  links 0  gap 0
+                 hits 0  offered 0  picked 0  work 0   maxwant 0.00
+
+    ON arm (trunk_upgrade_gate = 1)
+      MEAN/game  lines 363.1  whole 981.4  links 245.6  gap 380.9
+                 hits 6091.2  offered 20.1  picked 7.1  work 19.0
+
+    per game, ON arm
+      seed   whole  links   gap    hits   off  pick  work  maxwant
+         1    1081    368   584    8373     0     0    14    15.85
+         2     839    200   295    4436     3     2    27     4.49
+         3     930    236   365    6344     0     0    10    16.38
+         4     615    164   273    4763     4     2    14     8.23
+         5    1059    372   575    7134    33    24    18    11.66
+         6    1241    262   350    4842     5     4    11    10.04
+         7    1056    309   446    7388     8     5    29     7.18
+         8     895    175   251    5479    18     2    13     5.27
+         9     846    154   223    3977     0     0    30     9.38
+        10     694    252   388    5266    16     1    14    10.63
+        11     971    277   454    6894   168    46    22    18.94
+        12     931    137   236    3876     2     2    17     9.90
+        13    1363    236   385    5891     2     1    18    15.49
+        14     899    352   626   13797    11     5    38    16.27
+        15    1018    227   349    4262     1     1    15    13.25
+        16    1265    208   294    4738    50    18    14     7.57
+
+`whole` is ~950 player-turns of finished trunk in BOTH arms — the
+denominator, and the reason the OFF arm's zeros are a knob statement
+rather than a venue one. Above the gate 245.6 of those link-turns enter
+the upgrade phase carrying 380.9 upgradable tile-turns, the want reaches
+the advisor's auction on 6091 candidates a game, deep's own task source
+prices 20.1 beyond the enumeration ceiling and assigns 7.1, and **19.0
+worker-turns a game are spent building a road on a tile that already
+carries one** — which is the claim the epic owes, in the only field that
+can make it.
+
+A line with every stage firing at once, seed-11 T63:
+
+    deep-trunkup turn=63 player="P2" whole=3 links=3 gap=5 hits=60
+                 offered=1 picked=1 work=1 maxwant=15.27
+
+`knobcensus.py --knob trunk_upgrade_gate`: **LIVE** on the ON arm
+(2443 matching lines), **DEAD** on the OFF arm. Gate grade, direct.
+
+Most upgrade demand is `hits` and not `offered`, and that is geometry
+rather than a miss: a finished trunk runs between cities, so its tiles
+are usually inside somebody's work radius and the advisor's own
+enumeration already reaches them. The beyond-ceiling source only sees
+the stretch that is outside every radius.
+
+### 7. Score A/B
+
+16 mirrored `lategame-80` seeds, `tuning/w12g-keep-on.ini` (the corridor
+family as W12G measured it) against the same file plus one key. One
+pinned binary, both arms, 0 pairing violations.
+
+    seed      OFF       ON     delta
+       1   170.50   170.00    -0.50
+       2   176.67   171.00    -5.67
+       3   160.83   165.00    +4.17
+       4   169.67   175.33    +5.67
+       5   157.17   155.33    -1.83
+       6   171.17   168.67    -2.50
+       7   176.17   174.33    -1.83
+       8   160.83   163.83    +3.00
+       9   156.33   163.17    +6.83
+      10   171.33   181.17    +9.83
+      11   167.00   172.67    +5.67
+      12   166.00   162.83    -3.17
+      13   160.50   166.67    +6.17
+      14   157.17   169.67   +12.50
+      15   151.67   159.33    +7.67
+      16   155.67   151.00    -4.67
+    mean   164.29   166.88    +2.58   sd 5.52  se 1.38  t +1.87  wins 9/16
+
+**+1.6% on score, t = +1.87, 9/16 seeds. That is not significance and it
+is not claimed as such** — rule 6, and 16 paired seeds at this spread
+resolve about a 3% effect. What makes it worth keeping rather than
+shrugging at is that the supporting metrics move together and each one
+is what a cheaper road SHOULD move:
+
+    metric              OFF        ON     delta      se      t   wins
+    cities             7.30      7.70     +0.40    0.19  +2.14   8/16
+    pop               38.86     40.47     +1.60    0.72  +2.21  12/16
+    landarea       89156.25  92197.92  +3041.67 1470.27  +2.07  10/16
+    unitsbuilt        37.44     38.55     +1.11    0.52  +2.16  13/16
+    techs             53.09     52.89     -0.21    0.14  -1.53   3/16
+    up-live            0.00    152.69   +152.69    9.72 +15.70  16/16
+    up-pick            0.00      2.62     +2.62    0.77  +3.42  13/16
+
+More cities, more land, more population and more units built — an empire
+that moves faster settles further out — bought at 0.2 of a tech, which
+is the worker-turns the upgrades cost. `up-live` at 16/16 and t = +15.70
+is the mechanism; the rest is what it did.
+
+The honest reading: **the mechanism is unambiguously live and the score
+is directionally positive but not resolved.** It ships at 0 like every
+other corridor knob and owes a held-out confirmation.
+
+### 8. What this owes, and what the next session should not redo
+
+- **The score needs a bigger n.** t = +1.87 on 16 training seeds is a
+  lead, not a result. The cheapest confirmation is the same cell on the
+  held-out seed list; ~110 paired games would resolve a 5% effect at
+  this correlation and the venue runs ~3 min a game at jobs 3.
+- **`trunk_upgrade_gate` is geometry and owes no tuning pass.** There is
+  no magnitude in it: the price above the gate is `deep_trunk_price()`
+  with one measured quantity swapped for another measured quantity.
+  What it inherits is `trunk_road_gain`'s existing PLACEHOLDER status.
+- **The venue portfolio has a hole this epic exposed.** No canonical
+  cell both builds trunks from scratch AND reaches a better road:
+  `corridor-150` does the first, `lategame-80` the second. A
+  `corridor-150` with a longer horizon (or a techlevel start on
+  corridor geometry) would let the build and upgrade phases be measured
+  in one game, which is the only way their interaction can be seen at
+  all. Not built here; flagged rather than invented.
+- **The funnel's `done` now means "complete", not "roaded".** Under the
+  gate the two differ, and `deepfunnel.c` was corrected to match
+  (commit 5). Anyone comparing funnel `done` across the gate boundary
+  is comparing two definitions.
+- **SINGLE_MOVE interaction, checked as the brief asked.** The July bug
+  at `infracache.c:237` does not touch this path: the corridor code
+  reads `terrain->movement_cost * SINGLE_MOVE` and `road->move_cost`
+  directly and never goes through the infracache's tile valuation.
+  Nothing was changed in `ai/default` or `common`.
+
+### 9. Machine lessons paid for this session
+
+- **A trap on EXIT alone reports SUCCESS when the script is signalled**,
+  because `$?` at trap entry is the last command's status and not the
+  signal's. A half-finished identity stage (head arm 25/30, no
+  comparison run) left `SUCCESS rc=0` behind and the chained A/B
+  launcher believed it. Fixed in commit 10 with a
+  `trap 'signalled=1' HUP INT TERM`. Any driver copied from this family
+  has the same bug.
+- **Check batch liveness from the filesystem, not the process table.**
+  Twice this session a launch looked dead and was not, and once it
+  looked alive and was not. `ls */DONE | wc -l` and file mtimes are the
+  only honest answer.
+- **Orphaned servers hold ports after their launcher is reaped.** Four
+  corridor-150 games survived their killed parent and held 7680-7683,
+  and the next launch failed with `bind failure: Address already in
+  use` on every seed — which reads exactly like a sandbox denial and is
+  not one.
+
+### 10. Retention
+
+`benchmark/results/railup-ab/{on,off}` (the 32-game A/B),
+`railup-identity/{base,head}` (60 smoke games),
+`railup-venue-corridor` (the 3 truncated corridor-150 probe games that
+settled the venue) and `railup-venue-lg` (the 2-game lategame-80 pilot).
+Every table above re-derives with `benchmark/upcensus.py` and
+`benchmark/railup.sh report`.

@@ -61,9 +61,20 @@
 struct deep_trunk_link {
   int terr;                  /* Terrain movement cost over the corridor,
                               * in move fragments. */
+  int cur;                   /* What crossing the corridor costs TODAY,
+                              * same units: each tile's cheapest road if
+                              * it carries one, its terrain if not. Equal
+                              * to terr on a wholly unroaded corridor,
+                              * and read only in the upgrade phase. */
   int len;                   /* Corridor tiles (city ends excluded). */
-  int gap;                   /* Of those, still without a road that
-                              * speeds movement. */
+  int gap;                   /* Of those, the ones still wanting work --
+                              * without a road in the build phase, below
+                              * their best buildable road in the upgrade
+                              * phase. */
+  bool upgrade;              /* The link is whole and this player can lay
+                              * a better road on some of its tiles
+                              * (trunk_upgrade_gate). FALSE always with
+                              * the gate shut. */
   bool ally;                 /* Far endpoint is an allied city, not one
                               * of ours (W12 slice 3). */
   struct tile *far;          /* The endpoint the corridor runs TO. Read
@@ -228,6 +239,31 @@ static int deep_trunk_c_stk_dec[MAX_NUM_PLAYER_SLOTS][3];
 static int deep_trunk_c_stk_pick[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_stk_save[MAX_NUM_PLAYER_SLOTS];
 
+/* Rail upgrade: links whose every tile already carries a road. Counted
+ * in BOTH settings of trunk_upgrade_gate, because it is the denominator
+ * the upgrade phase is read against and the one number that says
+ * whether a venue ever finishes a trunk at all. */
+static int deep_trunk_c_up_whole[MAX_NUM_PLAYER_SLOTS];
+/* And the upgrade phase's own instruments: the links that entered it,
+ * their upgradable tiles, the candidates the advisor's hook and deep's
+ * task source priced on one, the assignments made, and the largest want
+ * an upgrade tile ever issued. Zero by construction with the gate
+ * shut. */
+static int deep_trunk_c_up_links[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_up_gap[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_up_hits[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_up_off[MAX_NUM_PLAYER_SLOTS];
+static int deep_trunk_c_up_pick[MAX_NUM_PLAYER_SLOTS];
+/* Own workers swinging a shovel on an upgrade-phase corridor tile at
+ * this refresh -- a road going up on ground that ALREADY CARRIES ONE.
+ * Summed over player-turns by benchmark/upcensus.py it is worker-turns
+ * of upgrade construction, and it is the only field that says the want
+ * was CLAIMED rather than merely issued: an upgrade tile inside a city
+ * radius is assigned by the advisor's own auction, whose result deep
+ * never sees. */
+static int deep_trunk_c_up_work[MAX_NUM_PLAYER_SLOTS];
+static double deep_trunk_c_up_max[MAX_NUM_PLAYER_SLOTS];
+
 /* W12G: which corridor tile each worker is walking to.
  *
  * The advisor keeps no such memory -- auto_workers_player() sends an
@@ -274,6 +310,101 @@ bool deep_trunk_tile_roaded(const struct tile *ptile)
   } extra_type_by_cause_iterate_end;
 
   return FALSE;
+}
+
+/**********************************************************************//**
+  What crossing this tile costs a traveller TODAY, in move fragments --
+  the same unit link->terr is summed in: the cheapest move-bonus road the
+  tile already carries, or the terrain's own cost when it carries none.
+
+  move_mode is ignored, exactly as deep_trunk_price() has always ignored
+  it. The corridor is a straight-line valuation and not a path, and River
+  (RMM_CARDINAL in classic) is the only extra for which the two differ;
+  stating the approximation rather than hiding it.
+**************************************************************************/
+static int deep_trunk_tile_cost(const struct tile *ptile)
+{
+  int cost = tile_terrain(ptile)->movement_cost * SINGLE_MOVE;
+
+  extra_type_by_cause_iterate(EC_ROAD, pextra) {
+    const struct road_type *proad = extra_road_get(pextra);
+
+    if (tile_has_extra(ptile, pextra) && proad != NULL
+        && road_provides_move_bonus(proad) && proad->move_cost < cost) {
+      cost = proad->move_cost;
+    }
+  } extra_type_by_cause_iterate_end;
+
+  return cost;
+}
+
+/**********************************************************************//**
+  The cheapest crossing cost this player could HAVE on this tile: the
+  best move-bonus road they can build here, against what the tile already
+  delivers. Equal to deep_trunk_tile_cost() when nothing better is
+  buildable, and that equality is what "complete" means.
+
+  player_can_build_extra() is the same test next_extra_for_tile() makes
+  when it is given no unit (common/extras.c:788-793), and
+  next_extra_for_tile() is what the advisor (autoworkers.c:676) and
+  deep's own task source (deepsettler.c:2080) use to decide WHICH road a
+  worker would build here. So a tile this calls upgradable is exactly a
+  tile they would offer the upgrade on -- no second notion of buildable
+  is introduced, and no extra is named.
+**************************************************************************/
+static int deep_trunk_tile_best(const struct player *pplayer,
+                                const struct tile *ptile)
+{
+  int cost = deep_trunk_tile_cost(ptile);
+
+  extra_type_by_cause_iterate(EC_ROAD, pextra) {
+    const struct road_type *proad = extra_road_get(pextra);
+
+    if (!tile_has_extra(ptile, pextra) && proad != NULL
+        && road_provides_move_bonus(proad) && proad->move_cost < cost
+        && player_can_build_extra(pextra, pplayer, ptile)) {
+      cost = proad->move_cost;
+    }
+  } extra_type_by_cause_iterate_end;
+
+  return cost;
+}
+
+/**********************************************************************//**
+  Is this corridor tile finished, for 'pplayer', as far as the plan is
+  concerned?
+
+  Below trunk_upgrade_gate that is the old question verbatim -- does it
+  carry any road that speeds movement -- so the gate shut is the plan
+  byte for byte.
+
+  Above it, a tile is finished only when no road this player could build
+  here would cross cheaper than what the tile already delivers. That
+  makes "road < railroad < whatever the ruleset offers" fall out of
+  move_cost rather than out of a named extra, and it also stops counting
+  a tile no road can be built on (no CanRoad terrain) as a gap the plan
+  could ever close.
+**************************************************************************/
+bool deep_trunk_tile_complete(const struct player *pplayer,
+                              const struct tile *ptile)
+{
+  if (deep_tuning_get()->trunk_upgrade_gate <= 0) {
+    return deep_trunk_tile_roaded(ptile);
+  }
+
+  return deep_trunk_tile_best(pplayer, ptile) >= deep_trunk_tile_cost(ptile);
+}
+
+/**********************************************************************//**
+  Does this corridor tile still want work, in its link's current phase?
+  In the BUILD phase that is today's question exactly; in the UPGRADE
+  phase it is the completion test above.
+**************************************************************************/
+static bool deep_trunk_tile_wanted(const struct player *pplayer,
+                                   const struct tile *ptile, bool upgrade)
+{
+  return (upgrade ? !deep_trunk_tile_complete(pplayer, ptile)
+                  : !deep_trunk_tile_roaded(ptile));
 }
 
 /**********************************************************************//**
@@ -704,6 +835,12 @@ static double deep_trunk_link_dividend(const struct player *pplayer,
    * pplayer changes. Looked up rather than cast away. */
   struct player *owner = player_by_number(player_number(pplayer));
   int pn = player_number(pplayer);
+  /* What crossing this corridor costs before the work: bare terrain in
+   * the build phase, the roads already there in the upgrade phase. The
+   * same base deep_trunk_price() subtracts from, so the caravan's ETA
+   * and the logistics saving are quoted against one description of the
+   * ground. */
+  int base = (link->upgrade ? link->cur : link->terr);
   double per_tile, saving, total = 0.0;
   struct tile *ends[2];
   int e, t;
@@ -720,7 +857,7 @@ static double deep_trunk_link_dividend(const struct player *pplayer,
    * this per candidate extra; here one road stands for the link, which
    * is what makes the dividend a per-link number. */
   for (t = 0; t < len && proad == NULL; t++) {
-    if (!deep_trunk_tile_roaded(path[t])) {
+    if (deep_trunk_tile_wanted(pplayer, path[t], link->upgrade)) {
       proad = deep_trunk_road_target(next_extra_for_tile(path[t], EC_ROAD,
                                                          pplayer, NULL));
     }
@@ -729,11 +866,11 @@ static double deep_trunk_link_dividend(const struct player *pplayer,
     return 0.0;
   }
 
-  saving = (double) (link->terr - link->len * proad->move_cost);
+  saving = (double) (base - link->len * proad->move_cost);
   if (saving <= 0.0) {
     return 0.0;
   }
-  per_tile = (double) link->terr / (double) link->len;
+  per_tile = (double) base / (double) link->len;
 
   ends[0] = from;
   ends[1] = to;
@@ -844,9 +981,12 @@ static void deep_trunk_build(const struct player *pplayer)
   deep_trunk_c_risk_coast[pn] = 0;
   deep_trunk_c_risk_sum[pn] = 0.0;
   deep_trunk_c_risk_max[pn] = 0.0;
+  deep_trunk_c_up_whole[pn] = 0;
+  deep_trunk_c_up_work[pn] = 0;
   for (i = 0; i < deep_trunk_prev[pn].n; i++) {
-    if (deep_trunk_tile_roaded(index_to_tile(nmap,
-                                             deep_trunk_prev[pn].tile[i]))) {
+    if (deep_trunk_tile_complete(pplayer,
+                                 index_to_tile(nmap,
+                                               deep_trunk_prev[pn].tile[i]))) {
       deep_trunk_c_soft_road[pn][deep_trunk_prev[pn].own[i]]++;
     }
   }
@@ -947,16 +1087,39 @@ static void deep_trunk_build(const struct player *pplayer)
         int t;
 
         link->terr = 0;
+        link->cur = 0;
         link->len = 0;
         link->gap = 0;
+        link->upgrade = FALSE;
         link->ally = is_ally[pick];
         link->far = ctile[pick];
         link->dividend = 0.0;
         for (t = 0; t < len; t++) {
           link->terr += tile_terrain(path[t])->movement_cost * SINGLE_MOVE;
+          link->cur += deep_trunk_tile_cost(path[t]);
           link->len++;
           if (!deep_trunk_tile_roaded(path[t])) {
             link->gap++;
+          }
+        }
+        if (link->gap == 0) {
+          /* The link is WHOLE: every tile of it carries a road. Counted
+           * in both settings of the gate, because it is the denominator
+           * the upgrade census is read against and the one number that
+           * says whether a venue ever finishes a trunk at all. */
+          deep_trunk_c_up_whole[pn]++;
+          if (tune->trunk_upgrade_gate > 0) {
+            /* Build phase over, upgrade phase begins -- and only now.
+             * Laying a better road on a link that still has a hole buys
+             * the link nothing, because a traversal still pays full
+             * terrain cost at the hole, so the phase is what keeps
+             * upgrades from competing with unbuilt corridor at all. */
+            link->upgrade = TRUE;
+            for (t = 0; t < len; t++) {
+              if (!deep_trunk_tile_complete(pplayer, path[t])) {
+                link->gap++;
+              }
+            }
           }
         }
         if (link->gap > 0) {
@@ -965,7 +1128,8 @@ static void deep_trunk_build(const struct player *pplayer)
           for (t = 0; t < len; t++) {
             int idx = tile_index(path[t]);
 
-            if (deep_trunk_tile[idx] == 0 && !deep_trunk_tile_roaded(path[t])) {
+            if (deep_trunk_tile[idx] == 0
+                && deep_trunk_tile_wanted(pplayer, path[t], link->upgrade)) {
               enum deep_trunk_own own
                 = deep_trunk_own_class(pplayer, path[t]);
 
@@ -1109,6 +1273,9 @@ static void deep_trunk_build(const struct player *pplayer)
     own = deep_trunk_own_class(pplayer, utile);
     if (punit->activity == ACTIVITY_GEN_ROAD) {
       deep_trunk_c_soft_work[pn][own]++;
+      if (deep_trunk_links[deep_trunk_tile[tile_index(utile)] - 1].upgrade) {
+        deep_trunk_c_up_work[pn]++;
+      }
     }
 
     if (deep_trunk_duty_n[pn] >= deep_trunk_duty_alloc[pn]) {
@@ -1250,8 +1417,14 @@ static void deep_trunk_refresh(const struct player *pplayer)
   deep_trunk_c_ally_gap[pn] = 0;
   deep_trunk_c_div_links[pn] = 0;
   deep_trunk_c_div_max[pn] = 0.0;
+  deep_trunk_c_up_links[pn] = 0;
+  deep_trunk_c_up_gap[pn] = 0;
   for (slot = 0; slot < deep_trunk_nlinks; slot++) {
     deep_trunk_c_gap[pn] += deep_trunk_links[slot].gap;
+    if (deep_trunk_links[slot].upgrade) {
+      deep_trunk_c_up_links[pn]++;
+      deep_trunk_c_up_gap[pn] += deep_trunk_links[slot].gap;
+    }
     if (deep_trunk_links[slot].ally) {
       deep_trunk_c_ally_links[pn]++;
       deep_trunk_c_ally_gap[pn] += deep_trunk_links[slot].gap;
@@ -1282,6 +1455,21 @@ static bool deep_trunk_tile_ally(const struct tile *ptile)
   return slot > 0 && deep_trunk_links[slot - 1].ally;
 }
 
+/* Whether this tile's corridor is in its UPGRADE phase, on an
+ * already-refreshed plan -- the tile already carries a road and the want
+ * on it is for a better one. The upgrade counters' only question. */
+static bool deep_trunk_tile_upgrade(const struct tile *ptile)
+{
+  int slot;
+
+  if (deep_trunk_tile == NULL) {
+    return FALSE;
+  }
+  slot = deep_trunk_tile[tile_index(ptile)];
+
+  return slot > 0 && deep_trunk_links[slot - 1].upgrade;
+}
+
 /* The want itself, on an already-refreshed plan: the movement the
  * corridor's link saves once whole, amortized over the tiles still
  * missing. Counter-free so both the hook path and the task source can
@@ -1309,7 +1497,24 @@ static adv_want deep_trunk_price(const struct deep_tuning *tune,
   }
   link = &deep_trunk_links[slot - 1];
 
-  saving = link->terr - link->len * proad->move_cost;
+  /* An upgrade is worth the DIFFERENCE, not the whole. The link's worth
+   * has always been (what crossing it costs before the work) - (what it
+   * would cost roaded end to end); in the upgrade phase the first half
+   * is link->cur, the roads actually on the ground, instead of
+   * link->terr, the bare terrain that is no longer what a traveller
+   * pays. Nothing else in the term moves: same subtraction, same
+   * SINGLE_MOVE, same amortize() over the gap, same trunk_road_gain.
+   *
+   * That single substitution is also the ordering. On grassland
+   * (movement_cost 1, so 1 * SINGLE_MOVE = 3 fragments a tile) an
+   * unroaded link of L tiles prices at 3L - 1*L = 2L fragments under
+   * classic's Road (move_cost 1); the same link, finished, prices its
+   * railroad upgrade (move_cost 0) at 1*L - 0 = L. The unbuilt corridor
+   * is worth exactly twice the upgrade of a corridor already built, out
+   * of the ruleset's own numbers, and the link phase guarantees the two
+   * are never even tiles of the same link. */
+  saving = (link->upgrade ? link->cur : link->terr)
+           - link->len * proad->move_cost;
   if (saving <= 0) {
     return 0.0;
   }
@@ -1357,6 +1562,10 @@ adv_want deep_trunk_want(const struct player *pplayer,
   deep_trunk_c_hits[pn]++;
   if (want > deep_trunk_c_max[pn]) {
     deep_trunk_c_max[pn] = want;
+  }
+  if (deep_trunk_tile_upgrade(ptile)) {
+    deep_trunk_c_up_hits[pn]++;
+    deep_trunk_c_up_max[pn] = MAX(deep_trunk_c_up_max[pn], want);
   }
 
   return want;
@@ -1406,6 +1615,11 @@ adv_want deep_trunk_source_want(const struct player *pplayer,
       [deep_trunk_own_class(pplayer, ptile)]++;
     if (deep_trunk_tile_ally(ptile)) {
       deep_trunk_c_ally_off[player_number(pplayer)]++;
+    }
+    if (deep_trunk_tile_upgrade(ptile)) {
+      deep_trunk_c_up_off[player_number(pplayer)]++;
+      deep_trunk_c_up_max[player_number(pplayer)]
+        = MAX(deep_trunk_c_up_max[player_number(pplayer)], want);
     }
   }
 
@@ -1472,6 +1686,12 @@ void deep_trunk_source_pick(const struct player *pplayer,
   deep_trunk_c_soft_pick[pn][deep_trunk_own_class(pplayer, ptile)]++;
   if (deep_trunk_tile_ally(ptile)) {
     deep_trunk_c_ally_pick[pn]++;
+  }
+  if (deep_trunk_tile_upgrade(ptile)) {
+    /* An assignment on a tile that ALREADY CARRIES A ROAD -- the job
+     * that could not exist below the gate, because the plan dropped the
+     * link the moment its last tile was roaded. */
+    deep_trunk_c_up_pick[pn]++;
   }
   if (slot > 0 && deep_trunk_links[slot - 1].dividend > 0.0) {
     deep_trunk_c_div_pick[pn]++;
@@ -1732,6 +1952,40 @@ void deep_trunk_census(struct player *pplayer)
   }
 
   if (log_do_output_for_level(deep_metric_log_level())
+      && (deep_trunk_c_up_whole[pn] > 0 || deep_trunk_c_up_links[pn] > 0)) {
+    /* Rail upgrade. whole= links whose every tile already carries a
+     * road, counted in BOTH settings of trunk_upgrade_gate -- it is the
+     * denominator, and on its own it is the venue statement: whole=0
+     * says this venue never finishes a trunk and no upgrade could
+     * possibly be claimed here whatever the knob does. links= the whole
+     * links that entered the UPGRADE phase (whole= minus links= is
+     * whole links with nothing better buildable yet -- no railroad tech,
+     * or already railed end to end), gap= their tiles below the best
+     * road this player could lay, hits= upgrade candidates the advisor's
+     * task-value hook priced, offered= the ones deep's own task source
+     * priced beyond the ceiling, picked= assignments actually made ON A
+     * TILE THAT ALREADY CARRIES A ROAD, and maxwant= the largest want an
+     * upgrade tile issued. work= is own workers building a road on an
+     * upgrade tile at this refresh -- a road going up on ground that
+     * already carries one, which is the only field saying the want was
+     * CLAIMED and not merely issued (an upgrade tile inside a city
+     * radius is assigned by the advisor's own auction, whose result
+     * deep never sees).
+     *
+     * whole>0 with links=0 is the gate shut and is exactly what the OFF
+     * arm must show; links>0 with picked=0 is upgrades priced and
+     * outbid, which is a null rather than a dead knob. */
+    log_base(deep_metric_log_level(),
+             "deep-trunkup turn=%d player=\"%s\" whole=%d links=%d gap=%d"
+             " hits=%d offered=%d picked=%d work=%d maxwant=%.2f",
+             game.info.turn, player_name(pplayer),
+             deep_trunk_c_up_whole[pn], deep_trunk_c_up_links[pn],
+             deep_trunk_c_up_gap[pn], deep_trunk_c_up_hits[pn],
+             deep_trunk_c_up_off[pn], deep_trunk_c_up_pick[pn],
+             deep_trunk_c_up_work[pn], deep_trunk_c_up_max[pn]);
+  }
+
+  if (log_do_output_for_level(deep_metric_log_level())
       && deep_trunk_c_duty_seen[pn] > 0) {
     /* W12H exposure. on= workers standing on a corridor tile at this
      * turn's refresh; seen= worker-turns of corridor duty so far;
@@ -1861,6 +2115,14 @@ void deep_trunk_census(struct player *pplayer)
   deep_trunk_c_hits[pn] = 0;
   deep_trunk_c_max[pn] = 0.0;
   deep_trunk_c_beyond[pn] = 0;
+  deep_trunk_c_up_whole[pn] = 0;
+  deep_trunk_c_up_links[pn] = 0;
+  deep_trunk_c_up_gap[pn] = 0;
+  deep_trunk_c_up_hits[pn] = 0;
+  deep_trunk_c_up_off[pn] = 0;
+  deep_trunk_c_up_pick[pn] = 0;
+  deep_trunk_c_up_work[pn] = 0;
+  deep_trunk_c_up_max[pn] = 0.0;
   deep_trunk_c_src_off[pn] = 0;
   deep_trunk_c_src_pick[pn] = 0;
   memset(deep_trunk_c_src_hist[pn], 0,
