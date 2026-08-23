@@ -34,15 +34,20 @@ below flight.** The method is PLAY-FORWARD-THEN-EQUALIZE:
 worldbuilder; deep would bake its biases into every evaluation start)
 on the target map — ~15% land for the naval venue; ~50% land with
 barbarians disabled and war-suppressing settings for the air venue so
-every seat reaches the snapshot alive; (2) snapshot the save at the
-target era (world tech ~70 for flight), on a turn where seats are
-roughly even; (3) run a committed equalization edit pass over the
-snapshot (the sav is editable secfile text): level all seats to the
-same tech set, equalize gold, and stamp the venue's subject
-infrastructure — Airports in every city for the airlift/air venue
-(pair with airliftingstyle at load), harbors for the naval one;
-(4) per-seed variance comes from gameseed at load — one fixed world,
-N divergent games (paired-seeds logic at its limit). Deliverables:
+every seat reaches the snapshot alive; (2) snapshot a FAMILY of worlds, not one — 4-8 mapseeds grown
+identically and frozen at the target era (world tech ~70 for flight),
+each on a turn where every seat is alive and viable: one world is a
+sample size of one, and the family is what keeps venue conclusions
+general; (3) run a committed MINIMAL-REPAIR edit pass over each
+snapshot (the sav is editable secfile text): keep seats alive and
+stamp ONLY the venue's subject infrastructure — Airports in every
+city for the airlift/air venue (pair with airliftingstyle at load),
+harbors for the naval one. Do NOT level tech/gold across seats:
+module-swap pairing already cancels seat handicaps (same seats, same
+world, both arms), and heavy state editing manufactures unreachable
+game states where AI behaviour stops reflecting reality;
+(4) per-seed variance comes from gameseed at load — frozen worlds,
+N divergent games each (paired-seeds logic at its limit). Deliverables:
 the grow-world driver, the equalizer script, and the frozen snapshot
 save all committed and documented; the equalized save must load
 cleanly on the pinned binary with both ai modules (no warnings) and
