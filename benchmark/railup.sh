@@ -122,15 +122,25 @@ if [ -n "$STAGE" ]; then
   mkdir -p "$here/results"
   rm -f "$MARK"
 fi
+# `killed` must not read as `finished`. A trap on EXIT alone reports
+# SUCCESS when the script is signalled, because $? at trap entry is the
+# status of the last command that ran, not of the signal -- which is
+# exactly how a half-finished identity stage came to leave a SUCCESS
+# marker behind (2026-08-23). The signal traps below set a flag first,
+# so the EXIT trap can tell the two apart.
+signalled=0
 finish() {
   local rc=$?
   [ -n "$STAGE" ] || return 0
-  if [ "$rc" -eq 0 ]; then
+  if [ "$signalled" -ne 0 ]; then
+    echo "FAIL signalled $(date -Is)" > "$MARK"
+  elif [ "$rc" -eq 0 ]; then
     echo "SUCCESS rc=0 $(date -Is)" > "$MARK"
   else
     echo "FAIL rc=$rc $(date -Is)" > "$MARK"
   fi
 }
+trap 'signalled=1' HUP INT TERM
 trap finish EXIT
 
 case "${1:-}" in
