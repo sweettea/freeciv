@@ -86,7 +86,8 @@ static adv_want adv_calc_cultivate(const struct city *pcity,
     goodness = city_tile_value(pcity, vtile, 0, 0);
     tile_virtual_destroy(vtile);
 
-    return goodness;
+    return adv_terrain_value(pcity, ptile, ACTIVITY_CULTIVATE, new_terrain,
+                             goodness);
   } else {
     return -1;
   }
@@ -126,7 +127,8 @@ static adv_want adv_calc_plant(const struct city *pcity,
     goodness = city_tile_value(pcity, vtile, 0, 0);
     tile_virtual_destroy(vtile);
 
-    return goodness;
+    return adv_terrain_value(pcity, ptile, ACTIVITY_PLANT, new_terrain,
+                             goodness);
   } else {
     return -1;
   }

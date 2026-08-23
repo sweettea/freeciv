@@ -36,6 +36,38 @@ int adv_transform_chain(const struct terrain *from,
 int adv_transform_cost(const struct terrain *from,
                        const struct terrain *to);
 
+/* An optional second opinion on what a terrain-CHANGING worker action is
+ * worth (W29). initialize_infrastructure_cache() values cultivating and
+ * planting one step deep -- the terrain the activity produces, by that
+ * terrain's yield -- which is the whole of the greedy evaluation RC1's
+ * corollary describes: a first step that looks unappealing alone is never
+ * taken, however good the terrain two steps along is.
+ *
+ * This is an EXTENSION POINT and nothing else (CLAUDE.md rule 4): with no
+ * consumer registered the value returned is the one-step value the caller
+ * computed, byte for byte, so a server without ai/deep -- and a server
+ * with it whose consumer declines -- behaves exactly as before. The
+ * consumer receives the values it needs to re-price the action and cannot
+ * reach anything else: the city asking, the tile, the activity, the
+ * terrain that activity produces, and the one-step value.
+ *
+ * It is deliberately NOT called for ACTIVITY_TRANSFORM, which already
+ * carries its own chain valuation in adv_calc_transform(). */
+struct city;
+struct tile;
+
+typedef adv_want (*adv_terrain_value_fn)(const struct city *pcity,
+                                         const struct tile *ptile,
+                                         enum unit_activity act,
+                                         const struct terrain *result,
+                                         adv_want one_step);
+void adv_terrain_value_hook_set(adv_terrain_value_fn fn);
+adv_want adv_terrain_value(const struct city *pcity,
+                           const struct tile *ptile,
+                           enum unit_activity act,
+                           const struct terrain *result,
+                           adv_want one_step);
+
 /*
  * To prevent integer overflows the product "power * hp * firepower"
  * is divided by POWER_DIVIDER.
