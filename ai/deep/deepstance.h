@@ -37,6 +37,15 @@ struct deep_stance {
   double econ;                  /* Growth, infrastructure, trade, expansion */
   double mil;                   /* Force: garrison, deterrence, campaigns */
   double cult;                  /* Culture and prestige -- INERT, see above */
+  /* How this player wants its empire SHAPED: above 1.0 many small
+   * cities packed tight, below 1.0 fewer cities with room to grow.
+   * A fourth axis rather than a re-reading of econ, because the two
+   * are orthogonal in the game and in the traits: an expansionist and
+   * a builder both want a big economy and disagree entirely about what
+   * one looks like. Read as a RATIO against 1.0 (identity), not
+   * against another axis, because it has no opposite pole to divide
+   * by -- the poles are inside its own seed. */
+  double expand;
 };
 
 /* The named presets survive ONLY as labels: for logging, for talking

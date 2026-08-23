@@ -220,6 +220,8 @@ static void dpai_player_save(struct player *pplayer,
                        "player%d.deep_state.stance_mil", plrno);
   secfile_insert_float(file, plr_data->stance.cult,
                        "player%d.deep_state.stance_cult", plrno);
+  secfile_insert_float(file, plr_data->stance.expand,
+                       "player%d.deep_state.stance_expand", plrno);
   secfile_insert_int(file, plr_data->stance_fear_gated,
                      "player%d.deep_state.stance_fear_gated", plrno);
   secfile_insert_int(file, plr_data->stance_op_gated,
@@ -332,6 +334,13 @@ static void dpai_player_load(struct player *pplayer,
     = secfile_lookup_float_default(file, 1.0,
                                    "player%d.deep_state.stance_cult",
                                    plrno);
+  /* Defaults to identity, so a save written before the shape axis
+   * existed loads as a player with no shape preference rather than one
+   * with a zero weight. */
+  plr_data->stance.expand
+    = secfile_lookup_float_default(file, 1.0,
+                                   "player%d.deep_state.stance_expand",
+                                   plrno);
   plr_data->stance_fear_gated
     = secfile_lookup_int_default(file, 0,
                                  "player%d.deep_state.stance_fear_gated",
@@ -379,9 +388,10 @@ static void dpai_player_load(struct player *pplayer,
    * observable. Keyed on plrno, not the name -- this fires inside
    * sg_load_player_main and the player is not fully built yet. */
   log_base(deep_metric_log_level(),
-           "deep-stance-load plr=%d econ=%.3f mil=%.3f cult=%.3f",
+           "deep-stance-load plr=%d econ=%.3f mil=%.3f cult=%.3f"
+           " expand=%.3f",
            plrno, plr_data->stance.econ, plr_data->stance.mil,
-           plr_data->stance.cult);
+           plr_data->stance.cult, plr_data->stance.expand);
 
   plr_data->last_strike_city
     = secfile_lookup_int_default(file, 0,
