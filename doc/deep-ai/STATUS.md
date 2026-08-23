@@ -18114,3 +18114,22 @@ Retention: 40 filtered ON-arm games under
 `benchmark/results/employ-muster/` (62 MB, same W12g pruning as the OFF
 arm), beside `employ-report.txt` and `pairarms.py`, which reproduces the
 paired score table from the two result trees.
+
+Ops note, and it is a standing change of convention (human call,
+2026-08-22). **Launch game batches so they survive the agent.** Both
+arms above lost a wave to the ~60-minute reaping of tracked background
+commands — the OFF arm at 30/40, the ON arm at 25/40 — and both were
+only cheap to recover because the driver was a self-contained on-disk
+script keyed on DONE markers. Keep that, and stop launching it inside
+the sandbox: write the driver to disk, then start it **detached and
+outside the sandbox** (the sandbox override plus `setsid`, stdout and
+stderr to a log file, fully disowned), and watch it by DONE counts and
+scorelog mtimes rather than by the process table, which this box does
+not report honestly. The sandbox's process-group reaping is what kills
+these runs; a detached process outside it survives even total session
+death. Two further habits earned the same way: sweep partial game
+directories before a resume, verifying the expected end turn and
+deleting anything short — a leftover `scorelog.txt` in a re-run
+directory is the silent-scorelog trap of 2026-08-13 — and prune each
+game to its ledger lines as it finishes rather than at the end, which
+is what kept 80 games of tech50war-200 inside 114 MB.
