@@ -95,6 +95,7 @@
 #include "deepsite.h"
 #include "deepcm.h"
 #include "deepops.h"
+#include "deeprequest.h"
 #include "deeprates.h"
 #include "deepsettler.h"
 #include "deeptrunk.h"
@@ -1982,6 +1983,15 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
     credit = deep_incoming_defence_credit(ait, pcity)
              + deep_muster_reserve_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
+    /* CHATTY slice 2, the ledger half. Same term, same place in the
+     * order, as the build-choice half -- because the comment on gate 1
+     * over there is right: "the danger the build choice reads must not
+     * disagree with the danger the ledger holds", and every other
+     * consumer of danger (deep-def, the emergency ranking, the
+     * survival cache) reads THIS one. */
+    if (deep_tuning_get()->chatty_inbound_gate > 0) {
+      city_data->danger += deep_request_defend_fear(pplayer, pcity);
+    }
     deep_apply_garrison_floor(&(wld.map), pcity, city_data, updisc,
                               menace, TRUE);
   } city_list_iterate_end;
@@ -4937,6 +4947,19 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     credit = deep_incoming_defence_credit(ait, pcity)
              + deep_muster_reserve_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
+    /* CHATTY slice 2: an ally asked us to hold this city. A TERM in the
+     * same currency as every fear above, added AFTER the credit
+     * subtraction so a request cannot be cancelled by help that is
+     * already on its way to somewhere else, and BEFORE the garrison
+     * floor so a requested city that would otherwise read zero danger
+     * is no longer a floor case. It is not scaled by the stance gate:
+     * a promise made to an ally is not deep's own anticipated fear and
+     * an economic posture is not a reason to keep it less. Skipped
+     * entirely -- not multiplied by nothing -- while the gate is
+     * shut. */
+    if (deep_tuning_get()->chatty_inbound_gate > 0) {
+      city_data->danger += deep_request_defend_fear(pplayer, pcity);
+    }
     deep_apply_garrison_floor(nmap, pcity, city_data, updisc,
                               deep_garrison_menace(pplayer), FALSE);
 

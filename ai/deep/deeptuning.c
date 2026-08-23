@@ -308,6 +308,15 @@ static const struct deep_tuning deep_tuning_defaults = {
   .founder_tier_gate = 0,               /* 0 = today's arbitration exactly */
   .founder_run_hold = 0,                /* 0 = today's preemption exactly */
   .terrain_chain_gate = 0,              /* 0 = one-step valuation exactly */
+  .chatty_inbound_gate = 0,             /* 0 = deep parses nothing at all */
+  .chatty_request_turns = 10,           /* PLACEHOLDER: how long a request
+                                         * counts for. Unreachable while
+                                         * chatty_inbound_gate is 0, which
+                                         * is what keeps the four below
+                                         * inert at their non-zero values */
+  .chatty_defend_fear = 50.0,           /* PLACEHOLDER, danger units */
+  .chatty_attack_gain = 0.5,            /* PLACEHOLDER, ranking multiplier */
+  .chatty_road_gain = 1.0,              /* PLACEHOLDER, distance discount */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -606,7 +615,12 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(chatty_max_per_turn) \
   TUNE_INT(founder_tier_gate) \
   TUNE_INT(founder_run_hold) \
-  TUNE_INT(terrain_chain_gate)
+  TUNE_INT(terrain_chain_gate) \
+  TUNE_INT(chatty_inbound_gate) \
+  TUNE_INT(chatty_request_turns) \
+  TUNE_DOUBLE(chatty_defend_fear) \
+  TUNE_DOUBLE(chatty_attack_gain) \
+  TUNE_DOUBLE(chatty_road_gain)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 

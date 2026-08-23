@@ -44,6 +44,7 @@
 
 #include "deepdefence.h"
 #include "deepchat.h"
+#include "deeprequest.h"
 #include "deeptrade.h"
 #include "deeptuning.h"
 
@@ -602,6 +603,16 @@ static int deep_trunk_ally_nodes(const struct player *pplayer,
 
     city_list_iterate(aplayer->cities, acity) {
       struct tile *atile = city_tile(acity);
+      /* CHATTY slice 2: this ally asked for the corridor to run HERE.
+       * The demand is injected as a discount on the only quantity this
+       * choice reads -- how far the city is -- so a requested city
+       * competes with the nearest one on the planner's own terms
+       * instead of overriding it. An ally who asks for a city on the
+       * far side of their empire can still be told, truthfully, that
+       * the road went somewhere closer. Computed per candidate rather
+       * than hoisted because the answer is per CITY. */
+      bool asked = deep_tuning_for(pplayer)->chatty_inbound_gate > 0
+                   && deep_request_road_wanted(pplayer, acity);
       int i;
 
       for (i = 0; i < nown; i++) {
@@ -611,6 +622,9 @@ static int deep_trunk_ally_nodes(const struct player *pplayer,
           continue;
         }
         d = real_map_distance(ctile[i], atile);
+        if (asked) {
+          d = (int) (d / (1.0 + deep_tuning_for(pplayer)->chatty_road_gain));
+        }
         if (d < bestd) {
           bestd = d;
           best = atile;

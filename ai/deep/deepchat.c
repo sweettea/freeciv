@@ -209,6 +209,64 @@ bool deep_chat_tell(const struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Answer one player who addressed us, whether or not they are an ally.
+
+  Same three calls, same shape, same cap as everything else here; the
+  only differences are that the recipient is not required to be an ally
+  and the colour follows the relationship (ally chat for an ally,
+  private for anybody else), because that is the colour the client
+  already paints each in.
+
+  It exists for exactly one thing: slice 2's protocol has to be able to
+  refuse a stranger, and a refusal delivered to the alliance instead of
+  to the person who asked would be neither an answer nor honest.
+**************************************************************************/
+bool deep_chat_reply(const struct player *pplayer, struct player *who,
+                     enum deep_chat_class klass, const char *text, ...)
+{
+  const struct deep_tuning *tune = deep_tuning_for(pplayer);
+  struct deep_plr *dp = deep_plr_data(pplayer);
+  struct packet_chat_msg packet;
+  char body[MAX_LEN_MSG], line[MAX_LEN_MSG];
+  va_list args;
+
+  if (who == NULL || who == pplayer || dp == NULL
+      || tune->chatty_gate <= 0 || tune->chatty_max_per_turn <= 0
+      || (dp->chat_turn == game.info.turn
+          && dp->chat_said >= tune->chatty_max_per_turn)) {
+    return FALSE;
+  }
+
+  va_start(args, text);
+  fc_vsnprintf(body, sizeof(body), text, args);
+  va_end(args);
+  fc_snprintf(line, sizeof(line), _("*%s (AI)* %s"),
+              player_name(pplayer), body);
+
+  package_event(&packet, NULL, E_DIPLOMACY,
+                pplayers_allied(pplayer, who) ? ftc_chat_ally
+                                              : ftc_chat_private,
+                "%s", line);
+  lsend_packet_chat_msg(who->connections, &packet);
+  event_cache_add_for_player(&packet, who);
+
+  if (dp->chat_turn != game.info.turn) {
+    dp->chat_turn = game.info.turn;
+    dp->chat_said = 0;
+  }
+  dp->chat_said++;
+
+  log_base(deep_metric_log_level(),
+           "deep-chat turn=%d player=\"%s\" class=%d to=\"%s\" heard=%d"
+           " said=%d/%d text=\"%s\"",
+           game.info.turn, player_name(pplayer), (int) klass,
+           player_name(who), 1, dp->chat_said, tune->chatty_max_per_turn,
+           line);
+
+  return TRUE;
+}
+
+/**********************************************************************//**
   TRUE the first time this player raises this subject, FALSE ever
   after. The ring is bounded (DEEP_CHAT_MEMOS) and overwrites its
   oldest entry, so the failure mode of a very long game is one repeated
@@ -286,6 +344,86 @@ void deep_chat_phase_begin(const struct player *pplayer)
   Once per (city, threatening player): the ally is told a thing is
   coming, not told again every turn while it comes.
 **************************************************************************/
+/**********************************************************************//**
+  SAME-INFORMATION WARNER ELECTION.
+
+  From the user's Europe game, turn 105: Anglia, Rus and Gallia each
+  told Osmanli about the same Deep_Hellas units bearing down on Mersin,
+  Isparta and Gaziantep. Nine messages where one would do, and the
+  cause is structural rather than a bug in the warning -- slice 2's own
+  first finding is that an AI player cannot hear chat, so no warner can
+  possibly know another already spoke. The per-sender
+  once-per-(city, threat) memo is doing its job; there is simply one
+  memo per sender.
+
+  The fix is W12H's canonicalisation pattern applied to chat: when
+  several actors would emit the same fact, they all compute the same
+  designated emitter from state they all already have, and only that
+  one emits. Here the designated warner for (threatened city,
+  threatening player) is the LOWEST-NUMBERED allied deep player that
+  can itself see an at-war attack unit of that player inside
+  survival_horizon of that city -- i.e. the lowest-numbered player that
+  would have sent this very line.
+
+  Why this is not a hidden channel, which is the property that matters:
+  the election is only ever held among players who ALREADY HAVE THE
+  SAME INFORMATION. Every candidate satisfies the same predicate over
+  the same public facts, so the elected warner says nothing the others
+  could not have said, the recipient learns nothing it would not have
+  learnt from the loser, and nothing passes between the candidates. The
+  only thing decided is which of several identical lines is the one
+  that gets typed.
+
+  Two deliberate limits:
+
+  * we only ever look at players numbered BELOW us, because the moment
+    one qualifies we have lost the election and can stop. That also
+    bounds the cost: the scan runs only when we ourselves have already
+    seen a threat, which is rare;
+  * a candidate is tested on its chatty_gate and its cap SETTING, not
+    on its running per-turn tally. Electing on the tally would make the
+    winner depend on how much somebody else happened to have said
+    earlier in the same turn, and the loser's memo would then be spent
+    on a line nobody sent. As it stands an elected warner that is
+    capped out simply says it a turn later, and the losers stay quiet;
+    the failure mode is a delay, never a duplicate and never a silence.
+**************************************************************************/
+static bool deep_chat_is_warner(const struct player *pplayer,
+                                const struct player *aplayer,
+                                const struct player *eplayer,
+                                const struct city *acity, int horizon)
+{
+  players_iterate_alive(other) {
+    const struct deep_tuning *otune;
+
+    if (other == pplayer || other == aplayer || other == eplayer
+        || player_number(other) > player_number(pplayer)
+        /* Same module, so the same predicate and the same line. */
+        || other->ai != pplayer->ai
+        || !pplayers_allied(other, aplayer)
+        /* Mirrors our own filter: nobody warns about their own ally. */
+        || pplayers_allied(other, eplayer)) {
+      continue;
+    }
+    otune = deep_tuning_for(other);
+    if (otune->chatty_gate <= 0 || otune->chatty_max_per_turn <= 0) {
+      continue;
+    }
+
+    unit_list_iterate(eplayer->units, punit) {
+      if (is_attack_unit(punit) && can_player_see_unit(other, punit)
+          && real_map_distance(unit_tile(punit), city_tile(acity))
+             * SINGLE_MOVE / MAX(unit_type_get(punit)->move_rate, 1)
+             <= horizon) {
+        /* Somebody lower-numbered would send this same line. */
+        return FALSE;
+      }
+    } unit_list_iterate_end;
+  } players_iterate_alive_end;
+
+  return TRUE;
+}
+
 static void deep_chat_ally_threats(struct player *pplayer)
 {
   const struct deep_tuning *tune = deep_tuning_for(pplayer);
@@ -323,6 +461,23 @@ static void deep_chat_ally_threats(struct player *pplayer)
             nearest = MIN(nearest, eta);
           }
         } unit_list_iterate_end;
+
+        if (seen > 0
+            && !deep_chat_is_warner(pplayer, aplayer, eplayer, acity,
+                                    tune->survival_horizon)) {
+          /* Somebody else is saying it. Do NOT claim the memo: the
+           * line we are declining to send is not a subject we have
+           * raised, and if the alliance changes so that we become the
+           * designated warner, we must still be able to say it. */
+          deep_plr_data(pplayer)->chat_warn_yielded++;
+          log_base(deep_metric_log_level(),
+                   "deep-warner turn=%d player=\"%s\" ally=\"%s\" city=%d"
+                   " foe=\"%s\" yielded=%d",
+                   game.info.turn, player_name(pplayer),
+                   player_name(aplayer), acity->id, player_name(eplayer),
+                   deep_plr_data(pplayer)->chat_warn_yielded);
+          continue;
+        }
 
         if (seen > 0
             && deep_chat_once(pplayer, DEEP_CHAT_THREAT, acity->id,

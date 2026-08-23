@@ -49,6 +49,7 @@ enum deep_chat_class {
   DEEP_CHAT_THREAT,             /* an enemy force closing on an ally city */
   DEEP_CHAT_OPERATION,          /* an assault launched at a named city */
   DEEP_CHAT_PACT,               /* peace, alliance or war declared */
+  DEEP_CHAT_REPLY,              /* an answer to a request somebody made */
 };
 
 /* One thing already said. A bookkeeping bound like DEEP_OP_MEMBERS and
@@ -83,6 +84,18 @@ bool deep_chat_tell(const struct player *pplayer,
                     const struct player *aplayer,
                     enum deep_chat_class klass, const char *text, ...)
                     fc__attribute((__format__ (__printf__, 4, 5)));
+
+/* ANSWER one player who addressed us, ally or not. This is the ONE
+ * departure from "the channel talks to the alliance and to nobody
+ * else" (slice 2): a stranger who sends deep a command is owed the
+ * honest word that deep does not take orders from strangers, and that
+ * word has to go back to where it came from. It carries no information
+ * -- it is a refusal to act -- it is once per stranger through the
+ * memo ring, and it spends the same per-turn cap as everything else,
+ * so it cannot be used to make deep talk more than it would anyway. */
+bool deep_chat_reply(const struct player *pplayer, struct player *who,
+                     enum deep_chat_class klass, const char *text, ...)
+                     fc__attribute((__format__ (__printf__, 4, 5)));
 
 /* Dedupe: TRUE the first time this player raises this subject, FALSE
  * ever after. The subject is (class, key1, key2) -- a city id and a

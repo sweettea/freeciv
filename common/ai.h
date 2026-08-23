@@ -330,7 +330,18 @@ struct ai_type
      * version to do so.
      * When mandatory capability then changes again, please add new reservations to
      * replace those taken to use. */
-    void (*reserved_01)(void);
+
+    /* Called for the AI type of a player a chat message was ADDRESSED to,
+     * when that player is AI controlled. An AI player holds no connection,
+     * so every existing delivery path in handchat.c reaches nobody on the
+     * destination side; this is the only way the text is offered to the
+     * module at all. 'sender' is the server's own idea of who typed it and
+     * may be nullptr for an observer. Purely an observation point: the
+     * server has already delivered (or not delivered) the message before it
+     * is called, and no module in tree but ai/deep sets it, so leaving it
+     * nullptr is the previous behaviour exactly. */
+    void (*player_chat_msg)(struct player *pplayer, struct player *sender,
+                            const char *msg);
     void (*reserved_02)(void);
     void (*reserved_03)(void);
     void (*reserved_04)(void);
