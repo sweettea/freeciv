@@ -155,12 +155,22 @@ pick_names() {
   MY_CITY=${OWN_CITIES%%;*}; MY_CITY=${MY_CITY#*,}
   eval "ALLY_LIST=\${CITIES_$ALLY:-}"
   ALLY_CITY=${ALLY_LIST%%;*}; ALLY_CITY=${ALLY_CITY#*,}
-  # First seen city belonging to somebody who is neither us nor the
-  # ally. Owner index 0 is us and 1 is the ally in this venue's
-  # creation order, so anything above 1 is a stranger's.
-  FOE_CITY=$(printf '%s' "$SEEN" | tr ';' '\n' \
-             | awk -F, '$1 > 1 { print $3; exit }')
-  FOE_PLAYER=P6
+  # The first SEEN city whose owner we are actually AT WAR with. Not
+  # "the first city of somebody who is not us": deep answers a target
+  # whose owner it is at peace with with an honest refusal naming the
+  # owner, so a war-blind pick proves the refusal and never the effect.
+  # It did, on the first run -- `attack Sapporo` came back "we are not
+  # at war with P4, who holds Sapporo", which was true.
+  FOE_CITY=""; FOE_PLAYER=""
+  for w in $AT_WAR; do
+    FOE_CITY=$(printf '%s' "$SEEN" | tr ';' '\n' \
+               | awk -F, -v w="$w" '$1 == w { print $3; exit }')
+    if [ -n "$FOE_CITY" ]; then
+      FOE_PLAYER=$(printf '%s' "$PLAYER_NAMES" | tr ';' '\n' \
+                   | awk -F, -v w="$w" '$1 == w { print $2; exit }')
+      break
+    fi
+  done
 }
 
 smoke_dir() { echo "$ROOT/benchmark/results/chatty2-smoke/$1/seed-$2"; }

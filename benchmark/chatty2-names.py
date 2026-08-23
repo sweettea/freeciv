@@ -52,6 +52,7 @@ def main(path, me):
     names = {}                  # player section -> display name
     own = {}                    # player section -> [(id, name)]
     known = []                  # (owner index, id, name) as `me` sees it
+    war = []                    # player indices `me` is at war with
 
     for i, line in enumerate(lines):
         if line.startswith("["):
@@ -65,6 +66,11 @@ def main(path, me):
             k_id, k_nm = hdr.index("id"), hdr.index("name")
             own.setdefault(sec, []).extend(
                 [(r[k_id], r[k_nm]) for r in table(lines, i + 1)])
+        elif line.startswith("diplstate={") and names.get(sec) == me:
+            hdr = split_row(line[len("diplstate={"):])
+            k_cur = hdr.index("current")
+            war = [n for n, r in enumerate(table(lines, i + 1))
+                   if r[k_cur] == "War"]
         elif line.startswith("dc={") and names.get(sec) == me:
             hdr = split_row(line[4:])
             k_ow, k_id = hdr.index("owner"), hdr.index("id")
@@ -95,9 +101,18 @@ def main(path, me):
                      shlex.quote(";".join("%s,%s" % c for c in plist))))
 
     # Enemy cities we have SEEN: in our own dc table, owned by somebody
-    # who is neither us nor an ally the caller named.
+    # who is not us.
     print("SEEN=%s" % shlex.quote(";".join(
         "%d,%s,%s" % k for k in known if k[0] != myidx)))
+
+    # Who we are actually AT WAR with, read off our own diplstate table
+    # (row i is our state toward player i). Without this the smoke picks
+    # a seen city at random and gets the honest "we are not at war with
+    # its owner" refusal instead of the accepted target it wanted -- it
+    # did, on the first run.
+    print("AT_WAR=%s" % shlex.quote(" ".join(str(i) for i in war)))
+    print("PLAYER_NAMES=%s" % shlex.quote(";".join(
+        "%s,%s" % (s[len("player"):], n) for s, n in sorted(names.items()))))
 
 
 if __name__ == "__main__":
