@@ -15,8 +15,14 @@ line's own (deeptrunk.c):
   hits    upgrade candidates the advisor's task-value hook priced.
   off     upgrade candidates deep's own task source priced, beyond the
           advisor's enumeration ceiling.
-  pick    assignments actually made ON A TILE THAT ALREADY CARRIES A
-          ROAD -- the job that cannot exist below the gate.
+  pick    beyond-ceiling assignments made ON A TILE THAT ALREADY
+          CARRIES A ROAD -- the job that cannot exist below the gate.
+  work    own workers building a road on an upgrade tile at that
+          refresh. Summed over player-turns this is worker-turns of
+          upgrade construction, and it is the only field that says the
+          want was CLAIMED rather than merely issued: an upgrade tile
+          inside a city radius is assigned by the advisor's own
+          auction, whose result deep never sees.
 
 Every field is a per-player-turn count, so the sums are player-turns of
 demand and not distinct tiles; `lines` is the denominator for them.
@@ -27,9 +33,11 @@ import re
 import sys
 
 PAT = re.compile(r'deep-trunkup .*whole=(\d+) links=(\d+) gap=(\d+) '
-                 r'hits=(\d+) offered=(\d+) picked=(\d+) maxwant=([0-9.]+)')
+                 r'hits=(\d+) offered=(\d+) picked=(\d+) work=(\d+) '
+                 r'maxwant=([0-9.]+)')
 
-FIELDS = ("whole", "links", "gap", "hits", "off", "pick")
+FIELDS = ("whole", "links", "gap", "hits", "off", "pick", "work")
+NF = len(FIELDS)
 
 
 def game_logs(root):
@@ -49,13 +57,13 @@ def main():
     if len(sys.argv) < 2:
         print(__doc__)
         return 1
-    grand = [0] * 6
+    grand = [0] * NF
     grand_lines = 0
     games = 0
-    print("%-18s %8s %8s %8s %8s %8s %8s %8s %9s"
+    print("%-18s %8s %8s %8s %8s %8s %8s %8s %8s %9s"
           % ("game", "lines", *FIELDS, "maxwant"))
     for name, log in game_logs(sys.argv[1]):
-        tot = [0] * 6
+        tot = [0] * NF
         lines = 0
         peak = 0.0
         with open(log, errors="replace") as fh:
@@ -64,17 +72,17 @@ def main():
                 if m is None:
                     continue
                 lines += 1
-                for i in range(6):
+                for i in range(NF):
                     tot[i] += int(m.group(i + 1))
-                peak = max(peak, float(m.group(7)))
-        print("%-18s %8d %8d %8d %8d %8d %8d %8d %9.2f"
+                peak = max(peak, float(m.group(NF + 1)))
+        print("%-18s %8d %8d %8d %8d %8d %8d %8d %8d %9.2f"
               % (name, lines, *tot, peak))
         games += 1
         grand_lines += lines
-        for i in range(6):
+        for i in range(NF):
             grand[i] += tot[i]
     if games:
-        print("%-18s %8.1f %8.1f %8.1f %8.1f %8.1f %8.1f %8.1f"
+        print("%-18s %8.1f %8.1f %8.1f %8.1f %8.1f %8.1f %8.1f %8.1f"
               % ("MEAN/game", grand_lines / games,
                  *[t / games for t in grand]))
     else:

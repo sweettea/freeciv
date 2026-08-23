@@ -254,6 +254,14 @@ static int deep_trunk_c_up_gap[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_up_hits[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_up_off[MAX_NUM_PLAYER_SLOTS];
 static int deep_trunk_c_up_pick[MAX_NUM_PLAYER_SLOTS];
+/* Own workers swinging a shovel on an upgrade-phase corridor tile at
+ * this refresh -- a road going up on ground that ALREADY CARRIES ONE.
+ * Summed over player-turns by benchmark/upcensus.py it is worker-turns
+ * of upgrade construction, and it is the only field that says the want
+ * was CLAIMED rather than merely issued: an upgrade tile inside a city
+ * radius is assigned by the advisor's own auction, whose result deep
+ * never sees. */
+static int deep_trunk_c_up_work[MAX_NUM_PLAYER_SLOTS];
 static double deep_trunk_c_up_max[MAX_NUM_PLAYER_SLOTS];
 
 /* W12G: which corridor tile each worker is walking to.
@@ -974,6 +982,7 @@ static void deep_trunk_build(const struct player *pplayer)
   deep_trunk_c_risk_sum[pn] = 0.0;
   deep_trunk_c_risk_max[pn] = 0.0;
   deep_trunk_c_up_whole[pn] = 0;
+  deep_trunk_c_up_work[pn] = 0;
   for (i = 0; i < deep_trunk_prev[pn].n; i++) {
     if (deep_trunk_tile_complete(pplayer,
                                  index_to_tile(nmap,
@@ -1264,6 +1273,9 @@ static void deep_trunk_build(const struct player *pplayer)
     own = deep_trunk_own_class(pplayer, utile);
     if (punit->activity == ACTIVITY_GEN_ROAD) {
       deep_trunk_c_soft_work[pn][own]++;
+      if (deep_trunk_links[deep_trunk_tile[tile_index(utile)] - 1].upgrade) {
+        deep_trunk_c_up_work[pn]++;
+      }
     }
 
     if (deep_trunk_duty_n[pn] >= deep_trunk_duty_alloc[pn]) {
@@ -1953,19 +1965,24 @@ void deep_trunk_census(struct player *pplayer)
      * task-value hook priced, offered= the ones deep's own task source
      * priced beyond the ceiling, picked= assignments actually made ON A
      * TILE THAT ALREADY CARRIES A ROAD, and maxwant= the largest want an
-     * upgrade tile issued.
+     * upgrade tile issued. work= is own workers building a road on an
+     * upgrade tile at this refresh -- a road going up on ground that
+     * already carries one, which is the only field saying the want was
+     * CLAIMED and not merely issued (an upgrade tile inside a city
+     * radius is assigned by the advisor's own auction, whose result
+     * deep never sees).
      *
      * whole>0 with links=0 is the gate shut and is exactly what the OFF
      * arm must show; links>0 with picked=0 is upgrades priced and
      * outbid, which is a null rather than a dead knob. */
     log_base(deep_metric_log_level(),
              "deep-trunkup turn=%d player=\"%s\" whole=%d links=%d gap=%d"
-             " hits=%d offered=%d picked=%d maxwant=%.2f",
+             " hits=%d offered=%d picked=%d work=%d maxwant=%.2f",
              game.info.turn, player_name(pplayer),
              deep_trunk_c_up_whole[pn], deep_trunk_c_up_links[pn],
              deep_trunk_c_up_gap[pn], deep_trunk_c_up_hits[pn],
              deep_trunk_c_up_off[pn], deep_trunk_c_up_pick[pn],
-             deep_trunk_c_up_max[pn]);
+             deep_trunk_c_up_work[pn], deep_trunk_c_up_max[pn]);
   }
 
   if (log_do_output_for_level(deep_metric_log_level())
@@ -2104,6 +2121,7 @@ void deep_trunk_census(struct player *pplayer)
   deep_trunk_c_up_hits[pn] = 0;
   deep_trunk_c_up_off[pn] = 0;
   deep_trunk_c_up_pick[pn] = 0;
+  deep_trunk_c_up_work[pn] = 0;
   deep_trunk_c_up_max[pn] = 0.0;
   deep_trunk_c_src_off[pn] = 0;
   deep_trunk_c_src_pick[pn] = 0;
