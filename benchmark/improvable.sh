@@ -72,6 +72,12 @@ CORPUS_REL=play-0823-1226/saves/freeciv-T0201-Y01500-auto.sav.zst
 CORPUS=${CORPUS:-$MAIN/$CORPUS_REL}
 [ -r "$CORPUS" ] || CORPUS=$ROOT/$CORPUS_REL
 
+# The corpus replay runs the server with its CWD inside the result dir,
+# so it cannot find the ruleset by relative path the way run-game.sh's
+# games do. Same export run-game.sh:174 makes, from this worktree's own
+# data/ -- a replay must not read another checkout's rulesets.
+export FREECIV_DATA_PATH="$ROOT/data${FREECIV_DATA_PATH:+:$FREECIV_DATA_PATH}"
+
 MESON_OPTS="-Dclients= -Dfcmp= -Dtools= -Dnls=false -Daudio=none
             -Dreadline=false -Daimodules=classic,tex,baseline,deep"
 
