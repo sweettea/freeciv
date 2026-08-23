@@ -2775,6 +2775,65 @@ struct deep_tuning {
    * patience, which no scorelog contains. It owes a taste pass, not a
    * tuning pass. */
   int chatty_max_per_turn;
+  /* S-EXPAND-FIX: let a founder want CONTEST the military emergency
+   * tier instead of being discarded by it.
+   *
+   * What the funnel (STATUS 2026-08-22) established: deep built 0
+   * settlers in 20 complete games, and on 48.5% of the city-turns
+   * that carried a positive founder want the military side sat in
+   * the emergency tier, discarding a median want of 1 225.
+   *
+   * What reading the code then established, and what this knob is
+   * shaped by: the merge comparison is NOT where that happens.
+   * `domestic_advisor_choose_build()` clamps whatever it returns to
+   * DAI_WANT_DOMESTIC_MAX (daidomestic.c:631, = 750.075), and
+   * deep_want_from_choice() is monotone in the raw want, so at the
+   * merge deep's (tier, value) order and stock's magnitude order
+   * agree on every comparison there is -- and neither can seat a
+   * 750-capped founder against an emergency want of 1 000 or more.
+   * Measured over a probe game: the largest winning Settlers want is
+   * exactly 750.1, while military picks reach 58 588.
+   *
+   * The comparison the funnel actually adjudicated is one stage
+   * earlier: deep's `founder_want` as deep formed it, against the
+   * military want as the military advisor formed it. 43.7% of the
+   * tier-losses flip under it, median margin 411. With this gate on,
+   * a city whose founder_want strictly exceeds the military want
+   * (a) still reaches the domestic advisor when the emergency skip
+   * would have suppressed the call, and (b) wins the merge if the
+   * advisor's own winner is a founder.
+   *
+   * Both sides are wants that already exist and the comparator is
+   * `>`: no discount, no scale, no constant. Nothing changes for any
+   * non-founder want, and 0 restores today's arbitration exactly. */
+  int founder_tier_gate;
+
+  /* S-EXPAND-FIX: a founder build already under way is not preempted
+   * by a military switch.
+   *
+   * The funnel (STATUS 2026-08-22 §5) measured 528 founder runs across
+   * 20 games, 48.3% of them exactly one turn long, mean 2.36 turns,
+   * and about 67% of what the city switched to when a run ended was
+   * military. 16.49 auction wins per deep player-game bought 1.004
+   * production turns each; a settler costs more turns than that, so
+   * the wins never became units. The auction was not wrong about the
+   * founder on the turn it won -- it was overruled on the next turn
+   * by a gate that fires on 45-49% of city-turns at T40-79, and the
+   * shields already in the stock went with it.
+   *
+   * This gate changes no want. When the city is already building a
+   * founder, has shields in the stock, can still build it, and the
+   * choice that would replace it is a military unit, the decision is
+   * declined and production stands.
+   *
+   * The one exception is the advisor's own grave-danger signal
+   * (`ai_city::grave_danger`, daicity.h:48, raised in
+   * dai_assess_danger() at daimilitary.c:888 when a city-taking unit
+   * is one move away, and the same signal daicity.c:656 spends the
+   * treasury on): a city about to fall does not finish its settler.
+   * No new danger model and no new constant; 0 restores today's
+   * behaviour exactly. */
+  int founder_run_hold;
 };
 
 void deep_tuning_init(void);

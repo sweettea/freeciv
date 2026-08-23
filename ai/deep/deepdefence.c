@@ -7403,6 +7403,170 @@ static void deep_scale_domestic_bids(struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Is this choice a city founder?
+**************************************************************************/
+static bool deep_choice_is_founder(const struct adv_choice *choice)
+{
+  return (choice->type == CT_CIVILIAN
+          && choice->value.utype != NULL
+          && utype_is_cityfounder(choice->value.utype));
+}
+
+/**********************************************************************//**
+  Does deep's own founder want outbid the military choice, on
+  MAGNITUDE, at the stage where the two are still comparable?
+
+  This is the arbitration the founder funnel (STATUS 2026-08-22)
+  adjudicated: 48.5% of the city-turns carrying a positive founder
+  want had the military side in the emergency tier, the median want
+  discarded that way was 1 225, and 43.7% of those would have won a
+  magnitude comparison by a median margin of 411.
+
+  Why the comparison has to be made HERE rather than at the merge,
+  which is where the funnel's write-up put it: it cannot be made at
+  the merge at all. `domestic_advisor_choose_build()` clamps whatever
+  it returns to DAI_WANT_DOMESTIC_MAX (daidomestic.c:631 = 750.075),
+  and deep_want_from_choice() is monotone in the raw want, so deep's
+  (tier, value) order and stock's magnitude order agree on every
+  comparison that reaches the merge -- and under either of them a
+  750-capped founder bid loses to an emergency want of 1 000 or more,
+  always. Measured on a probe game: the largest winning Settlers want
+  in the whole game is exactly 750.1 against military picks of up to
+  58 588. Switching the merge comparator would therefore have been a
+  no-op, and W01's tier substitution is not the regression the funnel
+  charged it with; the clamp is older than this project.
+
+  What IS deep's to arbitrate is the want deep itself formed.
+  `founder_want` is read as it stands at this seam -- after deep's
+  rush and stance terms and after the expansion gate, before
+  daidomestic's four transforms -- because that is the population the
+  funnel measured. The military want is read the same way, as the
+  military advisor formed it, before deep's class scale and switch
+  debit. Both sides already exist; the comparator is `>`. No
+  discount, no scale, no constant.
+**************************************************************************/
+static bool deep_founder_contests_emergency(struct player *pplayer,
+                                            const struct city *pcity,
+                                            const struct ai_city *city_data)
+{
+  if (deep_tuning_get()->founder_tier_gate <= 0
+      || city_data->founder_want <= 0
+      || deep_want_from_choice(&city_data->choice).tier != DWT_EMERGENCY
+      || (adv_want) city_data->founder_want <= city_data->choice.want) {
+    return FALSE;
+  }
+
+  log_base(deep_metric_log_level(),
+           "deep-tiercontest turn=%d player=\"%s\" city=%d founder=%d"
+           " mil=" ADV_WANT_PRINTF " milpick=\"%s\" urgency=%u",
+           game.info.turn, player_name(pplayer), pcity->id,
+           city_data->founder_want, city_data->choice.want,
+           adv_choice_rule_name(&city_data->choice), city_data->urgency);
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  The merge verdict: does the domestic choice beat the military one?
+
+  Default is deep's (tier, value) order (deepwant.c), which at this
+  seam is the same order as stock's own adv_better_choice()
+  (advchoice.c:88) -- see deep_founder_contests_emergency() for why.
+
+  `contest` is that function's verdict, taken before either side was
+  rescaled or debited. When it holds and the domestic advisor's own
+  winner is a founder, the founder takes the build: the magnitude
+  comparison has already been made and the founder won it.
+**************************************************************************/
+static bool deep_merge_domestic_wins(const struct adv_choice *dom,
+                                     const struct adv_choice *mil,
+                                     bool contest)
+{
+  if (contest && deep_choice_is_founder(dom)) {
+    return TRUE;
+  }
+
+  return deep_want_cmp(deep_want_from_choice(dom),
+                       deep_want_from_choice(mil)) > 0;
+}
+
+/**********************************************************************//**
+  Should this city go on building the founder it is already building,
+  rather than switch to the military unit that just won?
+
+  The funnel (STATUS 2026-08-22 §5) measured 528 founder runs, 48.3%
+  of them exactly one turn long and mean 2.36 turns, against a settler
+  that costs more turns of production than that: 16.49 auction wins per
+  deep player-game, 1.004 production turns each, and zero settlers.
+  About 67% of what a city switched to when a run ended was military.
+  The auction is not re-run and no want is changed here; the switch is
+  simply declined, along with the forfeit it would take out of a stock
+  that has already been paid into.
+
+  Four conditions, all of them readings of state the server already
+  maintains, and one exception:
+
+  - the city is building a founder NOW (this is a run, not a bid);
+  - `shield_stock > 0`, so there is something invested to protect --
+    with nothing in the stock there is no run and no forfeit;
+  - the founder is still legal to build, the same guard the switch
+    hold below uses;
+  - the choice that would replace it is a military unit. A building or
+    another civilian is not the preemption the funnel measured and is
+    left alone.
+
+  The exception is `grave_danger`: the advisor's own signal for a
+  city-taking unit one move away (daicity.h:48, raised in
+  dai_assess_danger(), daimilitary.c:888, and the same field
+  daicity.c:656 empties the treasury on). A city about to fall does
+  not finish its settler. No new danger model and no new constant.
+**************************************************************************/
+static bool deep_founder_run_held(struct player *pplayer, struct city *pcity,
+                                  const struct ai_city *city_data)
+{
+  if (deep_tuning_get()->founder_run_hold <= 0
+      || pcity->shield_stock <= 0
+      || pcity->production.kind != VUT_UTYPE
+      || !utype_is_cityfounder(pcity->production.value.utype)) {
+    return FALSE;
+  }
+
+  if (city_data->choice.type != CT_ATTACKER
+      && city_data->choice.type != CT_DEFENDER) {
+    return FALSE;
+  }
+
+  if (!can_city_build_now(&(wld.map), pcity, &pcity->production,
+                          RPT_CERTAIN)) {
+    return FALSE;
+  }
+
+  /* A hold is only worth taking on a build that can actually finish.
+   * The server refuses to complete a pop-cost unit in a city that is
+   * not bigger than the cost and KEEPS the shields
+   * (city_build_unit(), server/cityturn.c:3062), so `can_city_build_now`
+   * says yes to a settler the city will never deliver. Without this
+   * test the hold is unbounded: measured on one probe game, city 271
+   * held Settlers from turn 8 to turn 19 with the stock climbing 33 to
+   * 66 against a 30-shield unit, refusing a defender at urgency 4 the
+   * whole time. Same test as the server's, read the same way. */
+  if (city_size_get(pcity)
+      <= utype_pop_value(pcity->production.value.utype, pcity)) {
+    return FALSE;
+  }
+
+  /* Last, so that the exception has its own counter: these are the
+   * runs the hold WOULD have kept and grave danger took. If this
+   * number is large the hold is not the mechanism it looks like. */
+  if (city_data->grave_danger > 0) {
+    deep_expand_note_hold_yield(pplayer);
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
+/**********************************************************************//**
   Final build-choice selection for one city. Derived from
   dai_city_choose_build(); the differences (W01) are that the
   military-emergency gate is a want TIER check instead of a magnitude
@@ -7452,6 +7616,11 @@ static void deep_city_choose_build(struct ai_type *ait,
   if (is_barbarian(pplayer)) {
     dai_barbarian_choose_build(pplayer, pcity, &(city_data->choice));
   } else {
+    /* Adjudicated once, here, before anything rescales either side,
+     * and carried to the merge: the founder want and the military
+     * want as their producers formed them. Off by default. */
+    bool contest = deep_founder_contests_emergency(pplayer, pcity,
+                                                   city_data);
     /* The two arms of the inherited skip, named so the funnel can
      * charge a founder want that never reached an auction to the arm
      * that stopped it. Both conjuncts are the same expressions the
@@ -7459,11 +7628,20 @@ static void deep_city_choose_build(struct ai_type *ait,
      * makes the reason readable. */
     bool skip_emerg
       = (deep_want_from_choice(&city_data->choice).tier == DWT_EMERGENCY
-         && city_data->urgency != 0);
+         && city_data->urgency != 0
+         /* A contested city-turn reaches the advisor: suppressing the
+          * call is how a founder want loses the tier without ever
+          * being compared to anything, and the contest has just
+          * compared it. Only the emergency arm is opened; the war
+          * arm is a different rule and not this gate's business. */
+         && !contest);
     bool skip_war = (dai_on_war_footing(ait, pplayer)
                      && city_data->choice.want > 0
                      && pcity->id != adv->wonder_city);
 
+    if (contest) {
+      deep_expand_note_contest(pplayer);
+    }
     if (skip_emerg || skip_war) {
       /* The emergency arm is the one the original condition tested
        * first, so a city-turn that trips both is charged to it. */
@@ -7550,8 +7728,8 @@ static void deep_city_choose_build(struct ai_type *ait,
        * nothing, which is where the hysteresis comes from. */
       {
         bool dom_won_before
-          = deep_want_cmp(deep_want_from_choice(newchoice),
-                          deep_want_from_choice(&city_data->choice)) > 0;
+          = deep_merge_domestic_wins(newchoice, &city_data->choice,
+                                     contest);
         adv_want had = (dom_won_before
                         ? newchoice->want : city_data->choice.want);
         bool dom_won_after;
@@ -7588,8 +7766,15 @@ static void deep_city_choose_build(struct ai_type *ait,
         deep_switch_cost_apply(pplayer, pcity, newchoice, "dom");
 
         dom_won_after
-          = deep_want_cmp(deep_want_from_choice(newchoice),
-                          deep_want_from_choice(&city_data->choice)) > 0;
+          = deep_merge_domestic_wins(newchoice, &city_data->choice,
+                                     contest);
+
+        if (contest && dom_won_after && deep_choice_is_founder(newchoice)) {
+          /* The contest is only worth its counter when it ends in a
+           * founder actually taking the build: the raise says the
+           * comparison was made, this says it was decisive. */
+          deep_expand_note_contest_win(pplayer);
+        }
 
         if (dom_won_before != dom_won_after) {
           /* The want-winner was rejected on cost. This is the counter
@@ -7629,6 +7814,27 @@ static void deep_city_choose_build(struct ai_type *ait,
       }
       adv_free_choice(newchoice);
     }
+  }
+
+  /* The run hold. Placed after both paths that can leave a military
+   * choice standing -- the merge and the two skips -- because the
+   * pathology the funnel measured is the SKIP's: the gates do not
+   * have to fire on the turn the founder wins, only on the turn
+   * after. Returning here leaves production untouched, exactly as
+   * the H_AWAY guard above and the switch hold below do. */
+  if (deep_founder_run_held(pplayer, pcity, city_data)) {
+    log_base(deep_metric_log_level(),
+             "deep-runhold turn=%d player=\"%s\" city=%d prod=\"%s\""
+             " stock=%d size=%d beat=\"%s\" want=" ADV_WANT_PRINTF
+             " danger=%u urgency=%u grave=%u",
+             game.info.turn, player_name(pplayer), pcity->id,
+             universal_rule_name(&pcity->production), pcity->shield_stock,
+             city_size_get(pcity),
+             adv_choice_rule_name(&city_data->choice),
+             city_data->choice.want, city_data->danger,
+             city_data->urgency, city_data->grave_danger);
+    deep_expand_note_hold(pplayer);
+    return;
   }
 
   /* The useful-water gate. A hull is only worth its shields if the

@@ -14,6 +14,11 @@ only aggregation that keeps the arithmetic self-checks readable:
     cities = gate + norole + fresh + stale
     auc    = win + lostdom + lostmil
 
+`contest`/`contwin` and `hold`/`holdyld` are the two S-EXPAND-FIX
+gates' own counters. Both are identically zero when the gates are
+off, so their appearance in an arm is the liveness proof for that
+arm and their absence proves the control arm ran ungated.
+
 and prints the veto ranking -- every way a founder want can fail to
 become a settler, ordered by how many city-turns it took.
 """
@@ -27,7 +32,8 @@ import sys
 
 FIELDS = ["cities", "gate", "norole", "fresh", "stale", "w0", "wpos",
           "wneg", "held", "vfood", "vwonder", "vcap", "skipwar",
-          "skipemerg", "auc", "win", "lostdom", "lostmil", "lostmilt",
+          "skipemerg", "contest", "contwin", "hold", "holdyld",
+          "auc", "win", "lostdom", "lostmil", "lostmilt",
           "wantsum", "bidsum", "lostsum", "prod", "born", "alive",
           "found", "sites", "freetiles", "freeshare"]
 
@@ -122,14 +128,31 @@ def main():
         ("lostdom   domestic advisor preferred another bid",
          tot["lostdom"]),
         ("lostmil   military choice beat the founder", tot["lostmil"]),
-        ("lostmilt  ... of those, lost on TIER not value",
-         tot["lostmilt"]),
+        ("lostmilt  ... of those, with the military in the "
+         "emergency tier", tot["lostmilt"]),
     ]
     for name, v in sorted(order, key=lambda kv: -kv[1]):
         share = 100.0 * v / tot["cities"] if tot["cities"] else 0.0
         print("  %-46s %9d  %5.1f%%" % (name, int(v), share))
     print("  %-46s %9d" % ("win       founder won the auction", tot["win"]))
     print("  %-46s %9d" % ("found     cities founded", tot["found"]))
+
+    # The two S-EXPAND-FIX gates. Both are identically zero with the
+    # gates off, so a nonzero row is the liveness proof and the ratio
+    # below it is the whole mechanism claim.
+    print("\n# S-EXPAND-FIX gates")
+    print("  %-46s %9d" % ("contest   founder_tier_gate raised a contest",
+                           int(tot["contest"])))
+    print("  %-46s %9d" % ("contwin   ... a founder took the build",
+                           int(tot["contwin"])))
+    print("  %-46s %9d" % ("hold      founder_run_hold kept a run",
+                           int(tot["hold"])))
+    print("  %-46s %9d" % ("holdyld   ... grave_danger took it anyway",
+                           int(tot["holdyld"])))
+    if tot["win"]:
+        print("  %-46s %9.3f"
+              % ("prod/win  production turns per auction won",
+                 tot["prod"] / tot["win"]))
 
 
 if __name__ == "__main__":

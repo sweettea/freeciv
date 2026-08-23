@@ -304,6 +304,8 @@ static const struct deep_tuning deep_tuning_defaults = {
   .chatty_gate = 0,                     /* 0 = deep says nothing at all */
   .chatty_max_per_turn = 3,             /* PLACEHOLDER: a taste value, inert
                                          * while chatty_gate is 0 */
+  .founder_tier_gate = 0,               /* 0 = today's arbitration exactly */
+  .founder_run_hold = 0,                /* 0 = today's preemption exactly */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -599,6 +601,8 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(techgoal_distance_power) \
   TUNE_INT(chatty_gate) \
   TUNE_INT(chatty_max_per_turn)
+  TUNE_INT(founder_tier_gate) \
+  TUNE_INT(founder_run_hold)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 

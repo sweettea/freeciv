@@ -46,6 +46,8 @@ struct deep_expand_tally {
   int w0, wpos, wneg;
   int held, vfood, vwonder, vcap;
   int skipwar, skipemerg;
+  int contest, contwin;
+  int hold, holdyld;
   int auc, win, lostdom, lostmil, lostmilt;
   /* The magnitudes behind the counts: what a founder bid was worth on
    * the city-turns where it existed, and on the ones where it lost. */
@@ -155,15 +157,62 @@ void deep_expand_note_skip(const struct player *pplayer, bool war)
 }
 
 /**********************************************************************//**
+  founder_tier_gate raised a contest for this city-turn: deep's own
+  founder want strictly outbid the military want on magnitude, so the
+  emergency skip is not taken and a founder that wins the domestic
+  advisor's own auction is exempt from the tier at the merge. Zero
+  with the gate off, which is what makes the funnel line the gate's
+  liveness proof.
+**************************************************************************/
+void deep_expand_note_contest(const struct player *pplayer)
+{
+  deep_expand_of(pplayer)->contest++;
+}
+
+/**********************************************************************//**
+  ... and the contest ended with a founder taking the build.
+**************************************************************************/
+void deep_expand_note_contest_win(const struct player *pplayer)
+{
+  deep_expand_of(pplayer)->contwin++;
+}
+
+/**********************************************************************//**
+  founder_run_hold declined a military switch away from a founder the
+  city is already building. Zero with the gate off.
+**************************************************************************/
+void deep_expand_note_hold(const struct player *pplayer)
+{
+  deep_expand_of(pplayer)->hold++;
+}
+
+/**********************************************************************//**
+  ... and the same run, released because the advisor raised
+  grave_danger. The exception's own counter: a large number here means
+  the hold is being overruled rather than binding.
+**************************************************************************/
+void deep_expand_note_hold_yield(const struct player *pplayer)
+{
+  deep_expand_of(pplayer)->holdyld++;
+}
+
+/**********************************************************************//**
   The auction settled with a founder bid in hand. Three outcomes, each
   charged where it happened: the domestic advisor preferred something
   else, the merge preferred the military choice, or the founder won.
 
-  `lostmilt` is the tier half of the third case. deep compares
-  (tier, value) rather than magnitudes (deepwant.c), so an
-  emergency-tier military want outranks a founder want of any size --
-  a loss that no magnitude in the log can explain and that no rescaling
-  of the founder want could ever reverse.
+  `lostmilt` records the third case with the military side in the
+  EMERGENCY tier. It was introduced as the TIER half of that case, on
+  the reading that deep's (tier, value) order (deepwant.c) can refuse
+  a founder want that stock's magnitude order would have seated. It
+  cannot: domestic_advisor_choose_build() clamps whatever it returns
+  to DAI_WANT_DOMESTIC_MAX (daidomestic.c:631 = 750.075) and the
+  emergency tier starts at 1000, so a founder bid ARRIVES at the merge
+  already below any emergency want, and deep_want_from_choice() is
+  monotone in the raw want besides -- the two orders agree on every
+  comparison that reaches this seam. Every lostmilt is a magnitude
+  loss as well. The comparison that can distinguish them happens one
+  stage earlier and is founder_tier_gate's (deepdefence.c).
 **************************************************************************/
 void deep_expand_note_auction(const struct player *pplayer, int founder_bid,
                               bool dom_founder, bool dom_won,
@@ -229,14 +278,16 @@ void deep_expand_census(struct player *pplayer)
   log_base(deep_metric_log_level(),
            "deep-expand turn=%d player=\"%s\" cities=%d gate=%d norole=%d"
            " fresh=%d stale=%d w0=%d wpos=%d wneg=%d held=%d vfood=%d"
-           " vwonder=%d vcap=%d skipwar=%d skipemerg=%d auc=%d win=%d"
+           " vwonder=%d vcap=%d skipwar=%d skipemerg=%d contest=%d"
+           " contwin=%d hold=%d holdyld=%d auc=%d win=%d"
            " lostdom=%d lostmil=%d lostmilt=%d wantsum=%.0f bidsum=%.0f"
            " lostsum=%.0f prod=%d born=%d alive=%d found=%d sites=%.2f"
            " freetiles=%d freeshare=%.3f",
            game.info.turn, player_name(pplayer),
            t->cities, t->gate, t->norole, t->fresh, t->stale,
            t->w0, t->wpos, t->wneg, t->held, t->vfood, t->vwonder, t->vcap,
-           t->skipwar, t->skipemerg, t->auc, t->win, t->lostdom,
+           t->skipwar, t->skipemerg, t->contest, t->contwin,
+           t->hold, t->holdyld, t->auc, t->win, t->lostdom,
            t->lostmil, t->lostmilt, t->wantsum, t->bidsum, t->lostsum,
            prod, born, alive, found,
            deep_remaining_sites(pplayer),
