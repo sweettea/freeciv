@@ -86,6 +86,10 @@ struct deep_employ_plr {
     int peak;                 /* High-water member count seen. */
     int kills;
     int losses;
+    /* Member departures, over the whole life and restricted to the
+     * turn after formation. */
+    int depart[DED_DEPART_COUNT];
+    int depart1[DED_DEPART_COUNT];
   } op[DEEP_OPS_MAX];
 };
 
@@ -102,6 +106,10 @@ static const char *const deep_employ_sortie_name[DES_SORTIE_COUNT] = {
 
 static const char *const deep_employ_blade_name[DEB_BLADE_COUNT] = {
   "moves", "done", "claim"
+};
+
+static const char *const deep_employ_depart_name[DED_DEPART_COUNT] = {
+  "dead", "lost", "defence", "poach", "garrison"
 };
 
 /**********************************************************************//**
@@ -276,6 +284,27 @@ void deep_employ_op_strike(const struct player *pplayer, int oi,
 }
 
 /**********************************************************************//**
+  One member left this operation, and this is why. Charged at the site
+  that removed it, so the four paths a blade can leave by stay
+  distinguishable; `depart1` restricts the same count to the turn after
+  formation, which is where the muster arm loses most of its waves.
+**************************************************************************/
+void deep_employ_op_depart(const struct player *pplayer, int oi,
+                           enum deep_employ_depart why)
+{
+  struct deep_employ_plr *ep = deep_employ_get(pplayer, FALSE);
+
+  if (ep == NULL || oi < 0 || oi >= DEEP_OPS_MAX || !ep->op[oi].live
+      || why < 0 || why >= DED_DEPART_COUNT) {
+    return;
+  }
+  ep->op[oi].depart[why]++;
+  if (game.info.turn <= ep->op[oi].formed_turn + 1) {
+    ep->op[oi].depart1[why]++;
+  }
+}
+
+/**********************************************************************//**
   The slot is being dissolved: print the operation's whole life.
   `waited` is the turns it spent gathering before it marched (or, for
   one that never marched, its whole life), and `held` the turns it spent
@@ -285,15 +314,23 @@ void deep_employ_op_end(const struct player *pplayer, int oi,
                         const char *why, int members)
 {
   struct deep_employ_plr *ep = deep_employ_get(pplayer, FALSE);
+  char dep[DED_DEPART_COUNT * 24];
+  int i, at = 0;
 
   if (ep == NULL || oi < 0 || oi >= DEEP_OPS_MAX || !ep->op[oi].live) {
     return;
   }
   ep->op[oi].live = FALSE;
+  for (i = 0; i < DED_DEPART_COUNT; i++) {
+    at += fc_snprintf(dep + at, sizeof(dep) - at, "%s%s=%d/%d",
+                      i == 0 ? "" : ",", deep_employ_depart_name[i],
+                      ep->op[oi].depart[i], ep->op[oi].depart1[i]);
+  }
   log_base(deep_metric_log_level(),
            "deep-employop turn=%d player=\"%s\" op=%d target=%d"
            " muster=%d formed=%d launched=%d waited=%d held=%d"
-           " members0=%d peak=%d final=%d kills=%d losses=%d why=%s",
+           " members0=%d peak=%d final=%d kills=%d losses=%d why=%s"
+           " dep=%s",
            game.info.turn, player_name(pplayer), oi, ep->op[oi].target,
            ep->op[oi].muster ? 1 : 0, ep->op[oi].formed_turn,
            ep->op[oi].launch_turn,
@@ -302,7 +339,7 @@ void deep_employ_op_end(const struct player *pplayer, int oi,
            ep->op[oi].launch_turn > 0
              ? game.info.turn - ep->op[oi].launch_turn : 0,
            ep->op[oi].members0, ep->op[oi].peak, members,
-           ep->op[oi].kills, ep->op[oi].losses, why);
+           ep->op[oi].kills, ep->op[oi].losses, why, dep);
 }
 
 /**********************************************************************//**
