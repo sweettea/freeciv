@@ -27,20 +27,31 @@ compatible, sized so a game finishes in reasonable wall-clock (state
 the measured minutes/game). Configs live in benchmark/configs/ with
 comments naming their purpose.
 
-**Equal-start craft (user directive 2026-08-23): do not pay pre-flight
-turns.** Prefer, in order of increasing craft and only as far as the
-venue needs: (a) pure settings — techlevel/gold/startunits reach the
-target era at T0; (b) a SYMMETRIC scenario map with fixed startpos
-(europe.sav precedent) so seat equality holds by construction;
-(c) a generated mid-game save — a committed script that writes the
-sav secfile directly, stamping equal pre-placed cities (size,
-buildings, harbors, units) per seat, so turn 1 is already the era
-under test. If you ship (b) or (c), the generator script is a
-deliverable (benchmark/ or data/scenarios/, documented), the save
-must load on the pinned binary and both ai modules without warnings,
-and STATUS must note the methodology trade: a fixed map narrows
-variance to AI decisions (maximum sensitivity, less generality), so
-census tables must say which venue kind produced them.
+**Equal-start craft (user directives 2026-08-23): do not pay
+pre-flight turns, and do NOT try settings-only — techlevel caps out
+below flight.** The method is PLAY-FORWARD-THEN-EQUALIZE:
+(1) grow the world once with ALL-CLASSIC seats (stock is the neutral
+worldbuilder; deep would bake its biases into every evaluation start)
+on the target map — ~15% land for the naval venue; ~50% land with
+barbarians disabled and war-suppressing settings for the air venue so
+every seat reaches the snapshot alive; (2) snapshot the save at the
+target era (world tech ~70 for flight), on a turn where seats are
+roughly even; (3) run a committed equalization edit pass over the
+snapshot (the sav is editable secfile text): level all seats to the
+same tech set, equalize gold, and stamp the venue's subject
+infrastructure — Airports in every city for the airlift/air venue
+(pair with airliftingstyle at load), harbors for the naval one;
+(4) per-seed variance comes from gameseed at load — one fixed world,
+N divergent games (paired-seeds logic at its limit). Deliverables:
+the grow-world driver, the equalizer script, and the frozen snapshot
+save all committed and documented; the equalized save must load
+cleanly on the pinned binary with both ai modules (no warnings) and
+score correctly from a save-start (verify a scorelog appears and
+survives; the exact-turn resume trap applies only to PRE-EXISTING
+scorelogs — evaluation dirs start fresh). STATUS notes the
+methodology trade: a fixed world narrows variance to AI decisions
+(maximum sensitivity, less generality), so census tables must say
+which venue kind produced them.
 
 ## Deliverable 2: the census
 
