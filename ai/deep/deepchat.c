@@ -412,6 +412,10 @@ static bool deep_chat_is_warner(const struct player *pplayer,
 
     unit_list_iterate(eplayer->units, punit) {
       if (is_attack_unit(punit) && can_player_see_unit(other, punit)
+          /* Mirror the sending predicate: a candidate who only sees
+           * units the ally also sees would win the election and then
+           * say nothing, turning a yield into a silence. */
+          && !can_player_see_unit(aplayer, punit)
           && real_map_distance(unit_tile(punit), city_tile(acity))
              * SINGLE_MOVE / MAX(unit_type_get(punit)->move_rate, 1)
              <= horizon) {
@@ -451,7 +455,11 @@ static void deep_chat_ally_threats(struct player *pplayer)
           int eta;
 
           if (!is_attack_unit(punit)
-              || !can_player_see_unit(pplayer, punit)) {
+              || !can_player_see_unit(pplayer, punit)
+              /* A warning about a unit the ally already sees carries
+               * no information (shared vision made these lines pure
+               * noise in live play). Count only what we newly reveal. */
+              || can_player_see_unit(aplayer, punit)) {
             continue;
           }
           eta = real_map_distance(unit_tile(punit), city_tile(acity))
