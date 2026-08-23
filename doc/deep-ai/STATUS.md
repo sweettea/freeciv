@@ -307,6 +307,26 @@ Format:
         heuristic that would be an invented behaviour).
 - Note: acceptance bullet 3 therefore unmet pending the bootstrap
       piece; bullets 1-2 met. Flagged rather than hacked around.
+- [x] second half (4 commits on `epic/w28-stacking`, based at
+      `ab03d10246`): the corridor task source — the ONLY path a
+      corridor tile outside every city radius can reach a worker by —
+      still copied the advisors' old skip. `trunk_stack_gate` prices
+      those tiles as joins instead. Identity 10/10 in `deep`,
+      `mixed_db` AND a stock-only `classic` cell; `tune-audit` CLEAN at
+      254; `knobcensus` LIVE.
+- [ ] **NULL on corridor-150, and the reason is arithmetic.** 16
+      mirrored seeds, one key apart: `picked = 0` on every seed, the two
+      arms are byte-identical games (16/16 scorelogs), score delta
+      exactly +0.00. Refusals split `late` 59.3% / `idle` 38.9% /
+      `partial` 1.9% — a corridor road tile is 3.50 turns of work while
+      travel is 68.8% of all worker-turns, so a joiner cannot arrive
+      before the job ends. Stacking needs long JOBS; a corridor is a
+      long CHAIN of short jobs. Full entry 2026-08-23.
+- Note: measured stacking rate empire-wide is **0.46%** of worksite-turns
+      (n = 698.5 : 2.5 : 0.6 : 0.2 : 0.0 workers per active tile), which
+      is the size of the user's "auto-workers never stack" complaint.
+      `transform` is 0.0% of worker-turns on this venue, so bullet 3
+      above is still unmet and cannot even be asked here.
 - Scoping notes from source reading (kept for the bootstrap follow-up):
       - struct workermap { int enroute; int eta; } at autoworkers.c:72;
         the hard skip is the `continue` at ~499; displacement compare
@@ -20748,3 +20768,216 @@ been replaced in place by the re-run, which carries the same 40 games
 with the richer log; the table above reproduces with
 `benchmark/employ.py --section depart`, and the batch itself with
 `benchmark/muster-depart.sh`.
+
+## W28 second half: the corridor source refuses to stack, and stacking cannot help it (2026-08-23)
+
+Branch `epic/w28-stacking`, 4 commits plus this entry, based at
+`ab03d10246` (`epic/w03-horizon-content`: the whole W12 corridor family
+including W12G's keepable-bid fixes and W12H's soft borders, the
+corridor-150 venue, the funnel). Own worktree `.worktrees/w28`, own
+build (`-Daimodules=classic,tex,baseline,deep -Dtools= -Dclients=
+-Dfcmp=`), one pinned binary staged with its own `libfreeciv.so`
+(`.stage-bin/*/freeciv-server` sha256 `b2fbb6a78a65129a…`; identity base
+`33967d08aecb339c…`), ports 7500-7549. `tune-audit` CLEAN at **254**
+fields (one new knob). `knobcensus` **LIVE** for `trunk_stack_gate`.
+`meson test` 6/6. `corpus-run` 7/7.
+
+| commit | what |
+|---|---|
+| `dd2f0bd4e9` | `deepstack.c`: the worksite ledger — stack-size distribution, stacked worksite-turns, completion turns split solo/stacked |
+| `4015d2ff7a` | `trunk_stack_gate`: an occupied corridor tile is priced as a join instead of skipped |
+| `1512c7f29b` | `benchmark/w28-stacking.sh`, `stackcensus.py`, the ON-arm ini |
+| `f6e21f35d9` | the Europe rider: `trunk_stack_gate = 1` in `derby5/tuning-derby7.ini` |
+| — | this entry |
+
+### 1. The brief expected `server/advisors/`, and the code had moved
+
+**Stated first because it is where this epic departs from its brief.**
+W28 is one of two approved rule-4 exceptions permitting behaviour change
+in `server/advisors/`, and the brief was written expecting the change to
+land there. It did not, because the advisors' refusal was already gone:
+`consider_worker_action()` has had a join branch since **2026-07-25**
+(W28's first half, merged), with `struct workermap` carrying
+`extra_rate`/`extra_n`.
+
+What that entry could not know is that the demand which most wants
+stacking never reaches the advisor at all.
+`worker_evaluate_improvements()` enumerates only tiles inside an own
+city radius (`autoworkers.c:586`), so a corridor tile between two
+distant cities is offered to nothing there. W12 slice 2 built
+`deep_trunk_source_task()` (`deepsettler.c`) to lift that ceiling — and
+copied the advisors' *old* guard while doing it, skipping any tile with
+another worker on it. The funnel had already charged that skip: `taken`
+was 28.2 drops a game (19.0%) on the pilot, and on this branch it is
+**23.1 a game, 28.9% of all drops — the largest single cause**.
+
+So the site was correctly identified, and **no `server/advisors/` file
+was touched**; placement followed `00-context` §4 (default is
+`ai/deep`).
+
+**The advisors-side refusal that remains, unfixed and deliberately so:**
+`worker_evaluate_city_requests()` (`autoworkers.c:1000`) still hard-skips
+occupied tiles. That path serves `pcity->task_reqs`, whose only writers
+outside savegame loading are `server/unithand.c:7002` (a client packet —
+a HUMAN player's city work request) and `ai/tex`. It is a real defect on
+a different demand source; `ai/deep` never uses it, so a deep tuning
+knob cannot gate it, and an ungated change would break the byte-identity
+this epic's proof rests on.
+
+### 2. The mechanism, and why no constant was invented
+
+Behind `trunk_stack_gate` an occupied corridor tile is priced rather
+than skipped, by the arithmetic `consider_worker_action()` already uses:
+
+    remaining     = tile_activity_time() - total_activity()
+    turns_without = ceil(remaining / join_rate)
+    at_arrival    = remaining - join_rate * arrival
+    turns_joined  = arrival + ceil(at_arrival / (join_rate + my_rate))
+    value         = amortize(want, turns_joined) - amortize(want, turns_without)
+
+with three refusals, counted separately so a null could be read:
+**idle** (nobody is actually performing this activity here, so there is
+nothing to join), **late** (the job ends before this worker could
+arrive), **partial** (no whole turn is bought). The gate is geometry,
+not a magnitude: the price is the advisor's own formula and there is
+nothing free in it. It is also self-limiting — each further joiner
+shortens the job less, and the first that shortens it by less than a
+turn is refused — so **no stacking cap was invented**.
+
+### 3. Identity: 10/10 in three cells, including a stock-only cell
+
+Base = `git archive ab03d10246`; both sides ran
+`tuning/w12g-keep-on.ini`, which does not name the new key, so it sat at
+its compiled 0. Ten paired `smoke.conf` seeds per cell:
+
+    identity deep:     10/10 byte-identical, 0 differ, 0 missing
+    identity mixed_db: 10/10 byte-identical, 0 differ, 0 missing
+    identity classic:  10/10 byte-identical, 0 differ, 0 missing
+    base arm emitting a W28 token:      0 files   (it really is the base)
+    head arm with gate shut, offered>0: 0 lines   (the gate really is shut)
+    head arm deep-trunksrc:           499 lines   (the path really is walked)
+
+The `classic` cell has no deep seat at all and is what makes "default
+server behaviour is unchanged" checkable rather than asserted.
+
+### 4. The A/B: a PROVEN zero, not a statistical one
+
+16 mirrored corridor-150 seeds, one pinned binary, one key apart
+(`tuning/w12g-keep-on.ini` vs the same plus `trunk_stack_gate = 1`).
+Read-back audit 16/16 per arm.
+
+**The gate never assigned a single join, on any seed:**
+
+    seed   seen  offered  declined (idle:late:partial)  picked
+       1     39        0        21:15:0                      0
+       2    140        1        78:55:2                      0
+       3   1832       23      596:1187:26                    0
+       4    223        0        90:125:4                     0
+       5     86        0        27:51:0                      0
+       6     42        0        25:16:1                      0
+       7    113        0        22:17:1                      0
+       8     46        1        24:16:1                      0
+       9     77        3        37:36:1                      0
+      10    146        0        74:65:1                      0
+      11     53        0        44:6:1                       0
+      12     77        4        35:37:1                      0
+      13    437        4      137:201:10                     0
+      14     98        0        42:55:0                      0
+      15   1792       50      638:1014:42                    0
+      16     37        0        21:16:0                      0
+    MEAN  327.4      5.4      119.4:182.0:5.7                0
+
+Because no assignment ever changed, **the two arms are the same games**:
+
+    scorelogs byte-identical: 16/16      maphash equal: 16/16
+
+so `paircmp` reports exactly what that implies, and the score line is a
+proof rather than an estimate:
+
+    metric        OFF        ON     delta      se       t   wins
+    score      190.14    190.14     +0.00    0.00     nan   0/16
+    cities      23.98     23.98     +0.00    0.00     nan   0/16
+    techs       30.02     30.02     +0.00    0.00     nan   0/16
+    trunk-picks 191.62   191.62     +0.00    0.00     nan   0/16
+    stack-offer   0.00      2.25     +2.25    1.14   +1.97   7/16
+
+`stack-offer` is the only line that moves, and it is the instrument.
+The knob is **LIVE, and the mechanism is null**: joins were priced 86
+times across the arm and lost the auction every time.
+
+### 5. Why it is null, which the decline split answers exactly
+
+`late` is **59.3%** of refusals and `idle` **38.9%**; `partial` — the
+marginal test turning down a real opportunity — is **1.9%**. The
+supporting magnitudes, from `deep-stack` and `deep-workturn` on the same
+games:
+
+    a corridor road tile           3.50 turns of work (tsolo/dsolo)
+    travel                        68.8% of all worker-turns
+    idle                          18.3%
+    road / irrigate / mine    7.0% / 3.7% / 1.8%
+    transform                      0.0%
+
+A corridor road is 2-6 activity turns; the walk to a beyond-ceiling
+corridor tile is longer than that. `remaining - join_rate * arrival <= 0`
+almost always, so a second worker cannot arrive before the job ends, and
+the marginal test correctly declines.
+
+**The brief's premise is wrong in a specific and useful way.** It
+reasoned that "long multi-tile road chains are exactly where stacking
+pays". The chain is long; each *tile* is short — and stacking operates
+per tile. The workstream's own value table is about **36-96 worker-turn
+transforms**, which is where the amortize discount bites. On this venue
+`transform` is **0.0% of worker-turns**: the long transforms W28's first
+half found were never built still are not, so bullet 3 of its acceptance
+remains unmet and is untouched by this epic.
+
+### 6. What the stack census says about the original complaint
+
+The user's report — auto-workers "never stack" — is now measured rather
+than anecdotal. Per game, worksite-turns by simultaneous worker count:
+
+    n = 698.5 : 2.5 : 0.6 : 0.2 : 0.0        (1 : 2 : 3 : 4 : 5+ workers)
+    stacked 3.2 worksite-turns a game = 0.46% of all
+    completions 185.6 a game: 184.3 solo, 1.2 ever stacked
+    turns per completion: solo 3.50, stacked 3.95
+
+Identical in both arms, because this epic's gate changed nothing. 0.46%
+is the honest size of the phenomenon on this venue, and the 3.95-vs-3.50
+gap is observational (a site is stacked because it is slow), not a cost
+of stacking.
+
+### 7. For whoever picks this up
+
+- **Do not tune this knob.** It is geometry and it is null here for an
+  arithmetic reason, not a pricing one. Tuning cannot move `late`.
+- **The stacking case is W29's, not W12's.** Stacking needs long JOBS.
+  The one place deep could get them — terrain transforms — it never
+  starts, which is a bootstrap problem in claim-time valuation, not a
+  join problem. Any future stacking work should be measured on a venue
+  where `transform` worker-turns are nonzero; on corridor-150 they are
+  exactly zero and the question cannot be asked.
+- **`idle` at 38.9% is a separate, live defect.** Those are corridor
+  tiles refused because *some* worker stands there, doing something else
+  or nothing. Today's skip and this epic's join both decline them. Simply
+  allowing a normal claim on a tile whose occupant is not working it is a
+  different change with a different risk (two workers converging), and it
+  is the obvious next probe — 119.4 refusals a game.
+- **`taken` is still the largest drop cause at 28.9%**, and this epic
+  proves stacking is not what closes it.
+- **Machine lessons, all paid for this session.** (a) The power-loss
+  sweep caught two DONE dirs that passed every naive check — non-zero
+  size, non-zero maphash, and a last record showing the right final turn
+  — but had a truncated final block; the test that works is counting the
+  final-turn lines (a complete corridor-150 game has 186, a smoke game
+  124). (b) `find` here is `bfs` and **errors** on relative `-newermt`,
+  so freshness checks must use ISO timestamps or they silently report
+  zero. (c) `cd X && … &` backgrounds the `cd` too, so anything after
+  the `&` runs in the old directory. (d) An agent thread's cwd resets
+  between Bash calls, so the `bash ./benchmark/<name>.sh` launch form
+  needs an explicit `cd` prefix.
+- **Retention:** `benchmark/results/w28-ab` (32 corridor-150 games, both
+  arms) and `benchmark/results/w28-identity` (60 smoke games). Saves
+  deleted and every `game.log` filtered to `deep-trunk|deep-stack|
+  deep-tuning|deep-workturn` lines after scoring; every table above
+  re-derives from what remains with the two committed readers.
