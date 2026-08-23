@@ -14,3 +14,15 @@
 - Risk-weight decision for derby-7 (fear knobs zeroed there; W12H
   risk term inert until they are not).
 - Alignment remedy: canonicalise walk direction (W12H rec #1).
+- **SITE-IMPROVABLE** (user call 2026-08-23, "we can improve crappy
+  sites after we build them"): the site evaluator's starve gate and
+  potential term judge tiles AS-IS; price achievable-after-improvement
+  yields instead (irrigable/minable/transformable), discounted by
+  worker-turns, REUSING W29's chain valuation. Evidence: Carthago
+  stalled at 23 cities with 118 mindist + 36 starve drops/turn while
+  "room" was unimproved desert. Starve gate becomes a starve price.
+  BLOCKED BEHIND: epic/pox-spacing (owns deepsite.c) and
+  epic/w29-transform-chains (provides the chain valuation).
+- **NAVAL-FOUNDING for Europe** (same debrief): Carthago evaluated
+  boat=0 sites all game facing Sicily/Sardinia; site_naval_gate=0 in
+  derby-7. One-line ini experiment next game; weights already tuned.
