@@ -816,6 +816,12 @@ static double deep_trunk_link_dividend(const struct player *pplayer,
    * pplayer changes. Looked up rather than cast away. */
   struct player *owner = player_by_number(player_number(pplayer));
   int pn = player_number(pplayer);
+  /* What crossing this corridor costs before the work: bare terrain in
+   * the build phase, the roads already there in the upgrade phase. The
+   * same base deep_trunk_price() subtracts from, so the caravan's ETA
+   * and the logistics saving are quoted against one description of the
+   * ground. */
+  int base = (link->upgrade ? link->cur : link->terr);
   double per_tile, saving, total = 0.0;
   struct tile *ends[2];
   int e, t;
@@ -832,7 +838,7 @@ static double deep_trunk_link_dividend(const struct player *pplayer,
    * this per candidate extra; here one road stands for the link, which
    * is what makes the dividend a per-link number. */
   for (t = 0; t < len && proad == NULL; t++) {
-    if (!deep_trunk_tile_roaded(path[t])) {
+    if (deep_trunk_tile_wanted(pplayer, path[t], link->upgrade)) {
       proad = deep_trunk_road_target(next_extra_for_tile(path[t], EC_ROAD,
                                                          pplayer, NULL));
     }
@@ -841,11 +847,11 @@ static double deep_trunk_link_dividend(const struct player *pplayer,
     return 0.0;
   }
 
-  saving = (double) (link->terr - link->len * proad->move_cost);
+  saving = (double) (base - link->len * proad->move_cost);
   if (saving <= 0.0) {
     return 0.0;
   }
-  per_tile = (double) link->terr / (double) link->len;
+  per_tile = (double) base / (double) link->len;
 
   ends[0] = from;
   ends[1] = to;
@@ -1447,7 +1453,24 @@ static adv_want deep_trunk_price(const struct deep_tuning *tune,
   }
   link = &deep_trunk_links[slot - 1];
 
-  saving = link->terr - link->len * proad->move_cost;
+  /* An upgrade is worth the DIFFERENCE, not the whole. The link's worth
+   * has always been (what crossing it costs before the work) - (what it
+   * would cost roaded end to end); in the upgrade phase the first half
+   * is link->cur, the roads actually on the ground, instead of
+   * link->terr, the bare terrain that is no longer what a traveller
+   * pays. Nothing else in the term moves: same subtraction, same
+   * SINGLE_MOVE, same amortize() over the gap, same trunk_road_gain.
+   *
+   * That single substitution is also the ordering. On grassland
+   * (movement_cost 1, so 1 * SINGLE_MOVE = 3 fragments a tile) an
+   * unroaded link of L tiles prices at 3L - 1*L = 2L fragments under
+   * classic's Road (move_cost 1); the same link, finished, prices its
+   * railroad upgrade (move_cost 0) at 1*L - 0 = L. The unbuilt corridor
+   * is worth exactly twice the upgrade of a corridor already built, out
+   * of the ruleset's own numbers, and the link phase guarantees the two
+   * are never even tiles of the same link. */
+  saving = (link->upgrade ? link->cur : link->terr)
+           - link->len * proad->move_cost;
   if (saving <= 0) {
     return 0.0;
   }
