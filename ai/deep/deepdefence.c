@@ -51,6 +51,7 @@
 #include "maphand.h"
 #include "citytools.h"
 #include "cityturn.h"
+#include "plrhand.h"
 #include "sernet.h"
 #include "srv_log.h"
 #include "unithand.h"
@@ -158,7 +159,7 @@ static void deep_log_defence(struct ai_type *ait, struct player *pplayer)
              "deep-def turn=%d player=\"%s\" city=%d danger=%u"
              " urgency=%u defense=%d ndef=%d prod=\"%s\""
              " shield=%d food=%d menace=%.2f"
-             " founder=%d worker=%d",
+             " founder=%d worker=%d capital=%d",
              game.info.turn, player_name(pplayer), pcity->id,
              city_data->danger, city_data->urgency,
              assess_defense(ait, pcity), ndef,
@@ -176,7 +177,15 @@ static void deep_log_defence(struct ai_type *ait, struct player *pplayer)
               * city_data->choice is deliberately NOT logged here: this
               * pass runs before the choice is made, so it still holds
               * want=-1 and would read as "expansion lost to nothing". */
-             city_data->founder_want, city_data->worker_want);
+             city_data->founder_want, city_data->worker_want,
+             /* Which of these city-turns is the capital's, so the
+              * garrison column can be read for the capital ALONE and
+              * on BOTH arms of a capital-stake cell -- the gate-off arm
+              * logs no deep-capstake line to join against. Appended at
+              * the end of the line: benchmark/defence.py's regex stops
+              * at prod=, so nothing that reads this line today
+              * notices. */
+             is_capital(pcity) ? 1 : 0);
   } city_list_iterate_end;
 }
 
@@ -1939,6 +1948,226 @@ static double deep_fear_satisfaction(const struct civ_map *nmap,
   return MAX(tune->satisfied_fear_discount, 0.0);
 }
 
+/* The capital stake's counters, one line per player per turn from the
+ * once-per-turn caller. */
+static int deep_capstake_n = 0;
+static double deep_capstake_mult = 0.0;
+static int deep_capstake_clipped = 0;
+
+/* The largest danger figure whose SQUARE still fits the `int qdanger`
+ * the build choice computes below (46340 = floor(sqrt(INT_MAX))). Not
+ * a tuning choice and not a taste: it is the width of the existing
+ * arithmetic, and the stake is the first term that can multiply danger
+ * rather than add to it, so it is the first term that could reach it.
+ * Every danger deep has ever logged is three orders below this. */
+#define DEEP_DANGER_QUADRATIC_MAX 46340
+
+/* Every factor of one capital's stake, kept so the caller that owns
+ * the danger can print the arithmetic beside the number it moved. */
+struct deep_capstake {
+  int prob;                     /* Percent, civil_war_triggered()'s */
+  double odds;                  /* Clipped to [0, 1] */
+  int cands;                    /* Cities that could defect */
+  int flips;                    /* How many of them civil_war() takes */
+  double pool;                  /* Their summed ai_city.worth */
+  double exposure;              /* odds x pool x flips / cands */
+  double worth;                 /* The capital's own ai_city.worth */
+  double mult;                  /* 1 + gain x exposure / worth */
+};
+
+/**********************************************************************//**
+  What losing THIS city would cost the rest of the empire, as a
+  multiplier on its danger. 1.0 for every city that is not the capital,
+  and for every capital whose loss cannot start a civil war.
+
+  THE HOLE. The defence ledger prices a city by the threat standing in
+  front of it. That is the right shape for a city whose loss costs its
+  own worth, and the capital is not one: capturing it rolls the
+  ruleset's civil-war dice, and a civil war hands roughly half of every
+  OTHER city to a brand-new hostile player. The user's Europe game is
+  the whole argument -- Deep_Osmanli's capital fell around T123 with
+  danger=7233 and urgency=67 in the ledger, which is a large number
+  that means "a large wave is here", and nothing anywhere in the ledger
+  meant "and this one is the capital". The dice came up; 31 cities
+  became 16; the game was over in the way that does not recover.
+
+  THE PRICE, and every factor in it is read rather than chosen:
+
+  - P(civil war) is civil_war_triggered()'s own arithmetic without its
+    dice: EFT_CIVIL_WAR_CHANCE for our government, less every city's
+    EFT_CIVIL_WAR_CITY_BONUS. Under classic that is 90% in Anarchy down
+    to 30% under Democracy, and it moves with celebration exactly the
+    way the server's roll does.
+  - The exposure is civil_war()'s own split. Its candidate pool is
+    every non-capital city without a GameLoss unit, and it flips
+    MAX(j/2, 1) of the j candidates, so the expected worth handed over
+    is pool x flips / j.
+  - Worth is stock's cached `ai_city.worth`, which is what
+    deep_conquest_worth() prices a capture at and what
+    deep_birth_guard_want() pays to keep a city -- one currency, three
+    consumers.
+
+  THE FORM IS A RATIO, WHICH IS WHY IT NEEDS NO NEW CONSTANT. Danger is
+  not worth: it is the size of the threat, and the ledger converts it
+  into defence spending at a rate that is calibrated for a city whose
+  loss costs its own worth. Multiplying the capital's danger by
+
+    1 + gain x P(civil war) x expected defector worth / capital worth
+
+  says exactly "defend this one as hard as the ledger would defend a
+  city that valuable", and both sides of the division are ai_city.worth
+  in the same units. capital_stake_gain = 1.0 is therefore the identity
+  conversion rather than a calibration; see deeptuning.h.
+
+  An ADDITIVE stake would have needed a worth-to-danger conversion
+  constant that nothing in the tree derives, which is the reason this
+  is a multiplier. The cost of that choice is stated honestly: a
+  capital at danger == 0 gets no stake, because the ledger says nothing
+  can reach it. The garrison floor still covers that city, and a threat
+  it cannot see is exactly what the floor's blind-spot classes are for.
+**************************************************************************/
+static double deep_capital_stake_mult(struct ai_type *ait,
+                                      struct city *pcity,
+                                      struct deep_capstake *terms)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct player *pplayer = city_owner(pcity);
+  double odds, pool = 0.0, exposure, capital_worth, mult;
+  int prob, cands = 0, flips;
+
+  memset(terms, 0, sizeof(*terms));
+  terms->mult = 1.0;
+  if (tune->capital_stake_gate == 0 || tune->capital_stake_gain <= 0.0
+      || !is_capital(pcity)) {
+    return 1.0;
+  }
+  /* The server's own preconditions for the roll, at the same
+   * conquering_city = TRUE the capture site passes. No possible civil
+   * war, no stake: the capital is then worth its own worth like any
+   * other city and the ledger was already right. */
+  if (!civil_war_possible(pplayer, TRUE, TRUE)
+      || normal_player_count() >= MAX_NUM_PLAYERS) {
+    return 1.0;
+  }
+  prob = get_player_bonus(pplayer, EFT_CIVIL_WAR_CHANCE);
+  city_list_iterate(pplayer->cities, acity) {
+    prob -= get_city_bonus(acity, EFT_CIVIL_WAR_CITY_BONUS);
+  } city_list_iterate_end;
+  odds = CLIP(0, prob, 100) / 100.0;
+  if (odds <= 0.0) {
+    return 1.0;
+  }
+  /* civil_war()'s defector candidates, by its own two exclusions. */
+  city_list_iterate(pplayer->cities, acity) {
+    bool gameloss = FALSE;
+
+    if (is_capital(acity)) {
+      continue;
+    }
+    unit_list_iterate(city_tile(acity)->units, punit) {
+      if (unit_owner(punit) == pplayer
+          && unit_has_type_flag(punit, UTYF_GAMELOSS)) {
+        gameloss = TRUE;
+        break;
+      }
+    } unit_list_iterate_end;
+    if (gameloss) {
+      continue;
+    }
+    cands++;
+    pool += def_ai_city_data(acity, ait)->worth;
+  } city_list_iterate_end;
+  if (cands <= 0 || pool <= 0.0) {
+    return 1.0;
+  }
+  flips = MAX(cands / 2, 1);
+  exposure = odds * pool * flips / cands;
+  capital_worth = def_ai_city_data(pcity, ait)->worth;
+  if (capital_worth <= 0.0) {
+    /* Stock recomputes worth once a turn and a city can be read before
+     * its first pass. No denominator, no ratio. */
+    return 1.0;
+  }
+  mult = 1.0 + tune->capital_stake_gain * exposure / capital_worth;
+
+  terms->prob = prob;
+  terms->odds = odds;
+  terms->cands = cands;
+  terms->flips = flips;
+  terms->pool = pool;
+  terms->exposure = exposure;
+  terms->worth = capital_worth;
+  terms->mult = mult;
+
+  return mult;
+}
+
+/**********************************************************************//**
+  Multiply a danger figure by the capital stake, keeping it inside the
+  width the build choice's `int qdanger` can square, and log the whole
+  derivation with the danger it moved.
+**************************************************************************/
+static void deep_apply_capital_stake(struct ai_type *ait,
+                                     struct city *pcity,
+                                     struct ai_city *city_data,
+                                     const char *site)
+{
+  struct deep_capstake t;
+  unsigned int before = city_data->danger;
+  double scaled;
+  bool clipped = FALSE;
+
+  if (deep_capital_stake_mult(ait, pcity, &t) > 1.0) {
+    if (before > 0) {
+      scaled = before * t.mult;
+      if (scaled > DEEP_DANGER_QUADRATIC_MAX) {
+        scaled = DEEP_DANGER_QUADRATIC_MAX;
+        clipped = TRUE;
+      }
+      city_data->danger = (unsigned int) scaled;
+    }
+    /* BOTH sites log, and they are told apart by site=, because they
+     * see different numbers and only one of them is consumed. The
+     * ledger runs at phase begin, after the incoming-defence credit
+     * has already been subtracted, so a capital with help on the way
+     * reads danger=0 there and the stake has nothing to scale; the
+     * build choice re-assesses and is what the defender is actually
+     * bought from. Logging only the once-per-turn site would have
+     * reported the mechanism as nearly inert when it is not. */
+    if (site[0] == 'l') {
+      deep_capstake_n++;
+      deep_capstake_mult += t.mult;
+      deep_capstake_clipped += clipped ? 1 : 0;
+    }
+    log_base(deep_metric_log_level(),
+             "deep-capstake turn=%d player=\"%s\" city=%d site=\"%s\""
+             " prob=%d odds=%.3f cands=%d flips=%d pool=%.1f"
+             " exposure=%.1f worth=%.1f mult=%.3f danger=%u staked=%u"
+             " clipped=%d",
+             game.info.turn, player_name(city_owner(pcity)), pcity->id,
+             site, t.prob, t.odds, t.cands, t.flips, t.pool, t.exposure,
+             t.worth, t.mult, before, city_data->danger, clipped ? 1 : 0);
+  }
+}
+
+/**********************************************************************//**
+  The capital stake's execution counter, one line per player per turn.
+  Zero lines on an arm with the gate shut is what proves the switch.
+**************************************************************************/
+static void deep_capstake_census(struct player *pplayer)
+{
+  if (deep_capstake_n > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-capstakes turn=%d player=\"%s\" priced=%d meanmult=%.3f"
+             " clipped=%d",
+             game.info.turn, player_name(pplayer), deep_capstake_n,
+             deep_capstake_mult / deep_capstake_n, deep_capstake_clipped);
+  }
+  deep_capstake_n = 0;
+  deep_capstake_mult = 0.0;
+  deep_capstake_clipped = 0;
+}
+
 /**********************************************************************//**
   Apply the overseas fear, the en-route credit and the garrison floor
   to every city's freshly assessed danger.
@@ -1992,9 +2221,16 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
     if (deep_tuning_get()->chatty_inbound_gate > 0) {
       city_data->danger += deep_request_defend_fear(pplayer, pcity);
     }
+    /* The stake MULTIPLIES what every term above assembled, so it goes
+     * after all of them and after the credit: what the capital's loss
+     * costs the empire scales the threat actually standing there, net
+     * of the help already on its way. Before the floor, which is a
+     * danger == 0 rule the stake cannot reach anyway. */
+    deep_apply_capital_stake(ait, pcity, city_data, "ledger");
     deep_apply_garrison_floor(&(wld.map), pcity, city_data, updisc,
                               menace, TRUE);
   } city_list_iterate_end;
+  deep_capstake_census(pplayer);
 }
 
 /**********************************************************************//**
@@ -4977,6 +5213,12 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     if (deep_tuning_get()->chatty_inbound_gate > 0) {
       city_data->danger += deep_request_defend_fear(pplayer, pcity);
     }
+    /* Same term, same place in the order as the once-per-turn site:
+     * the danger the build choice reads must not disagree with the
+     * danger the ledger holds. This is the site the defender is
+     * actually bought from; site="build" on the log line tells the two
+     * apart, and only the ledger's feeds the per-turn census. */
+    deep_apply_capital_stake(ait, pcity, city_data, "build");
     deep_apply_garrison_floor(nmap, pcity, city_data, updisc,
                               deep_garrison_menace(pplayer), FALSE);
 

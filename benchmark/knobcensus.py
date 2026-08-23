@@ -1581,6 +1581,25 @@ MAP = {
         "the trunk planner picks the alliance's corridor endpoint. "
         "Needs trunk_ally_gate; read the effect on deep-trunklink "
         "ally=1 to=. PLACEHOLDER."),
+    "capital_stake_gate": (
+        "S2", "mode", "direct", [("deep-capstake", "")],
+        "0 = deep_capital_stake_mult() returns on its first comparison "
+        "and no city's danger changes = byte-identical. deep-capstake "
+        "is written once per turn per capital the stake prices, "
+        "carrying the whole derivation (prob, odds, cands, flips, "
+        "pool, exposure, worth, mult) and the danger it moved "
+        "(danger= -> staked=), so the tag cannot exist in a gate-off "
+        "game. VENUE-SENSITIVE: it needs an empire at or above "
+        "civilwarsize (10 by default) AND a capital carrying nonzero "
+        "danger after the incoming-defence credit."),
+    "capital_stake_gain": (
+        "S2", "mag", "direct", [("deep-capstake", "")],
+        "The conversion in 1 + gain x P(civil war) x exposure / "
+        "worth. DERIVED at 1.0 rather than searched -- both sides of "
+        "that division are ai_city.worth in the same units -- so a "
+        "tuning pass on it is asking whether a civil war costs more "
+        "or less than the cities it moves. mult= on deep-capstake is "
+        "monotone in it, which is what makes this direct."),
 }
 
 STAGE_NAME = {

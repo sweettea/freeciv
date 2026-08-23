@@ -2991,6 +2991,44 @@ struct deep_tuning {
    * was going to choose anyway, so with trunk_ally_gate shut there is
    * nothing to prefer and this is inert. PLACEHOLDER. */
   double chatty_road_gain;
+
+  /* CAPITAL STAKE (deepdefence.c, deep_capital_stake_mult()). Losing
+   * the capital is not losing a city: it rolls the ruleset's civil-war
+   * dice, and a civil war hands roughly half of every OTHER city to a
+   * new player. The defence ledger priced the capital exactly like any
+   * other city, so the empire-wide consequence was worth nothing to it
+   * (user's Europe game, T123: Deep_Osmanli's capital fell at
+   * danger=7233 urgency=67 with no palace term anywhere in the ledger,
+   * the dice came up, and 31 cities became 16).
+   *
+   * 0 (default) = the ledger the epic inherited, byte for byte: the
+   * multiplier function returns on its first comparison and no city's
+   * danger changes. != 0 = the capital's danger is multiplied by
+   *
+   *   1 + capital_stake_gain x P(civil war) x (expected defector worth
+   *                                           / capital worth)
+   *
+   * and every factor is READ, not chosen: P is civil_war_triggered()'s
+   * own arithmetic (EFT_CIVIL_WAR_CHANCE less every city's
+   * EFT_CIVIL_WAR_CITY_BONUS), the defector pool is civil_war()'s own
+   * eligibility rule (non-capital, no GameLoss unit) at its own split
+   * size (MAX(j/2, 1) of j candidates), and worth is stock's cached
+   * `ai_city.worth` -- the same currency deep_conquest_worth() prices a
+   * capture at and deep_birth_guard_want() pays to keep a city. */
+  int capital_stake_gate;
+
+  /* The conversion in that formula, and it is a RATIO of two
+   * `ai_city.worth` figures, so 1.0 is the identity: "an expected
+   * worth of X held hostage in other cities is worth defending the
+   * capital as hard as a capital worth X more would be". DERIVED
+   * rather than picked -- the numerator and the denominator are the
+   * same quantity in the same units, and nothing has to be calibrated
+   * for them to divide. Below 1.0 discounts the empire's exposure
+   * against the capital's own; above 1.0 says the disruption costs
+   * more than the cities themselves (plausible -- the split also
+   * creates a hostile neighbour -- but not derivable, so not the
+   * default). */
+  double capital_stake_gain;
 };
 
 void deep_tuning_init(void);

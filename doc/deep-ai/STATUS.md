@@ -21256,3 +21256,204 @@ Saves dropped, every `game.log` filtered to `deep-employ*`,
 `deep-writeoff` and `kill-dyad` lines. Every table above re-derives
 with `benchmark/employ.py --section poach` and the batch itself with
 `benchmark/poach-price.sh`.
+## S-CAPSTAKE: the capital was priced like a city, and it is worth half the empire (2026-08-23)
+
+Brief: `sessions/S-CAPSTAKE-capital-defence.md`. Branch
+`epic/capital-stake` (base `50ca21b736`). Four commits: the stake, the
+probe drivers, the Europe rider, this entry. tune-audit **CLEAN at
+268/268**, `meson test` **7/7**, both new knobs census **LIVE/MODE** on
+the liveness corpus (`deep-capstake`, 122 firings). The palace-
+relocation half is **deferred**, with its design and the reason in §7.
+
+### 1. The defect, in the ledger's own numbers
+
+`ai/deep`'s defence ledger prices a city by the threat standing in
+front of it. That is the right shape for a city whose loss costs its
+own worth, and the capital is not one: capturing it rolls the
+ruleset's civil-war dice (`civil_war_triggered()`), and `civil_war()`
+hands `MAX(j/2, 1)` of the `j` eligible cities to a brand-new hostile
+player.
+
+The user's Europe game is the whole argument, and the T110-T125 saves
+in `play-0822-2253/` say it plainly. Replaying the T120 autosave shows
+Deep_Osmanli's capital (city 383) in the three turns before it fell:
+
+    turn  danger  urgency  ndef  defense  producing   founder-want
+     121     628        2     0        0  Riflemen             843
+     122     713       12     0        0  Riflemen             843
+     123     713       12     0        0  Riflemen             843
+
+**ndef = 0.** The capital was empty, its settler want was 843, and
+nothing anywhere in the ledger said the word "capital". It fell, the
+dice came up, and 31 cities became 16.
+
+### 2. The price, and why it contains no invented constant
+
+The capital's danger is multiplied by
+
+    1 + capital_stake_gain x P(civil war) x expected defector worth
+                                          / capital worth
+
+Every factor is READ:
+
+- **P(civil war)** is `civil_war_triggered()`'s arithmetic without its
+  dice: `EFT_CIVIL_WAR_CHANCE` for our government less every city's
+  `EFT_CIVIL_WAR_CITY_BONUS` (classic: 90% Anarchy .. 30% Democracy;
+  celebration -5 per city, disorder +5).
+- **The exposure** is `civil_war()`'s own split over its own candidate
+  pool (non-capital, no GameLoss unit): `pool x flips / cands`.
+- **Worth** is stock's `ai_city.worth` -- the currency
+  `deep_conquest_worth()` prices a capture in and
+  `deep_birth_guard_want()` pays to keep a city.
+
+**The form is a ratio of two worths, which is why the gain needs no
+calibration.** 1.0 is the identity conversion: numerator and
+denominator are the same quantity in the same units. An ADDITIVE stake
+would have needed a worth-to-danger constant that nothing in the tree
+derives, and that is the reason this is a multiplier. The cost of the
+choice, stated honestly: a capital at danger 0 gets no stake.
+
+### 3. The derivation, arithmetic shown, from the user's own position
+
+`benchmark/capstake.sh derive` replays T120 with the gate open (the
+user's `tuning-derby7.ini` plus one key). Four turns, four deep
+capitals, sixteen priced city-turns; mean multiplier **8.735**, mean
+candidate pool **29.8 cities**, mean P **0.584**. Osmanli's own line:
+
+    turn  prob  odds  cands  flips     pool  exposure   worth    mult
+     121    40  0.40     31     15  24682.6    4777.3   833.0   6.735
+     122   100  1.00     30     15  11707.1    5853.6   466.4  13.550
+     123   100  1.00     30     15  11645.6    5822.8   466.4  13.484
+     124   115  1.00     28     14   9793.7    4896.9   466.4  11.499
+
+T122 in full: `exposure = 1.000 x 11707.1 x 15/30 = 5853.6`, and
+`1 + 1.0 x 5853.6 / 466.4 = 13.550`. That turn's danger 781 became
+**10582**. Read it as the sentence it is: **the capital was carrying
+12.6x its own value in other people's cities**, and the ledger priced
+it at 1x.
+
+The `prob` column is not a constant either -- 40 -> 100 -> 115 is
+Democracy's 30 plus the disorder cascade the collapse itself caused.
+The stake rises exactly as the empire becomes more splittable.
+
+### 4. Identity: 20/20, twice, including a mixed cell
+
+10 smoke seeds x {`deep`, `mixed_dc`} at compiled defaults
+(`capital_stake_gate = 0`), pre-epic binary `5569a5ff` against this
+branch's:
+
+    binary 98797c02 (mechanism)     20 scorelogs identical, 0 different
+    binary 113736c9 (shipped)       20 scorelogs identical, 0 different
+
+The second run is the one that counts -- it is the binary the branch
+ships -- and the first is kept because it was taken before the log line
+gained its `site=` field. `mixed_dc` is the mixed cell: deep on odd
+seats, `ai/default` on even.
+
+### 5. Liveness: the paired replay of the position itself
+
+`benchmark/capstake.sh corpus` plays the SAME T120 save on twice, one
+pinned binary, one key apart, to T135. Both arms are the identical game
+up to T120 by construction, which is a tighter pair than any seed.
+
+    arm    stakes  meanmult  cap-ndef  oth-ndef   cap-danger
+    off         0       n/a     1.157     0.809       4249.1
+    on        122     7.466     1.330     0.784       3644.0
+
+- **The gate is a gate**: zero `deep-capstake` lines on the off arm.
+- **Capital garrisons rise 15.0%** (1.157 -> 1.330 defenders per
+  capital city-turn) while **every other city falls 3.1%** (0.809 ->
+  0.784). That is the signature the mechanism claims: it REDIRECTS
+  defence to the capital, it does not buy more defence everywhere.
+- Split by site: the ledger priced 59 city-turns (27 with danger left
+  to scale, mean 4226 -> 18157) and the build choice 63 (28 scaled,
+  mean 4321 -> 17295). The two sites disagree in count because the
+  ledger runs after the incoming-defence credit, so a capital with help
+  already on the way reads danger 0 there. **5 of the 28 applications
+  hit the quadratic clip** (46340 = floor(sqrt(INT_MAX))), so the clip
+  is not theoretical: at multipliers of 7-13 a capital above ~6000
+  danger reaches the width of the `int qdanger` the build choice
+  squares.
+
+**The anecdote, labelled as one.** On the off arm Osmanli's capital
+fell at **T123** and the empire went 31 -> 16 cities -- reproducing the
+user's live game exactly. On the on arm the same capital held to
+**T130**, the empire was still at 28 cities at T130, and the civil war
+came at **T131**:
+
+    turn      121 122 123 124 125 126 127 128 129 130 131 132 133 134 135
+    off  n=    32  31  16  16  14  12  11  11  11  11  11  11  11  11  12
+    on   n=    32  31  31  31  31  31  30  30  29  28  13  13  12  12  11
+
+Eight turns bought on the position that motivated the epic. It is
+**n = 1**, the arms diverge chaotically after T121, and the endpoint at
+T135 is a wash (12 vs 11) -- the T120 position may simply be lost. This
+is an observation, not a result, and it is not a score claim.
+
+### 6. The A/B is DEFERRED, and why
+
+The brief allows one 16-seed war-venue cell "if the box frees up". It
+did not: `benchmark/results/defaults-holdout` had no `ALLDONE` and
+`defaults-tune-g` no `TUNE-DONE` at any point in this session (both
+were writing as late as 05:25 and 05:03 respectively, and the box sat
+at load average ~10 throughout). `benchmark/capstake.sh liveness` is
+committed and ready for it; it wants `tech50war-200`, ports 7620-7629.
+
+One venue caveat for whoever runs it: the stake cannot price anything
+below `civilwarsize` (10 cities by default), so a cell whose players
+never reach ten cities will report the mechanism dead for a reason that
+is not the mechanism's.
+
+### 7. The palace-relocation half is deferred, with its design
+
+Not shipped. The design that would close it, so the next session does
+not start from the brief:
+
+- **Where.** `deephorizon.c`, beside `deep_gov_center_credit()`, which
+  already models a Palace MOVE correctly (it charges the city that
+  loses the improvement). The relocation want is a second term on the
+  same improvement, and it must be the improvement carrying
+  `EFT_CAPITAL_CITY`, not `EFT_GOV_CENTER` -- those differ in civ2civ3.
+- **The price, derivable in the same currency as the stake.** A
+  relocation is worth what it takes off the table:
+  `P(the capital falls) x P(civil war) x exposure`, where the first
+  factor is `1 - deep_city_stack_survival()` for the current capital
+  and the last two are exactly what `deep_capital_stake_mult()` already
+  computes. No new constant, one gate.
+- **Why it was not shipped anyway.** The term is large by construction
+  (exposure ran 4777-5853 on the corpus), it lands in the same auction
+  as the defence it would compete with, and its whole value is
+  conditional on the OLD capital then falling -- a mechanism that pays
+  off only when you are already losing needs an A/B before it ships,
+  and this session had no A/B capacity. Rule 6.
+
+### 8. Machine lessons paid for this session
+
+- **A savegame RESTORES server settings.** The corpus was played with a
+  human in seat 12, so it carries `minplayers=1` and `timeout=0`; a
+  headless probe that sets those BEFORE `load` has them overwritten and
+  sits at the prompt forever. Two attempts died there. Every `set` now
+  follows the `load`, and every seat with a real username is
+  `aitoggle`d.
+- **The rider broke the probe.** Once `capital_stake_gate = 1` was in
+  `derby5/tuning-derby7.ini`, the probe's plain append produced the key
+  TWICE, `secfile_load` refused the WHOLE file, and both arms ran on
+  compiled defaults with no derby-7 tuning and no gate -- a silently
+  void cell that looked fine. The driver now strips the key before
+  setting it. **The awk dedupe check the brief mandates catches this
+  only if you read its output**; it printed DUP into a background log
+  nobody was watching.
+- **Log the site, not the pass.** The once-per-turn ledger convention
+  every other deep term follows would have reported this mechanism as
+  nearly inert: at the ledger the credit has already eaten the danger
+  in over half the priced city-turns. The line carries `site=` and both
+  sites log.
+
+### 9. Retention
+
+`benchmark/results/capstake-derive` (the 4-turn derivation replay),
+`capstake-derive-r1` (its predecessor, pre-`site=`),
+`capstake-corpus/{off,on}` (the 15-turn liveness pair, saves already
+deleted by the driver), `capstake-identity` and `capstake-identity-r1`
+(40 smoke games each pair). Every table above re-derives from those
+with `benchmark/capstake.py`.

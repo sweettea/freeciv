@@ -319,6 +319,11 @@ static const struct deep_tuning deep_tuning_defaults = {
   .chatty_defend_fear = 50.0,           /* PLACEHOLDER, danger units */
   .chatty_attack_gain = 0.5,            /* PLACEHOLDER, ranking multiplier */
   .chatty_road_gain = 1.0,              /* PLACEHOLDER, distance discount */
+  .capital_stake_gate = 0,              /* 0 = the inherited ledger exactly */
+  .capital_stake_gain = 1.0,            /* DERIVED: worth/worth is a ratio,
+                                         * so 1.0 is the identity
+                                         * conversion. Inert while
+                                         * capital_stake_gate is 0 */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -624,7 +629,9 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(chatty_request_turns) \
   TUNE_DOUBLE(chatty_defend_fear) \
   TUNE_DOUBLE(chatty_attack_gain) \
-  TUNE_DOUBLE(chatty_road_gain)
+  TUNE_DOUBLE(chatty_road_gain) \
+  TUNE_INT(capital_stake_gate) \
+  TUNE_DOUBLE(capital_stake_gain)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 
