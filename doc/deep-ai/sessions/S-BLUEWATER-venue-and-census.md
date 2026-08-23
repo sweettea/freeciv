@@ -70,7 +70,11 @@ existing logs/scorelogs plus a census reader you commit to benchmark/:
 transports built and loaded (lift ops formed/launched), overseas
 cities founded/conquered, air units built vs USED (sorties flown,
 if observable from unit activity; say what is not observable),
-airbases built, carriers built/loaded, nukes built/used, caravans
+airbases built, carriers built/loaded, nukes built/used (PRE-VERIFIED
+by code inspection 2026-08-23: deep has ZERO nuke code — two comments
+only; stock has action dispatch in daitools.c but no build logic
+anywhere — the census confirms the zero behaviorally and checks
+whether stock builds SDI via generic effects valuation), caravans
 lost in transit, engineers lost in transit, long jobs (>5 worker-turn)
 started. Where a count cannot be read from existing instrumentation,
 DO NOT add ai/ code — record it as "needs an instrument" with the
