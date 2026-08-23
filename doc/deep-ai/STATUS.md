@@ -19188,3 +19188,221 @@ Retention: 40 filtered ON-arm games under
 `benchmark/results/employ-muster/` (62 MB, same W12g pruning as the OFF
 arm), beside `employ-report.txt` and `pairarms.py`, which reproduces the
 paired score table from the two result trees.
+
+---
+
+## W29 slice 2: the chains that are REACHABLE are cultivate/plant, and their price never wins (2026-08-23)
+
+Brief: `doc/deep-ai/sessions/S-W29-transform-chains.md`. Branch
+`epic/w29-transform-chains` (**not merged**), worktree `.worktrees/w29`,
+11 commits, rebased onto `9af8e85966` after W28 and the tier fix merged.
+
+### 0. What the brief and the workstream had gone stale on
+
+Three things, all checked against the tree rather than assumed.
+
+1. **W29's own design is already landed and merged.** `adv_transform_chain()`
+   (advtools.c) and the chain valuation in `adv_calc_transform()` went in on
+   2026-07-25 (`752fc8ad8b`, `b9ef98c5a7`, `df66fbf1fa`) and are ancestors of
+   this epic's base. The branch `epic/w29-transform-chains` already existed and
+   was an ancestor of the base too; this epic fast-forwarded it. The workstream
+   file and the session brief both read as if none of that existed.
+
+2. **The workstream's premise is classic-rules thinking, and STATUS already
+   knew.** civ2civ3 gates Transform Terrain behind **Fusion Power**
+   (`data/civ2civ3/actions.ruleset`, `enabler_transform_terrain`), so the
+   landed transform chain is correct and dormant for the whole of every game
+   this project measures. The July session recorded this; the brief did not
+   carry it.
+
+3. **The reachable half was never chained.** `adv_calc_cultivate()` and
+   `adv_calc_plant()` are still exactly one step, and Cultivate/Plant require
+   nothing but a worker (`enabler_cultivate`, `enabler_plant`). In civ2civ3
+   those edges form a strongly connected triangle:
+
+   ```
+   Grassland --plant 15--> Forest --cultivate 10--> Plains
+   Plains    --plant 10--> Forest --plant     15--> Grassland
+   ```
+
+   Neither `Grassland->Plains` nor `Plains->Grassland` is a legal step; both
+   are two steps through Forest for 25 worker-turns, which is exactly the job
+   length W28 measured stacking to pay on. **This is where RC1's corollary is
+   still live in the venue the project measures**, and it is what this epic
+   attacks.
+
+### 1. What landed
+
+| commit | what |
+|---|---|
+| `8bf11f9ca5` | `deep_terra_reach()` — shortest paths over the cultivate/plant graph from a FORCED first activity, relaxation over <= 8 nodes, start terrain excluded, transform edges deliberately not followed |
+| `1801c9a7a9` | `adv_terrain_value()` — an inert hook in `advisors`, consulted by the two one-step evaluators, returning the value it was handed while no consumer registers |
+| `66af9fa3dd` | `deep_chain_value()` — the consumer: best `city_tile_value()` along the chain, amortized over the turns BEYOND the first step, gated on `terrain_chain_gate` |
+| `3fa8e12169` | `deep-terrachain` — the funnel, tiles followed to an outcome |
+| `25f2f9cd44` | `chaincensus.py` + the knobcensus entry |
+| `027be9cb6b`, `6367c485d3` | `w29-chains.sh`, the proofs re-runnable |
+| `52a171c7bc` | the gate on in the derby-7 Europe tuning |
+| `97511ed888` | `terraform.py`: cultivate/plant results are one-step pairs |
+| `e561c16514` | the driver's port ranges, kept apart (see the run note below) |
+
+Advisors churn is **35 lines**, all of it the hook, and rule 4's
+extension-point clause covers it exactly: nothing in `server/advisors` behaves
+differently until `ai/deep` registers. The existing `aw_task_value_fn` seam
+could not carry this — it is handed the worker and not the CITY, and
+`city_tile_value()` needs one.
+
+`tests/deepterra_test.c` pins the search against a synthetic ruleset carrying
+civ2civ3's component and its times, a dead end, a two-route node whose dear
+route is found first, and transform edges that must not be walked. 8 checks,
+in `meson test` as suite 6 of 7.
+
+Gate hygiene: `meson test -C build` 7/7 Ok, `tune-audit.py` **CLEAN
+259/259/259/259** (struct fields / loader macros / params.ini / ALL block),
+`knobcensus.py --knob terrain_chain_gate` **LIVE** on the garden corpus.
+
+### 2. The mechanism, stated so it can be argued with
+
+A cultivate or plant candidate is worth the best `city_tile_value()` any
+terrain reachable from that tile has — the same function, the same city, the
+same weights the one-step value came from — **amortized over the turns beyond
+the first step**, because `consider_worker_action()` already amortizes the
+first step and the walk to the tile. The immediate terrain is one of the
+candidates, so the price is never below the one-step price and is exactly it
+when the near terrain is the best one going.
+
+Every terrain is valued **bare**, the immediate one included. This is the one
+place the design departs from the landed transform path, which credits
+destinations with their prospective mine (`b9ef98c5a7`), and it is deliberate:
+the comparison here is between terrains along one chain, all of which will be
+improved or not alike, so crediting only the far ones would buy distance
+rather than yield. Section 5 says why that choice is also the most likely
+reason the price never wins, and what to measure next.
+
+No constant was invented. The gate `terrain_chain_gate` is a PLACEHOLDER at 0
+and has no companion weight: the price is the advisor's own function through
+the advisor's own `amortize()`, and the chain length is the ruleset's activity
+times.
+
+### 3. Identity — inert at defaults, in three cells
+
+`benchmark/w29-chains.sh identity`, 10 paired smoke seeds, no tuning file in
+either arm (the new key at its compiled 0), control built from `9af8e85966`:
+
+```
+identity deep:     10/10 byte-identical, 0 differ, 0 missing
+identity mixed_db: 10/10 byte-identical, 0 differ, 0 missing
+identity classic:  10/10 byte-identical, 0 differ, 0 missing
+head arm, gate at its compiled default (lift must be 0):
+  deep-terrachain turn=100 player="P3" cand=1991 multi=1143 lift=0 gain=0
+                  tiles=0 work=0 done=0 stray=0 lost=0 live=0
+IDENTITY OK
+
+base sha256 0538d50e19ca1460  head sha256 814467a8e52bd6e0
+```
+
+Two non-vacuity checks the driver refuses to pass without, both of which held:
+the base arm emits **no** `deep-terrachain` token at all (so the two sides are
+not both head), and the head arm emits the line with **lift=0** (so the
+instrument is live and the knob is shut).
+
+### 4. Liveness — the mechanism fires, and the price never wins
+
+`benchmark/w29-chains.sh live 6 2` — 6 mirrored `garden.conf` seeds (1 AI,
+scarce island, T300, civ2civ3), one binary (sha `814467a8e52bd6e0`), gate shut
+vs gate open. The funnel, per game, means over 6:
+
+```
+1 cand    terrain-change candidates priced       29765.7
+2 multi   of those, ones with a chain            18204.0   61.2%
+3 lift    prices raised above one step             500.8    2.8%
+. gain    want points added                       2956.7
+4 tiles   DISTINCT tiles lifted                      8.2
+5 work    lifted tiles whose terrain changed         0.0    0.0%
+6 done    lifted tiles that reached the target        0.0    0.0%
+```
+
+`cand` and `multi` are **identical to the unit** in both arms, per seed — the
+denominator is the venue's, and the two arms really did play the same games.
+`lift` is 0.0 in all six OFF games and 500.8/game in all six ON games
+(`paircmp` chain-lift: 0.00 -> 213.33, t = +9.15, 6/6 seeds).
+
+And nothing else moved at all:
+
+```
+=== outcome identity: how many seeds did the gate not move? ===
+6/6 seeds byte-identical between the arms
+
+    metric                       OFF        ON     delta      se      t   wins
+    score                     616.00    616.00     +0.00    0.00   +nan   0/6
+    cities                     20.00     20.00     +0.00    0.00   +nan   0/6
+    techs                      57.50     57.50     +0.00    0.00   +nan   0/6
+    chain-lift                  0.00    213.33   +213.33   23.32  +9.15   6/6
+
+=== terrain actually changed, OFF then ON ===
+45 over 6 games (7.5/game) pairs=f>g:43+f>p:1+j>s:1  chain_evidence=0
+45 over 6 games (7.5/game) pairs=f>g:43+f>p:1+j>s:1  chain_evidence=0
+```
+
+So the score A/B is not deferred and it is not a venue null: the venue asked
+the question 18 204 times a game, the mechanism answered it 501 times a game,
+and **not one raised price ever won the tile auction** — 0 of 8.2 lifted tiles
+a game ever changed terrain. Every terrain change that did happen was a
+one-step cultivate or plant, in both arms, in the same places.
+
+W28's worksite ledger stayed live through all of it and says the venue does
+stack workers on the jobs it does take: 536.8 worksites a game, 2442.3
+worksite-turns, 290.0 of them (11.9%) with two or more workers, 123.3 of 523.7
+completions stacked. What it is stacking is roads and irrigation, because no
+terrain chain was ever started for it to join.
+
+### 5. What this says, and what to do next
+
+**The mechanism is reachable and its price is too small to win.** That is a
+magnitude result, not a venue result: the venue asked the question 24 088
+times in one game.
+
+The most likely reason, and the next thing to measure. A terrain change has to
+beat `oldv` — the tile as it stands, **with its realised extras** — while every
+destination in the chain is valued bare. An irrigated Plains beats a bare
+Forest and a bare Grassland alike, so the whole cultivate/plant family is
+priced below the tile it would replace before any chain arithmetic happens.
+This is the same asymmetry the transform path hit in July and patched by
+crediting destinations with their prospective improvement (`b9ef98c5a7`,
+measured against 8/12 mountains mined and zero transforms ever chosen). The
+symmetric version of that patch for cultivate/plant is a **separate mechanism**
+and wants its own arm, not a second change inside this one — two changes on one
+causal chain cannot be read from one A/B.
+
+**A defect in the landed transform chain, found while deriving the cost units
+and deliberately NOT fixed here.** `infracache.c:237` converts remaining chain
+time to turns as `(total_time[i] - total_time[0]) / SINGLE_MOVE`, where
+`total_time` is a sum of ruleset `transform_time` values. But the ruleset time
+already IS the turn count for the reference worker: `tile_activity_time()`
+returns `ruleset_time * ACTIVITY_FACTOR` points (`common/tile.c:442`) and
+`get_activity_rate()` of a green worker with `move_rate == SINGLE_MOVE` is
+exactly `ACTIVITY_FACTOR` points a turn (`common/unit.c:556`). `SINGLE_MOVE` is
+`terrain_control.move_fragments` — **6** in civ2civ3, **3** in classic — so the
+landed code discounts a 96-worker-turn Mountains->Plains chain as if it were a
+16-turn wait. It is not fixed here because it is landed, merged and measured
+behaviour in shared advisors code, dormant in civ2civ3 (Fusion), and live in
+classic where it would move stock's own auto-workers: it wants its own commit
+and its own A/B. `deepchain.c` uses the correct conversion.
+
+**Not merged.** The branch is `epic/w29-transform-chains` and the gate is off
+by default everywhere except `derby5/tuning-derby7.ini`, where it is on for the
+Europe game — a long game is the only place a city runs out of tiles to buy,
+and a price that never wins costs nothing.
+
+**Two run notes for the next session, both mine.** `run.sh` assigns one TCP
+port per GAME, so a 30-game batch walks 30 ports: an identity batch on
+7650/7665 and a liveness batch on 7670/7680 collided, three games died on
+'Address already in use', and both runs had to be resumed (`e561c16514` fixes
+the layout). And **never edit a driver while it is running** -- fixing that
+port layout mid-flight killed the identity run between its two sides, which is
+why the numbers above come from a clean rerun.
+
+Next, in order: (1) the symmetric improvement-crediting arm for cultivate and
+plant, which is the measured reason this null exists; (2) the `SINGLE_MOVE`
+fix for the transform path, on classic rules where it is live; (3) with either
+of those firing, the W28 stacking gate finally has 10-25 turn jobs to join,
+which is what its `late` refusals said it needed.
