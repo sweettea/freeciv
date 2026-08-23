@@ -19188,3 +19188,394 @@ Retention: 40 filtered ON-arm games under
 `benchmark/results/employ-muster/` (62 MB, same W12g pruning as the OFF
 arm), beside `employ-report.txt` and `pairarms.py`, which reproduces the
 paired score table from the two result trees.
+
+## CHATTY slice 2: deep listens — four commands, priced not obeyed, one gate (2026-08-23)
+
+Brief: `doc/deep-ai/sessions/S-CHATTY2-inbound.md`. Slice 1 (merged
+`bcc4db4b02`) gave deep a voice and closed by saying **"inbound stays
+excluded. The moment something does, every honesty property in section
+2 has to be re-argued from scratch."** This is that something, and the
+re-argument is section 3 below.
+
+Branch `epic/chatty2-inbound` (**not merged**), worktree
+`.worktrees/chatty2`, 15 commits, rebased onto the current tip of
+`epic/w03-horizon-content` (`9af8e85966`, i.e. after W28 and the
+founder tier-fix) before any proof was run, so the identity control is
+the real branch point. Proof binary `freeciv-server` sha
+`4648120e76b8b9` with `libfreeciv.so` sha `877abeabf76eb8`; the
+identity control is a binary built from `9af8e85966`, sha
+`15c455a567b9bb`.
+
+### 1. The inbound channel — the answer is "there isn't one", so one was added
+
+The brief's first job was to find how a server-side AI can observe
+player chat. **It cannot, anywhere, today.**
+
+`handle_chat_msg_req()` (`server/handchat.c:320`) is the single funnel
+every client chat line passes through. All four of its destinations —
+`chat_msg_to_conn()`, `chat_msg_to_player()`, `chat_msg_to_allies()`,
+`chat_msg_to_all()` — deliver by walking a `conn_list`. An AI player
+holds no connection: in `chat_msg_to_player()` the search for a
+non-observer conn of `pdest` ends with `dest == nullptr`, the packet
+goes to `pdest`'s empty connection list, and **the message is delivered
+to nobody on the destination side.** The server console is no help
+either — it routes to `handle_stdin_input()`, which never reaches
+`handle_chat_msg_req()`.
+
+So the observation point was added, in the shape the header itself
+reserves for it. `common/ai.h:325-332` says of the `reserved_NN` slots:
+
+> These are here reserving space for future optional callbacks. This
+> way we don't need to change the mandatory capability of the AI module
+> interface when adding such callbacks, but existing modules just have
+> these set to nullptr.
+
+`reserved_01` becomes `player_chat_msg(pplayer, sender, msg)`, called
+at the **end** of `chat_msg_to_player()` — after every existing
+delivery and every event-cache write. Nothing above the call is
+conditional on it, no packet changes, `FC_AI_MOD_CAPSTR` does not move,
+and `ai/default`, `ai/classic`, `ai/tex` and the frozen `ai/baseline`
+all leave the pointer nullptr, so a server built without a consumer
+behaves exactly as before. `ai/default` and `ai/baseline` are untouched
+by this epic.
+
+**Addressed chat, not the allies channel**, for two reasons that are
+the protocol's whole footing: `<name>: <text>` is the only path
+carrying a server-AUTHENTICATED sender (`sender->playing`) together
+with an unambiguous addressee, and it is the only one a stranger can
+reach at all — the allies channel is delivered to allies by
+construction, so a refusal could never be provoked through it.
+
+### 2. The protocol
+
+Exact match, no NLP, four verbs, from allied players only:
+
+| command | priced through | reply |
+|---|---|---|
+| `defend <one of OURS>` | `city_data->danger`, both sites | "We will reinforce X." |
+| `attack <city\|player>` | the operation target score, both pricing sites | "We will weigh X heavier as a target." |
+| `road to <one of YOURS>` | the trunk planner's ally endpoint | "We will run our corridor to X." |
+| `status` | — answered on the spot | stance, current op target, nearest threat to you |
+
+A line that is **not** one of the four is passed over in silence: deep
+answers commands, not conversation. Everything decays after
+`chatty_request_turns` turns and dies at once if the alliance does.
+Repeating a request refreshes it rather than stacking, so there is no
+state a talkative ally accumulates. The per-ally cap reuses
+`chatty_max_per_turn` rather than adding a second number.
+
+### 3. The honesty properties, re-argued rather than inherited
+
+- **The sender is the server's.** `handchat.c` hands us
+  `sender->playing`. Deep never reads an identity out of the text, so a
+  line cannot claim to be from somebody it is not.
+- **A request is not an order.** Every command is a TERM or a
+  MULTIPLIER on a want that already existed, and every one can lose.
+  `chatty_defend_fear` is added to danger, so a city under real siege
+  still outbids one merely asked about. `chatty_attack_gain` multiplies
+  a pure RANKING quantity — nothing compares the operation target score
+  to a threshold, and `op_take_target`'s odds gate runs *before* the
+  multiply — so it can re-order targets and can never talk deep into an
+  attack it expects to lose. `chatty_road_gain` discounts a distance in
+  a choice deep was going to make anyway.
+- **Nothing is learned from the text.** A named city is resolved only
+  against cities deep may already act on: its own, the asker's, or a
+  city on a tile `map_is_known()` says deep has seen — the same test
+  `deep_op_pick_target()` applies to its own candidates. A name deep
+  cannot ground is refused, so an ally cannot use the channel to hand
+  deep a map it has not scouted.
+- **The refusals are true.** One of them was not, and the smoke caught
+  it: `attack Sapporo` came back "we have not seen a city called
+  Sapporo" when deep had seen Sapporo perfectly well and was merely not
+  at war with its owner (`c93c8cf0db`). The war test is now its own
+  branch with its own answer, and naming the owner back leaks nothing
+  because deep has seen that tile.
+
+### 4. Where the brief was wrong, and what was done instead
+
+The brief said `defend <city>` should accept "the ally's or deep's
+own". **The source disagrees and the source won** (`feff3a22d9`).
+
+The seam is `city_data->danger`: one per city deep OWNS, recomputed
+from deep's own threat model, spent on what that city builds. Deep has
+no mechanism of any kind for raising the defence of a city somebody
+else garrisons — not a want, not a borrowable want, not an expedition.
+Building one needs rules for which forces go, how far, and for how
+long: three new constants, a workstream and not a slice of a chat
+protocol.
+
+So an ally's own city is refused, with the reason and with the thing
+that would work:
+
+```
+*P1 (AI)* We cannot garrison Guánica -- it is yours to hold.
+          Name a city of ours and we will thicken it.
+```
+
+which is better than accepting, promising, and then doing precisely
+nothing — the failure the whole channel exists in order not to have.
+
+### 5. The Europe taste defect: same-information warner election
+
+From the user's live game, turn 105: **Anglia, Rus and Gallia each told
+Osmanli about the same Deep_Hellas units** bearing down on Mersin,
+Isparta and Gaziantep. Nine messages where one would do.
+
+The cause is this slice's own first finding turned around: an AI cannot
+hear chat, so no warner can know another already spoke. The
+once-per-(city, threat) memo was working correctly — there is simply
+one memo per sender.
+
+W12H's canonicalisation pattern, applied to chat (`448412e729`). The
+designated warner for (threatened city, threatening player) is the
+LOWEST-NUMBERED allied deep player that can itself see an at-war attack
+unit of that player inside `survival_horizon` of that city — the
+lowest-numbered player that would have sent this very line. **The
+election is only ever held among players who already have the same
+information**, so the winner says nothing the losers could not have
+said, the recipient learns nothing extra, and nothing passes between
+the candidates. Not a back channel: the only thing decided is which of
+several identical lines gets typed.
+
+Three details that are decisions: a loser does **not** claim its memo
+(so it can still speak if it later becomes the warner); candidates are
+tested on their gate and cap SETTING, never their running tally (so the
+winner cannot depend on what somebody said earlier in the turn, and the
+failure mode is a delay, never a duplicate and never a silence); and
+only lower-numbered players are examined, which both ends the election
+early and bounds the cost.
+
+### 6. The knobs
+
+Seven now. `chatty_inbound_gate` = 0 is the gate and the identity
+claim; `chatty_request_turns` = 10, `chatty_defend_fear` = 50.0,
+`chatty_attack_gain` = 0.5, `chatty_road_gain` = 1.0 are all
+**PLACEHOLDER**.
+
+**All five owe a TASTE pass, not a tuning pass**, for
+`chatty_max_per_turn`'s reason and one more. What they trade off is a
+human ally's experience of being listened to, and no scorelog contains
+an ally who types. `benchmark/tune.py` must not be pointed at them.
+The gate and the decay window are classified MODE in `knobcensus.py`;
+the three prices are MAG but with no score gradient to climb in any
+benchmark venue, because a benchmark venue has nobody in it to ask.
+
+- `tune-audit.py`: **CLEAN at 263/263/263/263** (was 258 at the rebase
+  point).
+- `knobcensus.py` over `chatty2-smoke` + `chatty2-warner`: all seven
+  chatty knobs instrumented and firing — `chatty_gate` MODE 320,
+  `chatty_max_per_turn` MODE 320, `chatty_inbound_gate` MODE 20,
+  `chatty_request_turns` MODE 70, `chatty_defend_fear` LIVE 4,
+  `chatty_attack_gain` LIVE 4, `chatty_road_gain` LIVE 2. Corpus
+  verdicts `DEAD=31 LIVE=74 MODE=34 NO-CORPUS=69 NO-INSTRUMENT=55`.
+- `meson test -C build`: **6/6 OK** on every commit.
+
+### 7. The proofs
+
+Driver `benchmark/chatty2.sh` (`identity` / `quiet` / `stage` /
+`smoke CELL` / `warner` / `report`), resumable on DONE markers, ports
+7600-7649, jobs ≤ 2, binary pinned per stage with `libfreeciv.so`
+beside it.
+
+**Identity at defaults, both gates off — 20/20 scorelogs
+BYTE-IDENTICAL.** `configs/smoke.conf`, seeds 1-10,
+`TUNING=tuning/identity.ini` on both sides, the tip binary against one
+built from `9af8e85966`:
+
+```
+comparing .../base/smoke-1b069b508d3d/ against .../head/smoke-5a65a2c6690b/
+identity deep:     10/10 byte-identical, 0 differ, 0 missing
+identity mixed_db: 10/10 byte-identical, 0 differ, 0 missing
+provenance: neither arm carries a deep-request line, as required
+```
+
+The mixed cell is deep beside default/baseline seats in one game, where
+a stray packet or a per-player confusion would show first.
+
+**Inertness with the gate OPEN — the parser costs nothing until
+somebody talks.** `chatty2-on.ini` (both gates on) against
+`chatty2-deaf.ini` (identical but `chatty_inbound_gate = 0`), same
+seeds, 60-turn scripted-alliance games, nothing ever injected:
+
+```
+seed-1: scorelogs IDENTICAL (inbound gate on, no traffic vs deaf)
+seed-2: scorelogs IDENTICAL (inbound gate on, no traffic vs deaf)
+inbound tokens in the gate-on cell: 0 (must be 0 -- nobody spoke)
+```
+
+This is the stronger of the two inertness claims: the gate is actually
+open and the parser is actually installed.
+
+**Liveness.** A benchmark game has no client connected, so no chat
+packet can arrive. The smoke drives the SAME parser through the
+existing, previously-unimplemented `funcs.player_console` seam —
+`aicmd <deep> chat <sender> <line>`, `ALLOW_ADMIN`
+(`server/stdinhand.c:5918`), which no AI module in tree implements, so
+deep taking it changes nothing anywhere else and needs no server patch.
+
+**Stated plainly, because the difference is why the chat hook exists as
+well:** proved through the console are the parse, the alliance test
+against the real diplomatic state, the city grounding, the per-ally
+rate cap, the reply, all three prices and both refusals. **Not** proved
+is the ATTRIBUTION — over a socket the sender is the connection's own
+player and cannot be chosen; here the operator names it. That is why it
+sits behind an admin-only command and is not the channel the mechanism
+ships on.
+
+Venue: slice 1's scripted alliance (two deep on one team, hence
+`DS_TEAM`, hence allied) on `tech50war-200`'s war-forcing recipe, 32×32
+single continent, six players. Every cell **loads one save taken at
+T40** and plays to T60, so the cells differ only in what was said.
+
+#### The four commands, request → reply → effect
+
+```
+<P2 types>   P2 to P1: defend Tsehitcihéndé
+<P2 sees>    *P1 (AI)* We will reinforce Tsehitcihéndé.
+effect       deep-prodswitch city=261 danger=  ctl 395 394 363
+                                              def 445 444 413   (+50.0 exactly)
+             deep-switchcost city=261 want=   ctl 59.25 118.50 177.75
+                                              def 66.75 133.50 200.25
+```
+
+```
+<P2 types>   P2 to P1: attack Guarda
+<P2 sees>    *P1 (AI)* We will weigh Guarda heavier as a target.
+effect       deep-anchor (243 = Guarda), turns 42-45:
+             ctl  target=243 alt=243 changed=0 | alt=242 changed=1 | alt=242 changed=1
+             atk  target=243 alt=243 changed=0 | alt=243 changed=0 | alt=243 changed=0
+             i.e. the request HELD the operation on the city the ally
+             named, against a retarget that would twice have moved it
+             to 242. target= is identical in both arms -- reading that
+             field alone showed nothing, which is why the report reads
+             alt= and changed=.
+```
+
+```
+<P2 types>   P2 to P1: road to Guánica
+<P2 sees>    *P1 (AI)* We will run our corridor to Guánica.
+effect       deep-trunkally turn=42:  ctl  links=2 gap=5 offered=3 picked=2
+                                      road links=1 gap=1 offered=0 picked=0
+             ally endpoints held:     ctl  to=28,4 (Coimbra) AND to=27,16
+                                      road to=27,16 only
+             corridors announced:     ctl  Bialystok, Coimbra, Porto
+                                      road Bialystok, Porto
+             i.e. the P2 endpoint moved off Coimbra, which needed four
+             tiles of road, onto Guánica, which needs none -- so the
+             link leaves the plan entirely. An honest illustration of
+             "a preference over an endpoint, not a new corridor".
+```
+
+```
+<P2 types>   P2 to P1: status
+<P2 sees>    *P1 (AI)* Stance economy 1.00, force 1.00; marching on
+                       Vila Real; we see nothing bearing down on you.
+```
+
+#### The two refusals
+
+```
+<P2 types>   P2 to P1: defend Guánica            (the ALLY's own city)
+<P2 sees>    *P1 (AI)* We cannot garrison Guánica -- it is yours to
+                       hold. Name a city of ours and we will thicken it.
+
+<P3 types>   P3 to P1: defend Tsehitcihéndé      (P3 is NOT allied)
+<P3 sees>    *P1 (AI)* We take requests from our allies only.
+```
+
+`P3`'s line is the one departure from slice 1's "this channel talks to
+the alliance and to nobody else": it goes back to the person who asked,
+once per stranger through the existing memo ring, out of the same
+per-turn cap. A refusal delivered to the alliance instead would be
+neither an answer nor honest.
+
+#### Decay, and the cap
+
+```
+deep-requests turn=42..51  live=4 retired=0 heard=6 taken=4 capped=0 stranger=1
+deep-requests turn=52      live=0 retired=3 heard=6 taken=4 capped=0 stranger=1
+```
+
+Requests taken at T41 with `until=51` all stop counting at T52, which
+is `chatty_request_turns` = 10 exactly. **cap breaches: 0** across every
+cell.
+
+#### The warner election
+
+FOUR deep players on one team — the two-deep venue cannot show this at
+all, because `deep_chat_ally_threats()` skips the city's own owner and
+so has only one candidate:
+
+```
+seed-1: warnings=7 yields=62   no (city, threat) subject warned about twice
+seed-2: warnings=3 yields=8    no (city, threat) subject warned about twice
+
+deep-warner turn=54 player="P2" ally="P3" city=238 foe="P5" yielded=1
+deep-warner turn=54 player="P4" ally="P3" city=238 foe="P5" yielded=1
+```
+
+Two of the three possible warners stand down on the same (city, threat)
+in the same turn and the third speaks. Under the old code that subject
+would have produced three identical lines.
+
+Retention: `benchmark/results/chatty2-identity/{base,head}/` (40 games),
+`chatty2-quiet/{on,deaf}/` (4 games), `chatty2-smoke/{stage,ctl,def,atk,road,all}/`
+(12 games, `key.txt` and `names.txt` per cell), `chatty2-warner/` (2 games).
+
+### 8. Surprises
+
+- **The effect was landing and the counter could not see it.** Two full
+  smoke runs reported the defend request changing nothing, because the
+  report read `deep-def danger=` — which carries the RAW stock figure
+  and says so in its own source comment: *"deep's injected fears land
+  after this line"*. It cannot show this effect and does not show any
+  of the other injected fears either. **A counter that is documented to
+  be pre-injection is not an instrument for an injection**, and the
+  only thing that distinguishes "no effect" from "wrong counter" is
+  diffing the whole turn.
+- **...and while looking for that, a real bug.** `e5c1c87d6b`.
+  deepdefence keeps danger in two places by design and the build site
+  carries the comment *"the danger the build choice reads must not
+  disagree with the danger the ledger holds"*. The first commit
+  injected into the build site only — and on the requested city that
+  site never ran at all, because `deep_military_choose_build()` is
+  called only when `city_data->choice.want` is still ≤ 0. **An effect
+  placed at one of two sites that are documented to have to agree is a
+  bug even when it compiles**, and only a counter read on a live game
+  shows it.
+- **Every cell first asked for the status quo.** The smoke picked the
+  first ally city and the first seen enemy city, and deep was already
+  roading to that ally city and already marching on that enemy city. All
+  three cells therefore agreed with the plan and moved nothing. A
+  request that agrees with the plan is a legitimate outcome; it is not
+  evidence. The picks now read the control run's own log and choose
+  something deep is **not** already doing (`afea5f9400`).
+- **A city name broke the shell.** This venue's deep player holds
+  `Nit'ahéndé` and `Ch'laandé`; the name emitter wrote values inside
+  hand-written single quotes, the apostrophe closed the string, and
+  every smoke cell died before its first game (`81a1191992`).
+  `shlex.quote()` since.
+- **Deep is at war with deep in the Europe game.** The same turn-105
+  log that produced the warner defect also shows **Deep_Hellas at war
+  with Deep_Osmanli** under the fence tuning. Recorded as an
+  observation, no action taken here — it is a stance/diplomacy
+  question, not a chat one, and it is worth somebody's attention on its
+  own terms.
+
+### 9. Next, and explicitly NOT this session
+
+1. **The five placeholders want the Europe game, not a tuner.** They
+   are the first knobs on this project whose objective function is a
+   person. `said=n/max` and the `deep-request` verdict field are what
+   to read.
+2. **`defend <ally city>` is refused, and could one day not be.** That
+   needs a defensive-expedition mechanism with its own rules for reach
+   and duration. It is a workstream.
+3. **The election is per module, not per alliance.** A deep player
+   yields only to another *deep* player; a classic ally warning about
+   the same stack is still a duplicate. Nothing can be done about that
+   without changing `ai/default`, which rule 2 forbids.
+4. **No score claim is possible from this epic and none is made.** The
+   gate-off and no-traffic scorelogs are identical by construction;
+   that identity IS the deliverable, and everything else is a
+   transcript.
