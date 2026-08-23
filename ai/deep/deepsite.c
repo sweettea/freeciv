@@ -564,13 +564,31 @@ void deep_site_free(void)
 }
 
 /**********************************************************************//**
-  Can an extra of this cause actually be built on this tile by this
-  player -- eventually? RPT_POSSIBLE, so a requirement we have not met
-  yet (a tech) does not refuse the tile, while one we can never meet on
-  this ground (civ2civ3's Irrigation wants a water source beside it)
-  does. That distinction is the whole reason the un-gated potential term
-  is wrong about desert: it credits every desert tile with the +1 food
-  of an irrigation the tile may have no way to receive.
+  Can an extra of this cause be built on this tile by this player --
+  eventually? player_can_build_extra() at RPT_POSSIBLE, which is the
+  same test the advisors' own adv_calc_extra() values an extra through:
+  reuse rather than a second feasibility model.
+
+  WHAT IT CATCHES, checked against civ2civ3 rather than assumed: the
+  extra is already there (extra_can_be_built), it conflicts with one
+  that is (a mined tile cannot also be irrigated), the terrain takes no
+  such improvement at all (irrigation_time / mining_time == 0), and the
+  extra's own reqs -- which for civ2civ3's Mine include a tech and a
+  terrain class. The un-gated potential term makes none of these tests,
+  so it credits an ALREADY IRRIGATED tile with the irrigation increment
+  a second time, on top of the yield that irrigation is already
+  delivering through ptdc->food.
+
+  WHAT IT DOES NOT CATCH, and this correction is worth stating because
+  the first version of this comment claimed otherwise: civ2civ3 puts
+  irrigation's water-source condition in the ACTION ENABLER's
+  target_reqs (enabler_irrigate_src_ocean_*, "TerrainClass Oceanic
+  CAdjacent"), not in the Irrigation extra's reqs, which are empty. An
+  extra-level test cannot see an enabler, so a dry inland desert still
+  reads as irrigable here. Reaching that would mean evaluating action
+  enablers with no actor unit in hand, which is a piece of machinery
+  this file should not be the first to build; it is recorded in STATUS
+  as the follow-up.
 **************************************************************************/
 static bool deep_improve_extra_ok(const struct player *pplayer,
                                   const struct tile *ptile,

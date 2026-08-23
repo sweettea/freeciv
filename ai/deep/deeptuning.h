@@ -3036,10 +3036,10 @@ struct deep_tuning {
    *
    * The potential term reads `MAX(irrigation_food_incr,
    * mining_shield_incr)` off the terrain -- an increment the tile may
-   * not be able to take (desert with no water beside it), never a
-   * cultivate or plant chain, and with no notion of how many
-   * worker-turns any of it costs. That made the user's Carthago stall
-   * at 23 cities while its "room" was unimproved desert.
+   * not be able to take, or may already have taken, never a cultivate
+   * or plant chain, and with no notion of how many worker-turns any of
+   * it costs. That made the user's Carthago stall at 23 cities while
+   * its "room" was unimproved desert.
    *
    * 0 (default) = today's arithmetic exactly: the same two increments,
    * no legality test, no chains, no worker-turns. != 0: a catchment
