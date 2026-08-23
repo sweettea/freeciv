@@ -199,4 +199,57 @@ enum deep_employ_depart {
 void deep_employ_op_depart(const struct player *pplayer, int oi,
                            enum deep_employ_depart why);
 
+/* WHAT THE POACH PAID, AND WHAT IT BOUGHT (deep-employpoach).
+ *
+ * The departure counter above settled the mechanism -- 89.4% of member
+ * departures are deep_op_poach_defender(), deep's own threatened cities
+ * taking blades back off forming waves -- and explicitly did not settle
+ * whether the poach is RIGHT. Every poach is a priced decision, and
+ * nothing on disk carried the value it paid or what the payment bought.
+ *
+ * One entry per poach, opened where the blade is taken and resolved
+ * `survival_horizon` turns later, carrying three things:
+ *
+ *   the CLAIM   the city, its survival at claim time, the wave it saw,
+ *               the reachable relief pool, the worth the defence bid,
+ *               and whether the force it joined was actually deployed
+ *               (a poach taken into a city that is then written off in
+ *               the same pass buys nothing at all);
+ *   the LOSS    the operation, its age, its member count before and
+ *               after, and the expected take the poach outbid -- the
+ *               op's own side of the comparison the poach already
+ *               makes, not a new metric;
+ *   the AFTER   sampled once a turn at the same point in the turn the
+ *               claim was made: did the enemy ever reach the walls, did
+ *               the blade arrive, did it take damage or die, did the
+ *               city fall, was it re-claimed by another operation.
+ *
+ * The window is `survival_horizon` because that is the horizon the
+ * claim itself is made over -- the survival model prices the city's
+ * next `survival_horizon` turns, and the poach only takes a blade that
+ * can arrive inside it -- and because the write-off ledger next door
+ * adjudicates its own verdicts over exactly the same span. No new
+ * constant.
+ *
+ * Everything here observes. Every value passed to the claim was already
+ * computed by the decision it sits in; the aftermath reads only unit
+ * and city state that any observer could read. */
+void deep_employ_poach_claim(const struct player *pplayer, int city_id,
+                             int unit_id, int utype_id, double p_survival,
+                             double dworth, double risk, int oi, bool muster,
+                             int age, int members_before, double take,
+                             double odds, int eta, int target);
+
+/* The claiming city's pass ends here: `kept` is whether the relief
+ * force the blade joined was actually deployed, `relief` the survival
+ * that force reaches, and `wave`/`pool` the threat and the reachable
+ * blades the city saw. Called from both exits of the relief decision,
+ * so an unsettled entry means neither ran. */
+void deep_employ_poach_settle(const struct player *pplayer, int unit_id,
+                              bool kept, double relief, int wave, int pool);
+
+/* One turn of aftermath for every open entry, and the verdict line for
+ * every entry whose window has run out. */
+void deep_employ_poach_tick(struct player *pplayer);
+
 #endif /* FC__DEEPEMPLOY_H */

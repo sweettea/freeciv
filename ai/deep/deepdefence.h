@@ -142,4 +142,10 @@ unsigned int deep_density_fear_at(const struct player *pplayer,
                                   const struct tile *ptile);
 bool deep_boat_shadow_afloat(const struct player *pplayer);
 
+/* At-war, non-civilian units standing on a tile adjacent to this city:
+ * "the enemy is at the walls", as against a forecast that it will be.
+ * The write-off ledger records it at the call and the poach ledger
+ * samples it over its window; one reading, one definition. */
+int deep_enemy_adjacent(const struct city *pcity);
+
 #endif /* FC__DEEPDEFENCE_H */
