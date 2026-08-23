@@ -64,6 +64,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .site_boat_cost_weight = 0.333333,    /* = stock 1/3, untuned */
   .site_rival_pressure = 10.0,          /* PLACEHOLDER, untuned */
   .site_rival_crowding = 0.9,           /* human-set 2026-08-02, untuned */
+  .site_own_overlap = 0.0,              /* 0 = off; derived on-value 33.2 */
   .expansion_war_survival = 0.9,        /* PLACEHOLDER, untuned */
   .expansion_gate_enabled = 1,          /* 1 = gate on, as shipped */
   .caravan_discount = 0.95,             /* = stock, untuned */
@@ -238,6 +239,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .stance_expand_gain = 1.0,            /* PLACEHOLDER, untuned */
   .stance_assault_gain = 1.0,           /* PLACEHOLDER, untuned */
   .stance_floor_gain = 1.0,             /* PLACEHOLDER, untuned */
+  .stance_pox_gain = 1.0,               /* PLACEHOLDER, untuned */
   .stance_position_gain = 0.5,          /* PLACEHOLDER, untuned */
   .stance_techlean_gain = 0.5,          /* PLACEHOLDER, untuned */
   .stance_pressure_ref = 4.0,           /* PLACEHOLDER, untuned */
@@ -417,6 +419,7 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(site_boat_cost_weight) \
   TUNE_DOUBLE(site_rival_pressure) \
   TUNE_DOUBLE(site_rival_crowding) \
+  TUNE_DOUBLE(site_own_overlap) \
   TUNE_DOUBLE(expansion_war_survival) \
   TUNE_INT(expansion_gate_enabled) \
   TUNE_DOUBLE(caravan_discount) \
@@ -555,6 +558,7 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(stance_expand_gain) \
   TUNE_DOUBLE(stance_assault_gain) \
   TUNE_DOUBLE(stance_floor_gain) \
+  TUNE_DOUBLE(stance_pox_gain) \
   TUNE_DOUBLE(stance_position_gain) \
   TUNE_DOUBLE(stance_techlean_gain) \
   TUNE_DOUBLE(stance_pressure_ref) \

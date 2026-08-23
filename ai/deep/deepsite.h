@@ -35,4 +35,15 @@ void deep_site_free(void);
  * two definitions of "chokepoint" would be two laws about one fact. */
 bool deep_site_is_choke(const struct civ_map *nmap, struct tile *ptile);
 
+/* Real map distance from a tile to the nearest OTHER city this player
+ * holds, or -1 if it holds none. The site evaluator buckets its
+ * candidates on it; the founding census records it for the city that
+ * was actually planted, and both must mean the same thing or the
+ * census cannot check the evaluator. */
+int deep_site_own_spacing(struct player *pplayer, const struct tile *ptile);
+
+/* And its bucket, 0..DEEP_SPACING_BUCKETS-1 (2 / 3 / 4 / 5-or-more) or
+ * -1 for a player holding no other city. */
+int deep_site_spacing_bucket(int d);
+
 #endif /* FC__DEEPSITE_H */

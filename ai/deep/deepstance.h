@@ -37,6 +37,15 @@ struct deep_stance {
   double econ;                  /* Growth, infrastructure, trade, expansion */
   double mil;                   /* Force: garrison, deterrence, campaigns */
   double cult;                  /* Culture and prestige -- INERT, see above */
+  /* How this player wants its empire SHAPED: above 1.0 many small
+   * cities packed tight, below 1.0 fewer cities with room to grow.
+   * A fourth axis rather than a re-reading of econ, because the two
+   * are orthogonal in the game and in the traits: an expansionist and
+   * a builder both want a big economy and disagree entirely about what
+   * one looks like. Read as a RATIO against 1.0 (identity), not
+   * against another axis, because it has no opposite pole to divide
+   * by -- the poles are inside its own seed. */
+  double expand;
 };
 
 /* The named presets survive ONLY as labels: for logging, for talking
@@ -76,5 +85,10 @@ double deep_stance_assault_mult(const struct player *pplayer);
  * military want, and it is where an early-war and an early-peace
  * personality first differ. */
 double deep_stance_floor_mult(const struct player *pplayer);
+/* Gate 7 (S-POX) is the odd one out and has to be: it reads ONE axis
+ * against identity, as expand^-gain, because empire shape has no
+ * opposing axis to form a ratio with. It scales the own-crowding PRICE,
+ * so below 1.0 means "pack tighter". */
+double deep_stance_pox_mult(const struct player *pplayer);
 
 #endif /* FC__DEEPSTANCE_H */

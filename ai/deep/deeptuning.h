@@ -435,6 +435,31 @@ struct deep_tuning {
    * for the same reason; W02b deleted it along with the overlap
    * weight it modulated.) */
   double site_rival_crowding;
+  /* OWN-empire crowding: want charged per catchment tile of a
+   * candidate site that already lies inside the work radius of a city
+   * we hold. The rival terms above price being near SOMEONE ELSE;
+   * nothing priced being near OURSELVES, and the live Europe game says
+   * that is the unpriced one -- five of six deep seats settle at the
+   * citymindist floor with 62-82% of every catchment shared, against a
+   * human at spacing 4-5 and 0.8%.
+   *
+   * 0.0 = off, and that is the shipping default: the byte-identity
+   * gate is taken against it.
+   *
+   * DERIVED, not guessed. Probe of the user's T110 Europe save, four
+   * turns, 1 079 scored candidates in 76 searches (all six deep seats,
+   * derby-7 tuning): 32 searches offered both a d<=2 and a d>=4 site,
+   * and the tight one outscored the loose one in 15. Over those 15, at
+   * MEDIAN site quality, want(d<=2) = 792.5 against want(d>=4) = 526.7
+   * -- a margin of 265.8 -- while the winners carried 10 and 2 shared
+   * tiles. 265.8 / (10 - 2) = 33.2 want per shared tile is the price at
+   * which the median tight site stops winning. The per-search
+   * distribution of the same ratio has p25 17.2, p50 25.7, p75 33.8.
+   *
+   * It is a price in the SITE-VALUE currency, so it moves with
+   * site_stream_weight and would have to be re-derived if that moves.
+   * A tuning pass owns the range; the derivation owns the on-value. */
+  double site_own_overlap;
   /* Trade-route destination policy (findings/trade-routes.md).
    * caravan_discount is the per-turn patience fed to caravan.c's NPV
    * model; stock's 0.95 is kept as the placeholder, but stock also
@@ -1881,6 +1906,16 @@ struct deep_tuning {
    * benchmark baseline is a uniform floor; a pinned or trait-seeded
    * stance turns it into an early-war / early-peace personality. */
   double stance_floor_gain;
+  /* Gate 7 (S-POX): exponent on the SHAPE axis scaling the own-empire
+   * crowding price, as expand ^ -gain. The only gate that reads one
+   * axis against identity rather than a ratio of two, because empire
+   * shape has no opposing axis. 1.0 is the placeholder for the same
+   * reason the other six carry it -- it is the exponent that leaves
+   * the axis speaking at its own scale -- and 0.0 disables the
+   * coupling while leaving the price flat, which is the arm an A/B
+   * needs. Identity at an identity axis whatever the gain, so every
+   * byte-identity proof in the layer still holds. PLACEHOLDER. */
+  double stance_pox_gain;
   /* SOURCE 2 (W34 E34.4, A.4 step 3): how far the POSITION and the
    * RESEARCH LEAN may move an axis off the trait prior, in index units
    * -- the same units stance_trait_span then scales, so the clamp that

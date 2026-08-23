@@ -71,6 +71,7 @@ struct deep_stance deep_stance_identity(void)
   st.econ = 1.0;
   st.mil = 1.0;
   st.cult = 1.0;
+  st.expand = 1.0;
 
   return st;
 }
@@ -211,11 +212,40 @@ static double deep_stance_trait_index(struct player *pplayer,
 }
 
 /**********************************************************************//**
+  The SHAPE index on [-1, +1]: where this player sits between the two
+  traits that disagree about what an empire should look like.
+
+      +1  purely EXPANSIONIST -- many cities, packed, taken early
+      -1  purely BUILDER      -- fewer cities with room to grow
+       0  the two at the same relative position in their ranges
+
+  A DIFFERENCE of two trait indices rather than a mean of several,
+  because unlike econ this axis has both its poles inside it, and
+  because the difference has the property the identity gate needs: two
+  traits at the same relative position give exactly 0, so a ruleset
+  that hands every player the same defaults ('traitdistribution FIXED',
+  which is the shipping default) leaves this axis at exactly 1.0 and
+  every consumer of it inert. Halved so the index stays inside
+  [-1, +1] and the span clamp keeps meaning what it means on the other
+  axes.
+
+  A ruleset with no range on either trait returns 0 by the same rule
+  deep_stance_trait_index() applies: nothing to read, no personality
+  invented.
+**************************************************************************/
+static double deep_stance_shape_index(struct player *pplayer)
+{
+  return (deep_stance_trait_index(pplayer, TRAIT_EXPANSIONIST)
+          - deep_stance_trait_index(pplayer, TRAIT_BUILDER)) / 2.0;
+}
+
+/**********************************************************************//**
   Source 1 (W34 A.1a): the axes seeded from this player's TRAITS.
 
-      econ <- EXPANSIONIST / BUILDER / TRADER
-      mil  <- AGGRESSIVE
-      cult <- no trait exists; stays inert (A.1c)
+      econ   <- EXPANSIONIST / BUILDER / TRADER
+      mil    <- AGGRESSIVE
+      expand <- EXPANSIONIST against BUILDER
+      cult   <- no trait exists; stays inert (A.1c)
 
   Each axis is 1.0 + span * (mean trait index), so a player at every
   relevant maximum with the opposite trait at its minimum reaches
@@ -249,6 +279,7 @@ static void deep_stance_seed_from_traits(struct player *pplayer,
 
   st->econ = 1.0 + span * (esum / 3.0);
   st->mil = 1.0 + span * (msum / 3.0);
+  st->expand = 1.0 + span * deep_stance_shape_index(pplayer);
 }
 
 /**********************************************************************//**
@@ -450,6 +481,15 @@ static void deep_stance_seed_from_position(struct player *pplayer,
 
   st->econ = 1.0 + span * MIN(MAX(e_idx, -1.0), 1.0);
   st->mil = 1.0 + span * MIN(MAX(m_idx, -1.0), 1.0);
+  /* The shape axis is seeded exactly as source 1 seeds it: a trait
+   * prior with no position term added. Not an oversight -- source 2's
+   * two signals are "what is the map offering" and "what have the
+   * bulbs bought", and neither is a statement about how tightly a
+   * player should pack what it takes. Inventing a coupling (free land
+   * -> spread out) would be a claim this project has not measured, and
+   * the trait seed is already live here because a source-2 player is
+   * still a trait-seeded player. */
+  st->expand = 1.0 + span * deep_stance_shape_index(pplayer);
 
   if (e_idx != e_trait || m_idx != m_trait) {
     deep_plr_data(pplayer)->stance_pos_moved++;
@@ -468,6 +508,13 @@ static void deep_stance_seed_from_position(struct player *pplayer,
   on purpose: a pinned corner is exactly the extreme a trait-driven
   player can reach, so a constant tuned pinned means the same thing
   free.
+
+  A PIN leaves the SHAPE axis at identity, deliberately. The pin exists
+  to make a tuning block separable by holding the economy/military
+  trade-off still, and "how tightly does this player pack its cities"
+  is not on that trade-off. A pinned arm therefore prices own-empire
+  crowding uniformly across its seats, which is exactly what tuning the
+  price of it wants; the personality is a FREE-player property.
 **************************************************************************/
 void deep_stance_refresh(struct player *pplayer)
 {
@@ -563,15 +610,15 @@ void deep_stance_log(struct player *pplayer)
 
   log_base(deep_metric_log_level(),
            "deep-stance turn=%d player=\"%s\" econ=%.3f mil=%.3f"
-           " cult=%.3f src=%s mode=%s preset=%s identity=%d"
+           " cult=%.3f expand=%.3f src=%s mode=%s preset=%s identity=%d"
            " trait_exp=%d trait_bld=%d trait_trd=%d trait_agg=%d"
            " fear_gate=%d op_gate=%d growth_gate=%d expand_gate=%d"
-           " assault_gate=%d floor_gate=%d"
+           " assault_gate=%d floor_gate=%d pox_gate=%d"
            " land=%.3f war=%.3f threat=%.3f press=%.2f lean=%+.3f"
            " tech_mil=%d tech_econ=%d pos_moved=%d",
            game.info.turn, player_name(pplayer),
            plr_data->stance.econ, plr_data->stance.mil,
-           plr_data->stance.cult,
+           plr_data->stance.cult, plr_data->stance.expand,
            deep_stance_source_name(deep_stance_source_effective()),
            pinned ? "PINNED" : "FREE",
            pinned ? deep_stance_preset_name(tune->stance_forced) : "-",
@@ -595,6 +642,7 @@ void deep_stance_log(struct player *pplayer)
            plr_data->stance_expand_gated,
            plr_data->stance_assault_gated,
            plr_data->stance_floor_gated,
+           plr_data->stance_pox_gated,
            /* Source 2's own census: the position and tech signals as
             * read, and the cumulative count of turns on which they
             * actually moved an axis off the trait prior. Zero on every
@@ -714,6 +762,47 @@ double deep_stance_floor_mult(const struct player *pplayer)
 {
   return deep_stance_mil_mult(pplayer,
                               deep_tuning_get()->stance_floor_gain);
+}
+
+/**********************************************************************//**
+  Gate 7 (S-POX): the multiplier on the OWN-EMPIRE CROWDING price -- the
+  want a candidate site is charged per catchment tile one of our
+  existing cities could work too.
+
+  This is the axis the other six do not have: every one of them reads a
+  RATIO of two axes, because econ and mil bid for one shield budget and
+  only their ratio is meaningful. Empire shape has no such partner. It
+  is read against identity directly, as expand ^ -gain:
+
+    expansionist (expand > 1)  ->  multiplier < 1, crowding forgiven,
+                                   cities packed at the legal floor
+    builder      (expand < 1)  ->  multiplier > 1, crowding punished,
+                                   fewer cities with room to grow
+
+  Exactly 1.0 at an identity axis whatever the gain -- pow(1.0, y) is
+  1.0 for every finite y in IEEE 754 -- so the byte-identity gate holds
+  by the same argument the other six use, and a zero gain disables the
+  coupling without touching the axis, which is the per-gate off-switch
+  an A/B needs.
+
+  It scales a PRICE rather than a want, so the direction reads
+  backwards from gates 2-4 at first glance: a personality that wants
+  more cities is served by making each one cheaper to place, not by
+  raising anything.
+**************************************************************************/
+double deep_stance_pox_mult(const struct player *pplayer)
+{
+  const struct deep_plr *plr_data = deep_plr_data(pplayer);
+  double gain = deep_tuning_get()->stance_pox_gain;
+
+  if (plr_data == NULL) {
+    return 1.0;
+  }
+  if (plr_data->stance.expand <= 0.0 || gain == 0.0) {
+    return 1.0;
+  }
+
+  return pow(plr_data->stance.expand, -gain);
 }
 
 /**********************************************************************//**

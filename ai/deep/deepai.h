@@ -30,6 +30,13 @@ struct section_file;
 
 struct ai_type *deep_ai_get_self(void);
 
+/* Spacing buckets, shared by the site evaluator's per-search census and
+ * the founding census that checks it: distance 2 (the citymindist floor
+ * in both rulesets we run), 3, 4, and 5-or-more. One definition,
+ * because a census that bucketed differently from the search could not
+ * be compared with it. */
+#define DEEP_SPACING_BUCKETS 4
+
 /* Which threat classes the danger assessment CANNOT SEE are actually
  * live in this game, for this player, this turn. Every field is a
  * server or ruleset FACT -- a setting, a diplomatic state, a unit a
@@ -93,6 +100,26 @@ struct deep_plr {
      floor injections actually scaled by a non-identity stance. Same
      contract as the other five. */
   int stance_floor_gated;
+  /* And for gate 7 (S-POX): candidate sites whose own-crowding price
+     was actually scaled by a non-identity SHAPE axis. Same contract as
+     the other six -- zero means the personality never reached the
+     price, whatever the axes on the stance line say. */
+  int stance_pox_gated;
+  /* The SETTLEMENT PATTERN this player actually produced (S-POX): every
+     city it founded, bucketed by the distance to its nearest other city
+     at the moment of founding -- DEEP_SPACING_BUCKETS wide, 2 (the
+     citymindist floor in both rulesets we run), 3, 4, 5-or-more -- plus
+     the count and the distance sum for a mean.
+
+     At FOUNDING and not at game end, because that is where the decision
+     is: a game-end survey of the cities a player holds mixes in
+     conquest, loss and the cities its neighbours planted, and those are
+     not this mechanism's doing. Saved with the gate counters, and on
+     the same contract: it is cumulative, so the last line of a game is
+     the total. */
+  int found_spacing_n;
+  int found_spacing_sum;
+  int found_spacing[DEEP_SPACING_BUCKETS];
   /* And for SOURCE 2 (W34 E34.4): turns on which position or research
      lean actually moved an axis off the trait prior it modulates.
      Same contract as the gate counters -- zero at stance_source 0 and

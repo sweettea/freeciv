@@ -159,6 +159,19 @@ MAP = {
     "site_rival_crowding": (
         "S3", "mag", "-", None,
         "shapes the same unlogged contest penalty (deepsite.c:766)."),
+    "site_own_overlap": (
+        "S3", "mag", "direct", [("deep-sitespace", "charged>0")],
+        "charged=/charge= on deep-sitespace count the candidates that "
+        "actually paid the own-crowding price and the want it took off "
+        "them (deepsite.c:906-909); identically zero at the 0.0 "
+        "default, which is what makes the identity arm's zero a proof "
+        "rather than a silence."),
+    "stance_pox_gain": (
+        "S3", "mag", "direct", [("deep-stance", "pox_gate>0")],
+        "gate-7 counter: pox_gate= increments only when the shape-axis "
+        "multiplier != 1.0 (deepsite.c:910-912), which needs both a "
+        "non-identity expand axis (stance_source>0 plus a ruleset that "
+        "varies the traits) and site_own_overlap > 0."),
     "site_choke_bonus": (
         "S3", "mag", "-", None,
         "the choke predicate is never logged (deepsite.c:769)."),
