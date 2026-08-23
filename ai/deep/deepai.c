@@ -202,7 +202,7 @@ static void dpai_player_save(struct player *pplayer,
                              struct section_file *file, int plrno)
 {
   struct deep_plr *plr_data = deep_plr_data(pplayer);
-  int oi, i;
+  int oi, i, bi;
   const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   secfile_insert_int(file, plr_data->dv_turns_logged,
@@ -236,6 +236,14 @@ static void dpai_player_save(struct player *pplayer,
                      "player%d.deep_state.stance_floor_gated", plrno);
   secfile_insert_int(file, plr_data->stance_pox_gated,
                      "player%d.deep_state.stance_pox_gated", plrno);
+  secfile_insert_int(file, plr_data->found_spacing_n,
+                     "player%d.deep_state.found_spacing_n", plrno);
+  secfile_insert_int(file, plr_data->found_spacing_sum,
+                     "player%d.deep_state.found_spacing_sum", plrno);
+  for (bi = 0; bi < DEEP_SPACING_BUCKETS; bi++) {
+    secfile_insert_int(file, plr_data->found_spacing[bi],
+                       "player%d.deep_state.found_spacing%d", plrno, bi);
+  }
   secfile_insert_int(file, plr_data->stance_pos_moved,
                      "player%d.deep_state.stance_pos_moved", plrno);
 
@@ -313,7 +321,7 @@ static void dpai_player_load(struct player *pplayer,
                              const struct section_file *file, int plrno)
 {
   struct deep_plr *plr_data = deep_plr_data(pplayer);
-  int oi, i;
+  int oi, i, bi;
   const struct deep_tuning *deep_scope = deep_tuning_scope_set(pplayer);
 
   plr_data->dv_turns_logged
@@ -371,6 +379,20 @@ static void dpai_player_load(struct player *pplayer,
     = secfile_lookup_int_default(file, 0,
                                  "player%d.deep_state.stance_pox_gated",
                                  plrno);
+  plr_data->found_spacing_n
+    = secfile_lookup_int_default(file, 0,
+                                 "player%d.deep_state.found_spacing_n",
+                                 plrno);
+  plr_data->found_spacing_sum
+    = secfile_lookup_int_default(file, 0,
+                                 "player%d.deep_state.found_spacing_sum",
+                                 plrno);
+  for (bi = 0; bi < DEEP_SPACING_BUCKETS; bi++) {
+    plr_data->found_spacing[bi]
+      = secfile_lookup_int_default(file, 0,
+                                   "player%d.deep_state.found_spacing%d",
+                                   plrno, bi);
+  }
   plr_data->stance_pos_moved
     = secfile_lookup_int_default(file, 0,
                                  "player%d.deep_state.stance_pos_moved",
@@ -825,6 +847,37 @@ static void dpai_city_got(struct player *pplayer, struct city *pcity)
            game.info.turn, player_name(pplayer), pcity->id,
            city_size_get(pcity), pcity->turn_founded,
            TILE_XY(city_tile(pcity)));
+
+  /* The settlement-pattern census (S-POX). Only a FOUNDING counts: a
+   * captured city says nothing about where this player chooses to put
+   * cities, and mixing the two is how a game-end survey of held cities
+   * reports a conqueror as a largepoxer. */
+  if (pcity->turn_founded == game.info.turn) {
+    struct deep_plr *plr_data = deep_plr_data(pplayer);
+    int d = deep_site_own_spacing(pplayer, city_tile(pcity));
+    int b = deep_site_spacing_bucket(d);
+
+    if (b >= 0) {
+      plr_data->found_spacing_n++;
+      plr_data->found_spacing_sum += d;
+      plr_data->found_spacing[b]++;
+    }
+    /* One line per founding, carrying the running distribution and the
+     * SHAPE AXIS that is supposed to be moving it. Two seats with
+     * opposite trait draws are then one grep apart, which is the whole
+     * acceptance test for the personality. */
+    log_base(deep_metric_log_level(),
+             "deep-spacing turn=%d player=\"%s\" city=%d d=%d"
+             " n=%d mean=%.2f d2=%d d3=%d d4=%d d5=%d expand=%.3f",
+             game.info.turn, player_name(pplayer), pcity->id, d,
+             plr_data->found_spacing_n,
+             plr_data->found_spacing_n > 0
+             ? (double) plr_data->found_spacing_sum
+               / plr_data->found_spacing_n : 0.0,
+             plr_data->found_spacing[0], plr_data->found_spacing[1],
+             plr_data->found_spacing[2], plr_data->found_spacing[3],
+             plr_data->stance.expand);
+  }
   deep_tuning_scope_restore(deep_scope);
 }
 

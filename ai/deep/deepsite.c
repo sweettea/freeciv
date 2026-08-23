@@ -391,16 +391,19 @@ static bool deep_city_covers(struct city *acity, const struct tile *ptile)
   This is the SPACING the settlement pattern is made of: citymindist is
   its floor, and a census bucketed on it is what tells "the AI packs at
   the floor" apart from "the AI packs where the map made it".
+
+  A city standing ON the tile is not its own neighbour, which is what
+  lets the founding census ask this about a city that already exists.
 **************************************************************************/
-static int deep_site_own_spacing(struct player *pplayer,
-                                 const struct tile *ptile)
+int deep_site_own_spacing(struct player *pplayer,
+                          const struct tile *ptile)
 {
   int best = -1;
 
   city_list_iterate(pplayer->cities, acity) {
     int d = real_map_distance(city_tile(acity), ptile);
 
-    if (best < 0 || d < best) {
+    if (d > 0 && (best < 0 || d < best)) {
       best = d;
     }
   } city_list_iterate_end;
@@ -1064,7 +1067,7 @@ static double deep_site_wait_alt_result = 0.0;
  *
  * Computed only when the metric level is on (the deep-sitedef pattern):
  * a tuning run must not pay for a census. */
-#define DEEP_SITE_SPACE_BUCKETS 4
+#define DEEP_SITE_SPACE_BUCKETS DEEP_SPACING_BUCKETS
 static int deep_site_space_n[DEEP_SITE_SPACE_BUCKETS];
 static double deep_site_space_best[DEEP_SITE_SPACE_BUCKETS];
 static int deep_site_space_share[DEEP_SITE_SPACE_BUCKETS];
@@ -1073,10 +1076,11 @@ static int deep_site_space_bestd = -1;
 static int deep_site_space_bestshr = -1;
 
 /**********************************************************************//**
-  Which spacing bucket a candidate at distance d from our nearest city
-  falls in, or -1 when we hold no cities at all.
+  Which spacing bucket a site at distance d from our nearest city falls
+  in, or -1 when we hold no cities at all. Exported so the founding
+  census buckets identically to the search census.
 **************************************************************************/
-static int deep_site_space_bucket(int d)
+int deep_site_spacing_bucket(int d)
 {
   if (d < 0) {
     return -1;
@@ -1527,7 +1531,7 @@ static struct cityresult *deep_city_desirability(struct ai_type *ait,
    * competing candidate at another spacing is compared against. */
   if (log_do_output_for_level(deep_metric_log_level())) {
     int d = deep_site_own_spacing(pplayer, ptile);
-    int b = deep_site_space_bucket(d);
+    int b = deep_site_spacing_bucket(d);
 
     if (b < 0) {
       deep_site_space_far++;
