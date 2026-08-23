@@ -2876,13 +2876,14 @@ void deep_manage_units(struct ai_type *ait, struct player *pplayer)
 }
 
 /**********************************************************************//**
-  Release one unit from whatever operation claims it (swap-pop).
-  Returns TRUE if a claim existed. The defence counter-claim uses
-  this to pull a raider out of the hunt; the op machinery already
-  tolerates member loss everywhere (validation prunes, quorums
-  re-check).
+  Drop one unit from whatever operation claims it (swap-pop), charged
+  to the departure cause the caller is. The two exits that take a
+  blade off a wave -- the defence counter-claim and the poach -- differ
+  in nothing but that cause, and the census that splits them is the
+  only reason they are two functions and not one.
 **************************************************************************/
-bool deep_op_release_member(const struct player *pplayer, int unit_id)
+static bool deep_op_drop_member(const struct player *pplayer, int unit_id,
+                                enum deep_employ_depart why)
 {
   struct deep_plr *dp = deep_plr_data(pplayer);
   int oi = deep_op_claiming(pplayer, unit_id);
@@ -2896,12 +2897,37 @@ bool deep_op_release_member(const struct player *pplayer, int unit_id)
   for (i = 0; i < op->n_members; i++) {
     if (op->members[i] == unit_id) {
       op->members[i] = op->members[--op->n_members];
-      deep_employ_op_depart(pplayer, oi, DED_DEFENCE);
+      deep_employ_op_depart(pplayer, oi, why);
       return TRUE;
     }
   }
 
   return FALSE;
+}
+
+/**********************************************************************//**
+  Release one unit from whatever operation claims it (swap-pop).
+  Returns TRUE if a claim existed. The defence counter-claim uses
+  this to pull a raider out of the hunt; the op machinery already
+  tolerates member loss everywhere (validation prunes, quorums
+  re-check).
+**************************************************************************/
+bool deep_op_release_member(const struct player *pplayer, int unit_id)
+{
+  return deep_op_drop_member(pplayer, unit_id, DED_DEFENCE);
+}
+
+/**********************************************************************//**
+  Take a blade the poach FOUND, on the exit that deploys it.
+
+  With poach_deploy_gate on, deep_op_poach_defender() leaves the
+  candidate in its operation and the relief pass calls this once it
+  knows the force is going out. Charged to POACH and not DEFENCE, so
+  the departure census keeps saying which claim spent the blade.
+**************************************************************************/
+bool deep_op_poach_take(const struct player *pplayer, int unit_id)
+{
+  return deep_op_drop_member(pplayer, unit_id, DED_POACH);
 }
 
 /**********************************************************************//**
@@ -4485,8 +4511,17 @@ struct unit *deep_op_poach_defender(struct ai_type *ait,
                               game.info.turn - op->formed_turn,
                               op->n_members, take, odds, eta,
                               op->target_city);
-      op->members[blade_i] = op->members[--op->n_members];
-      deep_employ_op_depart(pplayer, oi, DED_POACH);
+      /* THE SEQUENCING GATE. Off, the blade leaves the wave HERE --
+       * inside the ask, before anyone has asked whether the relief
+       * force it joins will be deployed at all, which is the order
+       * the poach ledger adjudicated 6667 times and found spending
+       * three quarters of its blades on an exit that deploys nobody.
+       * On, the candidate is merely NAMED here and
+       * deep_op_poach_take() spends it on the deploying exit. */
+      if (tune->poach_deploy_gate <= 0) {
+        op->members[blade_i] = op->members[--op->n_members];
+        deep_employ_op_depart(pplayer, oi, DED_POACH);
+      }
       return blade;
     }
   }

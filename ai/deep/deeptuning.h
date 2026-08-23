@@ -3029,6 +3029,33 @@ struct deep_tuning {
    * creates a hostile neighbour -- but not derivable, so not the
    * default). */
   double capital_stake_gain;
+
+  /* THE POACH SEQUENCING GATE (deepops.c, deep_op_poach_defender();
+   * deepdefence.c, deep_defend_counter_claims()).
+   *
+   * The defence counter-claim asks a forming wave for its best blade,
+   * appends it to the relief force, and only THEN asks whether the
+   * force clears survival_target. The blade, however, leaves its
+   * operation inside the ASK -- so the exit that deploys nobody has
+   * already spent it. The poach ledger adjudicated 6667 of these
+   * (STATUS 2026-08-23, S-POACHPRICE): 76.0% of poaches took the
+   * blade off the wave and then deployed nobody, the claiming city
+   * was written off in the same pass, and 30.1% of poached blades
+   * idled un-attacked for the whole window. Only 2.3% were decisive
+   * against a danger the window confirmed.
+   *
+   * 0 (default) = that sequence exactly, byte for byte: the blade is
+   * removed from its operation where the candidate is found.
+   * != 0 = the removal moves to the one exit that actually deploys
+   * the force, so a claim the arithmetic then refuses leaves the wave
+   * intact. Nothing else changes -- the candidate search, the price
+   * comparison and the survival arithmetic are untouched, and the
+   * ledger line gains `took=` to tell a claim that was PAID from one
+   * that was merely ASKED.
+   *
+   * Control flow, not a magnitude: there is no constant here, which
+   * is why this is 0/1 and not a weight. */
+  int poach_deploy_gate;
 };
 
 void deep_tuning_init(void);
