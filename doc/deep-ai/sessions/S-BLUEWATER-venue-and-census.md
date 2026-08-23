@@ -29,11 +29,15 @@ comments naming their purpose.
 
 **Equal-start craft (user directives 2026-08-23): do not pay
 pre-flight turns, and do NOT try settings-only — techlevel caps out
-below flight.** The method is PLAY-FORWARD-THEN-EQUALIZE:
+below flight.** The method is PLAY-FORWARD-THEN-EQUALIZE.
+**The growing is already done by epic/grow-worlds (S-GROWWORLDS):
+the frozen family lives in benchmark/worlds/ with its selection table
+in STATUS. CONSUME those worlds; do not re-grow. Your work starts at
+the minimal-repair pass.** For reference, the method was:
 (1) grow the world once with ALL-CLASSIC seats (stock is the neutral
 worldbuilder; deep would bake its biases into every evaluation start)
 on the target map — ~15% land for the naval venue; ~50% land with
-barbarians disabled and war-suppressing settings for the air venue so
+barbarians disabled for the air venue so
 every seat reaches the snapshot alive; (2) snapshot a FAMILY of worlds, not one — 4-8 mapseeds grown
 identically and frozen at the target era (world tech ~70 for flight),
 each on a turn where every seat is alive and viable: one world is a
