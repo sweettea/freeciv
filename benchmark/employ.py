@@ -92,6 +92,7 @@ class Game:
         self.sortie = {}          # player -> last cumulative dict
         self.ops = []             # dicts, one per resolved operation
         self.poach = []           # dicts, one per adjudicated poach
+        self.marg = []            # dicts, one per marginal poach pricing
         self.dyad = []            # (turn, killerai, victimai)
         for line in open(os.path.join(gdir, "game.log"), errors="replace"):
             if "deep-employ " in line:
@@ -106,6 +107,8 @@ class Game:
                 self.ops.append(kv(line))
             elif "deep-employpoach " in line:
                 self.poach.append(kv(line))
+            elif "deep-poachmarg " in line:
+                self.marg.append(kv(line))
             elif "kill-dyad " in line:
                 d = kv(line)
                 self.dyad.append((num(d, "turn"), d.get("killerai", "none"),
@@ -249,6 +252,13 @@ def section_ops(games, module):
           % mean([num(o, "members0") for o in ops]))
     print("  peak members              %8.2f"
           % mean([num(o, "peak") for o in ops]))
+    # The accumulation rate: operations that ever held MORE members
+    # than they formed with. 0.28% over 4297 operations was the
+    # 2026-08-22 muster verdict's whole argument, and it is the
+    # acceptance number for anything that stops stripping a wave.
+    grew = sum(1 for o in ops if num(o, "peak") > num(o, "members0"))
+    print("  EVER GAINED A MEMBER      %8d  (%.2f%%)"
+          % (grew, 100.0 * grew / len(ops)))
     print("  members at dissolve       %8.2f"
           % mean([num(o, "final") for o in ops]))
     print("  turns gathering           %8.2f"
@@ -365,7 +375,9 @@ def poach_table(rows, label):
     idle = sum(1 for p in rows
                if num(p, "home") > 0 and num(p, "adjmax") == 0
                and num(p, "dmg") == 0 and not num(p, "gone"))
+    paid = sum(1 for p in rows if took(p) == 1)
     print("  %-22s %8d" % (label, n))
+    print("    BLADE LEFT THE WAVE   %8d %s" % (paid, pct(paid, n)))
     print("    city fell in window   %8d %s" % (fell, pct(fell, n)))
     print("    enemy at the walls    %8d %s" % (walls, pct(walls, n)))
     print("    danger never came     %8d %s" % (never, pct(never, n)))
@@ -454,6 +466,15 @@ def section_poach(games, module):
     # (kept=1: the blade was decisive), and a force that still falls
     # short is written off in the same pass without deploying anybody
     # (kept=0: the wave lost its blade and the city got nothing).
+    #
+    # `took` is the poach_deploy_gate half of the same question and it
+    # only exists on binaries that carry the gate, so it defaults to
+    # `kept` -- which is what it WAS before the gate, since the old
+    # order always spent the blade at the ask. With the gate on, a
+    # refused claim leaves the wave whole: took=0 with kept=0 is a
+    # claim that was ASKED and cost the offence nothing, and it is a
+    # different event from the paid-for-nothing transaction even
+    # though the defence's side of both is identical.
     print("  THE POACH-PRICE TABLE")
     print("    %-34s %8s %8s %10s" % ("", "n", "share", "take=0"))
     cats = [
@@ -462,7 +483,9 @@ def section_poach(games, module):
         ("paid and unneeded (kept, no danger)",
          lambda p: num(p, "kept", -1) == 1 and not danger(p)),
         ("paid for nothing (city written off)",
-         lambda p: num(p, "kept", -1) == 0),
+         lambda p: num(p, "kept", -1) == 0 and took(p) == 1),
+        ("ASKED, not paid (wave kept blade)",
+         lambda p: num(p, "kept", -1) == 0 and took(p) == 0),
         ("unsettled (neither exit ran)",
          lambda p: num(p, "kept", -1) < 0),
     ]
@@ -472,6 +495,85 @@ def section_poach(games, module):
         print("    %-34s %8d %s %s"
               % (lab, len(sel), pct(len(sel), len(rows)), pct(z, len(sel))))
     print()
+
+
+# -------------------------------------------------------- poach marginal
+
+
+def section_marg(games, module):
+    """poach_marginal_gate's own ledger: what the blade adds against
+    what its going costs, and the verdict, INCLUDING the refusals the
+    claim line can never show.
+
+    Every row is one (city, operation) pricing that already had a
+    reachable blade, so the denominator here is candidate claims and
+    not city-turns.
+    """
+    rows = [m for g in games for m in g.marg
+            if g.module(m.get("player")) == module]
+    ng = len(games)
+    if not rows:
+        print("# 9. POACH MARGINAL: no deep-poachmarg lines"
+              " (gate off, or an older binary)\n")
+        return
+    claimed = [m for m in rows if num(m, "claim") == 1]
+    refused = [m for m in rows if num(m, "claim") == 0]
+    print("# 9. POACH MARGINAL -- %d priced claims over %d games (%.1f/game)"
+          % (len(rows), ng, len(rows) / ng))
+    print("  %-26s %8s %8s %10s %10s"
+          % ("", "n", "share", "mean gain", "mean loss"))
+    for lab, sel in (("claimed (gain > loss)", claimed),
+                     ("REFUSED (gain <= loss)", refused)):
+        print("  %-26s %8d %s %10.1f %10.1f"
+              % (lab, len(sel), pct(len(sel), len(rows)),
+                 mean([fnum(m, "gain") for m in sel]) if sel else 0.0,
+                 mean([fnum(m, "loss") for m in sel]) if sel else 0.0))
+    print()
+    # What the totals comparison would have said about the same rows:
+    # risk > take is the inherited gate, so this is the disagreement
+    # table between the two questions on one population.
+    tot = [m for m in rows if fnum(m, "risk") > fnum(m, "take")]
+    print("  the two questions, on the same %d rows" % len(rows))
+    print("    totals would claim (risk > take)  %8d %s"
+          % (len(tot), pct(len(tot), len(rows))))
+    print("    marginal claims  (gain > loss)    %8d %s"
+          % (len(claimed), pct(len(claimed), len(rows))))
+    agree = sum(1 for m in rows
+                if (fnum(m, "risk") > fnum(m, "take")) == (num(m, "claim") == 1))
+    print("    the two agree                     %8d %s"
+          % (agree, pct(agree, len(rows))))
+    print()
+    print("  the defence's marginal, over all priced rows")
+    print("    mean relieved -> with     %8.3f -> %.3f"
+          % (mean([fnum(m, "relieved") for m in rows]),
+             mean([fnum(m, "with") for m in rows])))
+    print("    rows the blade moves by 0 %8d %s"
+          % (sum(1 for m in rows
+                 if fnum(m, "with") - fnum(m, "relieved") <= 0.0005),
+             pct(sum(1 for m in rows
+                     if fnum(m, "with") - fnum(m, "relieved") <= 0.0005),
+                 len(rows))))
+    print("  the offence's marginal")
+    print("    mean odds -> without      %8.3f -> %.3f"
+          % (mean([fnum(m, "odds") for m in rows]),
+             mean([fnum(m, "without") for m in rows])))
+    print("    rows the blade costs 0    %8d %s"
+          % (sum(1 for m in rows if fnum(m, "loss") <= 0.0005),
+             pct(sum(1 for m in rows if fnum(m, "loss") <= 0.0005),
+                 len(rows))))
+    print()
+
+
+def took(p):
+    """Did the blade actually leave its operation?
+
+    Absent on any binary older than poach_deploy_gate, where the answer
+    was unconditionally yes for every settled claim -- the old order
+    spent the blade inside the ask. Defaulting to `kept` (0/1, and -1
+    for an unsettled entry) is therefore the historically true value
+    and not a guess.
+    """
+    return num(p, "took", num(p, "kept", -1))
 
 
 def danger(p):
@@ -633,6 +735,8 @@ def main():
         section_depart(games, args.module)
     if want in ("all", "poach"):
         section_poach(games, args.module)
+    if want in ("all", "marg"):
+        section_marg(games, args.module)
     if want in ("all", "wait"):
         section_wait(games, args.module)
         if args.windows:
