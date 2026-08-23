@@ -11,6 +11,12 @@
 #                                        on isolated-150, FOUR arms
 #                                        (off / pricing / starve-price /
 #                                        both), ONE pinned binary
+#   ./benchmark/improvable.sh corpus     the USER'S OWN position (the
+#                                        Carthago stall) replayed three
+#                                        turns with both gates shut and
+#                                        both open, one key apart: the
+#                                        before/after drop-cause counts
+#                                        on the map the epic exists for
 #   ./benchmark/improvable.sh report     drop-cause counts per arm, the
 #                                        improvable census, and the
 #                                        paired score comparisons
@@ -56,6 +62,8 @@ BASE_BUILD=$BASE_TREE/build/freeciv-server
 BASE_PIN=$ROOT/.imp-bin/base/freeciv-server
 ON=$here/tuning/improvable-on.ini
 CONFIG=$here/configs/isolated-150.conf
+# The user's Europe game, the turn the stall was reported from.
+CORPUS=${CORPUS:-$ROOT/play-0823-1226/saves/freeciv-T0201-Y01500-auto.sav.zst}
 
 MESON_OPTS="-Dclients= -Dfcmp= -Dtools= -Dnls=false -Daudio=none
             -Dreadline=false -Daimodules=classic,tex,baseline,deep"
@@ -186,6 +194,135 @@ ab)
   done
   echo "SUCCESS" > "$OUT/DONE"
   echo "=== arms complete; run '$0 report' ==="
+  ;;
+
+corpus)
+  # THE POSITION THE EPIC EXISTS FOR. Deep_Carthago at ~23 cities,
+  # every settler search losing 70-90 tiles to citymindist and 66-73 to
+  # the starve gate while the user could see improvable ground. Played
+  # on three turns twice, one key apart, from the identical save -- as
+  # tight a pair as exists, and on the only map the complaint was
+  # actually made about.
+  #
+  # The tuning is the user's OWN derby-7 file with the two gates
+  # STRIPPED and then set, never appended: once a key is in that file a
+  # plain append produces it twice, secfile_load refuses the WHOLE file,
+  # and both arms silently run on compiled defaults with no derby-7
+  # tuning at all (S-CAPSTAKE paid for this lesson). The awk below is
+  # the check, and it must print nothing.
+  OUT=$here/results/improvable-corpus
+  END=${2:-204}
+  bin=$(pin "$BUILD" corpus)
+  echo "server=$bin sha256=$(sha256sum "$bin" | cut -d' ' -f1)"
+  echo "corpus=$CORPUS"
+  [ -r "$CORPUS" ] || { echo "no corpus save at $CORPUS" >&2; exit 1; }
+  port=7646
+  for arm in off on; do
+    gate=0
+    [ "$arm" = on ] && gate=1
+    d=$OUT/$arm
+    rm -rf "$d"; mkdir -p "$d/saves"
+    zstdcat "$CORPUS" > "$d/game.sav" || exit 1
+    { grep -v '^[[:space:]]*site_improvable_gate' \
+           "$ROOT/derby5/tuning-derby7.ini" \
+        | grep -v '^[[:space:]]*site_starve_price_gate'
+      echo "site_improvable_gate = $gate"
+      echo "site_starve_price_gate = $gate"
+    } > "$d/tuning.ini"
+    awk -F= '/^[a-z]/{gsub(/ /,"",$1); if (seen[$1]++) print "DUP:"$1}' \
+        "$d/tuning.ini"
+    # Every `set` goes AFTER the load: a savegame RESTORES server
+    # settings, and this corpus was played with a human in it, so it
+    # carries minplayers=1 and timeout=0 and a headless server that
+    # sets those first has them overwritten and then waits forever.
+    { echo "load $d/game.sav"
+      zstdcat "$CORPUS" \
+        | awk -F'"' '/^name=/{n=$2} /^username=/{if ($2 != "Unassigned")
+                                                   print "aitoggle \"" n "\""}'
+      echo "set minplayers 0"
+      echo "set timeout -1"
+      echo "set endturn $END"
+      echo "set autosaves \"GAMEOVER\""
+      echo "start"
+    } > "$d/commands.serv"
+    sha256sum "$bin" "$d/tuning.ini" > "$d/key.txt"
+    ( cd "$d" \
+      && FREECIV_DEEP_TUNING="$d/tuning.ini" LD_LIBRARY_PATH=$(dirname "$bin") \
+         nice -n 10 timeout 7200 "$bin" -A none -e -p "$port" \
+         --read commands.serv --saves saves > game.log 2>&1 ) &
+    port=$((port + 1))
+  done
+  wait
+  rm -f "$OUT"/*/game.sav "$OUT"/*/saves/*.sav*
+  ok=1
+  for arm in off on; do
+    grep -aq "turn=$END" "$OUT/$arm/game.log" || ok=0
+  done
+  [ "$ok" -eq 1 ] && echo "SUCCESS" > "$OUT/DONE" \
+                  || echo "FAILED" > "$OUT/FAILED"
+
+  echo
+  echo "=== read-back: the gates each arm actually ran with ==="
+  for arm in off on; do
+    printf '%-4s ' "$arm"
+    grep -h "site_improvable_gate\|site_starve_price_gate" \
+         "$OUT/$arm/tuning.ini" | tr '\n' ' '
+    echo
+  done
+  echo
+  echo "=== Deep_Carthago's site ladder, per arm, summed over the replay ==="
+  printf '%-4s %7s %8s %8s %8s %8s %7s %7s\n' \
+    arm seen nofound mindist starve scored neg found
+  for arm in off on; do
+    grep -ah 'deep-siteladder .*Carthago' "$OUT/$arm/game.log" \
+      | awk -v lbl="$arm" '
+          { for (i = 1; i <= NF; i++) { split($i, kv, "="); s[kv[1]] += kv[2] } }
+          END {
+            printf "%-4s %7d %8d %8d %8d %8d %7d %7d\n", lbl, s["seen"],
+                   s["nofound"], s["mindist"], s["starve"], s["scored"],
+                   s["neg"], s["found"]
+          }'
+  done
+  echo
+  echo "=== every deep seat, same table ==="
+  printf '%-4s %7s %8s %8s %8s %8s %7s %7s\n' \
+    arm seen nofound mindist starve scored neg found
+  for arm in off on; do
+    grep -ah 'deep-siteladder ' "$OUT/$arm/game.log" \
+      | awk -v lbl="$arm" '
+          { for (i = 1; i <= NF; i++) { split($i, kv, "="); s[kv[1]] += kv[2] } }
+          END {
+            printf "%-4s %7d %8d %8d %8d %8d %7d %7d\n", lbl, s["seen"],
+                   s["nofound"], s["mindist"], s["starve"], s["scored"],
+                   s["neg"], s["found"]
+          }'
+  done
+  echo
+  echo "=== the gates' own instrument ==="
+  for arm in off on; do
+    grep -ah "deep-siteimprove " "$OUT/$arm/game.log" \
+      | awk -v lbl="$arm" '
+          { for (i = 1; i <= NF; i++) { split($i, kv, "="); s[kv[1]] += kv[2] }
+            n++ }
+          END {
+            printf "%-4s lines=%d tiles=%d lifted=%d cut=%d gain=%.0f"\
+                   " chain=%d starvepriced=%d starveturns=%d starvehard=%d\n",
+                   lbl, n, s["tiles"], s["lifted"], s["cut"], s["gain"],
+                   s["chain"], s["starvepriced"], s["starveturns"],
+                   s["starvehard"]
+          }'
+    [ "$(grep -ac 'deep-siteimprove ' "$OUT/$arm/game.log")" = 0 ] \
+      && echo "$arm: no deep-siteimprove line at all"
+  done
+  echo
+  echo "=== founder want, Deep_Carthago, last line per turn ==="
+  for arm in off on; do
+    printf '%-4s ' "$arm"
+    grep -ah 'deep-founder .*Carthago.*fresh=1' "$OUT/$arm/game.log" \
+      | grep -o 'want=[0-9-]*' | awk -F= '
+          { s += $2; n++; if ($2 > 0) p++ }
+          END { printf "lines=%d meanwant=%.1f positive=%d\n", n, s/n, p }'
+  done
   ;;
 
 report)
