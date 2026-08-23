@@ -2896,6 +2896,7 @@ bool deep_op_release_member(const struct player *pplayer, int unit_id)
   for (i = 0; i < op->n_members; i++) {
     if (op->members[i] == unit_id) {
       op->members[i] = op->members[--op->n_members];
+      deep_employ_op_depart(pplayer, oi, DED_DEFENCE);
       return TRUE;
     }
   }
@@ -4474,6 +4475,7 @@ struct unit *deep_op_poach_defender(struct ai_type *ait,
                unit_rule_name(blade), pcity->id, op->target_city, odds,
                raw_own, raw_own * dmult, city_risk);
       op->members[blade_i] = op->members[--op->n_members];
+      deep_employ_op_depart(pplayer, oi, DED_POACH);
       return blade;
     }
   }
@@ -4554,6 +4556,7 @@ static void deep_op_drive_consolidate(struct ai_type *ait,
      * re-decides who garrisons the city we just took. */
     deep_hold_unit(ait, gar, "garrison");
     op->members[gar_i] = op->members[--op->n_members];
+    deep_employ_op_depart(pplayer, oi, DED_GARRISON);
   }
 
   if (cleared || game.info.turn - op->phase_turn >= tune->op_muster_wait) {
@@ -5425,6 +5428,14 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
 
       if (m != NULL && unit_owner(m) == pplayer && m->hp > 0) {
         op->members[n++] = op->members[i];
+      } else {
+        /* The only two ways the validation pass drops a member, and
+         * they are different findings: gone or spent means the wave is
+         * walking through danger, still alive under another flag means
+         * it was captured or bribed away. */
+        deep_employ_op_depart(pplayer, oi,
+                              (m != NULL && m->hp > 0) ? DED_LOST
+                                                       : DED_DEAD);
       }
     }
     op->n_members = n;

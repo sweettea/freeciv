@@ -159,4 +159,44 @@ void deep_employ_op_strike(const struct player *pplayer, int oi,
 void deep_employ_op_end(const struct player *pplayer, int oi,
                         const char *why, int members);
 
+/* WHY A WAVE LOSES ITS MEMBERS. The muster A/B (STATUS addendum
+ * 2026-08-22) measured 4297 operations of which 80.2% dissolved with
+ * ZERO members left, 83.6% of musters formed with one blade and 77.9%
+ * of them died after one turn -- and could not say whether the blades
+ * were killed or taken back, because the two leave through different
+ * code and neither left a trace.
+ *
+ * They are different findings with opposite fixes. Killed means the
+ * wave is walking through danger it should not be in; taken back means
+ * deep's own defence outbids its own offence every turn, and the fix is
+ * a claim-priority question rather than a routing one.
+ *
+ * There are exactly four ways an assault loses a member, and each is
+ * charged where it happens:
+ *
+ *   DEAD      the validation pass found the unit gone or at zero hp
+ *   LOST      the validation pass found it alive but no longer ours
+ *             (captured, bribed, or handed over)
+ *   DEFENCE   deep_op_release_member(), whose only caller is the
+ *             defence counter-claim (deepdefence.c)
+ *   POACH     deep_op_poach_defender(), a threatened city taking the
+ *             wave's best blade back off the march
+ *   GARRISON  the CONSOLIDATE pass converting a member into the
+ *             garrison of the city the wave just took -- a success,
+ *             counted so the other four cannot be inflated by it
+ *
+ * Recorded per operation both over the whole life and restricted to
+ * the turn after formation, which is where the muster arm loses 78% of
+ * its waves. */
+enum deep_employ_depart {
+  DED_DEAD = 0,
+  DED_LOST,
+  DED_DEFENCE,
+  DED_POACH,
+  DED_GARRISON,
+  DED_DEPART_COUNT
+};
+void deep_employ_op_depart(const struct player *pplayer, int oi,
+                           enum deep_employ_depart why);
+
 #endif /* FC__DEEPEMPLOY_H */

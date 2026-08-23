@@ -20623,3 +20623,128 @@ Retention: `benchmark/results/pox-identity/` (40 games, 4 arms) and
 carrying deep-spacing, deep-sitespace and deep-stance). The T110 probe
 that funds section 2 and section 7 re-derives from
 `play-0822-2253/saves/freeciv-T0110-*.zst` with a 4-turn `-d 4` run.
+Ops note, and it is a standing change of convention (human call,
+2026-08-22). **Launch game batches so they survive the agent.** Both
+arms above lost a wave to the ~60-minute reaping of tracked background
+commands — the OFF arm at 30/40, the ON arm at 25/40 — and both were
+only cheap to recover because the driver was a self-contained on-disk
+script keyed on DONE markers. Keep that, and stop launching it inside
+the sandbox: write the driver to disk, then start it **detached and
+outside the sandbox** (the sandbox override plus `setsid`, stdout and
+stderr to a log file, fully disowned), and watch it by DONE counts and
+scorelog mtimes rather than by the process table, which this box does
+not report honestly. The sandbox's process-group reaping is what kills
+these runs; a detached process outside it survives even total session
+death. Two further habits earned the same way: sweep partial game
+directories before a resume, verifying the expected end turn and
+deleting anything short — a leftover `scorelog.txt` in a re-run
+directory is the silent-scorelog trap of 2026-08-13 — and prune each
+game to its ledger lines as it finishes rather than at the end, which
+is what kept 80 games of tech50war-200 inside 114 MB.
+
+### Addendum (2026-08-23): the waves are not dying, they are being taken back — 89% of member departures are deep's own poach
+
+The addendum above closed on an open question it could not answer: 80.2%
+of 4297 operations dissolved with **zero members left** after a mean 2.5
+turns, and nothing on disk said whether those blades had been killed or
+taken back. Those are opposite findings — killed means the wave walks
+through danger it should not be in, taken back means deep's own defence
+outbids its own offence every turn — and they want different fixes.
+
+`deep-employop` now carries a `dep=` field charging every member
+departure to the path it left by (commit `bc8f58a825`). The counter was
+run over the **same 40 games**: same venue, seeds 17-36, both seat
+orderings, `pv3-muster.ini` (sha `82cfdc67…`), on the rebuilt binary sha
+`66066a28…`.
+
+**Proof that these are the same games, and that the counter does not
+steer: `scorelog.txt` is byte-identical 40/40 against the ON arm above,
+across a binary change**, with all 40 `maphash.txt` equal and the
+operation count identical to the unit (4297 in both). The re-run is
+simultaneously the identity proof and the measurement.
+
+#### Where a wave's members go
+
+All 4297 assault operations, 40 games:
+
+    cause      departures   share   on formation+1   per game
+      poach          6681   89.4%           4084      167.03
+      dead            695    9.3%            123       17.38
+      defence          97    1.3%             27        2.42
+      lost              0    0.0%              0        0.00
+      garrison         16      —               1        0.40
+      total          7489                   4235      187.22
+
+`poach` is `deep_op_poach_defender()`: a threatened city of deep's own
+taking the wave's best blade back off the march. `dead` is the
+validation pass finding the unit gone or spent. `defence` is
+`deep_op_release_member()`, the defence counter-claim. `lost` is
+capture or bribery. `garrison` is the CONSOLIDATE pass converting a
+member into the garrison of a city the wave took — a success, and it
+happens **sixteen times in 40 games**.
+
+**Nine of every ten blades a wave loses are taken back by deep's own
+defence. Fewer than one in ten is killed. Not one was captured.** The
+third-ranked leak of the main entry — "member attrition during the
+muster walk" — is not attrition at all. It is deep bidding against
+itself.
+
+Split by what kind of operation lost them:
+
+    muster ops (n=3525)          departures 4176 = 1.18 per op
+      poach     4004   95.9%   of which 3059 (76.4%) on formation+1
+      dead       157    3.8%              81 (51.6%)
+      defence     15    0.4%               9 (60.0%)
+
+    ordinary formations (n=772)  departures 3297 = 4.27 per op
+      poach     2677   81.2%   of which 1025 (38.3%) on formation+1
+      dead       538   16.3%              42 ( 7.8%)
+      defence     82    2.5%              18 (22.0%)
+
+A muster is 96% poached and loses three quarters of that on the single
+turn after it forms. An ordinary formation — the priced, quorum-clearing
+wave — is 81% poached and loses its blades more slowly, which is what a
+force that actually marches looks like.
+
+And the closing arithmetic on the 3445 operations that dissolved with
+nothing left: **3236 of them (93.9%) had the poach take at least as many
+blades as they formed with.** The zero-member dissolve is not a wave
+that was destroyed; it is a wave that was dismantled by its own side.
+
+#### What this does and does not settle
+
+It settles the mechanism behind two rankings in the main entry. Rank 3
+("member attrition during the muster walk") is misnamed and should read
+*deep's defence poaching its own waves*, and the muster's failure to
+accumulate — 0.28% of operations ever gaining a member — now has a
+cause: a muster forms with one blade, and the poach takes it on the next
+turn, 76% of the time. ERA 3b's design assumed a gathering force would
+be left alone to gather; nothing in `deep_op_poach_defender()` knows the
+difference between a marching wave and a parked one.
+
+It does **not** settle whether the poach is wrong. Every poach is a
+priced decision — a city under threat valuing a defender above the
+assault's share of a blade — and this epic has no counter on the
+value it paid. A poach that saves a city is deep working correctly, and
+"89% of departures are poaches" is equally consistent with "the defence
+is right and the offence should never have formed". What the number does
+establish is *where the decision lives*: the employment leak is settled
+between deep's own two claimants, not between deep and its enemies, and
+the next instrument belongs on the poach's own price rather than
+anywhere in the odds funnel.
+
+Two scope limits, stated rather than buried. The **OFF arm is not
+instrumented for this** — it ran on the earlier binary, and its 748
+operations with 50.5% zero-member dissolves are very likely the same
+story, but that is inference and not measurement; re-running the OFF arm
+on this binary is one detached batch and is the cheapest next run in
+this workstream. And the per-cause counts are *departures*, not units:
+one blade poached, returned to the pool and poached again by a later
+wave is counted twice, which is the honest reading of "how often does
+this happen" and not of "how many blades exist".
+
+Retention: the ON-arm tree at `benchmark/results/employ-muster/` has
+been replaced in place by the re-run, which carries the same 40 games
+with the richer log; the table above reproduces with
+`benchmark/employ.py --section depart`, and the batch itself with
+`benchmark/muster-depart.sh`.

@@ -45,6 +45,13 @@ def kv(line):
             if "=" not in part:
                 continue
             k, v = part.split("=", 1)
+            if "=" in v:
+                # A cause list introduced by its own key, as
+                # `dep=dead=0/0,lost=0/0,...`: the first comma group
+                # carries both the introducer and the first pair, and
+                # the pair is the part worth keeping. No metric line
+                # has a value that legitimately contains "=".
+                k, v = v.split("=", 1)
             out[k] = v.strip('"')
     return out
 
@@ -264,6 +271,51 @@ def section_ops(games, module):
     print()
 
 
+# --------------------------------------------------------------- departs
+
+DEPART = ["dead", "lost", "defence", "poach", "garrison"]
+
+
+def section_depart(games, module):
+    """Where a wave's members go, by the path they left through.
+
+    The `dep=` field of deep-employop carries `cause=life/firstturn`
+    per cause, so one pass over the op lines gives both columns.
+    """
+    ops = [o for g in games for o in g.ops
+           if g.module(o.get("player")) == module]
+    if not ops or "dead" not in ops[0]:
+        print("# 7. MEMBER DEPARTURES: no dep= field (older binary)\n")
+        return
+    life = {k: 0 for k in DEPART}
+    first = {k: 0 for k in DEPART}
+    for o in ops:
+        for k in DEPART:
+            v = o.get(k, "0/0").split("/")
+            life[k] += int(v[0])
+            first[k] += int(v[1]) if len(v) > 1 else 0
+    tot = sum(life[k] for k in DEPART if k != "garrison")
+    ng = len(games)
+    print("# 7. MEMBER DEPARTURES -- %d assault operations over %d games"
+          % (len(ops), ng))
+    print("  %-10s %10s %8s %12s %10s"
+          % ("cause", "lifetime", "share", "formation+1", "per game"))
+    for k in sorted(DEPART, key=lambda k: -life[k]):
+        share = (100.0 * life[k] / tot) if tot and k != "garrison" else \
+            float("nan")
+        print("  %-10s %10d %7.1f%% %12d %10.2f"
+              % (k, life[k], share, first[k], life[k] / ng))
+    print("  %-10s %10d %8s %12d %10.2f"
+          % ("(total)", sum(life.values()), "", sum(first.values()),
+             sum(life.values()) / ng))
+    print("  losses excluding the garrison conversion: %d, of which %d"
+          " (%.1f%%) on the turn after formation"
+          % (tot, sum(first[k] for k in DEPART if k != "garrison"),
+             100.0 * sum(first[k] for k in DEPART if k != "garrison") / tot
+             if tot else 0))
+    print()
+
+
 # ------------------------------------------------------------------ wait
 
 WAIT_BUCKET = {
@@ -404,6 +456,8 @@ def main():
         section_sortie(games, args.module)
     if want in ("all", "ops"):
         section_ops(games, args.module)
+    if want in ("all", "depart"):
+        section_depart(games, args.module)
     if want in ("all", "wait"):
         section_wait(games, args.module)
         if args.windows:
