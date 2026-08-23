@@ -327,6 +327,8 @@ static const struct deep_tuning deep_tuning_defaults = {
   .poach_deploy_gate = 0,               /* 0 = the blade leaves its wave
                                          * inside the ask, exactly as
                                          * inherited */
+  .poach_marginal_gate = 0,             /* 0 = the total-vs-total
+                                         * comparison exactly */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -635,7 +637,8 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(chatty_road_gain) \
   TUNE_INT(capital_stake_gate) \
   TUNE_DOUBLE(capital_stake_gain) \
-  TUNE_INT(poach_deploy_gate)
+  TUNE_INT(poach_deploy_gate) \
+  TUNE_INT(poach_marginal_gate)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 

@@ -236,7 +236,9 @@ double deep_op_launch_rate(const struct player *pplayer);
 struct unit *deep_op_poach_defender(struct ai_type *ait,
                                     struct player *pplayer,
                                     struct city *pcity,
-                                    double p_survival);
+                                    double p_survival,
+                                    struct unit *const *force, int n_force,
+                                    double relieved);
 
 /* Spend a blade the poach named. Inert when poach_deploy_gate is off,
  * because the blade has already left its operation by then. */

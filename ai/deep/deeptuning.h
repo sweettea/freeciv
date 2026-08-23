@@ -3056,6 +3056,36 @@ struct deep_tuning {
    * Control flow, not a magnitude: there is no constant here, which
    * is why this is 0/1 and not a weight. */
   int poach_deploy_gate;
+
+  /* THE POACH ARBITRATION GATE (deepops.c, deep_op_poach_defender()).
+   *
+   * The poach compares the city's TOTAL risk
+   * (worth x defence_worth_mult x (1 - p)) against the operation's
+   * TOTAL take (conquest worth x odds at its eta). Two whole-quantity
+   * claims on ONE blade, priced by two different questions -- and
+   * neither is the question the decision actually is. The garrison
+   * draft next door already asks the right one in probability space
+   * (`with - held > cost`, deepops.c): what does THIS blade add,
+   * against what does its going cost.
+   *
+   * != 0 replaces the totals with exactly that difference, in the
+   * same worth currency both sides already use and through the same
+   * two primitives the draft calls:
+   *
+   *   gain = own worth x defence_worth_mult
+   *          x (survival with the blade - survival of the force
+   *             already assembled)
+   *   loss = conquest worth x (odds with the blade - odds without it)
+   *
+   * and the blade is claimed only when gain > loss. Nothing is
+   * invented: both terms are differences of two numbers the poach and
+   * the operation already compute. 0 (default) = the total comparison
+   * exactly.
+   *
+   * ORDER MATTERS. poach_deploy_gate should land first: 76% of poaches
+   * take a blade the claiming city then cannot use at all, and no
+   * arbitration term fixes a transaction neither side collects on. */
+  int poach_marginal_gate;
 };
 
 void deep_tuning_init(void);

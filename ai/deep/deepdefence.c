@@ -3139,8 +3139,8 @@ static void deep_flee_workers(struct ai_type *ait, struct player *pplayer)
  * cap, not a tunable -- the BFS takes the shortest chain and stops
  * at the first genuinely sparable garrison. */
 #define DEEP_RELAY_MAX 64
-/* Cap on one city's relief force in a turn (bookkeeping). */
-#define DEEP_RELIEF_MAX 12
+/* DEEP_RELIEF_MAX, the cap on one city's relief force in a turn, is in
+ * deepdefence.h: the poach prices against the same bound. */
 
 /**********************************************************************//**
   The weakest blade `lender` can send: own military, not bodyguarding
@@ -3869,7 +3869,12 @@ static void deep_defend_counter_claims(struct ai_type *ait,
                                                force, n_force, NULL);
     }
     if (relieved < tune->survival_target && n_force < DEEP_RELIEF_MAX) {
-      struct unit *poach = deep_op_poach_defender(ait, pplayer, pcity, p);
+      /* `relieved` here is the survival of exactly `force`, which is
+       * what the marginal pricing needs: the poach is asked LAST, so
+       * what its blade buys is what it buys on top of the whole free
+       * pool the city has already committed. */
+      struct unit *poach = deep_op_poach_defender(ait, pplayer, pcity, p,
+                                                  force, n_force, relieved);
 
       if (poach != NULL) {
         backfill[n_force] = NULL;
