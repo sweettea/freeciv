@@ -364,6 +364,7 @@ else
       'ai/deep/deepstance.c',
       'ai/deep/deeptech.c',
       'ai/deep/deeptechcensus.c',
+      'ai/deep/deepterra.c',
       'ai/deep/deeptrade.c',
       'ai/deep/deepemploy.c',
       'ai/deep/deepfunnel.c',
@@ -1766,6 +1767,17 @@ test('deeptuning',
                 install: false))
 # The nativity helpers iterate real terrain/class structures, so this
 # one links libfreeciv too.
+# The terrain-change graph walk reads real terrain structures, so this
+# one links libfreeciv too.
+test('deepterra',
+     executable('deepterra_test',
+                'tests/deepterra_test.c',
+                'ai/deep/deepterra.c',
+                sources: [verhdr, specenum],
+                include_directories: [common_inc,
+                                      include_directories('ai/deep')],
+                link_with: common_lib,
+                install: false))
 test('deepnativity',
      executable('deepnativity_test',
                 'tests/deepnativity_test.c',
