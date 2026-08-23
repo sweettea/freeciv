@@ -17884,3 +17884,233 @@ under `benchmark/results/employ-probe/` (52 MB; game.log reduced to the
 ledger lines and savegames dropped, W12g pattern). Every table above
 re-derives from that directory with `benchmark/employ.py` and
 `benchmark/mixseat.py`.
+
+### Addendum (2026-08-22): the muster A/B on pv3 — score is a WASH, and the muster never accumulates
+
+The entry above closed on a surprise: `op_muster` is 0 in the arm that
+loses, while ERA 3b built the muster for exactly the odds-refused-98%
+world these counters measured. This is that A/B, run on the same 40
+games' venue, seeds and binary.
+
+**Arms.** OFF is the 40-game probe above, unchanged and not re-run. ON
+is `benchmark/tuning/pv3-muster.ini` = pv3.ini verbatim **plus two
+lines**: `op_muster = 1` and `op_muster_home = 0`. Those two are ERA
+3b's arm **B'**, which that epic's own text nominated ("Whoever runs
+this should run B' if only one extra arm fits") and which its
+2026-08-13 A/B on pv1+reach then confirmed as the better of the two
+muster arms (B −12.1/seed t −1.98; B' −6.3/seed t −0.85; abandonment 3x
+lower without the home trigger). `op_muster_stall` is left absent, i.e.
+the compiled placeholder, exactly as ERA 3b specified; `cover_removal`
+and `op_draft_marginal` are pv3's values in both arms.
+
+    diff pv3.ini pv3-muster.ini  ->  6 comment lines + op_muster = 1
+                                     + op_muster_home = 0, nothing else
+    no duplicate keys (awk dedupe check clean)
+
+**Read-back.** The `deep-tuning file=` provenance line confirms the
+file path and `op_muster=1`, but **it cannot confirm `op_muster_home`**:
+the line is cut by `MAX_LEN_LOG_LINE` (5120, `utility/log.h:27`) after
+173 of 251 knobs, and `op_muster_home` falls past the cut. *A provenance
+line that silently stops at two thirds of the knobs is worth its own
+fix; recorded here, not fixed.* The switch is therefore confirmed
+behaviourally instead, on two 60-turn games differing only in that knob:
+
+    op_muster_home = 1   ->  8 muster-home abandons, 6 muster-worth
+    op_muster_home = 0   ->  0 muster-home abandons, 14 muster-worth
+
+**Pairing.** 40 games, seeds 17-36, both seat orderings, one pinned
+binary (`e9de7ed4…`), tuning sha `82cfdc67…`. All 40 reach T200; all 40
+`maphash.txt` match the OFF arm seed for seed, so this is a
+tuning-only contrast on identical maps.
+
+#### Score: nothing moves
+
+Paired on (seed, seat ordering), deep side, 40 games:
+
+    turn   score off   score on    diff    sem      t
+      40       523.4      524.2    +0.8    2.7  +0.32
+      60       566.1      565.4    -0.7    3.6  -0.18
+      80       597.7      599.6    +1.9    5.8  +0.33
+     100       631.8      634.0    +2.2    8.2  +0.27
+     200       797.1      795.5    -1.6   15.2  -0.11
+
+    T200 deep side       off      on    diff   sem      t
+      unitskilled      164.1   161.5    -2.6   6.8  -0.38
+      unitslost        248.0   254.4    +6.5   8.4  +0.76
+      unitsbuilt       360.6   367.1    +6.5   7.5  +0.86
+      cities            21.5    22.1    +0.5   0.5  +1.01
+      munits            80.0    78.5    -1.4   3.1  -0.47
+
+    kill:loss      T40    T60    T80   T100   T200
+      deep off   1.418  0.975  0.842  0.804  0.661
+      deep on    1.611  1.052  0.910  0.832  0.635
+      classic    0.632  0.912  0.958  0.975  1.067  (off)
+      classic    0.538  0.868  0.926  0.956  1.070  (on)
+
+The one non-null in the set is **mid-game losses**: −4.8 at T80
+(t −2.45) and −2.1 at T60 (t −1.84), gone again by T200 (+6.5). Deep
+loses slightly fewer units while its blades sit in musters, kills no
+more, and ends in exactly the same place. **The muster is a score wash
+on pv3, as it was on pv1+reach.**
+
+#### Disposition: the army is redistributed, not employed
+
+Mean per deep seat per turn (OFF above, ON below at each turn):
+
+    turn   mil   attidle  muster  march  garrison  escort  idle   ops
+      60  8.05     0.67    0.50   0.05     2.78     3.17   0.35  0.22   off
+      60  8.22     0.57    0.76   0.07     2.83     3.05   0.37  0.47   on
+     100 12.53     2.26    0.59   0.51     5.62     2.27   1.77  0.23   off
+     100 12.50     2.40    0.82   0.29     5.57     2.12   1.89  0.36   on
+     200 19.81     6.50    1.31   1.09     7.47     1.82   5.97  0.36   off
+     200 19.36     5.93    1.64   0.84     7.71     1.36   5.52  0.59   on
+
+Live operations per seat rise 0.36 → 0.59 and units in a muster 1.31 →
+1.64, while units on the march **fall** 1.09 → 0.84. Idle attackers move
+by −0.57 of an army of 19.4. The army is not employed; a fraction of a
+unit per seat is relabelled.
+
+#### Funnel: the odds refusals are re-badged, not resolved
+
+Per deep seat-game, n=160:
+
+    stage                       off      on
+      formation attempts      199.1   198.8
+      reached pricing         172.7   175.9
+        odds exactly 0        117.9   123.6
+        odds short of bar      49.7    47.1
+        odds cleared bar        5.0     5.2
+      mean best-prefix odds   0.036   0.036   (bar 0.649 in both)
+      blades drafted           42.5    50.3
+
+    verdict                     off      on
+      musteroff               104.0     0.0
+      worth                     0.0    83.6
+      muster                    0.0    22.2
+      poolempty                63.7    64.8
+      notarget                 20.7    20.1
+      formed                    5.0     5.2
+      nohome                    5.7     2.9
+      noslot                    0.9     1.2
+
+**The odds side is untouched to three decimal places**: same attempts,
+same mean best-prefix odds of 0.036 against the same 0.649 bar, same
+number of attempts clearing it (5.0 → 5.2). All the muster does is
+re-route the 104.0 `musteroff` refusals into 83.6 `worth` refusals and
+22.2 musters. The worth gate refuses 79% of what the odds gate used to
+refuse, and the remaining 21% opens a muster.
+
+#### Op lifecycle: 3525 musters, 35 launches, and no accumulation at all
+
+    quantity                        off        on
+      operations per game         18.70    107.42
+      operations, total             748      4297
+        of which musters              0      3525
+      launched                      313       331
+      launch rate                 41.8%      7.7%
+        musters launched              -   35 (1.0%)
+        ordinary formations       41.8%     38.1%
+      members at formation         5.61      2.03
+      PEAK members                 5.61      2.03
+      members at dissolve          1.59      0.67
+      turns gathering              6.57      2.51
+      dissolved with zero members 50.5%     80.2%
+      KILLS booked by the op layer    2         3   (over 40 games)
+      LOSSES booked by the op layer   1         5
+
+    end cause          off    on        muster shape (ON arm)
+      abort            407  3468        size at formation  1: 2948
+      muster-worth       -   421                           2:  492
+      abort-odds       194   180                           3:   69
+      abort-wait        70    69                           4:   11
+      abort-strike      32    56                           5:    5
+      muster-stall       -    53        lifetime turns     1: 2746
+      held              18    29                           2:  283
+      abort-march       27    21                           3:  141
+
+**`peak == members0` in both arms, to two decimals.** Across 4297
+operations, exactly **12 (0.28%)** ever held more members than they
+formed with. In the arm whose entire purpose is accumulating a force
+across turns, **the force never accumulates once**.
+
+The shape is starker than the mean: 2948 of 3525 musters (83.6%) form
+with **one blade**, and 2746 (77.9%) are dissolved after **one turn**,
+with 80.2% of all operations dying with zero members left. Members are
+removed by the validation pass, which drops a unit only when it is dead,
+no longer ours, or released through `deep_op_release_member` — and the
+defence counter-claim, which is the caller of that release, runs
+immediately before the operations pass every single turn
+(`deep_do_first_activities`, deepdefence.c:3814-3815). **Which of death
+and release dominates is the next counter and it is one field on the
+`deep-employop` line already there.**
+
+Meanwhile the launch rate of *ordinary* formations barely moves (41.8%
+→ 38.1%) and their count does not (748 → 772): the muster is a parallel
+churn engine bolted beside an unchanged machine. 3525 musters buy 35
+launches, and the op layer's whole kill book goes from 2 to 3 in 40
+games.
+
+#### Wait ledger: a new bucket, holding 1.3 idle attackers
+
+    gate that held the army      off turns  share  attidle/t | on turns share attidle/t
+      target priced but vetoed       16633  52.0%      4.37  |   13380 41.8%      4.79
+      target priced, no force        10190  31.8%      1.09  |   10368 32.4%      0.90
+      waiting for a wave                 -      -         -  |    3560 11.1%      1.32
+      no target worth hitting         4220  13.2%      0.07  |    3675 11.5%      0.10
+      a wave formed                    806   2.5%      2.04  |     832  2.6%      2.03
+      all op slots occupied            151   0.5%      5.01  |     185  0.6%      2.57
+
+    ON arm by window          T0-60          T61-100        T101-200
+      vetoed                16.9% / 0.75   42.3% / 2.52   56.6% / 6.19
+      no force              35.6% / 0.14   40.8% / 0.38   27.1% / 1.80
+      waiting for a wave     7.0% / 0.15   14.1% / 0.71   12.4% / 1.99
+      no target             37.3% / 0.08    0.4% / 2.68    0.4% / 0.11
+
+The brief's third bucket, unmeasurable in the OFF arm, is now measured:
+**"waiting for a wave that never fills" is 11.1% of deep seat-turns and
+holds 1.32 idle attackers each**, rising to 12.4% and 1.99 after T100.
+It is carved out of the veto bucket (52.0% → 41.8%), which keeps its
+4.4-4.8 idle attackers per turn regardless. The dominant leak named in
+the entry above is unchanged by the muster: the veto still holds
+three-and-a-half times as many idle attackers as the wave-wait does.
+
+#### Dyads: unchanged
+
+    killer -> victim       T60 off   T60 on   T200 off   T200 on
+      classic -> deep        15.47    14.32     176.20    181.07
+      classic -> classic     16.18    15.25     165.40    166.50
+      deep -> classic        15.40    15.57     110.05    109.17
+      deep -> deep            5.65     4.58      47.70      45.08
+
+    same-module share of own kills   classic 48.4% -> 47.9%
+                                     deep    30.2% -> 29.2%
+
+Every dyad moves by less than its own sampling noise, and the confound
+answer from the entry above is unchanged: classic still kills deep more
+than it kills classic.
+
+#### Verdict
+
+**`op_muster` stays 0, and this A/B adds the mechanism reason the
+2026-08-13 verdict could only infer.** That verdict said "MUSTER as
+designed accumulates forever and never attacks"; the counters say it is
+worse than that — **it does not accumulate at all**. 0.28% of operations
+ever gain a member, 83.6% of musters are one blade, 77.9% live one turn.
+A mechanism whose premise is "keep what you gathered and add to it"
+never reaches its second blade, so the 1.0% launch rate is not evidence
+about massing on this venue; it is evidence that nothing was massed.
+
+What this **does** settle for the epic above: the employment leak is not
+the missing muster. Turning the muster on leaves the odds funnel
+identical to three decimals, leaves score flat (t −0.11 at T200), leaves
+the veto bucket holding 4.4-4.8 idle attackers a turn, and leaves the
+operations layer booking 3 kills in 40 games. **The leak is upstream of
+the muster, in the pool the odds model is asked to price** (2.23 free
+blades) **and in whatever strips a wave's members within a turn of its
+forming** — and the second of those now has 4297 operations of evidence
+pointing at the release path rather than at any gate.
+
+Retention: 40 filtered ON-arm games under
+`benchmark/results/employ-muster/` (62 MB, same W12g pruning as the OFF
+arm), beside `employ-report.txt` and `pairarms.py`, which reproduces the
+paired score table from the two result trees.
