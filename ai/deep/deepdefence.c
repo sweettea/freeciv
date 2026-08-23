@@ -1982,6 +1982,15 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
     credit = deep_incoming_defence_credit(ait, pcity)
              + deep_muster_reserve_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
+    /* CHATTY slice 2, the ledger half. Same term, same place in the
+     * order, as the build-choice half -- because the comment on gate 1
+     * over there is right: "the danger the build choice reads must not
+     * disagree with the danger the ledger holds", and every other
+     * consumer of danger (deep-def, the emergency ranking, the
+     * survival cache) reads THIS one. */
+    if (deep_tuning_get()->chatty_inbound_gate > 0) {
+      city_data->danger += deep_request_defend_fear(pplayer, pcity);
+    }
     deep_apply_garrison_floor(&(wld.map), pcity, city_data, updisc,
                               menace, TRUE);
   } city_list_iterate_end;
