@@ -60,3 +60,19 @@
   the air grow runs, second selection rule) and the pollution venue
   (the air worlds ARE industrial economies at snapshot) are already
   covered without new growth.
+- **IRRIGATION CHAINS, priced not gated** (user directive 2026-08-23,
+  on the improvable epic's follow-up #1): do NOT ship a binary
+  enabler-aware feasibility check. In civ2civ3 a tile is irrigable if
+  adjacent to water OR an already-irrigated tile, so a dry desert is
+  not infeasible — it is N chain-steps from a water source, each step
+  a prerequisite irrigation costing its own worker-turns (and W29
+  transform chains can create the route). The user's framing: "we
+  should be able to irrigate and transform our way to a water source —
+  discount irrigation possibility by distance to water." Fix shape:
+  half A's potential term keeps the irrigation increment but applies
+  the amortize() discount per chain step (q^steps at MORT 24 — the
+  discounter already in the code, no new constant), steps = shortest
+  adjacency path to water/river through irrigable terrain, with the
+  intermediate tiles' irrigation charged as prerequisite work. Zero
+  steps = today's behaviour; unreachable (no path) = increment 0,
+  which is the only case the current code got right by accident.
