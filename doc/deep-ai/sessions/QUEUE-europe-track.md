@@ -76,3 +76,28 @@
   intermediate tiles' irrigation charged as prerequisite work. Zero
   steps = today's behaviour; unreachable (no path) = increment 0,
   which is the only case the current code got right by accident.
+- **CONQUEST LOOT unpriced** (user observation 2026-08-23, live play —
+  "i don't think the ai is sufficiently taking into account the
+  potential lootings from capturing a city"): server/citytools.c:2064
+  loots the victim on conquest: coins = min(victim_gold,
+  rand(victim_gold/20 + 1) + victim_gold*size/200). Expected value =
+  victim_gold * (1/40 + size/200), treasury-capped — DERIVABLE, no
+  invented constant (victim gold visible with an embassy; else a
+  stated estimator). Neither ai/deep nor ai/default prices it anywhere
+  (grep: zero valuation references). Fix seam: add the expected-loot
+  term to conquest worth where conquest_worth_mult applies, gated
+  (loot_worth_gate) with the arithmetic in the commit body. Rich-fat-
+  neighbour cities should be worth more to hit; this also interacts
+  with buy_per_gold (loot converts to buys).
+- **BARBARIANS beat both AIs** (user observation 2026-08-23 — "bro the
+  barbarians are so effective against both forms of ai"): not just the
+  Hellas garrison-floor incident; a standing capability gap for stock
+  AND deep. Before designing anything: a cheap census over existing
+  results — cities lost to barbarians per game per side, deep vs
+  stock, across venues (scorelogs/game.logs already record owner
+  changes). If the count is material, candidate mechanisms already
+  half-built: garrison floor vs barb landing anticipation
+  (barb_anticipation_turns, floor_barb_weight exist), retake pricing
+  (barb cities bypass the stance gate — deep_op_target_threatens()
+  deepops.c — and empty barb cities are cheap loot per the entry
+  above: the two defects may be one fix).
