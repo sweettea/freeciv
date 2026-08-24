@@ -148,4 +148,9 @@ bool deep_boat_shadow_afloat(const struct player *pplayer);
  * samples it over its window; one reading, one definition. */
 int deep_enemy_adjacent(const struct city *pcity);
 
+/* Cap on one city's relief force in a turn (bookkeeping, not a
+ * tunable). Exported so the poach can price the blade it is asked for
+ * against the force it would JOIN, on the caller's own array bound. */
+#define DEEP_RELIEF_MAX 12
+
 #endif /* FC__DEEPDEFENCE_H */

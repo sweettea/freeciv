@@ -2876,13 +2876,14 @@ void deep_manage_units(struct ai_type *ait, struct player *pplayer)
 }
 
 /**********************************************************************//**
-  Release one unit from whatever operation claims it (swap-pop).
-  Returns TRUE if a claim existed. The defence counter-claim uses
-  this to pull a raider out of the hunt; the op machinery already
-  tolerates member loss everywhere (validation prunes, quorums
-  re-check).
+  Drop one unit from whatever operation claims it (swap-pop), charged
+  to the departure cause the caller is. The two exits that take a
+  blade off a wave -- the defence counter-claim and the poach -- differ
+  in nothing but that cause, and the census that splits them is the
+  only reason they are two functions and not one.
 **************************************************************************/
-bool deep_op_release_member(const struct player *pplayer, int unit_id)
+static bool deep_op_drop_member(const struct player *pplayer, int unit_id,
+                                enum deep_employ_depart why)
 {
   struct deep_plr *dp = deep_plr_data(pplayer);
   int oi = deep_op_claiming(pplayer, unit_id);
@@ -2896,12 +2897,37 @@ bool deep_op_release_member(const struct player *pplayer, int unit_id)
   for (i = 0; i < op->n_members; i++) {
     if (op->members[i] == unit_id) {
       op->members[i] = op->members[--op->n_members];
-      deep_employ_op_depart(pplayer, oi, DED_DEFENCE);
+      deep_employ_op_depart(pplayer, oi, why);
       return TRUE;
     }
   }
 
   return FALSE;
+}
+
+/**********************************************************************//**
+  Release one unit from whatever operation claims it (swap-pop).
+  Returns TRUE if a claim existed. The defence counter-claim uses
+  this to pull a raider out of the hunt; the op machinery already
+  tolerates member loss everywhere (validation prunes, quorums
+  re-check).
+**************************************************************************/
+bool deep_op_release_member(const struct player *pplayer, int unit_id)
+{
+  return deep_op_drop_member(pplayer, unit_id, DED_DEFENCE);
+}
+
+/**********************************************************************//**
+  Take a blade the poach FOUND, on the exit that deploys it.
+
+  With poach_deploy_gate on, deep_op_poach_defender() leaves the
+  candidate in its operation and the relief pass calls this once it
+  knows the force is going out. Charged to POACH and not DEFENCE, so
+  the departure census keeps saying which claim spent the blade.
+**************************************************************************/
+bool deep_op_poach_take(const struct player *pplayer, int unit_id)
+{
+  return deep_op_drop_member(pplayer, unit_id, DED_POACH);
 }
 
 /**********************************************************************//**
@@ -4388,10 +4414,18 @@ static bool deep_op_retarget(struct ai_type *ait, struct player *pplayer,
   bid -- a launched wave turning around mid-assault is the exact
   dithering W33 exists to kill. Returns the released blade (best
   defender arriving within the survival horizon) or NULL.
+
+  `force`/`n_force` is the relief force already assembled for this
+  city and `relieved` its survival, which must be the number the
+  caller computed for exactly that force. They are read only by
+  poach_marginal_gate, which prices what THIS blade adds to THAT
+  force -- see the comment on the marginal block below.
 **************************************************************************/
 struct unit *deep_op_poach_defender(struct ai_type *ait,
                                     struct player *pplayer,
-                                    struct city *pcity, double p_survival)
+                                    struct city *pcity, double p_survival,
+                                    struct unit *const *force, int n_force,
+                                    double relieved)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   const struct civ_map *nmap = &(wld.map);
@@ -4419,7 +4453,7 @@ struct unit *deep_op_poach_defender(struct ai_type *ait,
     struct unit *stream[DEEP_OP_MEMBERS];
     struct unit *blade = NULL;
     int blade_i = -1, ns = 0, eta;
-    double odds, take;
+    double odds, take, worth;
 
     if (op->state != DEEP_OP_MUSTER || op->kind != DEEP_OPK_ASSAULT) {
       continue;
@@ -4442,9 +4476,12 @@ struct unit *deep_op_poach_defender(struct ai_type *ait,
     odds = deep_take_odds_at_arrival(nmap, target, stream, ns, eta);
     /* Hoisted, not recomputed: the same one call the comparison always
      * made, kept so the ledger can print the offence's own bid beside
-     * the defence's instead of inferring it. */
-    take = deep_conquest_worth(ait, pplayer, target) * odds;
-    if (city_risk <= take) {
+     * the defence's instead of inferring it. Called for every candidate
+     * op in the same place under both gates, so the culture counter it
+     * carries cannot move. */
+    worth = deep_conquest_worth(ait, pplayer, target);
+    take = worth * odds;
+    if (tune->poach_marginal_gate <= 0 && city_risk <= take) {
       continue;                 /* The op's claim outbids the city. */
     }
     for (i = 0; i < op->n_members; i++) {
@@ -4470,25 +4507,92 @@ struct unit *deep_op_poach_defender(struct ai_type *ait,
         blade_i = i;
       }
     }
-    if (blade != NULL) {
+    if (blade == NULL) {
+      continue;
+    }
+    if (tune->poach_marginal_gate > 0) {
+      /* THE MARGINAL QUESTION (S-POACHPRICE seam 2). The comparison
+       * above asks whether the city's TOTAL risk exceeds the op's
+       * TOTAL take -- two whole-quantity claims on one blade, priced
+       * by two different questions, which is the arbitration gap the
+       * ledger named. The garrison draft next door already prices the
+       * right question in probability space (`with - held > cost`):
+       * what does THIS blade add, against what does its going cost.
+       *
+       * Same shape here, in the same worth currency both sides of the
+       * poach already use, and reusing the same two primitives the
+       * draft calls -- deep_city_stack_survival_with() for the
+       * defence side and deep_take_odds_at_arrival() for the offence
+       * side. Nothing is invented and nothing is copied: the
+       * arithmetic is a difference of two numbers each side already
+       * computes.
+       *
+       * The defence's marginal is priced on top of the force the city
+       * has ALREADY assembled, which is why `force`/`relieved` are
+       * arguments: the poach is asked last, after the whole free pool
+       * has been spent, so "what this blade buys" is meaningless
+       * against the empty city. */
+      struct unit *withb[DEEP_RELIEF_MAX + 1];
+      struct unit *without[DEEP_OP_MEMBERS];
+      double surv_with, odds_wo, gain, loss;
+      int k, m = 0;
+
+      for (k = 0; k < n_force && k < DEEP_RELIEF_MAX; k++) {
+        withb[k] = force[k];
+      }
+      withb[k] = blade;
+      surv_with = deep_city_stack_survival_with(nmap, pcity,
+                                                tune->survival_horizon,
+                                                withb, k + 1, NULL);
+      for (k = 0; k < ns; k++) {
+        if (stream[k] != blade) {
+          without[m++] = stream[k];
+        }
+      }
+      odds_wo = m > 0
+                ? deep_take_odds_at_arrival(nmap, target, without, m, eta)
+                : 0.0;
+      gain = raw_own * dmult * (surv_with - relieved);
+      loss = worth * (odds - odds_wo);
       log_base(deep_metric_log_level(),
-               "deep-op turn=%d player=\"%s\" op=%d poach unit=\"%s\""
-               " city=%d target=%d odds=%.2f worth=%.1f dworth=%.1f"
-               " risk=%.1f",
-               game.info.turn, player_name(pplayer), oi,
-               unit_rule_name(blade), pcity->id, op->target_city, odds,
-               raw_own, raw_own * dmult, city_risk);
-      deep_employ_poach_claim(pplayer, pcity->id, blade->id,
-                              utype_number(unit_type_get(blade)),
-                              p_survival, raw_own * dmult, city_risk, oi,
-                              op->muster != 0,
-                              game.info.turn - op->formed_turn,
-                              op->n_members, take, odds, eta,
-                              op->target_city);
+               "deep-poachmarg turn=%d player=\"%s\" city=%d op=%d"
+               " unit=\"%s\" force=%d relieved=%.3f with=%.3f gain=%.1f"
+               " odds=%.3f without=%.3f loss=%.1f risk=%.1f take=%.1f"
+               " claim=%d",
+               game.info.turn, player_name(pplayer), pcity->id, oi,
+               unit_rule_name(blade), n_force, relieved, surv_with, gain,
+               odds, odds_wo, loss, city_risk, take,
+               gain > loss ? 1 : 0);
+      if (gain <= loss) {
+        continue;   /* This blade is not what saves this city. */
+      }
+    }
+    log_base(deep_metric_log_level(),
+             "deep-op turn=%d player=\"%s\" op=%d poach unit=\"%s\""
+             " city=%d target=%d odds=%.2f worth=%.1f dworth=%.1f"
+             " risk=%.1f",
+             game.info.turn, player_name(pplayer), oi,
+             unit_rule_name(blade), pcity->id, op->target_city, odds,
+             raw_own, raw_own * dmult, city_risk);
+    deep_employ_poach_claim(pplayer, pcity->id, blade->id,
+                            utype_number(unit_type_get(blade)),
+                            p_survival, raw_own * dmult, city_risk, oi,
+                            op->muster != 0,
+                            game.info.turn - op->formed_turn,
+                            op->n_members, take, odds, eta,
+                            op->target_city);
+    /* THE SEQUENCING GATE. Off, the blade leaves the wave HERE --
+     * inside the ask, before anyone has asked whether the relief
+     * force it joins will be deployed at all, which is the order
+     * the poach ledger adjudicated 6667 times and found spending
+     * three quarters of its blades on an exit that deploys nobody.
+     * On, the candidate is merely NAMED here and
+     * deep_op_poach_take() spends it on the deploying exit. */
+    if (tune->poach_deploy_gate <= 0) {
       op->members[blade_i] = op->members[--op->n_members];
       deep_employ_op_depart(pplayer, oi, DED_POACH);
-      return blade;
     }
+    return blade;
   }
 
   return NULL;

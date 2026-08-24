@@ -363,6 +363,7 @@ struct deep_poach_memo {
   double risk;                  /* dworth * (1 - p): what it bid */
   int adj0;                     /* at-war units adjacent at claim time */
   int kept;                     /* -1 unsettled, 0 abandoned, 1 deployed */
+  int took;                     /* did the blade actually leave the wave */
   double relief;                /* survival the force it joined reaches */
   int wave;
   int pool;
@@ -425,6 +426,7 @@ void deep_employ_poach_claim(const struct player *pplayer, int city_id,
   e->risk = risk;
   e->adj0 = pcity != NULL ? deep_enemy_adjacent(pcity) : 0;
   e->kept = -1;
+  e->took = -1;
   e->relief = p_survival;
   e->oi = oi;
   e->muster = muster ? 1 : 0;
@@ -443,9 +445,17 @@ void deep_employ_poach_claim(const struct player *pplayer, int city_id,
   never deployed is the one case where the offence paid and the defence
   did not even collect: the blade left the wave and the city was written
   off in the same pass.
+
+  `took` separates the two things "kept = 0" used to mean at once.
+  With poach_deploy_gate off, every claim spends its blade at the ask,
+  so took = kept = 0 is the paid-for-nothing transaction. With the gate
+  on, the refused claim leaves the wave whole: took = 0 with kept = 0
+  is a claim that was ASKED and not PAID, and only took = 1 costs the
+  offence anything.
 **************************************************************************/
 void deep_employ_poach_settle(const struct player *pplayer, int unit_id,
-                              bool kept, double relief, int wave, int pool)
+                              bool kept, bool took, double relief,
+                              int wave, int pool)
 {
   int i;
 
@@ -455,6 +465,7 @@ void deep_employ_poach_settle(const struct player *pplayer, int unit_id,
     if (e->plr_no == player_number(pplayer) && e->unit_id == unit_id
         && e->kept < 0) {
       e->kept = kept ? 1 : 0;
+      e->took = took ? 1 : 0;
       e->relief = relief;
       e->wave = wave;
       e->pool = pool;
@@ -475,13 +486,13 @@ static void deep_employ_poach_verdict(const struct player *pplayer,
   log_base(deep_metric_log_level(),
            "deep-employpoach turn=%d player=\"%s\" city=%d called=%d"
            " unit=\"%s\" p=%.3f wave=%d pool=%d adj0=%d dworth=%.1f"
-           " risk=%.1f kept=%d relief=%.3f op=%d muster=%d age=%d"
+           " risk=%.1f kept=%d took=%d relief=%.3f op=%d muster=%d age=%d"
            " members=%d target=%d odds=%.3f take=%.1f eta=%d"
            " samples=%d adjmax=%d home=%d dmg=%d gone=%d fell=%d"
            " reclaim=%d",
            game.info.turn, player_name(pplayer), e->city_id, e->turn,
            ut != NULL ? utype_rule_name(ut) : "?", e->p, e->wave, e->pool,
-           e->adj0, e->dworth, e->risk, e->kept, e->relief, e->oi,
+           e->adj0, e->dworth, e->risk, e->kept, e->took, e->relief, e->oi,
            e->muster, e->age, e->members, e->target, e->odds, e->take,
            e->eta, e->samples, e->adjmax, e->home, e->hp0 - e->hp_lo,
            e->gone, e->fell, e->reclaim);
@@ -529,7 +540,10 @@ void deep_employ_poach_tick(struct player *pplayer)
       if (pcity != NULL && same_pos(unit_tile(punit), city_tile(pcity))) {
         e->home++;
       }
-      if (deep_op_claiming(pplayer, e->unit_id) >= 0) {
+      /* Only meaningful for a blade that LEFT: an unspent claim never
+       * removed the unit from its operation, so "still claimed" would
+       * be the same claim it never lost. */
+      if (e->took > 0 && deep_op_claiming(pplayer, e->unit_id) >= 0) {
         e->reclaim = 1;
       }
     }

@@ -22165,3 +22165,319 @@ T201 Europe replay pair, saves deleted by the driver). Every table above
 re-derives with `benchmark/improvable.sh report` and
 `benchmark/improvable.sh corpus`.
 
+## S-POACHFIX: the wave stops paying for a defence that never deploys — 64.3% of poaches bought nothing, now 0% (2026-08-23)
+
+Brief: `sessions/S-POACHFIX-take-on-deploy.md`. Branch `epic/poach-fix`,
+base `91a3f6aad7`, own worktree `.worktrees/poachfix`, own build
+(`-Daimodules=classic,tex,baseline,deep -Dtools= -Dclients= -Dfcmp=`),
+two pinned binaries staged with their own `libfreeciv.so`: pre-epic
+`7f783adac454d03c…` and shipped `cd3f9b2123f1946c…`. Ports 7300-7349
+and 7400-7449, jobs 3, every game at `nice 10`. `meson test` **7/7**,
+`tune-audit` **CLEAN at 270/270**, both new gates census **MODE/direct**
+with their own instruments live. Five commits: the sequencing, the
+pricing, the drivers, the Europe rider, this entry.
+
+**Headline: the sequencing fix is a mechanism win and an outcome wash.**
+Paid-for-nothing poaches go 64.3% → 0.0%, blades taken off a wave go
+55.2 → 27.8 a game and the launch rate goes 46.1% → 62.3%; score moves
+**−0.71 ± 3.34 a seat over 16 paired seeds (t −0.21, 5/16 wins)**.
+
+### 1. The defect, and what shipped
+
+`deep_op_poach_defender()` removed the blade from its operation inside
+the ASK — before the relief pass had asked whether the force the blade
+joins clears `survival_target` at all — so the exit that deploys nobody
+had already spent it. S-POACHPRICE adjudicated 6667 of those and found
+76.0% paid for nothing.
+
+Two gates, both default off, both control flow, **neither introducing a
+constant**:
+
+- **`poach_deploy_gate`** moves the removal to the one exit that
+  deploys the force. The write-off exit leaves the wave intact.
+  `deep_op_release_member()` and the new `deep_op_poach_take()` now
+  share one static swap-pop and differ only in the departure cause they
+  charge, so the census keeps its POACH/DEFENCE split.
+- **`poach_marginal_gate`** replaces the two whole-quantity bids with
+  the difference each side actually faces, through the two primitives
+  the garrison draft next door already calls:
+
+      gain = own worth x defence_worth_mult
+             x (survival WITH the blade - survival of the force
+                already assembled)
+      loss = conquest worth x (odds WITH the blade - odds WITHOUT it)
+
+  Reuse, not copy: `deep_city_stack_survival_with()` and
+  `deep_take_odds_at_arrival()` are called directly, and
+  `deep_conquest_worth()` is still called exactly once per candidate op
+  in the same place under both gates, so its culture counter cannot
+  move.
+
+The ledger line gains `took=`, which separates the two things `kept=0`
+used to mean at once: a claim that was PAID and bought nothing from a
+claim that was merely ASKED and left the wave whole.
+
+### 2. Identity — and the war identity is the one that counts
+
+- **Smoke, 20/20 byte-identical.** 10 seeds × {`deep`, `mixed_dc`} at
+  compiled defaults (both gates 0), pre-epic binary against this
+  branch's. `mixed_dc` is the mixed cell.
+- **That proof is WEAK here, and the driver says so in its own header:**
+  a smoke game contains **zero** `deep-employpoach` lines, so
+  "identical" there can mean "the mechanism never ran".
+- **War identity, 4/4 byte-identical.** The ladder's own OFF ini
+  (pv3 + both gates 0) replayed on the PRE-EPIC binary over
+  `tech50war-200` seeds 17-20 and byte-compared against the ladder's
+  OFF arm. **306 poach claims on the base side**, so the mechanism ran
+  hundreds of times inside the games that came out identical.
+
+### 3. The ladder
+
+One venue, one tuning, one binary, one key at a time:
+`tech50war-200`, `benchmark/tuning/pv3.ini`, `mixed_dc`, seeds 17-32
+for `off`/`deploy` and 17-24 for `marg`. **Nested, not factorial** —
+gate 2 prices a claim gate 1 decides whether to spend, so two separate
+A/Bs would attribute to the pricing what the sequencing already did.
+
+#### The poach ledger, all three rungs on the SAME eight seeds (17-24)
+
+    poach ledger                  off        deploy         marg
+      claims opened /game        76.1         163.5         96.5
+      BLADE LEFT THE WAVE  609(100.0%)   214(16.4%)   262(33.9%)
+        per game                 76.1          26.8         32.8
+      paid and needed        16( 2.6%)    24( 1.8%)    17( 2.2%)
+        of which take = 0       18.8%         29.2%         0.0%
+      paid and unneeded     154(25.3%)   190(14.5%)   245(31.7%)
+      PAID FOR NOTHING      439(72.1%)     0( 0.0%)     0( 0.0%)
+      asked, not paid         0( 0.0%)  1094(83.6%)   510(66.1%)
+
+And the headline arm at its full width, 16 seeds:
+
+    poach ledger (16 seeds)             OFF            deploy
+      adjudicated claims                884              2330
+        per game                       55.2             145.6
+      BLADE LEFT THE WAVE        884 (100.0%)       444 (19.1%)
+        per game                       55.2              27.8
+      paid and needed               36 ( 4.1%)        43 ( 1.8%)
+      paid and unneeded            280 (31.7%)       401 (17.2%)
+      PAID FOR NOTHING             568 (64.3%)         0 ( 0.0%)
+      asked, not paid                0 ( 0.0%)      1886 (80.9%)
+      danger never came            806 (91.2%)      2085 (89.5%)
+      re-claimed by an op          349 (39.5%)       171 ( 7.3%)
+      idled un-attacked            143 (16.2%)       324 (13.9%)
+      median risk / take       1260.9 / 18.4     1254.0 / 58.1
+      offence bid exactly 0            31.8%             25.3%
+
+**Read the claim count as a mechanism, not a regression.** Claims rise
+55.2 → 145.6 a game *because the wave keeps its blades*: an operation
+the old order stripped one blade at a time stays poachable, so the same
+candidate is offered again and refused again. The row that costs
+anything is the second one, and it halves.
+
+**"Paid for nothing" is 0.0% by construction, and that is the point.**
+The claim is still made and still refused; what no longer happens is
+the payment.
+
+#### The operations layer, same eight seeds
+
+    operations (seeds 17-24)      off        deploy         marg
+      operations                  179           160          153
+      launched                  41.9%         66.9%        73.2%
+      members at formation       5.89          5.54         5.86
+      members at dissolve        1.83          2.83         3.13
+      DISSOLVED WITH ZERO       46.9%         20.0%        17.6%
+      kills at the walls          0.1           0.5          0.4
+
+    member departures (16 seeds)        OFF            deploy
+      poach                     849 (76.6%)       432 (53.1%)
+        per game                      53.06             27.00
+      dead                      214 (19.3%)       313 (38.5%)
+      defence                    46 ( 4.1%)        69 ( 8.5%)
+      garrison conversions                1                 5
+      lost on formation+1             29.5%             13.4%
+
+The wave that used to be dismantled by its own defence now marches: a
+fifth more operations launch, half again as many members survive to the
+dissolve, and the share of waves that die empty falls by more than
+half. `dead` rises in share AND in absolute count (214 → 313) — blades
+that stay with the wave go to the walls, and some die there, which is
+what an operation is for.
+
+**`EVER GAINED A MEMBER` is 0.00% in ALL THREE rungs, and that metric
+does not apply on this venue.** The 0.28% accumulation rate the muster
+verdict published is a *muster-arm* number: with `op_muster = 0` (pv3)
+an operation forms once with a full quorum and never adds a member at
+all, so `peak == members0` by construction and no sequencing fix can
+move it. The honest form of the same claim here is the pair "members at
+dissolve" and "dissolved with zero members", and both move hard. The
+arm where accumulation IS a number is §5.
+
+### 4. The A/B: a wash
+
+Same 16 seeds, same binary, one key apart, four deep seats a game.
+
+    seed      off       on     delta
+      17   203.25   225.62    +22.38
+      18   243.12   228.50    -14.62
+      19   220.38   219.88     -0.50
+      20   215.88   198.25    -17.62
+      21   208.62   202.12     -6.50
+      22   197.62   214.62    +17.00
+      23   204.88   204.38     -0.50
+      24   196.62   205.75     +9.12
+      25   212.50   193.12    -19.38
+      26   207.00   224.12    +17.12
+      27   201.25   201.25     +0.00
+      28   228.62   215.50    -13.12
+      29   198.25   187.50    -10.75
+      30   192.62   188.88     -3.75
+      31   206.38   221.75    +15.38
+      32   212.62   207.00     -5.62
+    mean   209.35   208.64     -0.71   se 3.34  t -0.21  wins 5/16
+
+Every other column is the same wash, and the only ones leaning are the
+ones the mechanism predicts:
+
+    metric              OFF        ON     delta      se      t   wins
+      unitsbuilt      95.20     97.62     +2.42    1.58  +1.54  10/16
+      techs           55.06     55.44     +0.38    0.25  +1.49   9/16
+      munits          20.10     20.62     +0.52    0.52  +1.01   7/16
+      cities           5.48      5.51     +0.03    0.04  +0.72   6/16
+      unitskilled     62.70     63.27     +0.57    2.12  +0.27   8/16
+      wonders          1.05      0.89     -0.16    0.14  -1.20   4/16
+
+**Do not read the wash as "the fix does not work".** 27 blades a game
+stop being spent on nothing and a third more operations launch; what
+does not follow is score — the same shape S-EXPAND-FIX and W12G both
+reported. The 2026-08-22 employment work already said where it goes:
+289 operations book **0.4 kills in 16 games** with the fix in. A wave
+that arrives intact at a target it still cannot take is a better-formed
+wave and not yet a better outcome, and the conversion gap S-WARGAP
+named is upstream of anything the poach can reach.
+
+### 5. The muster cell: the published table's direct after, and the accumulation row
+
+The S-POACHPRICE ON-arm shape — `tech50war-200` on `pv3-muster.ini`,
+the arm whose 6667 poaches produced the "76.0% paid for nothing"
+table — replayed one key apart on seeds 17-24, same pinned binary.
+
+    poach ledger (muster, 8 seeds)      off            deploy
+      adjudicated claims               1653              5021
+        per game                      206.6             627.6
+      BLADE LEFT THE WAVE       1653 (100.0%)       316 ( 6.3%)
+        per game                      206.6              39.5
+      paid and needed              23 ( 1.4%)        38 ( 0.8%)
+      paid and unneeded           297 (18.0%)       278 ( 5.5%)
+      PAID FOR NOTHING           1333 (80.6%)         0 ( 0.0%)
+      asked, not paid               0 ( 0.0%)      4705 (93.7%)
+      re-claimed by an op         991 (60.0%)       193 ( 3.8%)
+
+    operations (muster, 8 seeds)        off            deploy
+      operations                        983               665
+      launched                         6.9%             11.9%
+      members at formation             2.06              1.72
+      peak members                     2.07              1.76
+      EVER GAINED A MEMBER         5 (0.51%)         9 (1.35%)
+      members at dissolve              0.57              2.27
+      DISSOLVED WITH ZERO             83.2%             28.6%
+
+    member departures                   off            deploy
+      poach                     1656 (92.1%)       317 (57.5%)
+        per game                     207.00             39.62
+      dead                       130 ( 7.2%)       208 (37.7%)
+      lost on formation+1             58.0%             23.4%
+
+**80.6% paid for nothing becomes 0.0%**, and the ledger's own
+churn signature goes with it: re-claimed-inside-the-window falls
+60.0% → 3.8%. **A muster's members survive four times as long**
+(0.57 → 2.27 at the dissolve) and the share of waves dying empty falls
+83.2% → 28.6%.
+
+**The accumulation row, finally in the arm where it means something:
+0.51% → 1.35%.** That is 2.6x — and it is still 1.35%. Read it exactly
+as it reads: **the poach was a large part of why a muster loses its
+blades and only a small part of why it never gains one.** The 2026-08-22
+verdict ("it does not accumulate at all") survives the fix; what the fix
+removes is the dismantling, not the failure to grow.
+
+Score on the muster cell, **n = 8 and not a result**: 205.36 → 208.23,
+**+2.88 ± 4.44 (t +0.65, 5/8 wins)**
+(+0.2, +14.8, +7.6, −2.6, +8.8, −4.9, +19.4, −20.2).
+
+### 6. The marginal pricing: shipped, gated, LIVE, and NOT adjudicated
+
+`deep-poachmarg` is written for every priced candidate **including the
+refusals**, which the claim line could never show. Over the 8-seed arm:
+
+    priced claims                     1934      (241.8/game)
+      claimed (gain > loss)       799 (41.3%)  mean gain 529.6
+      REFUSED (gain <= loss)     1135 (58.7%)  mean loss 355.1
+      totals WOULD claim         1374 (71.0%)
+      the two questions agree    1059 (54.8%)
+      blade moves survival by 0   832 (43.0%)
+      blade costs the offence 0   332 (17.2%)
+      mean relieved -> with        0.084 -> 0.281
+      mean odds -> without         0.503 -> 0.322
+
+**The two questions disagree on 45.2% of the rows** — that is the
+arbitration gap S-POACHPRICE named, measured rather than argued. And
+the population it removes is exactly the one the ledger complained
+about: among claims the marginal gate DOES pay and that turn out
+decisive, the share whose operation had priced its own take at exactly
+zero is **0.0%**, against 29.2% on the deploy rung.
+
+Score, and it is **n = 8 and not a result**:
+
+    deploy -> marg   212.39 -> 214.73   +2.34  se 4.99  t +0.47  6/8
+    off    -> marg   211.30 -> 214.73   +3.44  se 2.83  t +1.21  5/8
+
+`poach_marginal_gate` stays **0** everywhere, including the Europe
+rider. Its arm is a liveness read; the A/B it needs is in §7.
+
+### 7. The Europe rider
+
+`derby5/tuning-derby7.ini` gains `poach_deploy_gate = 1` and nothing
+else. The file re-dedupes clean (`awk -F=` over every lowercase key
+prints nothing). `poach_marginal_gate` is deliberately not restated —
+an unmeasured gate does not go into the user's live game.
+
+### 8. What this does NOT settle
+
+- **Why a muster still never gains a member.** 1.35% is 2.6x better and
+  still 1.35%. The poach was the dismantling; whatever prevents growth
+  is a different mechanism and is now separable from it.
+- **`poach_marginal_gate`'s A/B**, at 16 seeds, on top of
+  `poach_deploy_gate` — nested, not factorial.
+- **The conversion gap.** 0.4 kills in 16 games is the war venue's real
+  defect and no poach arithmetic touches it.
+
+### 9. Machine lessons paid for this session
+
+- **This box's process table is namespaced: `pgrep` and `pkill` see
+  nothing but the caller's own shell.** "Is my driver still running?"
+  cannot be answered by looking, and a `pkill -f` whose pattern appears
+  in the caller's own command line kills the caller instead. A second
+  identity driver was launched on that false premise while the first
+  was still alive; the two raced on the same output dirs and the same
+  port block, three games FAILED on a bound port, and one arm's log
+  carried two completion summaries. The batch was discarded and re-run
+  from scratch. `poach-fix.sh` now takes an `flock` before any stage
+  that runs games — **that lock is the fix, not more care.**
+- **Liveness is a filesystem question here.** Scorelog and save mtimes
+  inside the last few minutes; never the process list.
+- **`bfs` is not `find`**: `-newermt '-90 seconds'` is rejected outright.
+  Use an absolute ISO timestamp, or compare `%T@`.
+- **A `&`-backgrounded job inside one tool call is reaped when the call
+  returns; `setsid` survives.** Every driver here is launched
+  `setsid bash ./benchmark/poach-fix.sh <stage>` from the worktree root.
+
+### 10. Retention
+
+`benchmark/results/poachfix/{identity,warid,ladder/{off,deploy,marg},ledger/{off,deploy}}`
+— 40 smoke games, 4 war-identity games, 16 + 16 + 8 `tech50war-200`
+games on pv3 and 8 + 8 on pv3-muster. Saves dropped, every
+`game.log` filtered to `deep-employ*`,
+`deep-poachmarg`, `deep-op`, `deep-writeoff` and `kill-dyad`. Every
+table above re-derives with `benchmark/employ.py` (`--section poach`,
+`marg`, `ops`, `depart`), `benchmark/extract.py` + `benchmark/paircmp.py`
+for the score, and the batch itself with `benchmark/poach-fix.sh`.

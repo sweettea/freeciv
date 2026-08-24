@@ -1642,6 +1642,29 @@ MAP = {
         "VENUE-SENSITIVE only in the weak sense that it needs a map "
         "with poor ground somewhere; every venue measured so far has "
         "some."),
+    "poach_deploy_gate": (
+        "S3", "mode", "direct", [("deep-employpoach", "took=0")],
+        "0 = deep_op_poach_defender() removes the blade from its "
+        "operation inside the ask, which is the order that spent 76.0% "
+        "of 6667 poaches on an exit deploying nobody (S-POACHPRICE). "
+        "1 = the removal moves to the deploying exit. took=0 on the "
+        "poach ledger line is a claim that was ASKED and not PAID, "
+        "which cannot exist with the gate off -- the old order always "
+        "paid at the ask -- so the token IS the gate. Read the effect "
+        "on the ledger's paid-for-nothing row and on deep-employop "
+        "peak= (whether a wave ever gains a member)."),
+    "poach_marginal_gate": (
+        "S3", "mode", "direct", [("deep-poachmarg", "")],
+        "0 = the city's TOTAL risk against the operation's TOTAL take. "
+        "1 = gain = own worth x defence_worth_mult x (survival with the "
+        "blade - survival of the force already assembled) against "
+        "loss = conquest worth x (odds with - odds without), claim iff "
+        "gain > loss. deep-poachmarg is written once per priced "
+        "candidate INCLUDING the refusals and only inside the gated "
+        "branch, so the tag cannot exist in a gate-off game. Needs "
+        "poach_deploy_gate ahead of it: three quarters of the events "
+        "the arbitration would be tuned against are transactions "
+        "neither side collects on."),
 }
 
 STAGE_NAME = {

@@ -241,12 +241,18 @@ void deep_employ_poach_claim(const struct player *pplayer, int city_id,
                              double odds, int eta, int target);
 
 /* The claiming city's pass ends here: `kept` is whether the relief
- * force the blade joined was actually deployed, `relief` the survival
- * that force reaches, and `wave`/`pool` the threat and the reachable
- * blades the city saw. Called from both exits of the relief decision,
- * so an unsettled entry means neither ran. */
+ * force the blade joined was actually deployed, `took` whether the
+ * blade actually left its operation, `relief` the survival that force
+ * reaches, and `wave`/`pool` the threat and the reachable blades the
+ * city saw. Called from both exits of the relief decision, so an
+ * unsettled entry means neither ran.
+ *
+ * `kept` and `took` are the same bit until poach_deploy_gate is on,
+ * which is exactly what the gate changes: with it on, a claim the
+ * arithmetic refuses is ASKED (took = 0) rather than PAID. */
 void deep_employ_poach_settle(const struct player *pplayer, int unit_id,
-                              bool kept, double relief, int wave, int pool);
+                              bool kept, bool took, double relief,
+                              int wave, int pool);
 
 /* One turn of aftermath for every open entry, and the verdict line for
  * every entry whose window has run out. */

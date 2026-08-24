@@ -327,6 +327,11 @@ static const struct deep_tuning deep_tuning_defaults = {
                                          * capital_stake_gate is 0 */
   .site_improvable_gate = 0,            /* 0 = as-is site pricing exactly */
   .site_starve_price_gate = 0,          /* 0 = the starve DROP, as before */
+  .poach_deploy_gate = 0,               /* 0 = the blade leaves its wave
+                                         * inside the ask, exactly as
+                                         * inherited */
+  .poach_marginal_gate = 0,             /* 0 = the total-vs-total
+                                         * comparison exactly */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -637,7 +642,9 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(capital_stake_gate) \
   TUNE_DOUBLE(capital_stake_gain) \
   TUNE_INT(site_improvable_gate) \
-  TUNE_INT(site_starve_price_gate)
+  TUNE_INT(site_starve_price_gate) \
+  TUNE_INT(poach_deploy_gate) \
+  TUNE_INT(poach_marginal_gate)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 

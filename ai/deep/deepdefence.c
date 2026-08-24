@@ -3139,8 +3139,8 @@ static void deep_flee_workers(struct ai_type *ait, struct player *pplayer)
  * cap, not a tunable -- the BFS takes the shortest chain and stops
  * at the first genuinely sparable garrison. */
 #define DEEP_RELAY_MAX 64
-/* Cap on one city's relief force in a turn (bookkeeping). */
-#define DEEP_RELIEF_MAX 12
+/* DEEP_RELIEF_MAX, the cap on one city's relief force in a turn, is in
+ * deepdefence.h: the poach prices against the same bound. */
 
 /**********************************************************************//**
   The weakest blade `lender` can send: own military, not bodyguarding
@@ -3770,6 +3770,7 @@ static void deep_defend_counter_claims(struct ai_type *ait,
     struct unit *cand[DEEP_RELIEF_MAX], *force[DEEP_RELIEF_MAX];
     struct city *backfill[DEEP_RELIEF_MAX];
     struct unit *poached = NULL;
+    bool poach_spent = FALSE;   /* has the blade left its wave yet? */
     int n_cand = 0, n_force = 0, i, j;
     int wave = 0;
     double p, relieved;
@@ -3868,7 +3869,12 @@ static void deep_defend_counter_claims(struct ai_type *ait,
                                                force, n_force, NULL);
     }
     if (relieved < tune->survival_target && n_force < DEEP_RELIEF_MAX) {
-      struct unit *poach = deep_op_poach_defender(ait, pplayer, pcity, p);
+      /* `relieved` here is the survival of exactly `force`, which is
+       * what the marginal pricing needs: the poach is asked LAST, so
+       * what its blade buys is what it buys on top of the whole free
+       * pool the city has already committed. */
+      struct unit *poach = deep_op_poach_defender(ait, pplayer, pcity, p,
+                                                  force, n_force, relieved);
 
       if (poach != NULL) {
         backfill[n_force] = NULL;
@@ -3877,6 +3883,10 @@ static void deep_defend_counter_claims(struct ai_type *ait,
                                                  tune->survival_horizon,
                                                  force, n_force, NULL);
         poached = poach;
+        /* With poach_deploy_gate off the blade is already off the
+         * wave; with it on the poach only NAMED it, and the exit
+         * below that deploys the force is the one that takes it. */
+        poach_spent = tune->poach_deploy_gate <= 0;
       }
     }
     if (relieved < tune->survival_target) {
@@ -3888,19 +3898,28 @@ static void deep_defend_counter_claims(struct ai_type *ait,
       deep_writeoff_record(pplayer, pcity, p, relieved, wave, n_cand,
                            tune->survival_horizon);
       deep_evacuate_civilians(ait, pplayer, pcity, p, relieved, wave);
-      /* The blade has already left the wave -- the poach removes it
-       * before it returns -- and this exit deploys nobody. Settled as
-       * NOT kept so the ledger can count the poaches that bought
-       * nothing at all. */
+      /* THE EXIT THAT DEPLOYS NOBODY. With poach_deploy_gate off the
+       * blade has already left the wave -- the poach removes it before
+       * it returns -- so both sides lose and `took` records that the
+       * claim was PAID. With the gate on nothing is taken here and the
+       * wave is whole; the claim was merely ASKED. Settled as NOT kept
+       * either way, so the two are one denominator. */
       if (poached != NULL) {
-        deep_employ_poach_settle(pplayer, poached->id, FALSE, relieved,
-                                 wave, n_cand);
+        deep_employ_poach_settle(pplayer, poached->id, FALSE, poach_spent,
+                                 relieved, wave, n_cand);
       }
       continue;   /* Cannot be held tonight: do not feed it blades. */
     }
     if (poached != NULL) {
-      deep_employ_poach_settle(pplayer, poached->id, TRUE, relieved,
-                               wave, n_cand);
+      /* THE EXIT THAT DEPLOYS. Under the gate this is the only place
+       * a poached blade leaves its operation, and it is charged to
+       * POACH rather than to the DEFENCE release below so the
+       * departure census keeps its split. */
+      if (!poach_spent) {
+        poach_spent = deep_op_poach_take(pplayer, poached->id);
+      }
+      deep_employ_poach_settle(pplayer, poached->id, TRUE, poach_spent,
+                               relieved, wave, n_cand);
     }
 
     for (i = 0; i < n_force; i++) {
