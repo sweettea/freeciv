@@ -76,3 +76,17 @@ The chain, each link instrumented:
 Sample sizes: 20 games/venue; per-seed paired SEs on the arm-level
 diffs are ~15; the trajectory and census patterns above are
 20-game aggregates and consistent across both venues.
+
+## CORRECTION (2026-08-25, prod-keep epic)
+
+The "starts ≈ abandonments" census above conflated abandonment with
+delivery: a COMPLETED settler also ends its production run and writes
+a `deep-prodswitch`, so switches-out ≠ pre-emptions. With `builtlast=`
+separating them, the true gate-off delivery rate is **24.8%** (391
+built / 1587 starts / 20 games). Hypothesis 1 (want-level hysteresis)
+was implemented, verified live, and REJECTED: −3.8 ± 9.1 — because 82%
+of abandoned part-built settlers were never candidates in the auction
+at all (advisor stopped proposing them). See
+prodkeep-verdict-2026-08-25.md; the live lead is `founder_run_hold`
+(delivery 24.8→30.7% yet score flat), pointing the stall DOWNSTREAM
+of settler delivery (escort/travel/site/founding).
