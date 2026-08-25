@@ -154,6 +154,18 @@ double deep_weak_prey_mult(const struct player *pplayer,
       || pplayers_allied(pplayer, victim)) {
     return 1.0;
   }
+  /* NO ARMY, NO PREY. Measured on the first validation game and it is
+   * not a corner case: smoke.conf's start units are all civilian, so
+   * every player's score.units is 0 until roughly T20, and without
+   * this line the MAX(ours, 1) clamp turned 0-against-0 into a ratio
+   * of 0 and paid the FULL factor -- `deep-weakprey turn=5 priced=1
+   * mean=2.000 ours=0`. An empire with nothing to attack with is the
+   * last one that should be talked into attacking. The term exists to
+   * spend a standing army; where there is no standing army there is
+   * nothing to spend and no advantage to read. */
+  if (pplayer->score.units <= 0) {
+    return 1.0;
+  }
   ratio = (double) victim->score.units
           / MAX(pplayer->score.units, 1);
   if (ratio >= 1.0) {
@@ -191,8 +203,20 @@ double deep_weak_prey_price(const struct player *pplayer,
 
 /**********************************************************************//**
   The weak-prey factor's execution counter, emitted once per player per
-  turn beside the culture one. Silent when the gate is shut, because
-  nothing ever increments it there.
+  turn beside the culture one, and carrying its accounting exactly:
+  ONE set of file statics, drained by whichever player's operations
+  pass runs next. AI phases are strictly sequential, so the ops-side
+  valuations on a line are that player's own; valuations taken by
+  hooks that run AFTER the ops pass (the build side's assault want)
+  land on the next line drained, which may be another seat's. That is
+  the same property deep-conqculture has always had and it is fine for
+  a diagnostic -- read `priced` and `mean` as a fleet average, not as
+  one seat's ledger -- but it is why `ours` can disagree with the
+  factors beside it, and why the per-decision question is answered by
+  `prey=` on deep-opodds instead.
+
+  Silent when the gate is shut, because nothing ever increments it
+  there.
 **************************************************************************/
 void deep_weak_prey_census(struct player *pplayer)
 {
