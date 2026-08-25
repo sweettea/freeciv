@@ -3107,6 +3107,11 @@ static struct city *deep_op_pick_target(struct ai_type *ait,
 
   players_iterate_alive(aplayer) {
     bool partner;
+    /* The weak-prey factor, hoisted: it is a property of the OWNER,
+     * so taking it once per player rather than once per candidate
+     * city keeps the deep-weakprey census counting decisions instead
+     * of counting map furniture. Exactly 1.0 with the gate shut. */
+    double prey;
 
     if (!pplayers_at_war(pplayer, aplayer)
         || (!is_barbarian(aplayer)
@@ -3117,6 +3122,7 @@ static struct city *deep_op_pick_target(struct ai_type *ait,
     partner = spare && player_index(aplayer) >= 0
       && player_index(aplayer) < MAX_NUM_PLAYER_SLOTS
       && routes[player_index(aplayer)] > 0;
+    prey = deep_weak_prey_price(pplayer, aplayer);
     city_list_iterate(aplayer->cities, acity) {
       double score;
       bool overseas = tile_continent(city_tile(acity)) != home;
@@ -3162,6 +3168,22 @@ static struct city *deep_op_pick_target(struct ai_type *ait,
        * loop's map_is_known() test ran before this line. */
       if (deep_tuning_get()->chatty_inbound_gate > 0) {
         score *= deep_request_attack_mult(pplayer, acity);
+      }
+      /* THE WEAK-PREY BIAS. Fourth multiplier on the same score and
+       * the same shape as the three above -- skipped rather than done
+       * when the gate is shut, so the off arm keeps the previous
+       * ordering byte-identically.
+       *
+       * Needed HERE as well as inside deep_conquest_worth() because
+       * this loop does not call that function: it ranks candidates on
+       * the raw `ai_city.worth` over distance, and a term that only
+       * reached the worth would change what deep is willing to PAY for
+       * a target without changing which target it picks. The factor is
+       * constant across one owner's cities -- hence the hoist above --
+       * so what it re-orders is PLAYERS, which is the decision the
+       * census is asked to verify moved. */
+      if (prey > 1.0) {
+        score *= prey;
       }
       if (score > best_score) {
         best_score = score;

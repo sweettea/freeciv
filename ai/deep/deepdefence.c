@@ -6192,6 +6192,11 @@ static void deep_assault_want(struct ai_type *ait,
         || best_role_unit_for_player(pplayer, L_FERRYBOAT) != NULL;
 
     players_iterate_alive(aplayer) {
+      /* The weak-prey factor, hoisted per owner exactly as
+       * deep_op_pick_target() hoists it: a property of the player, not
+       * of the city. Exactly 1.0 with weak_prey_gate shut, and the
+       * multiply below is then skipped rather than done. */
+      double prey;
       /* The initial diplstate between UNMET players is war, so the
        * at-war test alone passes on turn one -- and unmet,
        * ungarrisoned cities then price P(take)=1 and outbid every
@@ -6214,6 +6219,7 @@ static void deep_assault_want(struct ai_type *ait,
                  == DS_NO_CONTACT)) {
         continue;
       }
+      prey = deep_weak_prey_price(pplayer, aplayer);
       city_list_iterate(aplayer->cities, acity) {
         double score;
         /* Named apart from the function-scope `overseas`, which is the
@@ -6232,6 +6238,19 @@ static void deep_assault_want(struct ai_type *ait,
         score = def_ai_city_data(acity, ait)->worth
                 / (1.0 + real_map_distance(city_tile(pcity),
                                            city_tile(acity)));
+        /* THE WEAK-PREY BIAS, the build side's half. The ops-side
+         * ranking loop and this one are near-duplicates that have
+         * already diverged -- the ops side carries three score
+         * multipliers this one has never had -- and biasing only one
+         * of them means deep MARCHES against the weak while it still
+         * BUILDS against the rich. The two picks feed different
+         * decisions (which city an operation aims at; which target
+         * this shield is being spent toward) and neither reads the
+         * other, so the term has to be stated twice or the empire
+         * disagrees with its own army. */
+        if (prey > 1.0) {
+          score *= prey;
+        }
         if (score > best_score) {
           best_score = score;
           target = acity;
