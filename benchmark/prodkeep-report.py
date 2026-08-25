@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 SWITCH = re.compile(rb'deep-prodswitch turn=(\d+) .*?from="([^"]*)" to="([^"]*)"'
-                    rb'.*?keep=([-\d.]+)')
+                    rb'.*? builtlast=(\d+).*?keep=([-\d.]+)')
 
 
 def final_score(scorelog):
@@ -102,32 +102,53 @@ def score_report(root):
 
 
 def census(dirs):
-    print(f"{'cell':28s} {'bucket':>8s} {'into':>7s} {'out':>7s} "
-          f"{'net':>7s} {'kept':>7s} {'switches':>9s}")
+    """Settler runs per 25-turn bucket, split by how each one ENDED.
+
+    A switch away from Settlers is not by itself an abandonment: a
+    delivered settler also ends its run and the city then picks
+    something else, so the raw out-count conflates the two. The line's
+    own `builtlast=` (city_built_last_turn()) separates them, which the
+    original starts-vs-abandonments census did not do -- read `built%`
+    as the share of runs that reached a unit.
+
+    `kept` counts abandonments the completion bias had credited and
+    lost anyway; abandonments with kept=0 are ones the bias never
+    reached, because the current production was not a candidate in that
+    city-turn's auction at all.
+    """
+    print(f"{'cell':12s} {'bucket':>7s} {'starts':>7s} {'built':>7s} "
+          f"{'abandon':>8s} {'built%':>7s} {'kept':>6s} {'allsw':>7s}")
     for root in dirs:
         cells = {}
         n_games = 0
+        tot = [0, 0, 0, 0, 0]
         for log in sorted(Path(root).rglob("game.log")):
             n_games += 1
             for m in SWITCH.finditer(log.read_bytes()):
                 turn = int(m.group(1))
                 frm, to = m.group(2).decode(), m.group(3).decode()
-                keep = float(m.group(4))
+                built, keep = int(m.group(4)), float(m.group(5))
                 b = (turn // 25) * 25
-                c = cells.setdefault(b, [0, 0, 0, 0])
+                c = cells.setdefault(b, [0, 0, 0, 0, 0])
                 if to == "Settlers":
                     c[0] += 1
                 if frm == "Settlers":
-                    c[1] += 1
-                    if keep > 0:
+                    c[1 if built else 2] += 1
+                    if not built and keep > 0:
                         c[3] += 1
-                c[2] += 1
+                c[4] += 1
         name = Path(root).name
         for b in sorted(cells):
-            i, o, tot, kept = cells[b]
-            print(f"{name:28s} {('T%d+' % b):>8s} {i:7d} {o:7d} "
-                  f"{i - o:+7d} {kept:7d} {tot:9d}")
-        print(f"{name:28s} {'games':>8s} {n_games:7d}")
+            c = cells[b]
+            for k in range(5):
+                tot[k] += c[k]
+            pct = 100.0 * c[1] / (c[1] + c[2]) if c[1] + c[2] else 0.0
+            print(f"{name:12s} {('T%d+' % b):>7s} {c[0]:7d} {c[1]:7d} "
+                  f"{c[2]:8d} {pct:6.1f}% {c[3]:6d} {c[4]:7d}")
+        pct = 100.0 * tot[1] / (tot[1] + tot[2]) if tot[1] + tot[2] else 0.0
+        print(f"{name:12s} {'TOTAL':>7s} {tot[0]:7d} {tot[1]:7d} "
+              f"{tot[2]:8d} {pct:6.1f}% {tot[3]:6d} {tot[4]:7d}"
+              f"   ({n_games} games)\n")
 
 
 def main():
