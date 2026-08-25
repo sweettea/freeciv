@@ -332,6 +332,12 @@ static const struct deep_tuning deep_tuning_defaults = {
                                          * inherited */
   .poach_marginal_gate = 0,             /* 0 = the total-vs-total
                                          * comparison exactly */
+  .prod_keep_gate = 0,                  /* 0 = every build re-bid from
+                                         * scratch, exactly as today */
+  .prod_keep_gain = 1.0,                /* PLACEHOLDER, untuned: one full
+                                         * bid-share of extra weight at a
+                                         * finished box. Inert while
+                                         * prod_keep_gate is 0 */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -644,7 +650,9 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(site_improvable_gate) \
   TUNE_INT(site_starve_price_gate) \
   TUNE_INT(poach_deploy_gate) \
-  TUNE_INT(poach_marginal_gate)
+  TUNE_INT(poach_marginal_gate) \
+  TUNE_INT(prod_keep_gate) \
+  TUNE_DOUBLE(prod_keep_gain)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 
