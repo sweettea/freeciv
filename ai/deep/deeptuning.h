@@ -3192,6 +3192,50 @@ struct deep_tuning {
    * take a blade the claiming city then cannot use at all, and no
    * arbitration term fixes a transaction neither side collects on. */
   int poach_marginal_gate;
+
+  /* THE PRODUCTION COMPLETION BIAS (deepdefence.c,
+   * deep_prod_keep_credit()).
+   *
+   * Measured defect (findings/defaults-deficit-census-2026-08-25.md):
+   * over 20 holdout games, settler production STARTS and settler
+   * production ABANDONMENTS are the same number in every 25-turn
+   * bucket -- 487/529, 287/288, 333/375, 99/153 -- so nearly every
+   * settler deep starts is pre-empted before it is delivered, mostly
+   * by a Phalanx, a Trireme, a Colosseum or a Diplomat. Cities
+   * plateau at ~T50 while the expansion gate never blocks and
+   * Settlers still hold 15% of picks; ~24% of city-turns at T75+
+   * carry a production switch. The intent survives all game; the
+   * PIPELINE never drains.
+   *
+   * switch_cost_price does not cover this and cannot: it debits the
+   * shields `city_change_production_penalty()` really forfeits, and a
+   * unit->unit switch forfeits nothing at all -- the ruleset keeps
+   * the stock inside a production class. What a pre-empted settler
+   * loses is not shields, it is the COMPLETION TIME, and no term in
+   * the auction prices time.
+   *
+   * != 0 credits the candidate that IS what the city is already
+   * building, in proportion to how far that build has got:
+   *
+   *   want *= 1 + prod_keep_gain * min(stock, cost) / cost
+   *
+   * At an empty box the multiplier is exactly 1 and the auction is
+   * untouched; the bias is largest where the most turns would be
+   * thrown away. prod_keep_gain is the residue on that shape --
+   * 1.0 = one full bid-share of extra weight at a finished box.
+   * PLACEHOLDER, untuned.
+   *
+   * The EMERGENCY tier is exempt, as everywhere in deep, and the
+   * credited want is clamped below DAI_WANT_BELOW_MIL_EMERGENCY so
+   * the bias can never MANUFACTURE an emergency by pushing a normal
+   * want over the tier line. Both together are what keeps a genuine
+   * danger switch: the tier order puts every must-act want above
+   * every normal one whatever this credit does to a normal one.
+   *
+   * 0 (default) = every build re-bid from scratch every turn, exactly
+   * as today. */
+  int prod_keep_gate;
+  double prod_keep_gain;
 };
 
 void deep_tuning_init(void);

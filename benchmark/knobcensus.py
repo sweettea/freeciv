@@ -1665,6 +1665,21 @@ MAP = {
         "poach_deploy_gate ahead of it: three quarters of the events "
         "the arbitration would be tuned against are transactions "
         "neither side collects on."),
+    "prod_keep_gate": (
+        "S4", "mode", "direct", [("deep-prodkeep", "")],
+        "0 = every build is re-bid from scratch each turn, which is "
+        "the arithmetic behind settler starts ~= settler abandonments "
+        "in every 25-turn bucket (defaults-deficit census). 1 = the "
+        "candidate that IS the current production is credited by "
+        "prod_keep_gain x progress. One deep-prodkeep line per credit; "
+        "the line cannot be emitted with the gate off. Read the effect "
+        "on deep-prodswitch: switches into vs out of Settlers per "
+        "bucket, and keep= on the switch lines that happened anyway."),
+    "prod_keep_gain": (
+        "S4", "mag", "direct", [("deep-prodkeep", "credit>0")],
+        "credit= is want x this gain x min(stock, cost)/cost, clamped "
+        "below the emergency tier line (deepdefence.c). PLACEHOLDER at "
+        "1.0, never tuned; inert while prod_keep_gate is 0."),
 }
 
 STAGE_NAME = {
