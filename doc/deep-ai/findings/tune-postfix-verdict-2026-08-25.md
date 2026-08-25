@@ -58,17 +58,37 @@ All of this is in cached data; no new games were run.
    the paired metric. This compounds, but the order-statistic problem
    above is sufficient on its own.
 
-## What is still unknown
+## Resolution (2026-08-25 early AM): the gap predates the tuner
 
-**Where defaults+gates stand on the holdout.** The incumbent's ≈ −7 on
-mixed training seeds is the only anchor; there is no paired-holdout
-number for `postfix-start.ini`. Until that runs, "tuning made it
-worse" and "post-fix deep is behind baseline and tuning didn't help"
-cannot be separated. The 40 baseline holdout games are cached, so this
-costs only 40 deep games (~2 h at 8 jobs). **This is the first action
-after the quota reset**, and it gates everything: if defaults+gates
-also score ≈ −50, the problem is in the gates or the binary, not the
-tuner.
+Two follow-up holdout reports on the same pinned binary, seeds, and
+cached baseline games (`benchmark/defaults-holdout.sh`,
+`benchmark/nogates-holdout.sh`; s4's baseline dirs hardlinked in, so
+only 40 deep games each; results `s5-defaults-*`, `s6-nogates-*`):
+
+| arm, 20 holdout seeds | contested | lategame-80 |
+|---|---|---|
+| deep, gates OFF (`defaults.ini`, ≡ no tuning file) | −58.4 | −57.9 |
+| deep, defaults + 5 gates (`postfix-start.ini`) | −41.8 | −34.1 |
+| deep, full tuned vector (s3 winner) | −52.5 | −32.6 |
+
+Paired per-seed contrasts (all arms share the same baseline games):
+
+- **Tuned vs defaults+gates**: −10.8 (SE 16.3) contested, +1.6
+  (SE 15.1) lategame — a wash. The 195-param campaign neither helped
+  nor measurably hurt.
+- **Gates on vs off**: +16.6 (SE 15.9) contested, 14/20 seeds; +23.8
+  (SE 14.7) lategame, 13/20 seeds. Directionally positive in both
+  venues (~1σ each, ~1.9σ pooled) — **the five gates help; they are
+  not the problem.**
+
+So the standing fact is: **ai/deep at compiled defaults is behind
+stock baseline by roughly 40–60 points (~5–8% of total score) on
+these 20 holdout seeds, in both the war and econ venues.** The gates
+recover a third of it; tuning as practiced recovers none. Caveats:
+this is contested.conf and lategame-80.conf under tune.py's paired
+protocol, not `run.sh --full`; and the training-side anchor (≈ −7)
+was a mixed-game measure on different seeds, so part of the
+train/holdout gap may be venue kind, not seeds.
 
 ## Tuner fixes required before the next campaign (W25)
 

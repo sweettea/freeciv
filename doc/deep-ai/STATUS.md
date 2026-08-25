@@ -22510,3 +22510,21 @@ for the score, and the batch itself with `benchmark/poach-fix.sh`.
 - Housekeeping: game.logs zstd-compressed in place by new user timer
   `deep-tune-compact` (script `benchmark/compact-tune-logs.sh`,
   commit 1150190f08); /home at 88%.
+
+## W25 — defaults/gates holdout attribution (2026-08-25, pre-reset)
+
+- [x] s5 (defaults+gates) and s6 (gates-off) holdout reports, 40 deep
+      games each, baselines hardlinked from s4 (cache-hit, verified by
+      identical totals + maphashes). Pinned `.tune-postfix-bin`.
+- Three-way, 20 holdout seeds (mean paired diff vs stock baseline):
+  gates-off **−58.4 / −57.9** (contested / lategame-80);
+  defaults+gates **−41.8 / −34.1**; tuned s3 vector −52.5 / −32.6.
+- Paired contrasts: tuned≈defaults (wash: −10.8±16.3, +1.6±15.1);
+  gates help (+16.6±15.9 on 14/20, +23.8±14.7 on 13/20).
+- **Standing fact: deep at defaults is ~40–60 pts behind baseline on
+  these venues' holdout seeds. The gates recover ~a third; the tuner
+  recovered nothing. The deficit itself is the next target, not
+  retuning.** Details:
+  `findings/tune-postfix-verdict-2026-08-25.md` (Resolution section).
+- Drivers kept: `benchmark/defaults-holdout.sh`,
+  `benchmark/nogates-holdout.sh` (the hardlink-baselines pattern).
