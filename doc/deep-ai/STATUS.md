@@ -22609,3 +22609,149 @@ defaults-deficit census, implemented and adjudicated. Full write-up:
 - Retention: `benchmark/results/prodkeep/` — 20 identity smoke games
   (logs zstd-compressed) + 80 contested games, saves dropped, logs
   filtered to the four deep tags the tables need.
+
+## S-WEAKPREY: deep now punishes a weaker rival, converts more, and loses the exchange (2026-08-25)
+
+Branch `worktree-agent-a0998503a40d834a0` (base `1150190f08`), 7
+commits. User directive: *"have deep punish lower military harder"* —
+when a rival's military is weaker than ours, value attacking them more,
+so the standing army gets used instead of idling as upkeep drag.
+
+**Verdict: `weak_prey_gate` stays 0.** The mechanism works exactly as
+designed and the outcome is a small score LOSS. What it bought is
+recorded below, because the *reason* it loses is the most useful thing
+this epic found.
+
+### 1. What landed
+
+`deep_weak_prey_mult()` (deepops.c), factor
+
+    1 + weak_prey_gain x MAX(0, 1 - their score.units / ours)
+
+floored at 1.0 (a *stronger* rival buys no discount — deep already
+prices being outgunned four times on the defence side), refused
+outright when our own `score.units` is 0, and applied at three seats:
+
+- `deep_conquest_worth()` — the shared referee, so it reaches the build
+  want, the muster worth gate, the net-value launch gate and the poach
+  arbitration at once;
+- `deep_op_pick_target()` — which city an operation aims at;
+- `deep_assault_want()`'s own ranking loop — which target a shield is
+  spent toward. **Both** ranking loops, because they are near-duplicates
+  that have already diverged and biasing one would have deep *march*
+  against the weak while it still *built* against the rich.
+
+`score.units` is reused, not invented: the field
+`deep_garrison_menace()` already reads for the militarisation ratio
+(deepdefence.c:1273) and `deep_marginal_attrition()` reads for attack
+pressure. It inherits their coarseness (a Warrior weighs a Musketeer)
+and their omniscience (RC6) and adds neither.
+
+Census: `deep-weakprey` per player-turn; `prey=` / `preyunits=` added
+to `deep-opodds`.
+
+### 2. Identity — the gate is inert at its default
+
+- Smoke, 10 seeds x {deep, mixed_dc}, pre-epic pin `72bee71d` vs epic
+  pin `4d206e01`, no tuning: **20 identical, 0 different**, with a
+  guard that the base arm cannot have emitted `prey=`.
+- **War identity** (the smoke one is weak — the operations layer may
+  barely run at 4 players over 100 turns): the A/B's own off ini on the
+  **pre-epic** binary, contested, 4 seeds, byte-compared against the
+  A/B's off arm: **4 identical, 0 different**, over **3050** formation
+  attempts. The mechanism venue really runs and the gate is still inert.
+
+### 3. The A/B — contested, 24 TRAINING seeds (1–24), arm `deep`
+
+One pinned binary, two archived inis one key apart
+(`benchmark/tuning/weakprey-{off,on}.ini`). Holdout untouched.
+
+    metric                       OFF        ON     delta      se      t   wins
+    score                      84.10     82.09     -2.01    1.20  -1.68   8/24
+    cities                      4.60      4.55     -0.05    0.04  -1.23   6/24
+    unitsbuilt                 47.04     50.55     +3.51    1.02  +3.45  16/24
+    techs                      19.20     18.62     -0.58    0.34  -1.72   5/24
+    pop                        26.67     25.31     -1.36    0.44  -3.07   4/24
+    mean_city_size              5.85      5.72     -0.14    0.09  -1.46   9/24
+    munits                     14.58     15.45     +0.87    0.65  +1.34  13/24
+    unitslost                  13.49     16.69     +3.20    1.08  +2.96  17/24
+    unitskilled                 9.15     10.72     +1.58    0.99  +1.60  13/24
+
+    op-formations             696.42    743.04    +46.62   35.36  +1.32  12/24
+    op-formed                   5.25      8.58     +3.33    1.32  +2.53  14/24
+    op-strike                   0.38      0.75     +0.38    0.23  +1.62   5/24
+    kill-dyad (all seats)      74.83     87.04    +12.21    7.71  +1.58  12/24
+
+Per-seed score deltas: +8.9 +6.1 −8.1 −6.4 −6.5 −3.1 +1.5 −8.8 −1.5
++6.1 −7.4 −1.3 +3.9 +1.9 −2.0 −9.6 −11.9 +1.0 0.0 −3.8 −0.4 +7.8
+−8.1 −6.6.
+
+### 4. Targeting really moved — and that is not the bottleneck
+
+    formed operations (24 games)      OFF        ON
+      operations formed               126       206
+      chosen victim's score.units    13.6      11.7
+      chosen prey factor            1.000*    1.452
+      share of picks with prey > 1   0.0%*    79.6%
+
+\* **Do not read the starred column as a counterfactual.** The gate
+test is the first line of the factor function, so with the gate off
+`prey=` is a flat 1.000 by construction. The honest cross-arm
+comparator is `preyunits` — the chosen victim's own unit count, read
+whatever the gate says — and it moved **13.6 → 11.7**. Corrected in
+`benchmark/weakprey.py`, `weakprey.sh` and the emitting comment;
+recorded here because the instrument said something it could not know.
+
+So: **deep does aim at weaker players, and it does convert.** Formed
+operations rise 63% (126 → 206), strikes double, kills rise +1.58
+(t +1.60), and the whole point of the directive — the standing army
+stops idling — happens.
+
+### 5. Why it still loses, and this is the finding
+
+**Deep loses the exchange it now takes.** `unitslost` rises +3.20
+(t +2.96) against `unitskilled` +1.58 (t +1.60) — it buys roughly two
+losses per extra kill — while `unitsbuilt` rises +3.51 (t +3.45) and
+the civil column pays for it: `pop` −1.36 (**t −3.07**), techs −0.58,
+cities −0.05. Score's own arithmetic makes the trade explicit: +1.58
+kills is +0.53 score and +3.51 builds is +0.35, against −1.36 citizens
+at 1 point each.
+
+**The conversion gap is not a targeting gap.** S-WARGAP and the
+2026-08-25 deficit census both located deep's deficit in `unitskilled`
+and in a 2x army that never fights; the natural reading was that deep
+could not *find* a fight worth taking. This epic gave it a strong
+appetite for exactly the fights it should win, and it took them, and it
+still lost more than it gained. That moves the suspicion downstream of
+target selection, onto force sizing and the take-odds model
+(`op_take_target`, `attack_loss_gain`, the required-force prefix) —
+the wave arrives at a weaker enemy and still trades badly.
+
+Caveat on the venue: this is **all-deep self-play**, so both sides
+carry the bias and the weaker seat is another deep. A mixed
+deep-vs-classic cell would let deep prey on a module that does not prey
+back, and is the obvious next read; it was not run here.
+
+### 6. Constants owed to a tuning pass (rule 7)
+
+- **`weak_prey_gain` — PLACEHOLDER 1.0, UNTUNED.** 1.0 is the unit case
+  (a wholly disarmed rival's city worth twice a peer's, the same
+  doubling `conquest_worth_mult` already pays for denial), not a
+  measured magnitude. Range [0, 4] in `tuning-params.ini`; registered
+  in the M, MIL and ALL blocks. Given §5, a *smaller* gain is the
+  interesting direction — the appetite is not the problem, the
+  exchange rate is.
+- `weak_prey_gate` is a switch, not a magnitude, and its range is
+  degenerate on purpose.
+
+### 7. Retention and next
+
+- `benchmark/results/weakprey/` — 92 games (40 smoke identity, 48
+  contested A/B, 4 war identity), logs filtered to the census lines,
+  saves deleted. `report.txt` regenerates from them.
+- Drivers: `benchmark/weakprey.sh` (identity / ab / warid / report),
+  `benchmark/weakprey.py` (the two census populations).
+- **Next, in order:** (a) re-read the exchange rate — price the wave's
+  expected losses against the take at the launch gate, since that is
+  where §5 says the loss is; (b) the mixed `deep_vs_classic` cell for
+  the same gate; (c) only then a `weak_prey_gain` sweep.

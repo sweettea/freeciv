@@ -89,6 +89,156 @@
 static int deep_conq_culture_cands = 0;
 static double deep_conq_culture_paid = 0.0;
 
+/* WEAK-PREY census: how many PRICED conquest valuations carried a
+ * factor above 1.0, what those factors summed to, and the largest one
+ * seen. Fed by deep_conquest_worth() only -- the ranking loops read
+ * the factor through the pure entry point, because a loop that
+ * enumerates a menu is not a decision and one of those loops runs a
+ * second time under the metric log level. Read alongside `prey=` on
+ * the deep-opodds line, which reports the factor of the target that
+ * was actually chosen: this counter describes what deep paid, that
+ * field describes what deep aimed at. */
+static int deep_weak_prey_cands = 0;
+static double deep_weak_prey_sum = 0.0;
+static double deep_weak_prey_max = 1.0;
+
+/**********************************************************************//**
+  How much more taking a city is worth because the player who holds it
+  is militarily weaker than we are:
+
+    1 + weak_prey_gain x MAX(0, 1 - their score.units / ours)
+
+  1.0 -- exactly, and computed no further -- when the gate is shut,
+  when the gain is zero, when `victim` is us or an ally, or when the
+  victim is at least as strong as we are. Callers may therefore
+  multiply unconditionally, and with the gate at its default every
+  caller multiplies by an untouched 1.0 the compiler folds away.
+
+  WHY THIS QUANTITY. The 2026-08-25 census found deep at ~2x
+  baseline's military with only ~1.06x its kills: an army that is
+  built, paid for and never spent. Every conquest price in deep is a
+  property of the CITY (worth, distance, culture stock, the denial
+  multiplier); none of them is a property of the OPPONENT, so a large
+  army finds no target more attractive than a small one does and the
+  advantage never turns into an attack.
+
+  WHY score.units. It is reused, not invented: the same field
+  deep_garrison_menace() reads for the militarisation ratio behind the
+  garrison floor (deepdefence.c:1273) and deep_marginal_attrition()
+  reads for attack pressure. calc_civ_score() refreshes it at the head
+  of every turn expressly so the AI can read it
+  (server/srv_main.c:1200-1205), so it costs a load. It is a coarse
+  count -- a Warrior and a Musketeer weigh the same -- and it is an
+  omniscient read with no visibility test (RC6;
+  findings/omniscience-census-2026-08-11.md S5). Both properties are
+  inherited from the two consumers that already exist rather than
+  introduced here, and W04's estimator replaces all three at once or
+  none of them.
+
+  WHY IT DOES NOT GO BELOW 1.0. A rival STRONGER than us buys no
+  discount. Deep already prices being outgunned on the defence side
+  four times over -- the survival deficit, the garrison floor, the
+  menace slope, the counter-claim -- and a fifth term on the offence
+  side would be that same fear counted again. This one only adds
+  appetite where the odds are already ours.
+
+  Barbarians are deliberately NOT exempt. They hold real cities that
+  deep already targets (deepdefence.c:6203-6210 counted 47 empty
+  barbarian cities after T160), and a barbarian player with no units
+  left is exactly the weak prey this term exists to notice.
+**************************************************************************/
+double deep_weak_prey_mult(const struct player *pplayer,
+                           const struct player *victim)
+{
+  const struct deep_tuning *tune = deep_tuning_for(pplayer);
+  double ratio, mult;
+
+  if (tune->weak_prey_gate == 0 || tune->weak_prey_gain <= 0.0
+      || victim == NULL || victim == pplayer
+      || pplayers_allied(pplayer, victim)) {
+    return 1.0;
+  }
+  /* NO ARMY, NO PREY. Measured on the first validation game and it is
+   * not a corner case: smoke.conf's start units are all civilian, so
+   * every player's score.units is 0 until roughly T20, and without
+   * this line the MAX(ours, 1) clamp turned 0-against-0 into a ratio
+   * of 0 and paid the FULL factor -- `deep-weakprey turn=5 priced=1
+   * mean=2.000 ours=0`. An empire with nothing to attack with is the
+   * last one that should be talked into attacking. The term exists to
+   * spend a standing army; where there is no standing army there is
+   * nothing to spend and no advantage to read. */
+  if (pplayer->score.units <= 0) {
+    return 1.0;
+  }
+  ratio = (double) victim->score.units
+          / MAX(pplayer->score.units, 1);
+  if (ratio >= 1.0) {
+    return 1.0;
+  }
+  mult = 1.0 + tune->weak_prey_gain * (1.0 - ratio);
+
+  return mult;
+}
+
+/**********************************************************************//**
+  The same factor, COUNTED. Deliberately a second entry point rather
+  than a side effect inside the first: the deep-opodds line reports the
+  factor of the target it chose, and a census that counted that read
+  would double-count every pick and would differ between a quiet run
+  and a loud one -- the metric log level must not be able to move a
+  number. Seats that APPLY the factor call this one; readers call
+  deep_weak_prey_mult().
+**************************************************************************/
+double deep_weak_prey_price(const struct player *pplayer,
+                            const struct player *victim)
+{
+  double mult = deep_weak_prey_mult(pplayer, victim);
+
+  if (mult > 1.0) {
+    deep_weak_prey_cands++;
+    deep_weak_prey_sum += mult;
+    if (mult > deep_weak_prey_max) {
+      deep_weak_prey_max = mult;
+    }
+  }
+
+  return mult;
+}
+
+/**********************************************************************//**
+  The weak-prey factor's execution counter, emitted once per player per
+  turn beside the culture one, and carrying its accounting exactly:
+  ONE set of file statics, drained by whichever player's operations
+  pass runs next. AI phases are strictly sequential, so the ops-side
+  valuations on a line are that player's own; valuations taken by
+  hooks that run AFTER the ops pass (the build side's assault want)
+  land on the next line drained, which may be another seat's. That is
+  the same property deep-conqculture has always had and it is fine for
+  a diagnostic -- read `priced` and `mean` as a fleet average, not as
+  one seat's ledger -- but it is why `ours` can disagree with the
+  factors beside it, and why the per-decision question is answered by
+  `prey=` on deep-opodds instead.
+
+  Silent when the gate is shut, because nothing ever increments it
+  there.
+**************************************************************************/
+void deep_weak_prey_census(struct player *pplayer)
+{
+  if (deep_weak_prey_cands <= 0) {
+    return;
+  }
+  log_base(deep_metric_log_level(),
+           "deep-weakprey turn=%d player=\"%s\" priced=%d mean=%.3f"
+           " max=%.3f ours=%d",
+           game.info.turn, player_name(pplayer),
+           deep_weak_prey_cands,
+           deep_weak_prey_sum / deep_weak_prey_cands,
+           deep_weak_prey_max, pplayer->score.units);
+  deep_weak_prey_cands = 0;
+  deep_weak_prey_sum = 0.0;
+  deep_weak_prey_max = 1.0;
+}
+
 /**********************************************************************//**
   What taking `target` is worth to `pplayer`, in the want currency
   stock's own city worth is denominated in.
@@ -130,8 +280,14 @@ double deep_conquest_worth(struct ai_type *ait, struct player *pplayer,
                            struct city *target)
 {
   const struct deep_tuning *tune = deep_tuning_get();
+  /* The weak-prey factor multiplies the WHOLE take, culture stock
+   * included: a disarmed rival's capital is easier to hold as well as
+   * easier to reach, and the history it carries across is worth what
+   * it is worth to whoever ends up owning it. Exactly 1.0 with the
+   * gate shut, so this is the same product it has always been. */
+  double prey = deep_weak_prey_price(pplayer, city_owner(target));
   double worth = def_ai_city_data(target, ait)->worth
-                 * tune->conquest_worth_mult;
+                 * tune->conquest_worth_mult * prey;
   struct adv_data *adv;
   double culture;
 
@@ -144,7 +300,7 @@ double deep_conquest_worth(struct ai_type *ait, struct player *pplayer,
   }
   culture = (double) target->history / DEEP_CULTURE_PER_SCORE
             * deep_unworked_tile_value(target, adv, 3, NULL)
-            * tune->conquest_culture_gain;
+            * tune->conquest_culture_gain * prey;
   if (culture <= 0.0) {
     return worth;
   }
@@ -2979,6 +3135,16 @@ static struct city *deep_op_pick_target(struct ai_type *ait,
 
   players_iterate_alive(aplayer) {
     bool partner;
+    /* The weak-prey factor, hoisted: it is a property of the OWNER,
+     * so it is taken once per player rather than once per candidate
+     * city. The PURE entry point, deliberately: this function is also
+     * called a second time per formation attempt, for the metric-gated
+     * deep-anchor counterfactual (below), so counting here would make
+     * the census depend on the log level. The census is the pricing
+     * seats' -- deep_conquest_worth() -- and the targeting question is
+     * answered by prey= on deep-opodds. Exactly 1.0 with the gate
+     * shut. */
+    double prey;
 
     if (!pplayers_at_war(pplayer, aplayer)
         || (!is_barbarian(aplayer)
@@ -2989,6 +3155,7 @@ static struct city *deep_op_pick_target(struct ai_type *ait,
     partner = spare && player_index(aplayer) >= 0
       && player_index(aplayer) < MAX_NUM_PLAYER_SLOTS
       && routes[player_index(aplayer)] > 0;
+    prey = deep_weak_prey_mult(pplayer, aplayer);
     city_list_iterate(aplayer->cities, acity) {
       double score;
       bool overseas = tile_continent(city_tile(acity)) != home;
@@ -3034,6 +3201,22 @@ static struct city *deep_op_pick_target(struct ai_type *ait,
        * loop's map_is_known() test ran before this line. */
       if (deep_tuning_get()->chatty_inbound_gate > 0) {
         score *= deep_request_attack_mult(pplayer, acity);
+      }
+      /* THE WEAK-PREY BIAS. Fourth multiplier on the same score and
+       * the same shape as the three above -- skipped rather than done
+       * when the gate is shut, so the off arm keeps the previous
+       * ordering byte-identically.
+       *
+       * Needed HERE as well as inside deep_conquest_worth() because
+       * this loop does not call that function: it ranks candidates on
+       * the raw `ai_city.worth` over distance, and a term that only
+       * reached the worth would change what deep is willing to PAY for
+       * a target without changing which target it picks. The factor is
+       * constant across one owner's cities -- hence the hoist above --
+       * so what it re-orders is PLAYERS, which is the decision the
+       * census is asked to verify moved. */
+      if (prey > 1.0) {
+        score *= prey;
       }
       if (score > best_score) {
         best_score = score;
@@ -3554,7 +3737,8 @@ static void deep_opodds_log(struct player *pplayer, int oi,
            " verdict=\"%s\" odds=%.3f bar=%.3f take_target=%.2f"
            " required=%d pool=%d drafted=%d eta=%d overseas=%d"
            " def_n=%d def_best=%d muster=%d members=%d best=%d stall=%d"
-           " worth=%d why=%s mform=%d mlaunch=%d mabandon=%d",
+           " worth=%d why=%s mform=%d mlaunch=%d mabandon=%d"
+           " prey=%.3f preyunits=%d",
            game.info.turn, player_name(pplayer), oi, target->id,
            verdict, odds, bar, deep_tuning_get()->op_take_target,
            required, pool, drafted, eta, overseas ? 1 : 0,
@@ -3567,7 +3751,22 @@ static void deep_opodds_log(struct player *pplayer, int oi,
            op != NULL ? op->muster_worth : 0,
            why != NULL ? why : "none",
            dp->musters_formed, dp->musters_launched,
-           dp->musters_abandoned);
+           dp->musters_abandoned,
+           /* The weak-prey factor of the target that was CHOSEN. The
+            * PURE entry point on purpose: a read taken only under the
+            * metric log level must not be able to move the census.
+            *
+            * `prey` is a WITHIN-ARM statistic and not a cross-arm one,
+            * because the gate test is the first line of the factor
+            * function: with the gate shut this field is a flat 1.000
+            * by construction, not the counterfactual the off arm
+            * would have carried. `preyunits` beside it is the honest
+            * cross-arm comparator -- the chosen victim's own unit
+            * count, read whatever the gate says -- and it is what the
+            * first adjudication used to show that targeting really did
+            * move (13.6 units per chosen victim off, 11.7 on). */
+           deep_weak_prey_mult(pplayer, city_owner(target)),
+           city_owner(target)->score.units);
 }
 
 /**********************************************************************//**
@@ -5701,4 +5900,5 @@ void deep_run_operations(struct ai_type *ait, struct player *pplayer)
   }
 
   deep_conquest_culture_census(pplayer);
+  deep_weak_prey_census(pplayer);
 }
