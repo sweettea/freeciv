@@ -22528,3 +22528,20 @@ for the score, and the batch itself with `benchmark/poach-fix.sh`.
   `findings/tune-postfix-verdict-2026-08-25.md` (Resolution section).
 - Drivers kept: `benchmark/defaults-holdout.sh`,
   `benchmark/nogates-holdout.sh` (the hardlink-baselines pattern).
+
+## W25 — defaults-deficit census (2026-08-25, quota tail)
+
+- [x] Localized the −40/−60 holdout deficit from existing s5/s6 logs;
+      no games run. Deep LEADS both venues to ~T76/T25, then fades:
+      the deficit is a late-game expansion stall, not a weak opening.
+- Chain: cities plateau ~T50 → expgate never blocks (founder bids
+  600–800 at T150) → Settlers still 15% of picks through T100 → but
+  settler production starts ≈ abandonments every bucket (287/288,
+  333/375...), pre-empted by Phalanx/Trireme/Colosseum/Diplomat.
+  ~24% of city-turns at T75+ switch production. Also: treasury pinned
+  ~300 vs baseline ~2000 at identical rates; munits 7× at T16;
+  Colosseum 23% of picks T100+ with riots ≈ 0.
+- Ranked hypotheses (hysteresis, danger flapping, content
+  overvaluation, early military overprice) with per-hypothesis checks:
+  `findings/defaults-deficit-census-2026-08-25.md`. Next epic should
+  instrument settler completions and switch cycles FIRST.
