@@ -22481,3 +22481,32 @@ games on pv3 and 8 + 8 on pv3-muster. Saves dropped, every
 table above re-derives with `benchmark/employ.py` (`--section poach`,
 `marg`, `ops`, `depart`), `benchmark/extract.py` + `benchmark/paircmp.py`
 for the score, and the batch itself with `benchmark/poach-fix.sh`.
+
+---
+
+## W25 — tune-postfix campaign verdict (2026-08-25)
+
+- [x] Campaign ran to completion under systemd (survived one disk-full
+      crash + restart; content-addressed cache replayed cleanly).
+      ~1400 games, binary `.tune-postfix-bin` (24867bef2364d609).
+- **HOLDOUT REJECTS the tuned vector**: s3-mil-r2/best-tuning.ini
+  scores **−52.5** (contested, 6/20 wins) and **−32.6** (lategame-80,
+  7/20 wins) mean paired diff vs baseline on 20 held-out seeds each.
+  Training "block bests" (+104.4 MIL, +28.6 ECON, +62.5 MIL r2) were
+  order-statistic noise: unreplicated max over 30–40 candidates whose
+  8-seed objective has SE ≈ 41; each stage's gen0 cand0 re-eval of the
+  previous winner scored −40.2 / −6, i.e. no real training gain ever
+  existed. 195/269 params moved, 76 pinned at bounds. Full post-mortem:
+  `doc/deep-ai/findings/tune-postfix-verdict-2026-08-25.md`.
+- **Do not ship any part of s3-mil-r2/best-tuning.ini.**
+- Note — first action after quota reset (2026-08-25 16:00): holdout
+  report for `benchmark/tuning/postfix-start.ini` (defaults + 5 gates);
+  baseline arm is cached, so it costs 40 deep games. It decides whether
+  the −52/−33 is tuning damage or a pre-existing post-fix gap.
+- Note — tuner fixes required before any next campaign (in the
+  findings doc): replicated selection (re-eval top-k on fresh seeds or
+  paired incumbent-vs-challenger), ≤10 params per block or 10× seeds,
+  SE printed beside every objective, incumbent logged every gen.
+- Housekeeping: game.logs zstd-compressed in place by new user timer
+  `deep-tune-compact` (script `benchmark/compact-tune-logs.sh`,
+  commit 1150190f08); /home at 88%.
