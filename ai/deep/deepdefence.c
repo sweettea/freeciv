@@ -6193,9 +6193,12 @@ static void deep_assault_want(struct ai_type *ait,
 
     players_iterate_alive(aplayer) {
       /* The weak-prey factor, hoisted per owner exactly as
-       * deep_op_pick_target() hoists it: a property of the player, not
-       * of the city. Exactly 1.0 with weak_prey_gate shut, and the
-       * multiply below is then skipped rather than done. */
+       * deep_op_pick_target() hoists it, and through the same PURE
+       * entry point: a ranking loop enumerates a menu, and only the
+       * pricing seat (deep_conquest_worth, called on the CHOSEN target
+       * a few lines below) belongs in the census. Exactly 1.0 with
+       * weak_prey_gate shut, and the multiply below is then skipped
+       * rather than done. */
       double prey;
       /* The initial diplstate between UNMET players is war, so the
        * at-war test alone passes on turn one -- and unmet,
@@ -6219,7 +6222,7 @@ static void deep_assault_want(struct ai_type *ait,
                  == DS_NO_CONTACT)) {
         continue;
       }
-      prey = deep_weak_prey_price(pplayer, aplayer);
+      prey = deep_weak_prey_mult(pplayer, aplayer);
       city_list_iterate(aplayer->cities, acity) {
         double score;
         /* Named apart from the function-scope `overseas`, which is the

@@ -89,11 +89,15 @@
 static int deep_conq_culture_cands = 0;
 static double deep_conq_culture_paid = 0.0;
 
-/* WEAK-PREY census: how many valuations this player-turn carried a
+/* WEAK-PREY census: how many PRICED conquest valuations carried a
  * factor above 1.0, what those factors summed to, and the largest one
- * seen. Read alongside `prey=` on the deep-opodds line, which reports
- * the factor of the target that was actually chosen -- this counter
- * describes the whole menu, that field describes the pick. */
+ * seen. Fed by deep_conquest_worth() only -- the ranking loops read
+ * the factor through the pure entry point, because a loop that
+ * enumerates a menu is not a decision and one of those loops runs a
+ * second time under the metric log level. Read alongside `prey=` on
+ * the deep-opodds line, which reports the factor of the target that
+ * was actually chosen: this counter describes what deep paid, that
+ * field describes what deep aimed at. */
 static int deep_weak_prey_cands = 0;
 static double deep_weak_prey_sum = 0.0;
 static double deep_weak_prey_max = 1.0;
@@ -3132,9 +3136,14 @@ static struct city *deep_op_pick_target(struct ai_type *ait,
   players_iterate_alive(aplayer) {
     bool partner;
     /* The weak-prey factor, hoisted: it is a property of the OWNER,
-     * so taking it once per player rather than once per candidate
-     * city keeps the deep-weakprey census counting decisions instead
-     * of counting map furniture. Exactly 1.0 with the gate shut. */
+     * so it is taken once per player rather than once per candidate
+     * city. The PURE entry point, deliberately: this function is also
+     * called a second time per formation attempt, for the metric-gated
+     * deep-anchor counterfactual (below), so counting here would make
+     * the census depend on the log level. The census is the pricing
+     * seats' -- deep_conquest_worth() -- and the targeting question is
+     * answered by prey= on deep-opodds. Exactly 1.0 with the gate
+     * shut. */
     double prey;
 
     if (!pplayers_at_war(pplayer, aplayer)
@@ -3146,7 +3155,7 @@ static struct city *deep_op_pick_target(struct ai_type *ait,
     partner = spare && player_index(aplayer) >= 0
       && player_index(aplayer) < MAX_NUM_PLAYER_SLOTS
       && routes[player_index(aplayer)] > 0;
-    prey = deep_weak_prey_price(pplayer, aplayer);
+    prey = deep_weak_prey_mult(pplayer, aplayer);
     city_list_iterate(aplayer->cities, acity) {
       double score;
       bool overseas = tile_continent(city_tile(acity)) != home;
