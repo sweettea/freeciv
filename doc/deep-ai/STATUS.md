@@ -22545,3 +22545,67 @@ for the score, and the batch itself with `benchmark/poach-fix.sh`.
   overvaluation, early military overprice) with per-hypothesis checks:
   `findings/defaults-deficit-census-2026-08-25.md`. Next epic should
   instrument settler completions and switch cycles FIRST.
+
+## S-PRODKEEP — production completion bias, gated and REJECTED (2026-08-25)
+
+Branch `worktree-agent-a8bac4bc2114710a6`. Hypothesis 1 of the
+defaults-deficit census, implemented and adjudicated. Full write-up:
+`findings/prodkeep-verdict-2026-08-25.md`.
+
+- [x] `prod_keep_gate` / `prod_keep_gain` in struct tuning, params.ini,
+      ALL block, knobcensus MAP. tune-audit CLEAN at 275/275.
+- [x] `deep_prod_keep_credit()` (deepdefence.c): the candidate that IS
+      the current production is credited `want *= 1 + gain *
+      min(stock,cost)/cost`, after the class scale, the bell and both
+      shield debits. Emergency tier exempt; credited want clamped below
+      `DAI_WANT_BELOW_MIL_EMERGENCY` so the bias cannot manufacture an
+      emergency. Counters: `deep-prodkeep` per credit, `keep=` on
+      `deep-prodswitch`.
+- [x] Identity: 10 smoke seeds, pre-epic binary vs this branch at
+      `prod_keep_gate = 0` — **10 identical, 0 different**, byte for
+      byte, with three guards against a vacuous pass.
+- [x] A/B, contested.conf, **20 TRAINING seeds**, paired on shared
+      baseline games (`benchmark/prodkeep-ab.sh`, ports 7800–7849):
+
+      arm                          mean vs base    se   median  wins
+      off (postfix-start.ini)             −59.2  26.3    −41.5  7/20
+      on  (+prod_keep_gate=1)             −63.0  26.1    −42.5  6/20
+      hold (+founder_run_hold=1, diag)    −66.2  18.3    −33.5  5/20
+
+      **on − off: −3.8 (se 9.1, t −0.42, 8/20 seeds).** A wash.
+      hold − off: −7.0 (se 16.1, 10/20).
+
+- **Verdict: the gate stays 0.** Not because the mechanism is dormant —
+  43 204 credits, median progress 0.43, 10 273 to Settlers at mean
+  credit 239 — but because it does not reach the decision. Of 1 608
+  part-built settlers abandoned: 236 (15%) were credited and
+  pre-empted anyway, **1 315 (82%) had keep=0 with shields in the
+  stock**, i.e. the settler was not one of the two candidates in that
+  auction at all (the domestic advisor stopped proposing it, or the
+  emergency/war skip suppressed the call). Delivery rate 24.8% →
+  24.8%.
+- **Census method corrected** (`prodkeep-report.py --census`): the
+  original starts-vs-abandonments count treated a DELIVERED settler's
+  end-of-run switch as an abandonment. `builtlast=` separates them.
+  Corrected gate-off baseline: 1587 starts, 391 built, 1188 abandoned,
+  **built% 24.8**. That is the number a fix must move.
+- **Diagnostic**: `founder_run_hold` (landed 2026-08-22, still 0 in the
+  standing config) DOES move it — built% 24.8 → 30.7 overall, 25.9 →
+  47.3 at T100+, 37.3 → 68.8 at T125+ — and score still does not follow
+  (−7.0 ± 16.1). So more delivered settlers ≠ more score here: the
+  expansion stall may be downstream of settler DELIVERY (escort,
+  travel, site legality, founding), not at production. **Instrument
+  that next**, and give `founder_run_hold` its own cell if it is to be
+  adjudicated.
+- **FLAGGED FOR TUNING (rule 7)**: `prod_keep_gain = 1.0` is a
+  PLACEHOLDER and was never tuned. Do NOT tune it against this result —
+  what failed is the mechanism's reach, which no gain value changes.
+  It is unreachable while `prod_keep_gate = 0`.
+- Machine lessons paid for: a pinned binary needs `libfreeciv.so`
+  beside it (RUNPATH is `$ORIGIN/`; a bare copy cannot start), and the
+  port pool must be far larger than the job count — 8 ports with 8 jobs
+  put game i+8 on game i's live port and the first baseline arm
+  finished 10/20. Both are encoded in `benchmark/prodkeep-ab.sh`.
+- Retention: `benchmark/results/prodkeep/` — 20 identity smoke games
+  (logs zstd-compressed) + 80 contested games, saves dropped, logs
+  filtered to the four deep tags the tables need.
