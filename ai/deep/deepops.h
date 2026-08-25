@@ -254,4 +254,21 @@ double deep_conquest_worth(struct ai_type *ait, struct player *pplayer,
                            struct city *target);
 void deep_conquest_culture_census(struct player *pplayer);
 
+/* THE WEAK-PREY FACTOR: how much more a conquest is worth because its
+ * victim is militarily weaker than we are. 1.0 when the gate is shut,
+ * when we are the weaker side, or when the victim is ourselves or an
+ * ally -- so a caller may multiply unconditionally. Exported because
+ * the two target-ranking loops that need it live in different files
+ * (deepops.c's operations pick and deepdefence.c's build-side pick)
+ * and they have already diverged enough without a second copy of this
+ * arithmetic. */
+double deep_weak_prey_mult(const struct player *pplayer,
+                           const struct player *victim);
+/* The same factor, counted into the per-turn deep-weakprey census.
+ * Seats that APPLY the factor call this; readers (log lines) call the
+ * pure one above, so the metric log level cannot move the census. */
+double deep_weak_prey_price(const struct player *pplayer,
+                            const struct player *victim);
+void deep_weak_prey_census(struct player *pplayer);
+
 #endif /* FC__DEEPOPS_H */
