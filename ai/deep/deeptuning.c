@@ -332,6 +332,13 @@ static const struct deep_tuning deep_tuning_defaults = {
                                          * inherited */
   .poach_marginal_gate = 0,             /* 0 = the total-vs-total
                                          * comparison exactly */
+  .weak_prey_gate = 0,                  /* 0 = conquest pricing that never
+                                         * asks how strong the victim is,
+                                         * byte for byte */
+  .weak_prey_gain = 1.0,                /* PLACEHOLDER: the unit case, a
+                                         * disarmed rival's city worth 2x a
+                                         * peer's. Inert while the gate is
+                                         * 0 */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -644,7 +651,9 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(site_improvable_gate) \
   TUNE_INT(site_starve_price_gate) \
   TUNE_INT(poach_deploy_gate) \
-  TUNE_INT(poach_marginal_gate)
+  TUNE_INT(poach_marginal_gate) \
+  TUNE_INT(weak_prey_gate) \
+  TUNE_DOUBLE(weak_prey_gain)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 

@@ -3192,6 +3192,78 @@ struct deep_tuning {
    * take a blade the claiming city then cannot use at all, and no
    * arbitration term fixes a transaction neither side collects on. */
   int poach_marginal_gate;
+
+  /* THE WEAK-PREY BIAS (deepops.c, deep_weak_prey_mult()).
+   *
+   * The defect it addresses is measured, not argued. The 2026-08-25
+   * log census (findings/defaults-deficit-census-2026-08-25.md) found
+   * deep holding ~2x baseline's military most of the game -- 7.3
+   * against 1.0 at T16 on contested -- while `unitskilled` came in at
+   * only ~1.06x. Deep ARMS and does not CONVERT: the standing army is
+   * upkeep drag and pre-empts settlers (that census's item 4) without
+   * ever being spent on anything. S-WARGAP had already named the same
+   * quantity from the other side -- `unitskilled` is 55% of the war
+   * venue's deficit at the divergence point and the only term with
+   * |t| above 5 throughout (STATUS, S-WARGAP section 2).
+   *
+   * Nothing in deep's conquest pricing has ever asked how strong the
+   * VICTIM is. A city is priced by `ai_city.worth` over distance, and
+   * the same city held by a rival with forty units and by one with
+   * four is worth exactly the same. So a large army finds no target
+   * more attractive than a small army does, and there is no seat at
+   * which "we outnumber them three to one" can become "hit them".
+   *
+   * What the gate does when it is on: every conquest valuation is
+   * multiplied by
+   *
+   *   1 + weak_prey_gain x MAX(0, 1 - their score.units / ours)
+   *
+   * at three seats -- the shared worth (deep_conquest_worth), the
+   * operations target ranking (deep_op_pick_target) and the build
+   * side's own target ranking (deep_assault_want). All three, because
+   * the two ranking loops have already diverged from each other and
+   * biasing only one means deep MARCHES against the weak while it
+   * still BUILDS against the rich.
+   *
+   * The strength measure is REUSED, not invented: pplayer->score.units
+   * is the same field deep_garrison_menace() already reads for the
+   * militarisation ratio that sizes the garrison floor
+   * (deepdefence.c:1273), and deep_marginal_attrition() reads for
+   * attack pressure. It is a coarse count and an omniscient read with
+   * no visibility test (RC6; findings/omniscience-census-2026-08-11.md
+   * S5) -- exactly the omniscience the two existing consumers already
+   * carry, and W04's estimator replaces all three together or none.
+   * It is recomputed by calc_civ_score() at the head of every turn
+   * precisely so the AI can read it (server/srv_main.c:1200).
+   *
+   * NOT symmetric. A rival STRONGER than us buys no discount: the
+   * factor floors at 1.0 rather than falling below it. Deep already
+   * prices being outgunned in four places on the defence side (the
+   * survival deficit, the garrison floor, the menace slope, the
+   * counter-claim), and a fifth on the offence side would be that
+   * fear counted twice. This term only adds appetite where the odds
+   * are already ours.
+   *
+   * weak_prey_gate: 0 (default) = the multiply is SKIPPED, not done,
+   * so the off arm is byte-identical to everything measured before
+   * this landed. Pure switch: the magnitude lives in the gain.
+   *
+   * weak_prey_gain: PLACEHOLDER 1.0, flagged in STATUS.md for a tuning
+   * pass. 1.0 is the unit case rather than a guess about size -- it
+   * makes a wholly disarmed rival's city worth exactly TWICE a peer's,
+   * which is the same doubling conquest_worth_mult already applies for
+   * the denial half of a capture, and puts a rival at half our
+   * strength at 1.5x. What a turn of relative advantage is really
+   * worth against a turn of city value is not known and is not
+   * guessed here. 0.0 disables the term as completely as the gate
+   * does, so the two off-switches agree.
+   *
+   * Counter: deep-weakprey (per player per turn: how many valuations
+   * carried the factor and what it averaged), plus prey= on the
+   * deep-opodds line so a census can read the factor of the target
+   * that was actually chosen. */
+  int weak_prey_gate;
+  double weak_prey_gain;
 };
 
 void deep_tuning_init(void);
