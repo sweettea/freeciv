@@ -271,10 +271,13 @@ do_report() {
     echo "############ score+kills: off -> on (paired, arm deep)"
     "$here/paircmp.py" "$OUT/ab/off" "$OUT/ab/on" --arm deep
   fi
-  # The targeting census: did the factor actually fire, and did the
-  # CHOSEN target's prey factor move? prey= is on every deep-opodds
-  # line in both arms (it is a pure read, so the off arm reports the
-  # counterfactual 1.000 it acted on).
+  # The targeting census: did the factor actually fire, and did deep
+  # aim at players with fewer units? Compare the `victim units` column
+  # between the arms, NOT `prey`: the gate test is the first line of
+  # the factor function, so the off arm's prey= is a flat 1.000 by
+  # construction rather than the counterfactual it would have carried.
+  # prey= is a within-the-on-arm statistic; preyunits is the
+  # cross-arm one.
   for rung in off on; do
     [ -d "$OUT/ab/$rung" ] || continue
     echo "############ weak-prey census / $rung"

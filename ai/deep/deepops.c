@@ -3752,12 +3752,19 @@ static void deep_opodds_log(struct player *pplayer, int oi,
            why != NULL ? why : "none",
            dp->musters_formed, dp->musters_launched,
            dp->musters_abandoned,
-           /* The weak-prey factor of the target that was CHOSEN, so a
-            * census can ask whether targeting moved toward weaker
-            * players. The per-turn counter beside it describes the
-            * whole menu; this describes the pick. The PURE entry point
-            * on purpose: a read taken only under the metric log level
-            * must not be able to move the census. */
+           /* The weak-prey factor of the target that was CHOSEN. The
+            * PURE entry point on purpose: a read taken only under the
+            * metric log level must not be able to move the census.
+            *
+            * `prey` is a WITHIN-ARM statistic and not a cross-arm one,
+            * because the gate test is the first line of the factor
+            * function: with the gate shut this field is a flat 1.000
+            * by construction, not the counterfactual the off arm
+            * would have carried. `preyunits` beside it is the honest
+            * cross-arm comparator -- the chosen victim's own unit
+            * count, read whatever the gate says -- and it is what the
+            * first adjudication used to show that targeting really did
+            * move (13.6 units per chosen victim off, 11.7 on). */
            deep_weak_prey_mult(pplayer, city_owner(target)),
            city_owner(target)->score.units);
 }

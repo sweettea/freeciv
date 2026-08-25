@@ -12,15 +12,18 @@ the player priced -- and it is emitted only when the gate is on, since
 nothing increments it otherwise.
 
 `prey=` on `deep-opodds` is the factor of the target a formation
-attempt actually CHOSE. It is a pure read taken at log time, so it is
-present in BOTH arms: the off arm reports the counterfactual factor of
-the target it picked without the bias, which is exactly the baseline
-the on arm has to beat. A gate that works moves the chosen-target
-factor up relative to the off arm -- deep aiming at weaker players --
-and a gate that only inflates prices without re-aiming does not.
+attempt actually CHOSE. **It is NOT a cross-arm comparator, and the
+first adjudication run learned that the hard way.** The gate test is
+the first line of the factor function, so with the gate off the field
+is a flat 1.000 by construction -- not the counterfactual the off arm
+would have carried. Read `prey=` WITHIN the on arm ("how lopsided were
+the fights deep picked"), never as off-versus-on.
 
-`preyunits` is the chosen victim's own score.units, so "weaker" can be
-read in units rather than only as a ratio.
+`preyunits` is the chosen victim's own score.units and it IS
+gate-independent: it is read off the victim whatever the gate says. It
+is therefore the honest cross-arm question -- did deep aim at players
+with fewer units? -- and it is the column to compare between the two
+arms.
 """
 import re
 import sys
