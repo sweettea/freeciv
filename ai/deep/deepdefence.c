@@ -7470,6 +7470,108 @@ static adv_want deep_switch_cost_apply(struct player *pplayer,
 }
 
 /**********************************************************************//**
+  Credit the candidate that IS what the city is already building, in
+  proportion to how far that build has got, and return the credit.
+
+  The defect is measured
+  (findings/defaults-deficit-census-2026-08-25.md): over 20 holdout
+  games, `deep-prodswitch` switches INTO Settlers and switches OUT of
+  Settlers are the same number in every 25-turn bucket -- 487/529,
+  287/288, 333/375, 99/153. Nearly every settler deep starts is
+  pre-empted before it is delivered, by a Phalanx, a Trireme, a
+  Colosseum or a Diplomat whose want was larger for one turn. The
+  intent survives all game (`deep-expgate` blocks essentially never,
+  Settlers hold 15% of picks through T100); it is the PIPELINE that
+  never drains, and the cities plateau at ~T50 as a result.
+
+  Why deep_switch_cost_apply() above does not already cover it: that
+  debit is the shields `city_change_production_penalty()` really
+  forfeits, and a unit->unit switch forfeits NOTHING -- the ruleset
+  keeps the stock inside a production class, which is exactly the
+  switch a settler is usually lost to. What the pre-empted settler
+  loses is not shields, it is the COMPLETION TIME already paid for,
+  and nothing in this auction prices time.
+
+  The shape is the one the surrounding arithmetic already speaks -- a
+  factor on the bid before the comparison, like the class scale a few
+  statements below:
+
+    want *= 1 + prod_keep_gain * min(stock, cost) / cost
+
+  At an empty box the multiplier is exactly 1 and the auction is
+  untouched; the bias grows with what a switch would throw away, and
+  is largest one turn short of delivery. `cost` is the current
+  target's own shield cost, `stock` the city's own stock: two fields,
+  no model.
+
+  EMERGENCIES STILL PRE-EMPT, by two mechanisms and neither is a
+  judgement call made here. The emergency tier is exempt as every deep
+  gate exempts it, and the credited want is clamped below
+  DAI_WANT_BELOW_MIL_EMERGENCY so the credit can never MANUFACTURE an
+  emergency by pushing a normal want over the tier line -- and
+  deep_want_cmp() (deepwant.c) puts every emergency want above every
+  normal one whatever this does to a normal one. The paths that do not
+  come through this auction at all -- the grave-danger treasury spend,
+  resolve_city_emergency(), the disband and starvation paths -- never
+  see the credit, because the credit exists only on a candidate's
+  `want` for the length of one comparison.
+
+  Returns the credit, or 0.
+**************************************************************************/
+static adv_want deep_prod_keep_credit(struct player *pplayer,
+                                      struct city *pcity,
+                                      struct adv_choice *choice,
+                                      const char *who)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  struct universal target;
+  adv_want credit, ceiling;
+  double progress;
+  int cost;
+
+  if (tune->prod_keep_gate <= 0
+      || tune->prod_keep_gain <= 0.0
+      || choice->want <= 0
+      || pcity->shield_stock <= 0
+      || deep_want_from_choice(choice).tier == DWT_EMERGENCY
+      || !deep_choice_target(choice, &target)
+      || !are_universals_equal(&target, &pcity->production)) {
+    return 0;
+  }
+
+  cost = city_production_build_shield_cost(pcity);
+  if (cost <= 0) {
+    return 0;
+  }
+  progress = (double) MIN(pcity->shield_stock, cost) / (double) cost;
+
+  /* Below the tier line, always: the credit is a preference for
+   * finishing, never a claim that finishing is an emergency. */
+  ceiling = (adv_want) DAI_WANT_BELOW_MIL_EMERGENCY - 1;
+  credit = (adv_want) (choice->want * tune->prod_keep_gain * progress);
+  if (choice->want + credit > ceiling) {
+    credit = ceiling - choice->want;
+  }
+  if (credit <= 0) {
+    return 0;
+  }
+
+  log_base(deep_metric_log_level(),
+           "deep-prodkeep turn=%d player=\"%s\" city=%d who=\"%s\""
+           " pick=\"%s\" stock=%d cost=%d progress=%.3f"
+           " credit=" ADV_WANT_PRINTF " want=" ADV_WANT_PRINTF
+           " to=" ADV_WANT_PRINTF " gain=%.4f",
+           game.info.turn, player_name(pplayer), pcity->id, who,
+           adv_choice_rule_name(choice), pcity->shield_stock, cost,
+           progress, credit, choice->want, choice->want + credit,
+           tune->prod_keep_gain);
+
+  choice->want = choice->want + credit;
+
+  return credit;
+}
+
+/**********************************************************************//**
   Census one production change at the seam where deep COMMITS it, with
   the shields the change-production penalty WOULD take.
 
@@ -7490,10 +7592,18 @@ static adv_want deep_switch_cost_apply(struct player *pplayer,
   Logged only when the target differs from what the turn started
   building (`changed_from`), which is the population the penalty acts
   on; a city re-confirming its build every turn is not an event.
+
+  `keep` is what the completion bias paid the incumbent build in this
+  city-turn's auction (0 with prod_keep_gate off, and 0 with it on when
+  the current production was not one of the two candidates). A switch
+  event carrying keep>0 is one the bias was applied to and lost, which
+  is what separates "the bias is too small" from "the bias never
+  reached this decision".
 **************************************************************************/
 static void deep_prodswitch_log(struct ai_type *ait, struct player *pplayer,
                                 struct city *pcity,
-                                const struct universal *build_new)
+                                const struct universal *build_new,
+                                adv_want keep)
 {
   struct ai_city *city_data = def_ai_city_data(pcity, ait);
   const struct unit_type *carav = NULL;
@@ -7516,7 +7626,8 @@ static void deep_prodswitch_log(struct ai_type *ait, struct player *pplayer,
            " stock=%d after=%d loss=%d bcs=%d carsh=%d disb=%d lts=%d"
            " builtlast=%d surplus=%d size=%d"
            " danger=%u urgency=%u menace=%.3f"
-           " carav=%d carcost=%d coin=%d pen=%d",
+           " carav=%d carcost=%d coin=%d pen=%d"
+           " keep=" ADV_WANT_PRINTF,
            game.info.turn, player_name(pplayer), pcity->id,
            universal_rule_name(&pcity->changed_from),
            universal_rule_name(build_new),
@@ -7536,7 +7647,8 @@ static void deep_prodswitch_log(struct ai_type *ait, struct player *pplayer,
            /* Whether `loss` is about to be REALLY taken, one event at a
             * time: the seat carries the handicap, so the change the
             * next statement makes will run the penalty. */
-           has_handicap(pplayer, H_PRODCHGPEN) ? 1 : 0);
+           has_handicap(pplayer, H_PRODCHGPEN) ? 1 : 0,
+           keep);
 }
 
 /**********************************************************************//**
@@ -7886,6 +7998,12 @@ static void deep_city_choose_build(struct ai_type *ait,
   struct ai_city *city_data = def_ai_city_data(pcity, ait);
   const struct civ_map *nmap = &(wld.map);
   bool debit_zeroed = FALSE;
+  /* What the completion bias paid the incumbent build this city-turn,
+   * carried to the switch census: a switch logged with keep>0 is one
+   * that happened DESPITE the bias, which is the population the
+   * mechanism is judged on. 0 with the gate on means the thing the
+   * city is building was not among the two candidates at all. */
+  adv_want keep_credit = 0;
 
   /* The convertible class, censused where it is still visible. Both
    * fields are filled by unit actions during THIS phase and wiped by
@@ -8067,6 +8185,16 @@ static void deep_city_choose_build(struct ai_type *ait,
 
         deep_switch_cost_apply(pplayer, pcity, &(city_data->choice), "mil");
         deep_switch_cost_apply(pplayer, pcity, newchoice, "dom");
+
+        /* And the completion bias, last, so it acts on the bid the
+         * auction will really compare -- after the class scale, the
+         * bell and both absolute shield-equivalent debits. At most one
+         * of the two sides can be credited, because at most one of
+         * them can BE the current production. */
+        keep_credit
+          = deep_prod_keep_credit(pplayer, pcity, &(city_data->choice),
+                                  "mil")
+            + deep_prod_keep_credit(pplayer, pcity, newchoice, "dom");
 
         dom_won_after
           = deep_merge_domestic_wins(newchoice, &city_data->choice,
@@ -8311,7 +8439,7 @@ static void deep_city_choose_build(struct ai_type *ait,
       break;
     };
 
-    deep_prodswitch_log(ait, pplayer, pcity, &build_new);
+    deep_prodswitch_log(ait, pplayer, pcity, &build_new, keep_credit);
 
     change_build_target(pplayer, pcity, &build_new,
                         E_CITY_PRODUCTION_CHANGED);
