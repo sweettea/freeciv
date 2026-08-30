@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+# The designed group-screen campaign (W25, 2026-08-30).
+#
+# NOT LAUNCHED BY THE EPIC THAT WROTE IT. This script is the design,
+# written down and budgeted, so the decision to buy ~6600 games is a
+# decision somebody takes deliberately rather than one an agent takes
+# by starting a loop.
+#
+# ==================================================================
+# WHAT THIS IS, AND WHY IT IS SHAPED LIKE THIS
+# ==================================================================
+#
+# The 2026-08-23 tune-postfix campaign moved 195 of 269 constants and
+# its holdout came back -52.5 / -32.6. The post-mortem
+# (findings/tune-postfix-verdict-2026-08-25.md) put that on two
+# defects, and this campaign fixes both:
+#
+#   1. It selected the MAX of ~40 unreplicated draws from an objective
+#      whose SE was ~41.  Here every block best is replicated:
+#      --accept paired --accept-z 2 makes a challenger clear two
+#      standard errors of its PAIRED diff against the incumbent, and
+#      --reeval takes the block best from fresh seeds the search never
+#      saw, with the incumbent re-measured on the same fresh sample.
+#
+#   2. It fitted ~80 free parameters against 8 noisy seeds.  Here the
+#      widest block is 9 constants against 20 seeds, and the knob
+#      screen (findings/knob-screen-2026-08-30.md) chose them: every
+#      tier-A constant has a validated replay rule and a measured flip
+#      rate, and the 166 knobs that cannot be shown to move a single
+#      logged decision in 40 games are PINNED, not mutated.
+#
+# Venue, from the same document's Part 2: screen on contested.conf
+# --mixed at FULL length (the mixed venue's T100 surrogate r is +0.92
+# / +0.93 because both arms share the game's shocks), report on the
+# paired contested + lategame-80 holdout at full length.  T100
+# truncation was measured and rejected: its efficiency bracket is
+# 0.90-1.41, straddling 1.0.
+#
+# Two stages, because the tiers ask different questions:
+#
+#   Stage 1 FIT     AUCTION (5 knobs), DEFOPS (6).  Tier A: measured
+#                   flip rates, worth fitting.  Deeper search.
+#   Stage 2 SCREEN  BFEAR (9), BASSAULT (6), BSITE (6), BCIVIL (7).
+#                   Tier B: the instrument fires but the log cannot
+#                   price a flip.  The question is "does this
+#                   SUBSYSTEM move score at all", and the answer a
+#                   block returns is exactly that -- with --accept
+#                   paired, a block that finds nothing significant
+#                   returns its incumbent unchanged, which IS the
+#                   screen's negative result.  Only a block that
+#                   clears its own replicated test earns a later
+#                   individual pass; nothing here fits a tier-B knob.
+#
+# Honest about the instrument: tune.py runs a (mu,lambda) ES per
+# block, not a Plackett-Burman design.  What makes it a GROUP screen
+# is the blocking and the acceptance rule, not the sampler.  A real
+# fractional-factorial over the four tier-B blocks would answer the
+# same question in fewer arms and nobody has written one.
+#
+# ==================================================================
+# BUDGET -- from tune.py --dry-run --sigma-seed 115 (2026-08-30)
+# ==================================================================
+#
+#   Stage 1  AUCTION  5 params, 50 candidates, <= 1656 games
+#            DEFOPS   6 params, 50 candidates, <= 1656 games
+#            subtotal                          <= 3312 games
+#   Stage 2  BFEAR    9 params, 24 candidates, <=  784 games
+#            BASSAULT 6 params, 24 candidates, <=  784 games
+#            BSITE    6 params, 24 candidates, <=  784 games
+#            BCIVIL   7 params, 24 candidates, <=  784 games
+#            subtotal                          <= 3136 games
+#   Holdout  2 configs x 20 seeds x 2 arms         80 games
+#            (40 if the s4/s6 baseline dirs are hardlinked in, as
+#             benchmark/nogates-holdout.sh does -- baseline games are
+#             tuning-independent)
+#
+#   TOTAL <= 6528 campaign games + 80 report games = 6608
+#   At the corpus median 192 s/game and --jobs 10, ~35 hours.
+#   Cache hits make it fewer, never more.
+#
+#   Expected SE at sigma 115 per seed, both stages:
+#     objective  +/- 25.7   (20 seeds x 1 config)
+#     race rung  +/- 40.7   ( 8 seeds x 1 config)
+#     reeval     +/- 40.7   ( 8 seeds x 1 config)
+#
+#   READ THAT LAST LINE BEFORE STARTING. The replicated block best is
+#   taken on 8 fresh seeds, SE 40.7, and the effects on the table are
+#   the ~16-24 point gate contrasts from 2026-08-25. This budget can
+#   detect a large block effect and CANNOT resolve a small one; a
+#   block that returns its incumbent is evidence of "not big", never
+#   evidence of "nothing". Raising --reeval-seeds is how you buy
+#   resolution, at 2 games per candidate per seed.
+#
+#   sigma = 115 is the per-seed sigma of the PAIRED contested gap
+#   (findings/knob-screen-2026-08-30.md Part 2, reproduced there from
+#   the s4/s5/s6 holdout arms). The MIXED venue's own per-seed sigma
+#   has never been measured, so these SEs are that number carried
+#   across venues. Measuring it from stage 1's own generation-0 games
+#   is the first thing to do once this campaign has run one block.
+#
+# ==================================================================
+# USAGE
+# ==================================================================
+#
+#   benchmark/screen-campaign.sh /path/to/pinned/freeciv-server
+#
+# The binary MUST be pinned: copy a built freeciv-server somewhere no
+# build will touch and pass that path (CLAUDE.md, "Always pin the
+# binary for a benchmark in flight"). The script prints both stages'
+# --dry-run budget and asks for confirmation before the first game.
+#
+set -eu
+
+SERVER=${1:?pinned server binary (see CLAUDE.md: pin it, do not pass build/)}
+cd "$(dirname "$0")/.."
+SERVER=$(readlink -f "$SERVER")
+[ -x "$SERVER" ] || { echo "not executable: $SERVER" >&2; exit 1; }
+
+OUT=benchmark/results/screen-2026-08
+CFG=benchmark/configs/contested.conf
+TRAIN=benchmark/seeds/train.txt
+HOLD=benchmark/seeds/holdout.txt
+N="nice -n 10"
+JOBS=${JOBS:-10}
+PORTBASE=${PORTBASE:-7800}
+
+# Shared discipline for both stages. Changing any of these changes
+# the budget above: re-run --dry-run rather than guessing.
+COMMON=(--config "$CFG" --mixed --seeds "$TRAIN" --count 20
+        --accept paired --accept-z 2
+        --race 8 --race-z 1.0
+        --server "$SERVER" --jobs "$JOBS" --portbase "$PORTBASE")
+
+S1=(--blocks AUCTION,DEFOPS --pop 10 --gens 5 --reeval 3 --reeval-seeds 8)
+S2=(--blocks BFEAR,BASSAULT,BSITE,BCIVIL --pop 8 --gens 3
+    --reeval 2 --reeval-seeds 8)
+
+echo "=== BUDGET: stage 1 (fit, tier A) ==="
+python3 benchmark/tune.py "${COMMON[@]}" "${S1[@]}" \
+  --out "$OUT/s1-fit" --dry-run --sigma-seed 115
+echo
+echo "=== BUDGET: stage 2 (group screen, tier B) ==="
+python3 benchmark/tune.py "${COMMON[@]}" "${S2[@]}" \
+  --out "$OUT/s2-screen" --dry-run --sigma-seed 115
+echo
+echo "Holdout report at the end: 2 configs x 20 seeds x 2 arms = 80 games."
+echo "Tier C (166 knobs the screen cannot show moving a decision) is"
+echo "PINNED at compiled defaults for the whole campaign."
+echo
+printf 'Launch? this buys <= 6608 games, ~35h at --jobs %s [yes/NO] ' "$JOBS"
+read -r reply
+[ "$reply" = yes ] || { echo "not launched"; exit 0; }
+
+mkdir -p "$OUT"
+
+echo "=== stage 1: fit tier A on mixed contested ($(date)) ==="
+$N python3 benchmark/tune.py "${COMMON[@]}" "${S1[@]}" --out "$OUT/s1-fit"
+
+echo "=== stage 2: group-screen tier B, from stage 1's vector ($(date)) ==="
+$N python3 benchmark/tune.py "${COMMON[@]}" "${S2[@]}" \
+  --start "$OUT/s1-fit/best-tuning.ini" --out "$OUT/s2-screen"
+
+# ------------------------------------------------------------------
+# REPORT ONLY. Nothing below selects anything: --report-holdout
+# evaluates one fixed tuning on seeds the search never saw, on the
+# paired venue rather than the mixed one it was screened on. If it
+# disagrees with the training numbers, the training numbers are wrong
+# -- that is what the holdout is for, and 2026-08-25 is what it looks
+# like when the holdout is believed.
+# ------------------------------------------------------------------
+BEST=$OUT/s2-screen/best-tuning.ini
+
+echo "=== holdout report: contested ($(date)) ==="
+$N python3 benchmark/tune.py --report-holdout "$BEST" \
+  --config "$CFG" --seeds "$HOLD" --count 20 \
+  --portbase "$PORTBASE" --server "$SERVER" --jobs "$JOBS" \
+  --out "$OUT/holdout-war"
+
+echo "=== holdout report: lategame-80 ($(date)) ==="
+$N python3 benchmark/tune.py --report-holdout "$BEST" \
+  --config benchmark/configs/lategame-80.conf --seeds "$HOLD" --count 20 \
+  --portbase "$PORTBASE" --server "$SERVER" --jobs "$JOBS" \
+  --out "$OUT/holdout-econ"
+
+touch "$OUT/CAMPAIGN-DONE"
+echo "=== screen campaign complete ($(date)) ==="
