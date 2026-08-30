@@ -4104,6 +4104,30 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
             || unit_has_type_flag(u, UTYF_CIVILIAN)
             || u->hp <= 0
             || adv_unit_att_rating(u) <= 0
+            /* THE DRAFT'S QUALITY FLOOR (op-arrival; findings/
+             * op-exchange-rate-2026-08-29.md section 4.5).
+             *
+             * The blade chosen from each city is the weakest DEFENDER
+             * in it, and the release test is marginal on the ODDS,
+             * which are driven by attack rating. So the draft meets a
+             * head count with units that buy almost nothing per
+             * blade, and pays real defence for them:
+             *
+             *   drafted > 0   406 formations   23 strikes   3 takes
+             *   drafted = 0   234 formations   16 strikes  10 takes
+             *
+             * A wave that needed the draft takes a city at ONE SIXTH
+             * the rate of one that did not, and drafted formations
+             * are 63% of everything deep forms. The defensive arm's
+             * deaths rose 15% under the weak-prey gate, which is this
+             * draft's bill arriving.
+             *
+             * op_draft_attack_floor asks the blade to be worth
+             * marching before it is worth borrowing. 0.0 is the
+             * shipped test exactly: adv_unit_att_rating <= 0 is
+             * already refused above, so a floor of 0 excludes
+             * nothing. */
+            || adv_unit_att_rating(u) < tune->op_draft_attack_floor
             || def_ai_unit_data(u, ait)->charge > 0
             || deep_op_claiming(pplayer, u->id) >= 0) {
           continue;
@@ -4391,6 +4415,7 @@ static int deep_op_eta(struct player *pplayer,
                        const struct deep_operation *op,
                        const struct city *target)
 {
+  const struct deep_tuning *tune = deep_tuning_get();
   const struct unit_type *ferrytype
     = best_role_unit_for_player(pplayer, L_FERRYBOAT);
   Continent_id tcont = tile_continent(city_tile(target));
@@ -4428,7 +4453,32 @@ static int deep_op_eta(struct player *pplayer,
   if (n == 0) {
     return 0;
   }
-  k = MIN(MAX(op->required, 1), n);
+  /* THE QUORUM THAT GATES CONTACT (op-arrival; findings/
+   * op-exchange-rate-2026-08-29.md section 4.4).
+   *
+   * `required` is the smallest prefix of the pool that cleared the
+   * formation bar -- a LEGITIMACY number. It is also the k here, and
+   * contact fires at eta <= 1, so the same number decides whether the
+   * wave is allowed to exist and whether it can ever reach the walls:
+   *
+   *   required   launches   strikes        takes
+   *     1-2          27      4 (14.8%)     2 (7.4%)
+   *     3-4         124     20 (16.1%)     4 (3.2%)
+   *     5-6         133      9 ( 6.8%)     6 (4.5%)
+   *     7-8          84      3 ( 3.6%)     1 (1.2%)
+   *     9+          133      2 ( 1.5%)     0 (0.0%)
+   *
+   * 133 launches with a nine-or-more quorum produced two contacts and
+   * no cities. A wave with three blades at the walls and five
+   * stragglers six tiles back is priced as if it were still six tiles
+   * back, so it stands there, re-gates, and aborts.
+   *
+   * op_contact_quorum decouples the two: how many blades have to be
+   * on the target for the wave to be AT the target. 0 keeps the
+   * shipped identity, k = required. */
+  k = tune->op_contact_quorum > 0
+      ? MIN(tune->op_contact_quorum, n)
+      : MIN(MAX(op->required, 1), n);
 
   return t[k - 1];
 }
@@ -5367,7 +5417,12 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
     double eff_worth_now = 0.0;
     const char *abandon = NULL;
     int joined = 0;
-    bool go;
+    /* The arrival factor the net-value test multiplies through, and
+     * the eta it was computed at. 1.0 and 0 are the identity, which
+     * is what op_arrival_gate = 0 leaves them at. */
+    double arrive_now = 1.0;
+    int launch_eta = 0;
+    bool go, patience, eta_ok = TRUE;
 
     if (op->muster) {
       joined = deep_muster_enroll(ait, pplayer, op, staging);
@@ -5428,6 +5483,60 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
       go = odds_now >= deep_op_assault_bar(pplayer, target, FALSE)
            && surv_now >= tune->op_hold_survivors;
 
+      /* PRICING THE JOURNEY (op-arrival, findings/op-exchange-rate
+       * -2026-08-29.md section 8 item 1).
+       *
+       * deep_take_odds_cost() answers P(this stream beats that
+       * garrison, arriving together and fresh). The decision needs
+       * P(this operation ends with us holding that city). The gap
+       * between them is the march, and until this block nothing in
+       * the launch path priced it: 640 operations, 501 launches, 39
+       * contacts. Contacts over launches is 7.8% and falls to
+       * ZERO past eta 4 -- 117 launches at eta >= 5 produced no
+       * contacts and no cities.
+       *
+       * So the gate gets the missing factor and the missing cost.
+       * `arrive_now` is a per-turn-of-eta survival of the march,
+       * folded into the net-value product so the comparison becomes
+       * P(arrive) x P(win) x worth against cost. `op_launch_eta_cap`
+       * is the blunt form of the same claim -- past some eta the
+       * product is zero and no worth redeems it -- and it refuses the
+       * launch outright, patience release included, because a wave
+       * the model will not pay for must not be released by a clock
+       * either.
+       *
+       * The eta is the one the census bucketed on: deep_op_eta()'s
+       * k-th smallest member arrival, the same number the march line
+       * reports, not the max over the present force that odds_now was
+       * priced at. Those two differ, and the finding is stated in
+       * terms of the first.
+       *
+       * The decay is applied as a product of eta factors rather than
+       * pow(), so the arithmetic is exactly reproducible across libm
+       * versions and the off arm cannot drift into it.
+       *
+       * Everything here is behind op_arrival_gate: at 0 not one term
+       * is computed and the binary is the shipped one. */
+      if (tune->op_arrival_gate) {
+        int e;
+
+        launch_eta = MAX(deep_op_eta(pplayer, op, target), 1);
+        if (tune->op_launch_eta_cap > 0
+            && launch_eta > tune->op_launch_eta_cap) {
+          log_base(deep_metric_log_level(),
+                   "deep-netval turn=%d player=\"%s\" op=%d etacap"
+                   " target=%d force=%d eta=%d cap=%d odds=%.3f",
+                   game.info.turn, player_name(pplayer), oi,
+                   op->target_city, present, launch_eta,
+                   tune->op_launch_eta_cap, odds_now);
+          go = FALSE;
+          eta_ok = FALSE;
+        }
+        for (e = 0; e < launch_eta && tune->op_arrival_decay < 1.0; e++) {
+          arrive_now *= tune->op_arrival_decay;
+        }
+      }
+
       /* And then the question the BAR cannot ask: is the whole fight
        * worth having (human call 2026-08-06).
        *
@@ -5457,8 +5566,36 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
          * changes hands with it (BALANCE). */
         double raw_worth = def_ai_city_data(target, ait)->worth;
         double eff_worth = deep_conquest_worth(ait, pplayer, target);
-        double value = odds_now * eff_worth;
+        double value = arrive_now * odds_now * eff_worth;
         double cost = tune->attack_loss_gain * loss_now * SHIELD_WEIGHTING;
+
+        /* THE COST OF THE WALK ITSELF. The duel is the only thing the
+         * cost side has ever charged, and the ledger says the duel is
+         * not where the blades go: over 232 closed operations, 354
+         * member deaths against 2 kills at the walls, of which 1.78
+         * per operation were booked "dead in transit". A model that
+         * prices the battle and buys a journey must at least be made
+         * to pay for the journey.
+         *
+         * op_march_loss_rate is members lost per turn of march. It
+         * converts at the mean build cost of the force actually
+         * standing here, through the same attack_loss_gain x
+         * SHIELD_WEIGHTING referee the duel loss uses, so the two
+         * halves of the cost cannot disagree about what a shield is
+         * worth. Clamped at the whole force: an operation cannot lose
+         * more than it has. */
+        if (tune->op_arrival_gate && tune->op_march_loss_rate > 0.0
+            && present > 0) {
+          double lost = MIN(tune->op_march_loss_rate * launch_eta,
+                            (double) present);
+          double shields = 0.0;
+
+          for (i = 0; i < present; i++) {
+            shields += unit_build_shield_cost_base(here[i]);
+          }
+          cost += tune->attack_loss_gain * lost * (shields / present)
+                  * SHIELD_WEIGHTING;
+        }
 
         eff_worth_now = eff_worth;
 
@@ -5490,14 +5627,44 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
                                     here, present);
     }
 
-    if (go
-        /* The half-quorum patience release is for a wave that formed
-         * against a priced quorum. A muster never formed against one
-         * (ERA 3b): its release is the odds test, and its patience
-         * rule is the stall clock, not this one. */
-        || (!op->muster
-            && game.info.turn - op->formed_turn >= tune->op_muster_wait
-            && present >= (op->required + 1) / 2)) {
+    /* THE HALF-QUORUM PATIENCE RELEASE, and the one question it was
+     * never made to answer.
+     *
+     * It is for a wave that formed against a priced quorum. A muster
+     * never formed against one (ERA 3b): its release is the odds
+     * test, and its patience rule is the stall clock, not this one.
+     *
+     * What the census found (findings/op-exchange-rate-2026-08-29.md
+     * section 4.3): this clause released 273 of 501 launches at a mean
+     * predicted take probability of 0.08-0.15, and those launches took
+     * a city 1.1% of the time against 4.4% for the ones that cleared
+     * the bar. Because it is the right side of an `||` evaluated after
+     * the net-value test has already set `go` false, it overrode the
+     * odds bar, the survivor floor AND an explicit refusal -- value
+     * 794 against cost 1053, and 898 against 1671, both launched.
+     *
+     * op_patience_odds_floor does not turn patience into the bar; it
+     * gives patience a floor. Below it the wave falls through to the
+     * wait-cap branch it always had -- retarget from where it stands,
+     * or bank the members -- which is a strictly better use of the
+     * blades than a march nobody priced.
+     *
+     * The floor is read only when op_launch_odds is on, because
+     * odds_now is 0 by construction otherwise and the floor would
+     * quietly become "never launch". At 0.0 this is the shipped
+     * expression, term for term. */
+    patience = (!op->muster
+                && game.info.turn - op->formed_turn >= tune->op_muster_wait
+                /* The eta cap is a refusal, not a preference: a wave
+                 * the arrival model will not pay for must not be
+                 * released by a clock either. */
+                && eta_ok
+                && present >= (op->required + 1) / 2
+                && (tune->op_patience_odds_floor <= 0.0
+                    || !tune->op_launch_odds
+                    || odds_now >= tune->op_patience_odds_floor));
+
+    if (go || patience) {
       /* Land or sea, the wave marches shadowed: the ferry system
        * carries the crossing (transported members stay on stock's
        * leash throughout), while the op re-gates the landing every
@@ -5555,7 +5722,7 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
                "deep-op turn=%d player=\"%s\" op=%d march target=%d"
                " present=%d required=%d waited=%d eta=%d odds=%.3f"
                " surv=%.2f bar=%d loss=%.2f cost=%.1f eworth=%.1f"
-               " patience=%d",
+               " patience=%d arrive=%.3f",
                game.info.turn, player_name(pplayer), oi, op->target_city,
                present, op->required, game.info.turn - op->formed_turn,
                op->march_eta, odds_now, surv_now,
@@ -5563,7 +5730,7 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
                loss_now,
                tune->attack_loss_gain * loss_now * SHIELD_WEIGHTING,
                eff_worth_now,
-               go ? 0 : 1);
+               go ? 0 : 1, arrive_now);
       /* Fall through: the first march turn re-gates immediately. */
     } else if (abandon != NULL) {
       /* Dissolve rather than retarget: a retarget is a fresh
@@ -5636,6 +5803,60 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
     }
     eta = deep_op_eta(pplayer, op, target);
 
+    /* THE MARCH, one line per operation per turn.
+     *
+     * The exchange-rate census (findings/op-exchange-rate-2026-08-29.md)
+     * could read only the endpoints of a march: the launch line and
+     * whatever terminal line the wave earned. Everything the epic has
+     * to price lives in between. P(arrive | eta) has to be FITTED, and
+     * a curve cannot be fitted to two points per operation.
+     *
+     * `hp`/`hpmax` are the column that settles section 4.2's third
+     * candidate. deep_take_odds_cost() reads live HP, dai_gothere()
+     * spends the wave's blood getting there, and nothing carries a
+     * damage term across the march -- so a wave that arrives at 60%
+     * health was priced healthy. One probe operation lost 45x of its
+     * odds with members and eta both constant; only a per-turn HP
+     * read can say whether that is the population or an anecdote.
+     *
+     * `dist` is the quorum's raw distance (the same k-th smallest the
+     * eta is built from) and `near` the closest member's, so "the
+     * wave is converging" and "the wave has stalled" stop being the
+     * same absence of evidence. Distance CLOSED is the difference
+     * between consecutive lines; storing a launch distance in the op
+     * would be state, and state is not observation.
+     *
+     * Observation only: every field is a pure read of units and tiles
+     * the block above already resolved. */
+    {
+      int hp = 0, hpmax = 0, near = FC_INFINITY;
+      int d[DEEP_OP_MEMBERS];
+      int j, nd = 0, k;
+
+      for (i = 0; i < ns; i++) {
+        int di = real_map_distance(unit_tile(stream[i]),
+                                   city_tile(target));
+
+        hp += stream[i]->hp;
+        hpmax += unit_type_get(stream[i])->hp;
+        near = MIN(near, di);
+        for (j = nd; j > 0 && d[j - 1] > di; j--) {
+          d[j] = d[j - 1];
+        }
+        d[j] = di;
+        nd++;
+      }
+      k = MIN(MAX(op->required, 1), nd);
+      log_base(deep_metric_log_level(),
+               "deep-march turn=%d player=\"%s\" op=%d target=%d"
+               " marched=%d eta=%d members=%d required=%d"
+               " hp=%d hpmax=%d dist=%d near=%d",
+               game.info.turn, player_name(pplayer), oi, op->target_city,
+               game.info.turn - op->march_turn, eta, ns, op->required,
+               hp, hpmax, nd > 0 ? d[k - 1] : -1,
+               nd > 0 ? near : -1);
+    }
+
     if (eta <= 1) {
       /* Contact: the wave stands at the walls. The op takes its
        * members back from the stock attack path and fights the
@@ -5672,10 +5893,70 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
        * at the bar does not turn back on the first wobble. Banked
        * members go back to stock with a clean slate. */
       if (tune->op_abort_floor > 0.0 && ns > 0) {
-        double odds = deep_take_odds_at_arrival(nmap, target, stream, ns,
-                                                eta);
+        /* GIVING THE RE-GATE A MEMORY (op-arrival; findings/
+         * op-exchange-rate-2026-08-29.md section 4.2 and item 4).
+         *
+         * abort-odds is 302 of 640 terminal causes, five times
+         * anything else that is not the end of the game -- and in
+         * 57-71% of those aborts the wave was INTACT OR LARGER than
+         * at launch, its priced odds having fallen from 0.86-0.95 to
+         * 0.07-0.13 anyway, with an eta HIGHER at the abort than at
+         * launch. After five to sixteen turns of marching the wave is
+         * farther from the target in the model's own currency than
+         * when it set out.
+         *
+         * That is self-defeating in a precise sense.
+         * deep_take_odds_at_arrival() charges the defender
+         * eta x deep_reinforce_rate() virtual copies of its best
+         * buildable defender. A wave that fails to converge inflates
+         * its own eta, which inflates the phantom garrison, which
+         * drives the odds under op_abort_floor, which dissolves the
+         * wave -- and the march already paid for is nowhere in the
+         * comparison. The hysteresis the code documents
+         * (op_abort_floor below op_take_target) is hysteresis in the
+         * ODDS dimension only; there is none in the value dimension
+         * and no memory of sunk cost.
+         *
+         * Two terms, one gate:
+         *
+         * op_regate_eta_freeze prices the reinforcement at MIN(now,
+         * launch), so genuine progress still lowers the phantom
+         * garrison but a stalled wave can no longer raise it. Not the
+         * launch eta flat: a wave that really did close the distance
+         * has earned the cheaper price, and freezing it at launch
+         * would overcharge exactly the operations that are working.
+         * Guarded on march_eta >= 1 -- deep_op_drive_raid() and the
+         * reload path both leave it 0.
+         *
+         * op_regate_sunk_gain lowers the floor by the fraction of the
+         * journey already covered, marched / (marched + eta): the
+         * value-dimension hysteresis the re-gate has never had. At
+         * 1.0 a wave that has spent nine of its ten turns faces a
+         * floor a tenth of the nominal one; at 0.0 the floor is the
+         * nominal one, which is what ships.
+         *
+         * Behind op_regate_gate: at 0 neither term is computed and
+         * the arithmetic is the shipped arithmetic. */
+        int price_eta = eta;
+        double floor_eff = tune->op_abort_floor;
+        double odds;
 
-        if (odds < tune->op_abort_floor) {
+        if (tune->op_regate_gate) {
+          int marched = game.info.turn - op->march_turn;
+
+          if (tune->op_regate_eta_freeze && op->march_eta >= 1) {
+            price_eta = MIN(eta, op->march_eta);
+          }
+          if (tune->op_regate_sunk_gain > 0.0 && marched > 0) {
+            double sunk = (double) marched / (marched + MAX(eta, 1));
+
+            floor_eff *= MAX(0.0, 1.0 - tune->op_regate_sunk_gain * sunk);
+          }
+        }
+        odds = deep_take_odds_at_arrival(nmap, target, stream, ns,
+                                         price_eta);
+
+        if (odds < floor_eff) {
           bool crossing = deep_op_crossing(op, target);
 
           if (crossing) {
@@ -5706,10 +5987,11 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
             log_base(deep_metric_log_level(),
                      "deep-op turn=%d player=\"%s\" op=%d regate target=%d"
                      " odds=%.2f eta=%d members=%d def_n=%d def_best=%d"
-                     " marched=%d",
+                     " marched=%d peta=%d floor=%.3f",
                      game.info.turn, player_name(pplayer), oi,
                      op->target_city, odds, eta, ns, def_n, def_best,
-                     game.info.turn - op->march_turn);
+                     game.info.turn - op->march_turn, price_eta,
+                     floor_eff);
           }
           deep_op_dissolve(op, oi, "abort-odds", pplayer);
           return;

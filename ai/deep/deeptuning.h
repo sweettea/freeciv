@@ -3307,6 +3307,116 @@ struct deep_tuning {
    * that was actually chosen. */
   int weak_prey_gate;
   double weak_prey_gain;
+
+  /* --- op-arrival: the launch gate's missing factors. ---
+   *
+   * findings/op-exchange-rate-2026-08-29.md. Every knob here defaults
+   * to the identity value, so the off arm is the shipped binary byte
+   * for byte and the A/B is a clean paired comparison. */
+
+  /* The odds the HALF-QUORUM PATIENCE RELEASE must still clear.
+   *
+   * The launch block reads
+   *
+   *   if (go || (!muster && waited >= op_muster_wait
+   *              && present >= (required + 1) / 2))
+   *
+   * and the second clause is a head count on a clock: it consults no
+   * odds, no survivor floor and no net value. Worse, it is the right
+   * side of an `||` evaluated AFTER the net-value test has set `go`
+   * false, so it overrides an explicit refusal -- caught twice in 27
+   * probe launches.
+   *
+   * The measured population: 273 of 501 launches (54.5%) came through
+   * it at mean predicted odds 0.08-0.15, and took a city 1.1% of the
+   * time against the bar-clearing population's 4.4%. A patience knob
+   * was acting as a launch authority.
+   *
+   * At > 0 the release must ALSO clear this odds floor. Set it below
+   * the assault bar or it is not a patience rule any more -- it is the
+   * bar with extra steps. A wave that waits out the clock and cannot
+   * clear the floor falls through to the wait-cap branch it always
+   * had: retarget from where it stands, or bank its members.
+   *
+   * 0.0 = today's behaviour exactly. Only read when op_launch_odds is
+   * on: with the odds gate off there is no odds_now to compare and the
+   * floor would silently become "never launch". */
+  double op_patience_odds_floor;
+
+  /* PRICING THE JOURNEY. One gate over the three terms that make the
+   * launch decision ask P(this operation ends holding that city)
+   * instead of P(this stream beats that garrison, arriving together
+   * and fresh). 0 = not one of them is computed and the binary is the
+   * shipped one; the three ship together because they are one
+   * hypothesis with three handles, and splitting them into three A/Bs
+   * would be three reads of one causal chain. */
+  int op_arrival_gate;
+  /* P(the march survives one more turn), compounded over the quorum's
+   * eta and folded into the net-value product: the gate compares
+   * P(arrive) x P(win) x worth against cost instead of P(win) x
+   * worth. Measured proxy for the factor that is missing: contacts
+   * over launches is 7.8% pooled, 100% at eta 0-1, 2.9% at eta 2,
+   * 1.3% at eta 3-4 and 0.0% at eta 5+. 1.0 = no decay. */
+  double op_arrival_decay;
+  /* Refuse to launch at all when the quorum's eta exceeds this. The
+   * blunt form of the same claim: 117 launches at eta >= 5 produced
+   * zero contacts and zero cities, so past some distance the product
+   * is zero and no worth redeems it. It refuses the half-quorum
+   * patience release too -- a wave the arrival model will not pay for
+   * must not be released by a clock either. 0 = no cap. */
+  int op_launch_eta_cap;
+  /* Expected members lost per turn of march, charged into the
+   * net-value cost at the mean build cost of the force standing at
+   * the staging tile, through the same attack_loss_gain x
+   * SHIELD_WEIGHTING referee the duel loss uses. The cost side has
+   * only ever charged the duel, and the per-operation ledger says the
+   * duel is not where the blades go: 354 member deaths against 2
+   * kills at the walls over 232 closed operations, 1.78 per operation
+   * booked dead in transit. 0.0 = the duel alone, as shipped. */
+  double op_march_loss_rate;
+
+  /* THE MARCH RE-GATE'S MEMORY. One gate over the two terms that stop
+   * a marching wave from talking itself out of its own operation.
+   * abort-odds is 302 of 640 terminal causes and in 57-71% of them
+   * the wave was intact or larger than at launch. 0 = neither term is
+   * computed. */
+  int op_regate_gate;
+  /* Fraction of the journey already covered, credited against the
+   * abort floor: floor x (1 - gain x marched / (marched + eta)). The
+   * hysteresis op_abort_floor gives in the ODDS dimension, finally
+   * given in the value one -- today the march already paid for is not
+   * in the comparison at all. 0.0 = the nominal floor. */
+  double op_regate_sunk_gain;
+  /* Price the phantom reinforcement at MIN(eta now, eta at launch)
+   * instead of eta now. deep_take_odds_at_arrival() charges the
+   * defender eta x deep_reinforce_rate() virtual defenders, so a wave
+   * that fails to converge inflates its own eta, which inflates the
+   * phantom garrison, which drives the odds under the floor, which
+   * dissolves the wave. Not the launch eta flat: a wave that really
+   * did close the distance has earned the cheaper price. 0 = the
+   * current eta, as shipped. */
+  int op_regate_eta_freeze;
+  /* The k in deep_op_eta()'s k-th smallest member arrival, decoupled
+   * from `required`. `required` is the smallest prefix of the pool
+   * that cleared the formation bar -- a LEGITIMACY number -- and it
+   * is also the number that decides when the wave has ARRIVED, since
+   * contact fires at eta <= 1. So a big wave can never reach the
+   * walls: 133 launches at required >= 9 produced two contacts and
+   * zero cities, against 14.8% strike at required 1-2. A wave with
+   * three blades at the walls and five stragglers six tiles back is
+   * priced as if it were still six tiles back. 0 = k is `required`,
+   * as shipped. */
+  int op_contact_quorum;
+  /* Minimum adv_unit_att_rating for a blade the garrison draft is
+   * allowed to borrow. The draft picks the weakest DEFENDER in each
+   * city while the release test is marginal on the odds, which are
+   * driven by attack rating -- so it meets a head count with units
+   * that buy almost nothing and pays real defence for them. Drafted
+   * formations are 63% of everything deep forms and take a city at
+   * 0.7% against 4.3% for undrafted ones. 0.0 = the shipped test:
+   * a rating of 0 or less is already refused, so a floor of 0
+   * excludes nothing. */
+  double op_draft_attack_floor;
 };
 
 void deep_tuning_init(void);

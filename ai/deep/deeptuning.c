@@ -345,6 +345,34 @@ static const struct deep_tuning deep_tuning_defaults = {
                                          * disarmed rival's city worth 2x a
                                          * peer's. Inert while the gate is
                                          * 0 */
+  .op_patience_odds_floor = 0.0,        /* PLACEHOLDER; 0 = the half-quorum
+                                         * wait-cap release asks nothing,
+                                         * byte for byte */
+  .op_arrival_gate = 0,                 /* 0 = the launch path prices the
+                                         * duel and never the march,
+                                         * byte for byte */
+  .op_arrival_decay = 1.0,              /* PLACEHOLDER; 1.0 = no decay.
+                                         * Inert while the gate is 0 */
+  .op_launch_eta_cap = 0,               /* PLACEHOLDER; 0 = no cap.
+                                         * Inert while the gate is 0 */
+  .op_march_loss_rate = 0.0,            /* PLACEHOLDER; 0 = the duel is the
+                                         * whole cost. Inert while the gate
+                                         * is 0 */
+  .op_regate_gate = 0,                  /* 0 = the re-gate has no memory
+                                         * and an inflating eta,
+                                         * byte for byte */
+  .op_regate_sunk_gain = 0.0,           /* PLACEHOLDER; 0 = the nominal
+                                         * floor. Inert while the gate
+                                         * is 0 */
+  .op_regate_eta_freeze = 0,            /* PLACEHOLDER; 0 = price at the
+                                         * current eta. Inert while the
+                                         * gate is 0 */
+  .op_contact_quorum = 0,               /* PLACEHOLDER; 0 = the k in the
+                                         * eta is `required`, byte for
+                                         * byte */
+  .op_draft_attack_floor = 0.0,         /* PLACEHOLDER; 0 = the draft's
+                                         * shipped test, which already
+                                         * refuses a rating <= 0 */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -661,7 +689,17 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(prod_keep_gate) \
   TUNE_DOUBLE(prod_keep_gain) \
   TUNE_INT(weak_prey_gate) \
-  TUNE_DOUBLE(weak_prey_gain)
+  TUNE_DOUBLE(weak_prey_gain) \
+  TUNE_DOUBLE(op_patience_odds_floor) \
+  TUNE_INT(op_arrival_gate) \
+  TUNE_DOUBLE(op_arrival_decay) \
+  TUNE_INT(op_launch_eta_cap) \
+  TUNE_DOUBLE(op_march_loss_rate) \
+  TUNE_INT(op_regate_gate) \
+  TUNE_DOUBLE(op_regate_sunk_gain) \
+  TUNE_INT(op_regate_eta_freeze) \
+  TUNE_INT(op_contact_quorum) \
+  TUNE_DOUBLE(op_draft_attack_floor)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 
