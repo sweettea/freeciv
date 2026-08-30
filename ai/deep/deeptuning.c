@@ -410,6 +410,22 @@ static const struct deep_tuning deep_tuning_defaults = {
                                          * settler-build-time, the
                                          * break-even window. Inert while
                                          * the gate is 0 */
+  .diplo_price_gate = 0,                /* 0 = stock's flag decides the
+                                         * defensive diplomat,
+                                         * byte for byte */
+  .diplo_evidence_floor = 0,            /* PLACEHOLDER; 0 = no evidence
+                                         * is required. Inert while the
+                                         * gate is 0 */
+  .diplo_gap_floor = 0,                 /* PLACEHOLDER, UNTESTED; 0 =
+                                         * no tech gap is required.
+                                         * Inert while the gate is 0 */
+  .mil_infra_gate = 0,                  /* 0 = mil-infra is funded from
+                                         * deep's injected fear and
+                                         * never refused, byte for
+                                         * byte */
+  .mil_infra_threat_floor = 0,          /* PLACEHOLDER; 0 refuses
+                                         * nothing. Inert while the
+                                         * gate is 0 */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -749,7 +765,12 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(founder_site_cap_gate) \
   TUNE_DOUBLE(founder_site_cap_slack) \
   TUNE_INT(founder_join_guard_gate) \
-  TUNE_DOUBLE(founder_join_guard_mult)
+  TUNE_DOUBLE(founder_join_guard_mult) \
+  TUNE_INT(diplo_price_gate) \
+  TUNE_INT(diplo_evidence_floor) \
+  TUNE_INT(diplo_gap_floor) \
+  TUNE_INT(mil_infra_gate) \
+  TUNE_INT(mil_infra_threat_floor)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 

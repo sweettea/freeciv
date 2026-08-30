@@ -5257,6 +5257,93 @@ static adv_want deep_deterrence_dividend(const struct civ_map *nmap,
 }
 
 /**********************************************************************//**
+  The evidence the DEFENSIVE DIPLOMAT is bought on, counted rather than
+  assumed.
+
+  Stock's trigger is `city_data->diplomat_threat`, whose comment says
+  "Enemy diplomat or spy is near the city" (daicity.h:58) and whose
+  code (daimilitary.c:905) is
+
+      if (utype_acts_hostile(unit_type_get(punit)) && 2 >= move_time)
+
+  -- and `utype_acts_hostile()` is TRUE for ACTRES_ATTACK,
+  ACTRES_PILLAGE, ACTRES_BOMBARD and ACTRES_CONQUER_CITY as well as for
+  the spy families (common/actres.c), so an approaching Warriors sets
+  the diplomat flag. Upstream bug 50; ai/default keeps it.
+
+  This counts BOTH populations under stock's own threshold, so the flag
+  and the thing the flag claims to mean can be told apart per
+  city-turn. Nothing here is a new constant: the radius is stock's
+  `2 >= move_time` with move_time approximated as distance over the
+  unit's own move rate (the pathfinder is what makes stock's exact,
+  and a census may not pay for one per city per turn), and the
+  populations are `utype_acts_hostile()` and `UTYF_DIPLOMAT`
+  themselves.
+
+  `gap` is the count of techs the most advanced hostile neighbour in
+  contact knows and we do not -- the quantity stock's own
+  count_stealable_techs() computes for the OFFENSIVE diplomat and
+  never for the defensive one, and the only evidence in the game that
+  says what an enemy diplomat would come here to take.
+**************************************************************************/
+struct deep_dip_evidence {
+  int dip;        /* Foreign diplomat-class units inside stock's window */
+  int host;       /* Foreign hostile-capable units, same window */
+  int dip_eta;    /* Turns to the nearest foreign diplomat, -1 if none */
+  int gap;        /* Techs a hostile neighbour has and we do not */
+};
+
+static void deep_diplomat_evidence(const struct player *pplayer,
+                                   const struct city *pcity,
+                                   struct deep_dip_evidence *e)
+{
+  const struct tile *ptile = city_tile(pcity);
+  const struct research *ours = research_get(pplayer);
+
+  e->dip = e->host = e->gap = 0;
+  e->dip_eta = -1;
+
+  players_iterate_alive(aplayer) {
+    bool counted = FALSE;
+
+    if (aplayer == pplayer || pplayers_allied(pplayer, aplayer)
+        || player_diplstate_get(pplayer, aplayer)->type == DS_NO_CONTACT) {
+      continue;
+    }
+    unit_list_iterate(aplayer->units, aunit) {
+      const struct unit_type *at = unit_type_get(aunit);
+      int mr = MAX(1, at->move_rate / SINGLE_MOVE);
+      int d = real_map_distance(unit_tile(aunit), ptile);
+      int eta = (d + mr - 1) / mr;
+
+      if (eta > 2 || !utype_acts_hostile(at)) {
+        continue;
+      }
+      e->host++;
+      counted = TRUE;
+      if (utype_has_flag(at, UTYF_DIPLOMAT)) {
+        e->dip++;
+        if (e->dip_eta < 0 || eta < e->dip_eta) {
+          e->dip_eta = eta;
+        }
+      }
+    } unit_list_iterate_end;
+    if (counted) {
+      const struct research *theirs = research_get(aplayer);
+      int n = 0;
+
+      advance_index_iterate(A_FIRST, idx) {
+        if (research_invention_state(ours, idx) != TECH_KNOWN
+            && research_invention_state(theirs, idx) == TECH_KNOWN) {
+          n++;
+        }
+      } advance_index_iterate_end;
+      e->gap = MAX(e->gap, n);
+    }
+  } players_iterate_alive_end;
+}
+
+/**********************************************************************//**
   THE ATTACKER'S GARRISON CREDIT (NETTHREAT item 3, promoted to lead by
   the human 2026-08-12: "an attack unit's defensive value is the
   under-credited half, so credit it first").
@@ -5363,6 +5450,15 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
   struct adv_data *ai = adv_data_get(pplayer, NULL);
   struct unit_type *punittype;
   unsigned int our_def, urgency;
+  /* Stock's OWN assess_danger() figure, before deep injects a
+   * single anticipatory term. Hoisted to function scope because
+   * the mil-infra gate several hundred lines below has to be able
+   * to tell a MEASURED threat from a feared one, and the injection
+   * block overwrites city_data->danger in place. */
+  unsigned int fear_pre = 0;
+  /* "allow" until the gate refuses; "off" is not a separate state
+   * because a shut gate allows everything by construction. */
+  const char *infra_verdict = "allow";
   struct tile *ptile = pcity->tile;
   struct unit *virtualunit;
   struct ai_city *city_data = def_ai_city_data(pcity, ait);
@@ -5413,7 +5509,6 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
      * line when near == 0, and the prior writes none at all).
      * Observation only: the locals hold values this block was already
      * computing, in the order it already computed them. */
-    unsigned int fear_pre = city_data->danger;
     unsigned int surv, floored;
     int evid = deep_hostile_capability_near(pplayer, city_tile(pcity),
                                             NULL);
@@ -5423,6 +5518,8 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
       density = 0;
       prior = 0;
     }
+    fear_pre = city_data->danger;
+
     if (fmult != 1.0 && over + shadow + density + prior + barb > 0) {
       deep_plr_data(pplayer)->stance_fear_gated++;
     }
@@ -5511,14 +5608,76 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
      * choice and merge it back as an emergency-tier want with a
      * calibrated value instead. */
     struct adv_choice *dip = adv_new_choice();
+    struct deep_dip_evidence ev;
+    const struct deep_tuning *dt = deep_tuning_get();
+    const char *verdict = "off";
 
     deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
     dai_choose_diplomat_defensive(ait, pplayer, pcity, dip, our_def);
     deep_techcensus_mark(ait, pplayer, DEEP_TC_STOCK_DIPLOMAT);
+    /* DIPLOMAT census. 138 shields and 43.5 gold per player-game
+     * (findings/diploprice-verdict-2026-08-30.md §1.1) leave this
+     * function on a flag no line has ever printed, and the archive
+     * can only see the trigger as an END-STATE snapshot. `threat` is
+     * stock's flag, `dip`/`host` are the two populations under
+     * stock's own threshold, and their disagreement is the whole
+     * question. Written for EVERY city-turn, including the quiet
+     * ones: deep-density's silence at near==0 cost the last census
+     * its denominator. Observation only. */
+    deep_diplomat_evidence(pplayer, pcity, &ev);
+    if (dip->want > 0) {
+      verdict = "allow";
+      /* THE GATE (S-DIPLOPRICE). Stock's trigger claims to mean "an
+       * enemy diplomat is near this city" and fires on any unit that
+       * can attack, pillage or bombard -- upstream bug 50. Measured
+       * on the end state of 40 games, only 28.6% (contested) / 21.2%
+       * (lategame-80) of the cities with a hostile-capable unit
+       * within two tiles had an enemy diplomat within the same
+       * radius, and the whole 138-shield line is spent on the flag.
+       *
+       * With the gate open deep substitutes its own trigger: the
+       * evidence the flag's own comment describes, counted here, in
+       * stock's own window. It does not touch the WANT -- a warranted
+       * defensive diplomat is still worth diplomat_defence_value --
+       * because nothing in the census gives a magnitude and rule 7
+       * forbids inventing one to have something to fit. What it
+       * changes is WHETHER the choice is made at all.
+       *
+       * Both floors are PLACEHOLDER. diplo_evidence_floor's tested
+       * value is 1, which is not a magnitude but the literal reading
+       * of "an enemy diplomat or spy is near the city".
+       * diplo_gap_floor ships and is deliberately untested: the
+       * census gives no threshold for what an enemy diplomat would
+       * come here to take, so a number would be invented. */
+      if (dt->diplo_price_gate > 0
+          && (ev.dip < dt->diplo_evidence_floor
+              || ev.gap < dt->diplo_gap_floor)) {
+        verdict = "refuse";
+        dip->want = 0;
+      }
+    }
+    /* DIPLOMAT census. 138 shields and 43.5 gold per player-game
+     * (findings/diploprice-verdict-2026-08-30.md §1.1) leave this
+     * function on a flag no line has ever printed, and the archive
+     * can only see the trigger as an END-STATE snapshot. `threat` is
+     * stock's flag, `dip`/`host` are the two populations under
+     * stock's own threshold, and their disagreement is the whole
+     * question. Written for EVERY city-turn, including the quiet
+     * ones: deep-density's silence at near==0 cost the last census
+     * its denominator. */
+    log_base(deep_metric_log_level(),
+             "deep-dipthreat turn=%d player=\"%s\" city=%d threat=%d"
+             " hasdip=%d dip=%d host=%d dipeta=%d gap=%d ourdef=%u"
+             " verdict=%s stockwant=" ADV_WANT_PRINTF,
+             game.info.turn, player_name(pplayer), pcity->id,
+             city_data->diplomat_threat ? 1 : 0,
+             city_data->has_diplomat ? 1 : 0,
+             ev.dip, ev.host, ev.dip_eta, ev.gap, our_def, verdict,
+             dip->want);
     if (dip->want > 0) {
       deep_want_apply(dip, (struct deep_want) {
         .tier = DWT_EMERGENCY,
-        .value = deep_tuning_get()->diplomat_defence_value });
+        .value = dt->diplomat_defence_value });
       if (deep_want_cmp(deep_want_from_choice(dip),
                         deep_want_from_choice(choice)) > 0) {
         adv_choice_copy(choice, dip);
@@ -5633,6 +5792,30 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
                  choice->want);
       }
     }
+    /* THE MIL-INFRA GATE (S-DIPLOPRICE). Mil-infra is 288 shields per
+     * player-game on contested and 321 on lategame-80, and the census
+     * found it is NOT overpriced -- it is unfinished. 44.0% / 25.2%
+     * of Barracks runs deliver, 38.4% / 40.9% of City Walls runs,
+     * 20.9% of Coastal Defense runs, and deep ends with half
+     * (contested) to a tenth (lategame-80) of BASELINE's Barracks
+     * while carrying 47% / 91% raw recruits against baseline's 19% /
+     * 32%. Repricing the want downward would be the wrong correction;
+     * what the gate does instead is refuse to START a run in a city
+     * with no MEASURED threat, and fund the ones it allows from
+     * stock's own assess_danger() figure rather than from deep's
+     * anticipatory fear -- which is the same evidence S-FEARSEAT is
+     * instrumenting, read off the field that epic's `deep-fear pre`
+     * prints.
+     *
+     * mil_infra_threat_floor is PLACEHOLDER. Its tested value is 1,
+     * the unit case: at least one enemy unit that stock's own
+     * assessment scored above zero. Anything larger would be invented.
+     * findings/diploprice-verdict-2026-08-30.md section 1.3. */
+    if (deep_tuning_get()->mil_infra_gate > 0
+        && fear_pre < (unsigned int) deep_tuning_get()->mil_infra_threat_floor) {
+      infra_verdict = "refuse";
+      build_walls = FALSE;
+    }
     if (build_walls) {
       /* We will build walls if we can and want and (have "enough"
        * defenders or can just buy the walls straight away) */
@@ -5647,9 +5830,15 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
         /* Deep's injected fears (boat shadow, density, menace) fund
          * WALLS as well as bodies: walls are the upkeep-free defence,
          * the capital-for-labour answer in gold-upkeep rulesets
-         * (human idea 2026-07-30). */
+         * (human idea 2026-07-30). With the mil-infra gate open the
+         * funding basis is stock's MEASURED danger instead: a wall
+         * bought against a fear is a wall the queue drops when the
+         * fear moves on, and 895 / 801 abandoned City Walls runs are
+         * what that costs. */
         pcity->server.adv->building_want[wall_id]
-          += deep_tuning_get()->wall_fear_weight * city_data->danger;
+          += deep_tuning_get()->wall_fear_weight
+             * (deep_tuning_get()->mil_infra_gate > 0
+                ? fear_pre : city_data->danger);
       }
 
       if (wall_id != B_LAST
@@ -6315,9 +6504,29 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
      * G1 owns. */
     if (floor_def >= MAX(deep_tuning_get()->garrison_floor, 1)
         && city_data->grave_danger == 0) {
-      adjust_ai_unit_choice(pcity, choice);
+      /* The mil-infra gate's second seat, and the one the census
+       * points at hardest: 2013 / 595 Barracks runs started, 44.0% /
+       * 25.2% delivered, and deep finishes with 1.64 / 0.77 Barracks
+       * per player against baseline's 3.23 / 7.43 while its surviving
+       * army is 47% / 91% green against baseline's 19% / 32%. A
+       * veterancy swap in a city with no MEASURED threat is a run
+       * that starts and does not finish. */
+      if (deep_tuning_get()->mil_infra_gate > 0
+          && fear_pre
+             < (unsigned int) deep_tuning_get()->mil_infra_threat_floor) {
+        infra_verdict = "refuse";
+      } else {
+        adjust_ai_unit_choice(pcity, choice);
+      }
     }
   }
+
+  log_base(deep_metric_log_level(),
+           "deep-milinfra turn=%d player=\"%s\" city=%d pre=%u"
+           " danger=%u floor=%d verdict=%s",
+           game.info.turn, player_name(pplayer), pcity->id, fear_pre,
+           city_data->danger, deep_tuning_get()->mil_infra_threat_floor,
+           infra_verdict);
 
   /* SUCCESSOR-IMMINENT DEFERRAL (CONSEQ item 4, human 2026-08-05:
    * "some units and buildings expire too"). If the unit type that

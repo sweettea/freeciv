@@ -3594,6 +3594,56 @@ struct deep_tuning {
    * for a tuning pass. Only read while founder_join_guard_gate is
    * non-zero. */
   double founder_join_guard_mult;
+  /* Substitute deep's own trigger for stock's on the DEFENSIVE
+   * diplomat. `dai_choose_diplomat_defensive()` writes a
+   * self-described "totally arbitrary" 16000 whenever
+   * `city_data->diplomat_threat` is set, and that flag -- documented
+   * as "Enemy diplomat or spy is near the city", daicity.h:58 -- is
+   * set at daimilitary.c:905 for ACTRES_ATTACK, ACTRES_PILLAGE,
+   * ACTRES_BOMBARD and ACTRES_CONQUER_CITY as readily as for a spy
+   * (upstream bug 50). The line it funds is deep's third largest:
+   * 138 shields + 43.5 gold per player-game on contested, 193.6 +
+   * 42.0 on lategame-80, 41.2% / 34.7% of its runs delivering, and
+   * 85% / 83% of the survivors standing inside one of our own cities
+   * having never reached a seam. Of the cities with a hostile-capable
+   * unit within two tiles, 28.6% / 21.2% had an enemy diplomat within
+   * the same radius. 0 = stock's flag decides, byte for byte. */
+  int diplo_price_gate;
+  /* Minimum number of foreign diplomat-class units observed inside
+   * stock's own `2 >= move_time` window for a defensive diplomat to
+   * be warranted. PLACEHOLDER. The tested value is 1, which is not a
+   * magnitude but the literal reading of the flag's own comment.
+   * Inert while the gate is 0. */
+  int diplo_evidence_floor;
+  /* Additionally require that a hostile neighbour in contact knows at
+   * least this many techs we do not -- the only quantity in the game
+   * that says what an enemy diplomat would come here to take, and the
+   * one stock computes for the OFFENSIVE diplomat and never for this
+   * one. PLACEHOLDER, shipping UNTESTED at 0 (requires nothing): the
+   * census gives no threshold and rule 7 forbids inventing one.
+   * Inert while the gate is 0. */
+  int diplo_gap_floor;
+  /* Fund mil-infra -- the EFT_DEFEND_BONUS building and the veterancy
+   * swap -- from stock's MEASURED assess_danger() figure rather than
+   * from deep's post-injection anticipatory fear, and refuse the run
+   * outright below mil_infra_threat_floor.
+   *
+   * The census does NOT say this family is overpriced. It says it is
+   * unfinished: 288 shields per player-game on contested and 321 on
+   * lategame-80, with 44.0% / 25.2% of Barracks runs delivering,
+   * 38.4% / 40.9% of City Walls, 20.9% of Coastal Defense (which
+   * burns 67.0 shields per player-game in the abandoning switch), and
+   * deep ending with half to a TENTH of baseline's Barracks while its
+   * surviving army is 47% / 91% raw recruits against baseline's 19% /
+   * 32%. So the gate does not lower the want; it declines to start a
+   * run in a city with no measured threat. 0 = today's funding basis
+   * and no refusal, byte for byte. */
+  int mil_infra_gate;
+  /* Measured danger below which mil-infra is refused. PLACEHOLDER;
+   * the tested value is 1, the unit case -- at least one enemy unit
+   * that stock's own assessment scored above zero. Inert while the
+   * gate is 0. */
+  int mil_infra_threat_floor;
 };
 
 void deep_tuning_init(void);
