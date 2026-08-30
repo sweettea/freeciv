@@ -1977,6 +1977,7 @@ static void deep_apply_garrison_floor(const struct civ_map *nmap,
   unsigned int applied;
 
   if (city_data->danger != 0
+      || game.info.turn < tune->garrison_floor_turn
       || unit_list_size(city_tile(pcity)->units) >= tune->garrison_floor) {
     return;
   }

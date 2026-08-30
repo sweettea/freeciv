@@ -79,6 +79,7 @@ static const struct deep_tuning deep_tuning_defaults = {
   .overseas_decay = 0.2,                /* PLACEHOLDER, untuned */
   .garrison_floor = 1,                  /* PLACEHOLDER, untuned */
   .garrison_floor_danger = 40,          /* PLACEHOLDER, untuned */
+  .garrison_floor_turn = 0,             /* PLACEHOLDER, untuned; 0=off */
   .garrison_menace_slope = 1.0,         /* PLACEHOLDER, untuned */
   .menace_overseas_weight = 0.25,       /* PLACEHOLDER, untuned */
   .floor_barb_weight = 1.0,             /* PLACEHOLDER, untuned */
@@ -482,6 +483,7 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(overseas_decay) \
   TUNE_INT(garrison_floor) \
   TUNE_INT(garrison_floor_danger) \
+  TUNE_INT(garrison_floor_turn) \
   TUNE_DOUBLE(garrison_menace_slope) \
   TUNE_DOUBLE(menace_overseas_weight) \
   TUNE_DOUBLE(floor_barb_weight) \

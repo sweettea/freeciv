@@ -519,6 +519,14 @@ struct deep_tuning {
    * (same fix family as overseas_fear). */
   int garrison_floor;
   int garrison_floor_danger;
+  /* Turn before which the token garrison floor does not apply. The
+   * floor is the term that makes a city with ZERO assessed danger
+   * requisition a unit anyway, and it fires from turn one; the
+   * archived corpus puts the median deep player's first combat loss
+   * at turn 62. 0 (the default) keeps the floor from turn one, which
+   * is the shipped behaviour. Adjudicated by nothing yet -- it owes
+   * the tuning pile both a value and an arm. */
+  int garrison_floor_turn;
   /* Slope on the met-neighbour militarisation ratio (their summed
    * military rating / ours) that scales the garrison floor: 0 before
    * contact, capped at 1. Zero disables the scaling entirely. Each
