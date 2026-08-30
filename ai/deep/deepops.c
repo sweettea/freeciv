@@ -5843,10 +5843,70 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
        * at the bar does not turn back on the first wobble. Banked
        * members go back to stock with a clean slate. */
       if (tune->op_abort_floor > 0.0 && ns > 0) {
-        double odds = deep_take_odds_at_arrival(nmap, target, stream, ns,
-                                                eta);
+        /* GIVING THE RE-GATE A MEMORY (op-arrival; findings/
+         * op-exchange-rate-2026-08-29.md section 4.2 and item 4).
+         *
+         * abort-odds is 302 of 640 terminal causes, five times
+         * anything else that is not the end of the game -- and in
+         * 57-71% of those aborts the wave was INTACT OR LARGER than
+         * at launch, its priced odds having fallen from 0.86-0.95 to
+         * 0.07-0.13 anyway, with an eta HIGHER at the abort than at
+         * launch. After five to sixteen turns of marching the wave is
+         * farther from the target in the model's own currency than
+         * when it set out.
+         *
+         * That is self-defeating in a precise sense.
+         * deep_take_odds_at_arrival() charges the defender
+         * eta x deep_reinforce_rate() virtual copies of its best
+         * buildable defender. A wave that fails to converge inflates
+         * its own eta, which inflates the phantom garrison, which
+         * drives the odds under op_abort_floor, which dissolves the
+         * wave -- and the march already paid for is nowhere in the
+         * comparison. The hysteresis the code documents
+         * (op_abort_floor below op_take_target) is hysteresis in the
+         * ODDS dimension only; there is none in the value dimension
+         * and no memory of sunk cost.
+         *
+         * Two terms, one gate:
+         *
+         * op_regate_eta_freeze prices the reinforcement at MIN(now,
+         * launch), so genuine progress still lowers the phantom
+         * garrison but a stalled wave can no longer raise it. Not the
+         * launch eta flat: a wave that really did close the distance
+         * has earned the cheaper price, and freezing it at launch
+         * would overcharge exactly the operations that are working.
+         * Guarded on march_eta >= 1 -- deep_op_drive_raid() and the
+         * reload path both leave it 0.
+         *
+         * op_regate_sunk_gain lowers the floor by the fraction of the
+         * journey already covered, marched / (marched + eta): the
+         * value-dimension hysteresis the re-gate has never had. At
+         * 1.0 a wave that has spent nine of its ten turns faces a
+         * floor a tenth of the nominal one; at 0.0 the floor is the
+         * nominal one, which is what ships.
+         *
+         * Behind op_regate_gate: at 0 neither term is computed and
+         * the arithmetic is the shipped arithmetic. */
+        int price_eta = eta;
+        double floor_eff = tune->op_abort_floor;
+        double odds;
 
-        if (odds < tune->op_abort_floor) {
+        if (tune->op_regate_gate) {
+          int marched = game.info.turn - op->march_turn;
+
+          if (tune->op_regate_eta_freeze && op->march_eta >= 1) {
+            price_eta = MIN(eta, op->march_eta);
+          }
+          if (tune->op_regate_sunk_gain > 0.0 && marched > 0) {
+            double sunk = (double) marched / (marched + MAX(eta, 1));
+
+            floor_eff *= MAX(0.0, 1.0 - tune->op_regate_sunk_gain * sunk);
+          }
+        }
+        odds = deep_take_odds_at_arrival(nmap, target, stream, ns,
+                                         price_eta);
+
+        if (odds < floor_eff) {
           bool crossing = deep_op_crossing(op, target);
 
           if (crossing) {
@@ -5877,10 +5937,11 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
             log_base(deep_metric_log_level(),
                      "deep-op turn=%d player=\"%s\" op=%d regate target=%d"
                      " odds=%.2f eta=%d members=%d def_n=%d def_best=%d"
-                     " marched=%d",
+                     " marched=%d peta=%d floor=%.3f",
                      game.info.turn, player_name(pplayer), oi,
                      op->target_city, odds, eta, ns, def_n, def_best,
-                     game.info.turn - op->march_turn);
+                     game.info.turn - op->march_turn, price_eta,
+                     floor_eff);
           }
           deep_op_dissolve(op, oi, "abort-odds", pplayer);
           return;

@@ -3374,6 +3374,28 @@ struct deep_tuning {
    * kills at the walls over 232 closed operations, 1.78 per operation
    * booked dead in transit. 0.0 = the duel alone, as shipped. */
   double op_march_loss_rate;
+
+  /* THE MARCH RE-GATE'S MEMORY. One gate over the two terms that stop
+   * a marching wave from talking itself out of its own operation.
+   * abort-odds is 302 of 640 terminal causes and in 57-71% of them
+   * the wave was intact or larger than at launch. 0 = neither term is
+   * computed. */
+  int op_regate_gate;
+  /* Fraction of the journey already covered, credited against the
+   * abort floor: floor x (1 - gain x marched / (marched + eta)). The
+   * hysteresis op_abort_floor gives in the ODDS dimension, finally
+   * given in the value one -- today the march already paid for is not
+   * in the comparison at all. 0.0 = the nominal floor. */
+  double op_regate_sunk_gain;
+  /* Price the phantom reinforcement at MIN(eta now, eta at launch)
+   * instead of eta now. deep_take_odds_at_arrival() charges the
+   * defender eta x deep_reinforce_rate() virtual defenders, so a wave
+   * that fails to converge inflates its own eta, which inflates the
+   * phantom garrison, which drives the odds under the floor, which
+   * dissolves the wave. Not the launch eta flat: a wave that really
+   * did close the distance has earned the cheaper price. 0 = the
+   * current eta, as shipped. */
+  int op_regate_eta_freeze;
 };
 
 void deep_tuning_init(void);

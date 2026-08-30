@@ -358,6 +358,15 @@ static const struct deep_tuning deep_tuning_defaults = {
   .op_march_loss_rate = 0.0,            /* PLACEHOLDER; 0 = the duel is the
                                          * whole cost. Inert while the gate
                                          * is 0 */
+  .op_regate_gate = 0,                  /* 0 = the re-gate has no memory
+                                         * and an inflating eta,
+                                         * byte for byte */
+  .op_regate_sunk_gain = 0.0,           /* PLACEHOLDER; 0 = the nominal
+                                         * floor. Inert while the gate
+                                         * is 0 */
+  .op_regate_eta_freeze = 0,            /* PLACEHOLDER; 0 = price at the
+                                         * current eta. Inert while the
+                                         * gate is 0 */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -679,7 +688,10 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(op_arrival_gate) \
   TUNE_DOUBLE(op_arrival_decay) \
   TUNE_INT(op_launch_eta_cap) \
-  TUNE_DOUBLE(op_march_loss_rate)
+  TUNE_DOUBLE(op_march_loss_rate) \
+  TUNE_INT(op_regate_gate) \
+  TUNE_DOUBLE(op_regate_sunk_gain) \
+  TUNE_INT(op_regate_eta_freeze)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 
