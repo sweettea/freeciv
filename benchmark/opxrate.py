@@ -455,9 +455,75 @@ def eta_report(eps):
               f"{mean([e['end_turn'] - e['march_turn'] for e in ended]):.2f}")
 
 
+def pooled(all_eps):
+    """One table over every arm given, counted rather than averaged.
+
+    Percentages from separate arms cannot be averaged -- the arms have
+    different denominators -- and hand-pooling them off the per-arm
+    tables is how a report acquires an off-by-one it cannot explain.
+    """
+    eps = all_eps
+    marched = [e for e in eps if e["march_turn"] is not None]
+    print("\n" + "=" * 68)
+    print(f"POOLED over {len(eps)} formed operations, {len(marched)} launched")
+    struck = [e for e in eps if e["strike_turn"] is not None]
+    took = [e for e in eps if e["consol_turn"] is not None]
+    both = [e for e in took if e["strike_turn"] is not None]
+    print(f"  formed {len(eps)} -> march {len(marched)}"
+          f" ({pct(len(marched), len(eps)):.1f}%)"
+          f" -> strike {len(struck)} ({pct(len(struck), len(eps)):.1f}%)"
+          f" -> take {len(took)} ({pct(len(took), len(eps)):.1f}%)"
+          f"; took after a fight {len(both)}"
+          f" ({pct(len(both), len(eps)):.1f}%)")
+    whys = {}
+    for e in eps:
+        whys[e["why"]] = whys.get(e["why"], 0) + 1
+    print("  terminal: " + ", ".join(
+        f"{k}={v}" for k, v in sorted(whys.items(), key=lambda kv: -kv[1])))
+
+    def line(label, sel):
+        st = [e for e in sel if e["strike_turn"] is not None]
+        tk = [e for e in sel if e["consol_turn"] is not None]
+        print(f"    {label:<24} n={len(sel):<5}"
+              f" strike={len(st):>3} ({pct(len(st), len(sel)):5.1f}%)"
+              f" take={len(tk):>3} ({pct(len(tk), len(sel)):5.1f}%)")
+
+    print("  by launch eta:")
+    for lo, hi in ((0, 1), (2, 2), (3, 4), (5, 99)):
+        line(f"eta {lo}-{hi}",
+             [e for e in marched if lo <= e["eta_m"] <= hi])
+    print("  by quorum (`required`):")
+    for lo, hi in ((1, 2), (3, 4), (5, 6), (7, 8), (9, 999)):
+        line(f"required {lo}-{hi}",
+             [e for e in marched if lo <= e["required"] <= hi])
+    print("  by release:")
+    line("cleared the bar", [e for e in marched if e["bar0"] is not None
+                             and e["odds_m"] >= e["bar0"]])
+    line("patience release", [e for e in marched if e["bar0"] is not None
+                              and e["odds_m"] < e["bar0"]])
+    print("  by geography and force composition (all formations):")
+    line("land", [e for e in eps if e["overseas"] == 0])
+    line("overseas", [e for e in eps if e["overseas"] == 1])
+    line("drafted>0", [e for e in eps if e["drafted"] > 0])
+    line("drafted=0", [e for e in eps if e["drafted"] == 0])
+    print("  target garrison at formation:")
+    for lo, hi in ((0, 0), (1, 5), (6, 10), (11, 20), (21, 999)):
+        sel = [e for e in eps if e["def_best"] is not None
+               and lo <= e["def_best"] <= hi]
+        print(f"    def_best {lo}-{hi:<4} n={len(sel)}")
+    emp = [e for e in eps if e["kills"] is not None]
+    if emp:
+        print(f"  per-operation ledger rows {len(emp)}:"
+              f" member deaths={sum(e['dead'] for e in emp)}"
+              f" kills at the walls={sum(e['kills'] for e in emp)}")
+    print("=" * 68)
+
+
 def funnel(roots):
+    all_eps = []
     for root in roots:
         games, eps, netvals = scan_arm(root)
+        all_eps.extend(eps)
         print(f"# {root}")
         print(f"  games {games}   assault episodes {len(eps)}"
               f"   ({len(eps) / games:.1f}/game)" if games else "  no games")
@@ -588,6 +654,8 @@ def funnel(roots):
                   f"  exchange="
                   f"{tot_kill / tot_dead if tot_dead else 0:.3f} kills/death")
         print()
+    if len(roots) > 1 and all_eps:
+        pooled(all_eps)
 
 
 # ---------------------------------------------------------------- scores
