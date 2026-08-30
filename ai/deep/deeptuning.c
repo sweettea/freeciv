@@ -97,6 +97,17 @@ static const struct deep_tuning deep_tuning_defaults = {
    * two bases above keep the level they shipped with. */
   .barb_size_ref_cities = 10,
   .boat_shadow_fear = 25,               /* PLACEHOLDER, untuned */
+  .boat_shadow_gate = 0,                /* off: the flat term ships */
+  /* PLACEHOLDER, untuned. 1.0 is the UNIT CASE and not a chosen
+   * level: one hull reach is exactly the window
+   * deep_overseas_danger() already treats as "could be here", so at
+   * 1.0 the empty hull and the loaded one are feared over the same
+   * geometry. */
+  .boat_shadow_distance = 1.0,
+  /* PLACEHOLDER, untuned. 1 reproduces the shipped assumption that a
+   * single hull is a landing, so the count axis starts at identity
+   * and the distance axis is what the gate's first arm moves. */
+  .boat_shadow_count = 1,
   .density_fear_value = 6,              /* PLACEHOLDER, untuned */
   .density_fear_radius = 8,             /* PLACEHOLDER, untuned */
   .density_fear_ramp_turns = 0,         /* PLACEHOLDER, untuned; 0=off */
@@ -469,6 +480,9 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(barb_anticipation_turns) \
   TUNE_INT(barb_size_ref_cities) \
   TUNE_INT(boat_shadow_fear) \
+  TUNE_INT(boat_shadow_gate) \
+  TUNE_DOUBLE(boat_shadow_distance) \
+  TUNE_INT(boat_shadow_count) \
   TUNE_INT(density_fear_value) \
   TUNE_INT(density_fear_radius) \
   TUNE_INT(density_fear_ramp_turns) \

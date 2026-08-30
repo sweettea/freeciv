@@ -450,6 +450,9 @@ static double deep_defender_upkeep_discount(const struct civ_map *nmap,
   float: fourth application of the no-fear-before-the-threat-class
   law.
 **************************************************************************/
+static unsigned int deep_boat_shadow_hulls(const struct player *pplayer,
+                                           const struct tile *ptile);
+
 static unsigned int deep_boat_shadow_fear(const struct civ_map *nmap,
                                           struct city *pcity)
 {
@@ -460,8 +463,70 @@ static unsigned int deep_boat_shadow_fear(const struct civ_map *nmap,
     return 0;
   }
 
+  if (tune->boat_shadow_gate > 0) {
+    /* The geometry arm. A hull that cannot get here is not a landing,
+     * and one hull may not be one either: the count scales the fear
+     * linearly up to boat_shadow_count and no further. */
+    unsigned int hulls = deep_boat_shadow_hulls(city_owner(pcity),
+                                                city_tile(pcity));
+    int need = MAX(tune->boat_shadow_count, 1);
+    double scale = MIN(1.0, (double) hulls / need);
+    unsigned int fear = (unsigned int) (tune->boat_shadow_fear * scale);
+
+    log_base(deep_metric_log_level(),
+             "deep-shadow turn=%d player=\"%s\" city=%d hulls=%u need=%d"
+             " scale=%.3f fear=%u afloat=%d",
+             game.info.turn, player_name(city_owner(pcity)), pcity->id,
+             hulls, need, scale, fear,
+             deep_boat_shadow_afloat(city_owner(pcity)) ? 1 : 0);
+
+    return fear;
+  }
+
   return (deep_boat_shadow_afloat(city_owner(pcity))
           ? tune->boat_shadow_fear : 0);
+}
+
+/**********************************************************************//**
+  Hostile transport hulls within reach of one tile.
+
+  "Within reach" is deep_overseas_danger()'s own window --
+  move_rate/SINGLE_MOVE + 1 tiles, the distance from which a loaded
+  ferry is already feared -- scaled by boat_shadow_distance, so the
+  shadow of an EMPTY hull is measured with the same ruler as the
+  danger of a full one. Reading the reach off each hull's own type
+  rather than off a tile constant is what keeps the term meaningful
+  when the trireme becomes a Transport.
+
+  Ownership, not cargo: this is the fear that funds a garrison BEFORE
+  the boats load, which is the whole reason the term exists.
+**************************************************************************/
+static unsigned int deep_boat_shadow_hulls(const struct player *pplayer,
+                                           const struct tile *ptile)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  unsigned int hulls = 0;
+
+  players_iterate_alive(aplayer) {
+    if (aplayer == pplayer || !pplayers_at_war(pplayer, aplayer)) {
+      continue;
+    }
+    unit_list_iterate(aplayer->units, aunit) {
+      const struct unit_type *ut = unit_type_get(aunit);
+      int reach;
+
+      if (ut->transport_capacity <= 0 || !deep_utype_is_sea(ut)) {
+        continue;
+      }
+      reach = (int) (tune->boat_shadow_distance
+                     * (ut->move_rate / SINGLE_MOVE + 1));
+      if (real_map_distance(unit_tile(aunit), ptile) <= reach) {
+        hulls++;
+      }
+    } unit_list_iterate_end;
+  } players_iterate_alive_end;
+
+  return hulls;
 }
 
 /**********************************************************************//**

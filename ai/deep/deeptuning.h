@@ -587,6 +587,27 @@ struct deep_tuning {
    * boat shadow funds the garrison before the boats load. Also
    * vetoes grow-hard on exposed coasts via the CM danger gate. */
   int boat_shadow_fear;
+  /* The boat shadow's GEOMETRY, off by default (gate 0 keeps the flat
+   * term exactly as it shipped).
+   *
+   * With the gate open the shadow stops being a world-wide step
+   * function and becomes the same reachability question the embarked
+   * -cargo term already asks, pointed at the EMPTY hull: a hostile
+   * transport counts against this city only while it is within
+   * boat_shadow_distance of its own one-move reach
+   * (move_rate/SINGLE_MOVE + 1 tiles, deep_overseas_danger()'s own
+   * formula), and boat_shadow_count hulls inside that ring are what a
+   * landing takes -- fewer scale the fear down linearly, more do not
+   * scale it up. One model of what a hull can do to a coast, not two.
+   *
+   * boat_shadow_distance is measured in HULL REACHES, not tiles, so
+   * it keeps its meaning across rulesets and across the trireme-to-
+   * transport ladder. Only the per-city fear term is gated; the
+   * corridor pricing in deeptrunk.c still asks
+   * deep_boat_shadow_afloat(). */
+  int boat_shadow_gate;
+  double boat_shadow_distance;
+  int boat_shadow_count;
   /* Border-pressure fear: each met non-allied city within the radius
    * adds value/(1+dist) standing danger. 0 disables. */
   int density_fear_value;
