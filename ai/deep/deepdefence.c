@@ -7736,6 +7736,83 @@ static void deep_prodswitch_log(struct ai_type *ait, struct player *pplayer,
   choice->type and, for an attacker, the ruleset's own
   transport_capacity.
 **************************************************************************/
+/**********************************************************************//**
+  Founders this player is already committed to: alive on the map, plus
+  under construction in every city EXCEPT the one now being decided.
+
+  The exclusion is the whole point of the signature. The question at
+  the bid seam is "should ONE MORE founder be started here", so a city
+  already building one must not count its own run against its own bid:
+  withdrawing that bid forfeits the shields in its stock, which is the
+  defect founder_run_hold exists to stop.
+**************************************************************************/
+static int deep_founders_committed(const struct player *pplayer,
+                                   const struct city *except)
+{
+  int n = 0;
+
+  unit_list_iterate(pplayer->units, punit) {
+    if (unit_is_cityfounder(punit)) {
+      n++;
+    }
+  } unit_list_iterate_end;
+
+  city_list_iterate(pplayer->cities, pcity) {
+    if (pcity != except
+        && pcity->production.kind == VUT_UTYPE
+        && utype_is_cityfounder(pcity->production.value.utype)) {
+      n++;
+    }
+  } city_list_iterate_end;
+
+  return n;
+}
+
+/**********************************************************************//**
+  S-SITEPLAN (a): is this player already carrying a founder for every
+  site it still counts?
+
+  Nothing here is new arithmetic. `deep_remaining_sites()` is the
+  quantity the founder pool has sized itself by since 2026-08-03 -- the
+  reachable free land divided by this player's own land per city -- and
+  the founders are counted the way deep_settler_join_city() counts
+  them. What is new is reading it on the PRODUCTION side, so that
+  declining to dissolve a founder (the join guard) cannot turn into
+  baseline's 19-40 idle settlers: the two are one arm.
+
+  Logged on every city-turn that carries a founder bid, gate on or off,
+  so the off arm of the A/B says how often the cap WOULD have bound.
+**************************************************************************/
+static bool deep_founder_site_capped(struct player *pplayer,
+                                     struct city *pcity,
+                                     const struct ai_city *city_data)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int committed;
+  double sites, cap;
+  bool capped;
+
+  if (city_data->founder_want == 0) {
+    return FALSE;               /* No bid to withdraw. */
+  }
+
+  committed = deep_founders_committed(pplayer, pcity);
+  sites = deep_remaining_sites(pplayer);
+  cap = sites + tune->founder_site_cap_slack;
+  capped = ((double) committed >= cap);
+
+  log_base(deep_metric_log_level(),
+           "deep-sitecap turn=%d player=\"%s\" city=%d want=%d"
+           " committed=%d sites=%.2f slack=%.2f cap=%.2f capped=%d"
+           " gate=%d",
+           game.info.turn, player_name(pplayer), pcity->id,
+           city_data->founder_want, committed, sites,
+           tune->founder_site_cap_slack, cap, capped ? 1 : 0,
+           tune->founder_site_cap_gate);
+
+  return capped && tune->founder_site_cap_gate > 0;
+}
+
 static void deep_bid_log(struct player *pplayer, struct city *pcity,
                          const struct ai_city *city_data)
 {
@@ -8159,17 +8236,31 @@ static void deep_city_choose_build(struct ai_type *ait,
 
       deep_scale_domestic_bids(pplayer, pcity, city_data);
 
-      if (deep_tuning_get()->boat_gate_at_bid > 0
-          && deep_tuning_get()->boat_water_gate > 0
-          && city_data->founder_want < 0
-          && !deep_city_water_bridges(city_tile(pcity))) {
+      /* The second reason to withdraw a founder bid before the
+       * advisor compares it, and it withdraws at exactly the same
+       * seam and by exactly the same means: the founders this player
+       * already has, alive plus building elsewhere, have reached the
+       * sites it still counts. One more would be a hoard. Evaluated
+       * unconditionally so its census covers both arms; it returns
+       * FALSE unless founder_site_cap_gate is on. */
+      bool site_capped = deep_founder_site_capped(pplayer, pcity,
+                                                  city_data);
+
+      bool water_capped = (deep_tuning_get()->boat_gate_at_bid > 0
+                           && deep_tuning_get()->boat_water_gate > 0
+                           && city_data->founder_want < 0
+                           && !deep_city_water_bridges(city_tile(pcity)));
+
+      if (site_capped || water_capped) {
         int saved_founder_want = city_data->founder_want;
 
-        log_base(deep_metric_log_level(),
-                 "deep-watergate-bid turn=%d player=\"%s\" city=%d"
-                 " founder_want=%d",
-                 game.info.turn, player_name(pplayer), pcity->id,
-                 saved_founder_want);
+        if (water_capped) {
+          log_base(deep_metric_log_level(),
+                   "deep-watergate-bid turn=%d player=\"%s\" city=%d"
+                   " founder_want=%d",
+                   game.info.turn, player_name(pplayer), pcity->id,
+                   saved_founder_want);
+        }
         city_data->founder_want = 0;
         deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
         newchoice = domestic_advisor_choose_build(ait, pplayer, pcity);

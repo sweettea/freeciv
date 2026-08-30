@@ -22871,10 +22871,6 @@ is a model change and must not be turned into a fudge factor.
 
 ---
 
-||||||| 8e24d684a8
-||||||| 453d12f523
-||||||| 48c6ffa4eb
-||||||| 453d12f523
 ## S-SETTLERPIPE: the delivered settler is eaten by the JOIN, and 24–52% of joins are premature (2026-08-29)
 
 Branch `worktree-agent-ae224e019cdf907d8`. **Log census, no new
@@ -23260,480 +23256,143 @@ make it a group screen; the sampler is not.
    null on the cities gap and on score. The screen's remark that it
    "is currently untested" predates that read and is corrected in
    place by the next commit.
-||||||| 8e24d684a8
-## S-CONTENTCENSUS: the deficit is one quantity, and only the military want is in its window (2026-08-30)
+## S-SITEPLAN: the join is off the hook — removing it does not give deep its cities back (2026-08-30)
 
-Branch `worktree-agent-ad856cc423e029ff4`. **Log census on finished
-games** — the 20-seed gates-off holdout arms of `tune-postfix`
-(`s6-nogates-war`, `s6-nogates-econ`) against their paired baseline
-arms — plus **3 probe games** run only to verify this session's
-instrument commit. Answers the three "Secondary signatures" of
-`findings/defaults-deficit-census-2026-08-25.md` (hypotheses 3 and 4).
-Full write-up: `findings/content-military-gold-2026-08-30.md`.
+Branch `worktree-agent-a79870f3133b2019c`, 8 commits. The response to
+S-SETTLERPIPE, rescoped mid-session by the user from "a global plan of
+the cities we intend to build" to two minimal gated changes on the
+machinery deep already has. Full write-up:
+`findings/siteplan-verdict-2026-08-29.md`.
 
-**All figures are PER PLAYER.** The 2026-08-25 census quoted 8-player
-empire sums ("munits 7.3 vs 1.0 at T16", "treasury 250–450 vs ~2000");
-those are 0.92 vs 0.12 and 32.4 vs 264.7 per player, and both reproduce
-exactly.
-
-### The organizing fact
-
-`get_civ_score()` at T151 contested, deep − base: citizens **−3.99**,
-techs×2 **−2.24**, culture/50 **−2.07**, wonders×5 +0.67, units +0.24;
-total −7.50 ± 2.84. Citizens per city are **5.67 vs 5.72**. The three
-negative terms are one quantity — the 0.65 missing cities — and that
-gap is built in one window and never moves:
-
-    cities, deep − base   T25 −0.12±0.06   T50 −0.11±0.07
-                          T75 −0.63±0.14  T151 −0.65±0.16
-
-Econ: −0.47±0.10 (T25), **−1.15±0.20 (T50)**, −1.05±0.21 (T81).
-**A signature outside T50–T75 cannot be the lever.** That test decides
-the ranking.
-
-### Ranked verdict
-
-1. **The early military want.** In T51–75 deep delivers **131 shields
-   per player of military hardware against 15 of settlers**, and its
-   treasury flips from buying Settlers (563 buys, 13 073 gold through
-   T50) to buying Phalanxes (212 buys in T51–75) in the same band.
-   Standing army 3–10× baseline's from T10 (munits T25 +0.84±0.10,
-   T50 +2.11±0.12; econ T25 +2.92±0.14) against combat outcomes that
-   are **indistinguishable**: unitslost deep − base = −0.04±0.02 (T25),
-   +0.03±0.08 (T50), −0.04±0.23 (T75), both venues. The army is also
-   free to keep (below), so the whole cost is shields taken when they
-   are worth most.
-2. **Gold — the same lever in a second currency, not a defect of its
-   own.** Revenue is at parity (1215 vs 1265), deep's standing building
-   bill is **37% BELOW** baseline's (10.73 vs 17.02 gold/turn), unit
-   gold upkeep is zero, incite/bribe never fires. The treasury is empty
-   because deep buys: 421 gold/player-game, 22 buys, 2.41 gold/shield,
-   half of it military. Independent residual: `deep-fin` fire-sells
-   0.47 buildings/player-game at 2–4 gold.
-3. **Content — real as a want, falsified as an over-investment.**
-
-### Two of the 2026-08-25 hypotheses are corrected, not confirmed
-
-- **H4's "upkeep drag" does not exist.** civ2civ3 sets `uk_gold = 0`
-  for all 57 unit types; `effect_base_unit_upkeep_shield` excludes
-  Monarchy and Despotism (139 of 160 contested deep player-games); and
-  every city keeps 4 units food-free against deep's 0.97 military units
-  per city at T50.
-- **H3's "preemptive content-building at enormous scale" is right about
-  the want and wrong about the outcome.** The want is real and it is
-  deep's: Colosseum holds **23.1% of city-turns at T101–125** and
-  **75.6% of its want is `deep_content_credit()`** against a stock
-  valuation of exactly zero (`advdata.c`'s impr_calc `#if 0`s the
-  happiness family), with **66.2% of the credits speculative** —
-  `delay > 0`, i.e. nobody on pacification duty when the credit was
-  paid. But deep ends with **FEWER Colosseums per citizen than baseline
-  (0.056 vs 0.066)**, riots are 0.00–0.01 in both arms, and deep's
-  realized pacification load is at parity through T100 and **−0.81 by
-  T150**. Only **16.0%** of Colosseum runs complete (econ 8.0%), and
-  content delivers **0.0 shields before T50 and 12.8 in T51–75**. It is
-  a delivery problem in the last third of a game already lost — restate
-  it as churn, not as over-pricing. (`upkeep_gold_weight = 0.125`
-  remains a flagged PLACEHOLDER: it charges a 3-gold Colosseum 9
-  want-units against a mean credit of 161.)
-
-### Landed
-
-- [x] `ai/deep: log the injected fear vector at the build seat` —
-      `deep-fear ... site=build` with pre/over/shadow/density/prior/
-      barb/surv/credit/updisc/sat/fmult/prefloor/post. Observation
-      only. **All three probe games (contested seeds 101–103, same
-      config and runner shas as the archived provenance) reproduce the
-      archived `s6-nogates-war` scorelogs BYTE FOR BYTE** (`id` line
-      excluded; maphashes match). `meson test -C build` 7/7.
-- [x] `benchmark: add the content, military and gold census`
-      (`contentcensus.py`). Note for reuse: the baseline arm's
-      `game.log` is 461 lines with no AI decision line at all, so every
-      cross-arm number comes from the scorelog or the final savegame.
-- [x] `doc: localize the content, military and gold signatures`.
-- [x] `doc: drop a stray diff3 merge marker from STATUS.md`.
-
-### What the instrument immediately said
-
-Two anticipatory terms, both step functions of geography rather than of
-threat (3 seeds, 11 395 build-seat evaluations):
-
-- **`deep_density_fear()` owns the opening** — present on **54.9%** of
-  T1–25 evaluations against stock's 12.5%, and 72.1% vs 4.5% at T26–50,
-  where it is 85% of the pre+density sum. A count of non-allied cities
-  within radius 8, no land capability test at all.
-- **`deep_boat_shadow_fear()` joins at T51 and is the largest single
-  term in the causal window** — 30.9% of T51–75 evaluations at a
-  conditional value of **exactly 25.0**, because `deepdefence.c:453`
-  returns the flat `boat_shadow_fear` knob for **every coastal city**
-  as soon as **any** player we are at war with owns **one**
-  transport-capable ship **anywhere on the map**. No distance, no
-  count, no decay — and it is deliberately exempt from
-  `density_fear_ramp_turns` as an "evidence-based term" that "already
-  gates on real capability signals".
-
-The line also **refuted two live errors in this census**:
-`deep_density_prior()` fires **0.0% of the time in every band** (it
-returns 0 the moment any met non-allied player exists — turn one on a
-32×32 eight-player map), which was this session's working hypothesis;
-and **one seed was not enough** — seed 101 alone read density at 88.2%
-and no boat shadow at all. The seat conclusion survived the other two
-seeds; the magnitudes did not. Any arm reading `deep-fear` for
-magnitudes wants the full holdout set.
-
-### Next: S-FEARSEAT (proposed, not started)
-
-Instrument the remaining seats first (`site=ledger` on
-`deep_credit_incoming_defence`, which currently disagrees with
-`deep-def`; `deep-density` unconditionally; the danger behind a
-`deep-buy`). Then knobs, all identity by default, **no values chosen**:
-`density_fear_ramp_turns` (**already exists, set to 0, and its own
-comment describes this exact failure — cheapest first cell**),
-`density_fear_capability`, `boat_shadow_distance` /
-`boat_shadow_count`, `fear_evidence_floor`, `fear_defender_conversion`,
-`garrison_floor_turn`, and `mil_opportunity_price`. The last three
-named are model changes, not fudges — the boat shadow needs a distance
-and a count before it needs a smaller constant, and
-`mil_opportunity_price` charges the marginal defender the founder bid
-it displaces.
-
-**Pre-registered falsification:** an arm that ramps anticipatory fear
-must show fewer T10–50 military deliveries with **no rise in
-`unitslost` before T75** — the arms agree there to ±0.03 today. If
-`unitslost` rises, the diagnosis is wrong and the document gets
-re-read, not the tuning re-swept.
-
-**Design constraints:** `density_fear_ramp_turns`,
-`fear_evidence_floor` and `mil_opportunity_price` move the same
-decision in the same window — one **factorial** cell, not three arms.
-S-FEARSEAT and **S-SETTLERSINK (B)** both act on what the T50–75 queue
-produces and cannot be attributed from two concurrent A/Bs.
-`upkeep_gold_weight` must **not** ride along: it moves the T100+
-building auction and would make the military result unreadable.
-
-Two lines nobody has priced, recorded so they are not lost: the
-**Diplomat** is the third-largest shield line in the game (138.0
-shields + 43.5 gold per player-game, 12.4%/11.9% of picks at T26–50 and
-T51–75, from `dai_choose_diplomat_defensive`'s self-described "totally
-arbitrary 16000"), and **mil-infra** (Barracks + City Walls + Coastal
-Defense) is 290 shields/player-game, larger than content.
-||||||| 48c6ffa4eb
-## S-OPARRIVAL: the census replicates, the gates do not pay (2026-08-30)
-
-Branch `worktree-agent-a824462efa465663d`, 8 commits. The `op-arrival`
-epic proposed in `findings/op-exchange-rate-2026-08-29.md` §9: one
-instrument commit, five gated mechanisms, and the pre-registered
-factorial that adjudicates them. **144 games, TRAINING seeds 1–16,
-contested.conf, arm deep**, paired against a control that is the
-shipped binary at compiled defaults. Full write-up:
-`findings/op-arrival-verdict-2026-08-29.md`.
-
-### The verdict in two sentences
-
-Every diagnosis the exchange-rate census made replicates on an
-independent seed set. **None of the three gates built to act on them
-moves the score, and the biggest effect in an eight-cell factorial is
-+0.34 ± 0.53 — under one standard error.** All gates ship at 0.
-
-### The census replicates (control cell, 85 assault ops, 16 seeds)
-
-Six independent claims, six replications, on seeds none of the four
-original corpora contained:
-
-- **Take rate by launch eta** — the whole diagnosis, cut in the same
-  place: eta 0–1 → 100% strike / 16.7% take (n=6); eta 2 → 12.0/16.0
-  (n=25); eta 3–4 → 0.0/10.0 (n=20); **eta 5+ → 0.0/0.0 (n=21)**.
-  Twenty-one launches, zero contacts, zero cities.
-- **`required` gates contact** — required 1–2: 66.7% strike; **9+:
-  6.2% strike, 0.0% take (n=16)**.
-- **The garrison draft** — drafted 3.8% take (n=52) against undrafted
-  15.2% (n=33), and drafted formations are 61% of everything formed
-  (census: 63%).
-- **The patience release** — 36 of 72 marches, mean predicted odds
-  **0.109** against the bar-clearing population's **0.923**, take 5.6%
-  vs 13.9%.
-- **The re-gate's inflating eta** — 31 of 48 dead marches (65%) had the
-  wave INTACT (5.32 → 5.87 members) while odds fell 0.428 → 0.063 and
-  **eta rose 4.71 → 5.12**.
-- **Eta honesty** — reached the walls at eta 1.33; never arrived at
-  4.39, after 7.31 turns of marching.
-
-### The 2×2×2 factorial (A = arrival, P = patience, R = re-gate)
-
-Paired per seed, control mean score 83.90.
-
-    cell  gates    score  delta     se      t   launched   takes
-    000   control  83.90      —      —      —      4.88     0.44
-    100   A        83.81  -0.09   0.56  -0.15      4.06     0.12
-    010   P        84.04  +0.14   0.65  +0.22      3.00     0.50
-    001   R        84.23  +0.33   0.29  +1.14      4.75     0.31
-    110   A+P      84.16  +0.27   0.56  +0.48      1.31     0.12
-    101   A+R      83.98  +0.09   0.64  +0.13      3.19     0.12
-    011   P+R      83.92  +0.02   0.65  +0.04      2.69     0.44
-    111   A+P+R    84.24  +0.34   0.53  +0.65      1.25     0.12
-    eta   cap only 83.76  -0.14   0.53  -0.27      3.19     0.31
-
-Main effects: **A +0.03, P +0.11, R +0.12.** Nothing clears one SE.
-
-The gates fired hard, and the factorial earned its keep:
-
-- **A costs cities.** All four A-cells land at 0.12 takes/game against
-  0.44 (Δ −0.31 ± 0.12, t = −2.61). At decay 0.447 the net-value
-  product is crushed so far that `go` is *never* true and **the
-  patience release becomes 100% of all launches** — the gate meant to
-  discipline the clock handed the clock the whole decision. No separate
-  A/B could have seen that interaction.
-- **P is free.** Launches −1.88 ± 0.55 (t = −3.38), patience releases
-  −1.94 ± 0.43 (t = −4.48), `abort-odds` −0.81 ± 0.29 (t = −2.78),
-  takes **+0.06 ± 0.11**. Cell 011 cuts launches 45% with takes exactly
-  unchanged. Thirty fewer wasted marches per sixteen games, same
-  cities, no score.
-- **R does nothing.** `abort-odds` 40 → 36 and `abort-march` 10 → 14:
-  the waves the sunk-cost credit rescues die one gate later, having
-  marched longer.
-
-### The pre-registered falsification
-
-Predicted: fewer ops, fewer `unitslost`, **unchanged `unitskilled`**.
-Got (eta cell, paired): launches −1.69 ± 0.78 (t −2.17) ✓; `unitslost`
-−0.47 ± 0.37 (t −1.25) ✓ directionally; `unitskilled` **−0.30 ± 0.38
-(t −0.78)** — it fell, by 0.8 SE. Neither confirmation nor
-falsification: the capped launches demonstrably take no cities (21 of
-them, directly counted, zero takes), and refusing them buys nothing
-measurable. The blades freed do not convert anywhere else.
-
-### The result that outlives the gates
-
-**Cutting deep's assault launches by 75% moves score by less than one
-SE in either direction** (111: 1.25 launches/game, +0.34 ± 0.53; 000:
-4.88). Across 144 games the operations layer's launch volume is very
-nearly a free variable. The census's 354-deaths-for-2-kills exchange is
-real; what these games add is that fixing it does not pay, because the
-deaths were not buying anything the score noticed either. This is the
-causal version of the census's "8.0% of the army is in an operation,
-0.1% at the walls".
+**Verdict: `founder_site_cap_gate` and `founder_join_guard_gate` both
+stay 0.** The mechanism works completely and the score does not clear
+its SE. What the epic actually bought is a correction to the census
+that motivated it.
 
 ### What landed
 
-Byte-neutral at every default: contested holdout seeds 101–103
-reproduce the archived `tune-postfix/s6-nogates-war` scorelogs exactly
-(`id` line excluded), before and after the epic. `meson test` 7/7 at
-every commit.
+- [x] `ai/deep: count the tiles the settler search never looked at` —
+      `tbskip=/tbown=/tbunit=/tbland=` on `deep-siteladder`, counted in
+      `deep_settler_tile_behavior()` itself, because pf drops a
+      `TB_IGNORE` node before the ladder can count it. Computed
+      unconditionally (not behind the metric level) since a later
+      commit reads `tbland` in a decision.
+- [x] `ai/deep: cap founders in flight by the sites still counted` —
+      `founder_site_cap_gate` / `founder_site_cap_slack` (PLACEHOLDER
+      1.0). At the bid seam, and by the same withdraw-and-restore the
+      water gate uses, the founder bid is withdrawn when
+      alive + building-elsewhere ≥ `deep_remaining_sites()` + slack.
+      The deciding city is excluded from its own count so a run in
+      progress is never forfeited. Census `deep-sitecap`, both arms.
+- [x] `ai/deep: hold a founder while a site may open before we could
+      rebuild it` — `founder_join_guard_gate` /
+      `founder_join_guard_mult` (PLACEHOLDER 1.0). Window is one
+      settler-build-time computed from real shield rates (cost over the
+      best city surplus, mean **11.3 turns**); signals are
+      `city::turn_founded`, the `deep-settler cancel` line, and the
+      ladder's `offpeace + mindist + tbland`. Placed after the pool
+      gate so its census counts only the joins it alone prevents.
+      Census `deep-joinguard`, both arms, three signals apart.
+- [x] `benchmark/siteplan.{sh,py}`, `siteladder.py`, `siteplan-more.sh`,
+      `waitdone.sh`, and `benchmark/tuning/defaults.ini` (was untracked;
+      the identity proof needs it).
+- [x] Also removed a stray `|||||||` diff3 marker committed into
+      STATUS.md by the merge at `453d12f523`.
 
-- `ai/deep: log each marching turn's convergence` — `deep-march`, one
-  line per marching op per turn: eta, members, summed HP, quorum
-  distance. P(arrive | eta) has to be fitted and the log had only
-  endpoints.
-- `ai/deep: give the half-quorum patience release an odds floor`
-- `ai/deep: price the march in the assault launch gate` —
-  `op_arrival_gate` over decay, eta cap, march loss.
-- `ai/deep: give the march re-gate a memory of the march` —
-  `op_regate_gate` over sunk credit, eta freeze.
-- `ai/deep: separate the contact quorum from the required force`
-- `ai/deep: put an attack-rating floor under the garrison draft`
-- `benchmark: add the op-arrival factorial and its funnel census` —
-  `oparrival.sh`, `oparrival.py`, nine cell tunings whose derivations
-  are written in the files.
+### Identity
 
-### Constants owed to tuning (all PLACEHOLDER, all registered in M/MIL/ALL)
+3 contested games (seeds 101–103) at compiled defaults, byte-compared
+against the **archived** `tune-postfix/s6-nogates-war` holdout games the
+settler-pipeline census was taken on — config, tuning and runner shas
+all match that run's provenance. **3 identical, 0 different**, with
+four guards against a vacuous pass (must emit `tbskip=` and
+`deep-joinguard`; must not emit either gate's `... gate=1` firing).
 
-`op_patience_odds_floor` (tested 0.35 = `op_abort_floor`, structural),
-`op_arrival_gate` / `op_arrival_decay` (0.447) / `op_launch_eta_cap`
-(4) / `op_march_loss_rate` (0.56), `op_regate_gate` /
-`op_regate_sunk_gain` (1.0) / `op_regate_eta_freeze` (1) — all tested,
-all shipping at 0.
+### The A/B — 2×2 × two venues, 40 TRAINING seeds a cell, 320 games
 
-**Two shipped gated and deliberately untested.** `op_contact_quorum` is
-on the same causal chain as A and P, so running it alone would be the
-attribution error the factorial exists to avoid — it belongs in the
-*next* factorial. `op_draft_attack_floor` has no magnitude derivable
-from the census, and rule 7 forbids inventing one to have something to
-run.
+`benchmark/siteplan.sh`, pinned `.pin-bin/fix` (`14c7c62ecf3acd97`),
+ports 7850–7899. c10 in the war venue was extended to 60 seeds
+afterwards (it is the headline contrast); every other cell is 40. c10 = this epic's two gates, c01 = `founder_run_hold`
+alone, c11 = all three. Paired against c00 on the same seed.
 
-### Next
+      venue  cell   score Δ     se      t   wins
+      war    c10     +16.32   9.15  +1.78  36/60
+      war    c01      +2.12  10.12  +0.21  20/40
+      war    c11      -0.72  10.90  -0.07  17/40
+      econ   c10      +7.97   6.26  +1.27  22/40
+      econ   c01      -2.02   8.40  -0.24  24/40
+      econ   c11     +13.78   8.02  +1.72  22/40
 
-1. **The draft is the one large replicated funnel effect never
-   tested** — drafted formations take cities at a quarter the undrafted
-   rate and are 61% of everything formed. Needs a derived threshold
-   first: a census of `adv_unit_att_rating` for drafted vs free blades
-   against the odds each buys, which the `deep-opodds` line does not
-   currently carry.
-2. **Stop tightening the launch gate.** If launch volume is free at the
-   margin, the question is the 46% of the army in `DEFEND_HOME`, not
-   which of the remaining 8% marches — a defence-side question.
-3. **A second venue before any of it.** All four census corpora and
-   this factorial are contested/T150. `tech50war-200` concludes wars
-   and gives operations room; the replication in §3 is across seeds and
-   tunings, not across venues.
-4. **Not the duel model, not target selection.** §4.7 and S-WEAKPREY
-   measured those and found them innocent; nothing here changes that.
-||||||| baf2c085f6
+- **The mechanism is total.** Joins 25.1 → 0.03 (war) and 21.7 → 0.05
+  (econ); settlers built −6.7 and −7.2 a game; settler production
+  starts −11.4 and −18.0; founders standing +1.3 and +1.4 per seat.
+  The cap fired 47 times a game in both venues and held the hoard to
+  ~10 founders a game against baseline's 19–40, so the guard did not
+  buy baseline's problem.
+- **THE FINDING: the join is not what costs deep its cities.** War
+  cities per seat move +0.01 at T45, +0.02 at T100 and −0.07 at the
+  end — nothing, at any cut, with the join removed entirely. The
+  census's counterfactual (24.3% of joins followed within ten turns by
+  that player founding a city) was a correlation: the settler was
+  dissolved near a city that was going to be founded anyway.
+- **Except in the econ venue, where a third of the deficit closes.**
+  Cities per seat **+0.37 at T60 (t +4.68)**, +0.23 at the end
+  (t +2.01), citizens **+1.45 (t +3.91)** — about 2.2 more cities a
+  game against a 7.5-city deficit. And the citizens very nearly
+  account for the score: +1.45 × 6 seats = +8.7 against a measured
+  +7.97. The gain is real, and smaller than the venue's variance.
+- **`founder_run_hold` alone reproduces S-PRODKEEP and explains it.**
+  Score +2.12 and −2.02 (both a wash, as in the −7.0 ± 16.1 that cell
+  published), and it moves **joins UP**: +4.12 in the war venue
+  (t +2.60) and **+17.38 in the econ one (t +10.57)**. More delivered
+  settlers are delivered to the join. That is exactly what the
+  settler-pipeline census predicted, now measured on its own arm.
+- **The interaction changes sign between venues** (war c11 − c10 ≈
+  −16, econ +6), which is why the census insisted on a factorial:
+  two concurrent single-factor arms would have read the war venue's
+  c11 as a failure of gates that were not failing.
 
-## W25 — screen corpus retake and mixed-venue sigma (2026-08-30)
+### The instrument, and the correction it makes to S-SETTLERPIPE
 
-Branch `worktree-agent-ae7ba60aa890a4359`. Items 1 and 2 of the
-previous entry's "Next", both done. **40 games bought, and they are
-the same 40 games**; the mixed-sigma half bought none. Nothing was
-tuned, ranked or selected, and the campaign is still unlaunched.
+43 919 searches over the 40 gate-off war games, per search: `tbland`
+(land the pathfinder never offered) is **3.2**, against `offpeace`
+**66.9** and `nomin` **47.9**. On an empty search, 3.3 against 69.9 and
+47.3. So **the truncated horizon is a thin perimeter, not the missing
+map** — the refusal that dominates an empty search is deep's own
+"land theft does not make for good neighbors" rule, which is policy and
+could be priced instead of refused. Honest caveat: a refused tile also
+blocks passage, so this bounds the *perimeter* and not the area behind
+it; `tbfree` still needs a second pf run with the callback removed.
 
-### Task A — the corpus, re-taken and re-logged
+### The guard as built is not the guard as designed
 
-`benchmark/rescreen-corpus.sh`, binary sha `7f4a6473b05362d6`, ports
-7930–7959, `--jobs 4`, `nice -n 10`. Compiled defaults
-(`defaults.ini` sha `8b363d05`), contested + lategame-80, the 20
-holdout seeds, `tune.py --report-holdout` — which evaluates one fixed
-file and has no optimiser, so running on holdout seeds selects
-nothing. The 40 `ai/baseline` games were hardlinked in from
-`s6-nogates-*` as `nogates-holdout.sh` does; only the 40 deep games
-were run. Corpus lives in the main tree at
-`benchmark/results/w25-screen-corpus/`, game logs zstd'd, 80 MB.
+Its own census, read off the gate-OFF arm (5412 join attempts over 40
+games): the blocked-land signal fires on **99.6%** of attempts, so at
+`mult = 1.0` the guard is equivalent to switching the join off. The
+narrower rule — found-or-cancel recency alone — would have declined
+**44.8%**, and is measured but untested.
 
-**All 40 scorelogs are byte-identical to the archived s6 corpus** (id
-line excluded) and all 40 maphashes match — not a 3-seed sample, the
-whole corpus. The report reproduces s6 exactly:
+### Constants owed to tuning (rule 7)
 
-    contested    -58.4 +/- 21.2   lategame-80  -57.9 +/- 16.3
+- `founder_site_cap_slack` = 1.0 **PLACEHOLDER, untuned**, range [0,5],
+  in X/ECON/ALL. Reachable (47 firings a game) but not worth sweeping
+  against this result: what is in question is the join, not the cap.
+- `founder_join_guard_mult` = 1.0 **PLACEHOLDER, untuned**, range
+  [0,4]. Near-pointless to sweep while the blocked signal fires 99.6%
+  of the time — the window barely binds. Fix the signal first.
+- `tune-audit.py` CLEAN at 281/281; `meson test -C build` 7/7.
 
-4 471 631 `deep-` lines over 117 tags, against 4 452 k over 116. The
-only difference between the two corpora is what the server wrote.
+### Next, in order
 
-### RESCREEN priced — all eight flip, none inert
+1. **The narrower guard** (found-or-cancel only, 44.8%). One mode
+   selector in `struct tuning`, a new binary, and therefore its own
+   identity proof against the c00 games retained here.
+2. **Ask the war venue's stall separately.** It is not the join. An
+   empty search there is 69.9 tiles of peace border and 47.3 of
+   citymindist ring; the first is deep's own policy.
+3. `tbfree` — the area behind the refused perimeter.
+4. The free arrival-turn fix (`site_arrival_turn_gate`), still unbuilt:
+   51% of arrivals land on 0 move fragments and found a turn late.
 
-`knobscreen.py`, 40 games, no UNMEASURED rows:
-
-    knob                       flips/game  flip rate  ->
-    horizon_content_weight         753.23     32.3%   tier A AUCTION
-    horizon_multiplier_weight      144.62      6.2%   tier A AUCTION
-    scale_attacker                 112.90      3.2%   tier A DEFOPS
-    horizon_bundle_weight           83.88      3.6%   tier A AUCTION
-    horizon_growth_weight           78.85      3.4%   tier A AUCTION
-    emergency_value_cap             51.27      1.3%   TIER C, pinned
-    scale_defender                  42.75      1.2%   tier A DEFOPS
-    scale_ferry                     16.15      0.45%  tier A DEFOPS
-
-`horizon_content_weight` is the **second largest flip rate in the
-whole screen** (after `garrison_floor_danger` at 63.5%) and larger
-than `switch_cost_gain`, which the previous screen ranked first.
-
-`emergency_value_cap` is tier C **despite** flipping: its rule sees
-"the clamp engages", which is an input to a decision and not a
-decision; at the merge — the one comparison whose winner is logged —
-it stays provably inert on 143 k comparisons; and its default 0.0 is
-at the bottom of its range, so −1σ is a no-op and 51.27 is what
-turning the cap ON would clamp, not a gradient. Same class as
-`founder_tier_gate` and `garrison_floor`, same treatment: a gate A/B
-if anyone wants it, never a search dimension.
-
-New `emergency_cap` self-check: **17 530 decisions, 100.0%** agreement
-with the server (the smoke corpus had 606). All eight rules still
-self-check at 100.0% except `founder_pool` and `garrison_floor` at
-99.9%, unchanged.
-
-**The three-game smoke numbers were wrong, exactly as labelled.**
-`horizon_bundle_weight` read 0.0 and was called inert; it flips 83.9.
-`scale_defender` and `scale_attacker` swap order (83.0/40.7 became
-42.8/112.9). `emergency_value_cap` was under by 6×. Buying the 40
-re-plays was the difference between pinning a live knob and fitting
-it.
-
-Tier A's original eleven reproduce **to the digit** (274.70 / 114.15 /
-113.05 / 93.17 / 63.40 / 53.33 / 51.55 / 15.25 / 11.22 / 9.90 / 4.90),
-as they must on byte-identical games.
-
-Census: reconstructible 17 → 24, of which flipping 14 → 22;
-dead-path 92 → **89** (the three military scales now run); partial
-84 → 80. **The inert set falls 166 → 163.**
-
-### Blocks
-
-    TIER A, fit      AUCTION (9)  DEFOPS (9)      was 5 and 6
-    TIER B, screened BFEAR (9) BASSAULT (6) BSITE (6) BCIVIL (7)
-    RESCREEN         RETIRED, kept as the record
-    TIER C           163 pinned; not a block
-
-18 tier-A constants would be 18 against 20 seeds in one block — the
-ratio the 2026-08-23 campaign died of — so the 10-wide cap forces two,
-and the cut is at the **domestic/military merge**: AUCTION is the bid
-side plus the horizon anchor bids are priced against, DEFOPS is what
-produces a military want plus what that want is worth. The alternative
-cut would run a block boundary through a comparison that fires 93 k
-times a game. `scale_defender` sits with `garrison_floor_danger`
-because the floor produces the want the scale multiplies.
-
-Tier B unchanged, and its cut is now clean: with the four horizon
-components promoted out, the top 28 by firing rate is exactly the four
-tier-B blocks, the old five-way tie at 73.3 sits wholly inside, and
-the first name outside is `wrace_margin_turns` at 69.7.
-
-Campaign cost is **unchanged** — a block pass is `pop × gens × seeds`
-games whatever it moves, and `--dry-run` still prints 1 656 per
-stage-1 block pass at 9 constants as it did at 5. Verified: no
-duplicates, no cross-block overlap, every name in `tuning-params.ini`
-and inside `ALL`, no width NOTE.
-
-### Task B — the mixed venue's own sigma, offline
-
-1 120 archived `--mixed` games (`s1-mil-mixed` + `s3-mil-r2`, 70
-candidates × 8 seeds × 2 mirrored arms), scored with tune.py's own
-`mixed_sides()`. A mixed per-seed datum costs two games and so does a
-paired gap, so the sigmas are comparable per unit of machine time.
-
-    pooled within-candidate across-seed sigma      104.4
-    between-candidate sigma of candidate means      44.2
-      of which the 8-seed sampling SE               36.9
-      true between-candidate spread                 24.4
-    seed-effect sigma                               59.8
-    within-seed sigma across candidates             91.9
-    PAIRED candidate-vs-candidate per-seed sigma   119.2
-
-Paired contested reference, recomputed not cited: 115.3 / 105.4 /
-94.9 on the s4 / s5 / s6 holdout arms (64.2 / 72.7 / 72.9 on
-lategame-80).
-
-Three readings:
-
-1. **The mixed venue is not quieter.** 104.4 sits inside 94.9–115.3.
-   Its advantage was always its T100 surrogate correlation, which is
-   a different property. σ = 115 was pessimistic by ~9%.
-2. **Most between-candidate spread is the seed sample.** 44.2 apparent,
-   36.9 of it sampling SE, 24.4 real — the post-mortem's diagnosis as
-   a variance decomposition.
-3. **Pairing does not tighten the contrast on `--mixed`; it loosens
-   it.** There is no shared baseline term to cancel (the opponent is
-   inside each game), so pairing removes only the seed effect while
-   differencing two nearly independent games adds. ρ between two
-   candidates at one seed is **0.16**, and 119.2 > 104.4 follows.
-   `tune.py`'s docstring and `--dry-run` footer asserted the opposite
-   and are corrected.
-
-### The restated campaign SE budget
-
-    objective   +/- 23.3   (20 seeds, sigma 104.4)   was 25.7
-    race rung   +/- 36.9   ( 8 seeds, sigma 104.4)   was 40.7
-    reeval obj  +/- 36.9   ( 8 seeds, sigma 104.4)   was 40.7
-    ACCEPTANCE  +/- 42.2   ( 8 fresh seeds, sigma 119.2)  NOT BUDGETED
-
-The acceptance row is the one `--accept-z 2` gates on and it was
-missing from the header. **The bar a champion must clear is ~84
-points**, against the ~16–24 point gate contrasts of 2026-08-25. The
-campaign as written cannot accept an effect of the size this project
-has been finding — measured now, not guessed. `--reeval-seeds` is the
-lever (16 → bar 60 at +64 games/generation; 32 → bar 42 at +192), and
-`train.txt` holds 100 seeds so up to 80 is available for free.
-
-Also corrected in the header: 3312 + 3136 = 6448, so the campaign is
-6528 games including the report, not 6608.
-
-### Next
-
-1. **Read the acceptance bar before launching anything.** The design
-   question `screen-campaign.sh` now poses is whether to raise
-   `--reeval-seeds` before spending 35 hours, and that is a human's
-   call. It is still unlaunched on purpose.
-2. `horizon_content_weight` flips a third of every credited
-   improvement's argmax at ±1σ. That is a reachability claim and not
-   a value claim — but it is the largest reachability number on the
-   project and AUCTION is where it gets tested.
-3. The 163-knob inert set still has 89 knobs on code that never runs.
-   Turning one of those gates on makes the screen price its knobs the
-   same afternoon at zero game cost; that remains the cheapest
-   measurement available.
+Retention: `benchmark/results/siteplan/` — 363 games, saves deleted,
+logs filtered to nine deep census tags and zstd-compressed.

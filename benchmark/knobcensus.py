@@ -1540,6 +1540,33 @@ MAP = {
         "line per declined military switch away from a founder build "
         "already under way; the line cannot be emitted with the gate "
         "off. Default 0: expect no lines at defaults."),
+    "founder_site_cap_gate": (
+        "S3", "mode", "direct", [("deep-sitecap", "capped=1 gate=1")],
+        "S-SITEPLAN (a): the founder bid is withdrawn when the founders "
+        "already alive plus building in other cities reach "
+        "deep_remaining_sites() + founder_site_cap_slack "
+        "(deepdefence.c deep_founder_site_capped()). The deep-sitecap "
+        "line is emitted in BOTH arms -- capped= is the verdict and "
+        "gate= says whether it acted -- so the off arm reports how "
+        "often the cap would have bound. Default 0."),
+    "founder_site_cap_slack": (
+        "S3", "weight", "direct", [("deep-sitecap", "slack")],
+        "How many founders above the counted sites the cap tolerates. "
+        "PLACEHOLDER 1.0, never measured; inert while "
+        "founder_site_cap_gate is 0."),
+    "founder_join_guard_gate": (
+        "S3", "mode", "direct", [("deep-joinguard", "held=1 gate=1")],
+        "S-SITEPLAN (b): a founder is not dissolved into a city while a "
+        "site may open inside one settler-build-time -- we founded, a "
+        "mission was cancelled under a walking founder, or a search was "
+        "refused land on a border, a reservation or an owner the "
+        "pathfinder skipped (deepsettler.c "
+        "deep_founder_join_guarded()). The deep-joinguard line is "
+        "emitted in BOTH arms with the three signals apart. Default 0."),
+    "founder_join_guard_mult": (
+        "S3", "weight", "direct", [("deep-joinguard", "window")],
+        "The guard window in settler-build-times. PLACEHOLDER 1.0, "
+        "never measured; inert while founder_join_guard_gate is 0."),
     "terrain_chain_gate": (
         "S1", "gate", "direct", [("deep-terrachain", "lift>0")],
         "W29: below the gate a cultivate or plant is worth the terrain "

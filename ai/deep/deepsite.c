@@ -1539,6 +1539,85 @@ static double deep_site_lad_best_net = 0.0;  /* best cr->result seen */
  * is computed only when the metric level is on -- the deep-sitedef
  * pattern. Under FREECIV_DEEP_QUIET these stay zero, which is correct:
  * a tuning run must not pay for a census. */
+/* THE HORIZON THE LADDER CANNOT SEE.
+ *
+ * Every bucket above counts a tile the pf map OFFERED. But
+ * deep_settler_tile_behavior() (deepsettler.c) returns TB_IGNORE for
+ * every tile a non-allied player owns, and pf_normal_node_init() drops
+ * a TB_IGNORE node before it is ever queued (path_finding.c:288), so
+ * `seen` is already the post-truncation figure and the ladder could
+ * say the horizon was truncated but never by how much
+ * (findings/settler-pipeline-2026-08-29.md section 4, the one link
+ * whose instrument was missing).
+ *
+ * These are that instrument, counted in the callback itself:
+ *
+ *   tbskip   tiles refused by the behaviour callback, all reasons
+ *   tbown    ... because a non-allied player owns the tile
+ *   tbunit   ... because a non-allied unit stands on it
+ *   tbland   of `tbown`, the ones that are LAND -- the population that
+ *            could have been a city site had the border moved
+ *
+ * tbown + tbunit == tbskip and tbland <= tbown are the arithmetic
+ * self-checks. Counted unconditionally, not behind the metric level:
+ * the join guard reads tbland, so making it depend on the log level
+ * would make behaviour depend on the log level.
+ *
+ * Attribution caveat, stated because the counters are file-static and
+ * the callback is shared: they are reset at the top of
+ * deep_settler_map_iterate() like every other ladder bucket, so a line
+ * carries the refusals of the pf map that search built. A pf map built
+ * by some other consumer of the same callback between two searches
+ * charges its refusals to the next line. */
+static int deep_site_lad_tbskip = 0;
+static int deep_site_lad_tbown = 0;
+static int deep_site_lad_tbunit = 0;
+static int deep_site_lad_tbland = 0;
+
+/* The last turn on which a search of this player's saw land it was
+ * refused for a reason a turn can undo: a peace partner's border
+ * (offpeace), a non-allied owner the pathfinder never queued (tbland),
+ * or a citymindist reservation another settler of ours holds
+ * (mindist). One int per player slot, written where the ladder line is
+ * emitted and read by the join guard (deepsettler.c).
+ *
+ * Only counters computed UNCONDITIONALLY may appear here. The
+ * metric-gated splits (nomin, noterr, nomap, nolegal) are richer and
+ * are deliberately not used: a decision that reads them would change
+ * behaviour with the log level. */
+static int deep_site_blocked_turn[MAX_NUM_PLAYER_SLOTS];
+static bool deep_site_blocked_init = FALSE;
+
+/**********************************************************************//**
+  The last turn a search of this player's saw temporarily-blocked land,
+  or -1 if it never has.
+**************************************************************************/
+int deep_site_blocked_seen_turn(const struct player *pplayer)
+{
+  if (!deep_site_blocked_init) {
+    return -1;
+  }
+
+  return deep_site_blocked_turn[player_index(pplayer)];
+}
+
+/**********************************************************************//**
+  The settler pathfinder refused a tile before the pf map could offer
+  it to the ladder. `owned` separates the two reasons the callback has.
+**************************************************************************/
+void deep_site_note_tbskip(const struct tile *ptile, bool owned)
+{
+  deep_site_lad_tbskip++;
+  if (owned) {
+    deep_site_lad_tbown++;
+    if (!is_ocean_tile(ptile)) {
+      deep_site_lad_tbland++;
+    }
+  } else {
+    deep_site_lad_tbunit++;
+  }
+}
+
 static int deep_site_lad_noterr = 0;  /* TER_NO_CITIES (incl. all water) */
 static int deep_site_lad_nomin = 0;   /* citymindist vs an existing city */
 static int deep_site_lad_nomap = 0;   /* unknown to us under H_MAP */
@@ -2041,6 +2120,10 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
   deep_site_lad_nomin = 0;
   deep_site_lad_nomap = 0;
   deep_site_lad_nolegal = 0;
+  deep_site_lad_tbskip = 0;
+  deep_site_lad_tbown = 0;
+  deep_site_lad_tbunit = 0;
+  deep_site_lad_tbland = 0;
   {
     int b;
 
@@ -2256,13 +2339,30 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
    * and settler cost -- the pair that says whether a search came home
    * empty because there was nothing there or because what was there
    * did not survive its own price. */
+  /* What this search was refused that a turn could undo, recorded
+   * before the line is printed and independently of whether it is:
+   * the join guard reads it, so it may not depend on the log level. */
+  if (deep_site_lad_offpeace + deep_site_lad_mindist
+      + deep_site_lad_tbland > 0) {
+    if (!deep_site_blocked_init) {
+      int i;
+
+      for (i = 0; i < MAX_NUM_PLAYER_SLOTS; i++) {
+        deep_site_blocked_turn[i] = -1;
+      }
+      deep_site_blocked_init = TRUE;
+    }
+    deep_site_blocked_turn[player_index(pplayer)] = game.info.turn;
+  }
+
   if (deep_site_lad_seen > 0) {
     log_base(deep_metric_log_level(),
              "deep-siteladder turn=%d player=\"%s\" unit=%d boat=%d"
              " seen=%d off=%d nofound=%d mindist=%d danger=%d taken=%d"
              " starve=%d scored=%d neg=%d best_raw=%.1f best_net=%.1f"
              " found=%d noterr=%d nomin=%d nomap=%d nolegal=%d"
-             " offbridge=%d offpeace=%d",
+             " offbridge=%d offpeace=%d"
+             " tbskip=%d tbown=%d tbunit=%d tbland=%d",
              game.info.turn, player_name(pplayer), punit->id, boat_cost,
              deep_site_lad_seen, deep_site_lad_off, deep_site_lad_nofound,
              deep_site_lad_mindist, deep_site_lad_danger,
@@ -2272,7 +2372,9 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
              best != NULL ? 1 : 0,
              deep_site_lad_noterr, deep_site_lad_nomin,
              deep_site_lad_nomap, deep_site_lad_nolegal,
-             deep_site_lad_offbridge, deep_site_lad_offpeace);
+             deep_site_lad_offbridge, deep_site_lad_offpeace,
+             deep_site_lad_tbskip, deep_site_lad_tbown,
+             deep_site_lad_tbunit, deep_site_lad_tbland);
   }
 
   /* The spacing census, one line per SEARCH. n<d> counts the candidates

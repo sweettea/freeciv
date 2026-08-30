@@ -3417,6 +3417,104 @@ struct deep_tuning {
    * a rating of 0 or less is already refused, so a floor of 0
    * excludes nothing. */
   double op_draft_attack_floor;
+  /* S-SITEPLAN (a): never carry more founders than there are sites
+   * left to put them on.
+   *
+   * The settler-pipeline census (findings/settler-pipeline-2026-08-29)
+   * found deep dissolving 27-39% of the founders it delivers, and the
+   * obvious response -- stop dissolving them -- has an obvious failure
+   * mode: baseline, which never dissolves one, ends its games holding
+   * 19-40 idle settlers. A join guard without a production cap buys
+   * that hoard. This is the cap, and it is the reason the two ship as
+   * one arm.
+   *
+   * The rule, at the seam where the founder bid is made and before the
+   * domestic advisor compares it: withdraw the bid when the founders
+   * this player ALREADY has -- alive, plus under construction in any
+   * OTHER city -- reach the sites still counted for it.
+   *
+   * "Sites still counted" is deep_remaining_sites() (deepdefence.c),
+   * the free reachable land divided by this player's own land per
+   * city. Not a new estimate: it is the same quantity the founder
+   * pool gate has sized itself by since 2026-08-03, read here for the
+   * production side of the same question.
+   *
+   * The city being decided is excluded from the count on purpose. The
+   * question at this seam is "should ONE MORE founder be started", and
+   * counting a city's own run against its own bid would withdraw the
+   * bid of a city already building a settler -- forfeiting the stock
+   * it has paid in, which is the exact defect founder_run_hold exists
+   * to stop.
+   *
+   * 0 = today's bid exactly. Counter: deep-sitecap, one line per
+   * city-turn with a founder bid, gate on or off. */
+  int founder_site_cap_gate;
+
+  /* How many founders above the counted sites the cap tolerates.
+   *
+   * PLACEHOLDER 1.0 and NOT MEASURED. deep_remaining_sites() is an
+   * estimate of capacity, not a list of tiles, so a cap set exactly at
+   * it would refuse the founder that walks toward a site opening while
+   * it walks. One is the smallest slack that admits that founder; it
+   * is not evidence that one is the right number, and it is flagged in
+   * STATUS for a tuning pass. Only read while founder_site_cap_gate is
+   * non-zero. */
+  double founder_site_cap_slack;
+
+  /* S-SITEPLAN (b): a founder is not dissolved while a site may open
+   * inside the time it would take to build another one.
+   *
+   * deep_settler_join_city() fires when the site search returns NULL,
+   * and the census says that search returns NULL on LEGALITY, never on
+   * valuation: `scored` is exactly zero on all 21 010 empty searches,
+   * 69% of what a stranded settler sees is a peace partner's land and
+   * 21% is inside citymindist of a city that exists. None of those
+   * three refusals is permanent. And the counterfactual is deep's own:
+   * 24.3% of joins in the war venue and 51.9% in the econ one are
+   * followed by that same player founding a city within ten turns --
+   * on their own, the whole 5.1 and 7.5 city deficit.
+   *
+   * The guard is the comparison the join never made: dissolving a
+   * founder is only right if we will not want one back sooner than we
+   * could build one. Both halves are measured, not chosen:
+   *
+   *   the price   the founder's shield cost over the best shield
+   *               surplus this player's cities actually have, i.e.
+   *               the turns to replace it;
+   *   the chance  the last turn this player founded a city
+   *               (city->turn_founded), the last turn a walking
+   *               founder's target was cancelled under it (the
+   *               deep-settler cancel line), and the last turn a
+   *               search of ours was refused land on a border, a
+   *               reservation or an owner the pathfinder skipped
+   *               (deep_site_blocked_seen_turn(), the tbland/offpeace/
+   *               mindist counters).
+   *
+   * If any of those three happened within the window, the join is
+   * declined and the unit falls through to the terrain-work and idle
+   * paths it already has -- it holds and repositions rather than
+   * dissolving. It is NOT re-homed, re-tasked or given a new mission
+   * here: this gate only removes an irreversible act.
+   *
+   * Sized against a hoard by founder_site_cap_gate, which stops the
+   * production side from replacing what this stops us from spending.
+   *
+   * 0 = today's join exactly. Counter: deep-joinguard, one line per
+   * join that reaches the guard, in both arms, carrying each of the
+   * three signals separately so a narrower rule can be read off the
+   * off arm without running it. */
+  int founder_join_guard_gate;
+
+  /* The window, in settler-build-times.
+   *
+   * PLACEHOLDER 1.0 and NOT MEASURED. One build-time is the break-even
+   * the paragraph above describes and nothing more; the ten-turn
+   * counterfactual in the census is a different quantity measured on a
+   * different population, and using it here would be borrowing a
+   * number for a purpose it was not measured for. Flagged in STATUS
+   * for a tuning pass. Only read while founder_join_guard_gate is
+   * non-zero. */
+  double founder_join_guard_mult;
 };
 
 void deep_tuning_init(void);

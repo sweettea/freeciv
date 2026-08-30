@@ -373,6 +373,17 @@ static const struct deep_tuning deep_tuning_defaults = {
   .op_draft_attack_floor = 0.0,         /* PLACEHOLDER; 0 = the draft's
                                          * shipped test, which already
                                          * refuses a rating <= 0 */
+  .founder_site_cap_gate = 0,           /* 0 = today's founder bid exactly */
+  .founder_site_cap_slack = 1.0,        /* PLACEHOLDER, unmeasured: the
+                                         * smallest slack that still admits
+                                         * a founder walking toward a site
+                                         * that opens while it walks. Inert
+                                         * while the gate is 0 */
+  .founder_join_guard_gate = 0,         /* 0 = today's join exactly */
+  .founder_join_guard_mult = 1.0,       /* PLACEHOLDER, unmeasured: one
+                                         * settler-build-time, the
+                                         * break-even window. Inert while
+                                         * the gate is 0 */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -699,7 +710,11 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(op_regate_sunk_gain) \
   TUNE_INT(op_regate_eta_freeze) \
   TUNE_INT(op_contact_quorum) \
-  TUNE_DOUBLE(op_draft_attack_floor)
+  TUNE_DOUBLE(op_draft_attack_floor) \
+  TUNE_INT(founder_site_cap_gate) \
+  TUNE_DOUBLE(founder_site_cap_slack) \
+  TUNE_INT(founder_join_guard_gate) \
+  TUNE_DOUBLE(founder_join_guard_mult)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 

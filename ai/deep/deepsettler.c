@@ -72,6 +72,43 @@
 #include "deepops.h"
 #include "deepsettler.h"
 
+/* The last turn a walking founder of this player's had its destination
+ * cancelled under it -- somebody founded inside our target's
+ * citymindist, 96% of the time (findings/settler-pipeline-2026-08-29
+ * section 5). Written at the cancel line below and read by the join
+ * guard: a player losing races for tiles is a player that still wants
+ * founders. -1 until it happens. */
+static int deep_join_cancel_turn[MAX_NUM_PLAYER_SLOTS];
+static bool deep_join_cancel_init = FALSE;
+
+/**********************************************************************//**
+  Record that a city mission of this player's was called off this turn.
+**************************************************************************/
+static void deep_join_note_cancel(const struct player *pplayer)
+{
+  if (!deep_join_cancel_init) {
+    int i;
+
+    for (i = 0; i < MAX_NUM_PLAYER_SLOTS; i++) {
+      deep_join_cancel_turn[i] = -1;
+    }
+    deep_join_cancel_init = TRUE;
+  }
+  deep_join_cancel_turn[player_index(pplayer)] = game.info.turn;
+}
+
+/**********************************************************************//**
+  The last turn a mission of this player's was cancelled, or -1.
+**************************************************************************/
+static int deep_join_cancel_seen(const struct player *pplayer)
+{
+  if (!deep_join_cancel_init) {
+    return -1;
+  }
+
+  return deep_join_cancel_turn[player_index(pplayer)];
+}
+
 /* Switched on for the auction's SECOND pass only (deep_auto_settler_run,
  * behind idle_policy_gate): while it is set, deep_worker_task_value()
  * prices a base candidate at its bare tile value and counts nothing, so
@@ -117,10 +154,16 @@ deep_settler_tile_behavior(const struct tile *ptile,
   const struct player *owner = tile_owner(ptile);
 
   if (owner != NULL && !pplayers_allied(owner, param->owner)) {
+    /* Counted, because this is the refusal the refusal ladder cannot
+     * see: pf drops a TB_IGNORE node before the search is ever offered
+     * the tile (path_finding.c:288), so every bucket on
+     * deep-siteladder is already post-truncation. Observation only. */
+    deep_site_note_tbskip(ptile, TRUE);
     return TB_IGNORE;
   }
   if (is_non_allied_unit_tile(ptile, param->owner,
                               utype_has_flag(param->utype, UTYF_FLAGLESS))) {
+    deep_site_note_tbskip(ptile, FALSE);
     return TB_IGNORE;
   }
 
@@ -1630,6 +1673,97 @@ static bool deep_idle_fallback_work(struct ai_type *ait,
 
   Returns TRUE if the unit joined, or is under way to do so.
 **************************************************************************/
+/**********************************************************************//**
+  Turns this player would need to replace this founder, from the shield
+  rates its cities actually have.
+
+  The BEST surplus among our cities and not the mean: the question the
+  join guard asks is how soon a founder could exist again, and the
+  fastest city is the one that answers it. A surplus of zero or less is
+  floored at one shield a turn so the division is defined; a player in
+  that state cannot really replace the unit at all, and the floor
+  understates the price, which is the direction that lets the join
+  happen rather than the one that blocks it.
+**************************************************************************/
+static int deep_founder_rebuild_turns(const struct player *pplayer,
+                                      struct unit *punit)
+{
+  int cost = unit_build_shield_cost_base(punit);
+  int best = 0;
+
+  city_list_iterate(pplayer->cities, pcity) {
+    if (pcity->surplus[O_SHIELD] > best) {
+      best = pcity->surplus[O_SHIELD];
+    }
+  } city_list_iterate_end;
+
+  return (cost + MAX(best, 1) - 1) / MAX(best, 1);
+}
+
+/**********************************************************************//**
+  The last turn this player founded a city, or -1 if it holds none.
+
+  Read off the cities themselves (city::turn_founded) rather than
+  counted into a new accumulator: the server already maintains it, and
+  a founding that happened before this AI module was loaded still
+  counts correctly.
+**************************************************************************/
+static int deep_last_founded_turn(const struct player *pplayer)
+{
+  int best = -1;
+
+  city_list_iterate(pplayer->cities, pcity) {
+    if (pcity->turn_founded > best) {
+      best = pcity->turn_founded;
+    }
+  } city_list_iterate_end;
+
+  return best;
+}
+
+/**********************************************************************//**
+  S-SITEPLAN (b): may this founder be dissolved, or is a site likely to
+  open before we could build another one?
+
+  The window is one settler-build-time (times a PLACEHOLDER multiplier)
+  and the three signals inside it are all state the server or deep's
+  own censuses already keep: we founded a city, a walking founder's
+  target was cancelled under it, or a search of ours was refused land
+  on a border, a reservation, or an owner the pathfinder skipped. Any
+  of the three inside the window means the map is still moving for us,
+  and an irreversible act on a founder is premature while it is.
+
+  Logged in both arms, with the three signals apart, so the off arm
+  says what a narrower rule would have declined without running it.
+  Returns TRUE when the join must NOT happen.
+**************************************************************************/
+static bool deep_founder_join_guarded(struct player *pplayer,
+                                      struct unit *punit)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int turn = game.info.turn;
+  int rebuild = deep_founder_rebuild_turns(pplayer, punit);
+  double window = tune->founder_join_guard_mult * rebuild;
+  int founded = deep_last_founded_turn(pplayer);
+  int cancel = deep_join_cancel_seen(pplayer);
+  int blocked = deep_site_blocked_seen_turn(pplayer);
+  bool s_found = (founded >= 0 && (double) (turn - founded) < window);
+  bool s_cancel = (cancel >= 0 && (double) (turn - cancel) < window);
+  bool s_blocked = (blocked >= 0 && (double) (turn - blocked) < window);
+  bool held = (s_found || s_cancel || s_blocked);
+
+  log_base(deep_metric_log_level(),
+           "deep-joinguard turn=%d player=\"%s\" unit=%d rebuild=%d"
+           " window=%.1f found=%d cancel=%d blocked=%d sfound=%d"
+           " scancel=%d sblocked=%d held=%d gate=%d",
+           turn, player_name(pplayer), punit->id, rebuild, window,
+           founded, cancel, blocked, s_found ? 1 : 0, s_cancel ? 1 : 0,
+           s_blocked ? 1 : 0, held ? 1 : 0,
+           tune->founder_join_guard_gate);
+
+  return held && tune->founder_join_guard_gate > 0;
+}
+
 static bool deep_settler_join_city(struct ai_type *ait,
                                    const struct civ_map *nmap,
                                    struct player *pplayer,
@@ -1708,6 +1842,13 @@ static bool deep_settler_join_city(struct ai_type *ait,
        * simply switches off rather than inverting on a guess. */
       return FALSE;
     }
+  }
+
+  /* Last refusal before the unit is spent, and placed last on purpose:
+   * everything above would have declined the join anyway, so what this
+   * one counts is the joins it alone prevents. */
+  if (deep_founder_join_guarded(pplayer, punit)) {
+    return FALSE;
   }
 
   pft_fill_unit_parameter(&parameter, nmap, punit);
@@ -2357,6 +2498,7 @@ BUILD_CITY:
                    : (tile_city(ptile) != NULL ? "city" : "nolegal"))),
                deep_settler_tile_claim(pplayer, ptile),
                real_map_distance(unit_tile(punit), ptile));
+      deep_join_note_cancel(pplayer);
       dai_unit_new_task(ait, punit, AIUNIT_NONE, NULL);
       set_unit_activity(punit, ACTIVITY_IDLE, ACTION_NONE);
       send_unit_info(NULL, punit);
