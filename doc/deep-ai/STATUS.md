@@ -23101,3 +23101,155 @@ do not fix.
    `scale_*` military keys); log the pre-cap military value.
 3. `founder_tier_gate` off→on changes 7.2% of city-turn merges and has
    never been A/B'd. It is a gate, not a tuning parameter.
+
+---
+
+## W25 — tuning blocks and screen instrumentation (2026-08-30)
+
+Branch `worktree-agent-af8860cd45e730227`. The three instrumentation
+changes `findings/knob-screen-2026-08-30.md` recommends, the block cut
+the tune-postfix post-mortem asked for and never got, and the designed
+campaign, budgeted. **No campaign was launched and no score is
+claimed**: the only games run were three byte-identity probes.
+
+### Instrumentation — observation only, byte-identical
+
+Three contested seeds reproduce the archived `s6-nogates-war` holdout
+scorelogs **byte for byte** (same config sha `6ad23579`, runner sha
+`61aa448d`, `tuning=defaults.ini` sha `8b363d05`; sha256 of
+`scorelog.txt` with the `id` line excluded, and the maphash matches):
+
+    seed 101  ef13d47c64f28130    seed 102  7445677e29b7c6a1
+    seed 103  d2b3504fc380f009
+
+- [x] `ai/deep: split the horizon credit sum into its four components`
+      — `deep-decay-sum` now carries `bund/cont/mult/grow` beside
+      `capadd`. Each is exactly linear in its own weight (amortize
+      multiplies its benefit by `pow(discount, delay)` and
+      `deep_decay_reprice` by `dur/steps`; neither reads the weight),
+      so one knob re-prices from the line alone.
+- [x] `ai/deep: log the military bid's producer class on deep-bid` —
+      `milclass` = `enum deep_want_class`. `mil` was a merged bid with
+      no producer tag, so the three military `scale_*` keys could not
+      be attributed even when off their defaults.
+- [x] `ai/deep: log the pre-cap emergency military value` — the new
+      `deep-milcap` tag fires for **every** emergency-tier military
+      choice at `deep_want_scale_apply()`, cap on or off. The old
+      line only fired when the cap BOUND, and the cap's default is 0,
+      so the population it acts on was observable nowhere.
+
+### Screen coverage — 17 → 24 reconstructible knobs
+
+`benchmark/knobscreen.py` gains three replay extensions and a
+corpus-vintage check. On the **same 40-game s6 corpus** the findings
+doc used, the shortlist is identical entry for entry and number for
+number (274.70 / 256.90 / 114.15 / 113.05 / 112.95 / 93.17 / 63.40 /
+53.33 / 51.55 / 15.25 / 11.22 / 9.90 / 4.90 / 0.55) and all seven
+self-checks still agree with the server on 100.0% — the extension is
+additive, not a re-derivation.
+
+A corpus predating the new fields now lists the seven affected knobs
+under **UNMEASURED** with the field each needs, instead of reporting
+zero flips. "This knob flips nothing" and "this corpus cannot see this
+knob" are different claims.
+
+Smoke corpus: the three identity games, with full logging.
+**Flip rates from three games are INDICATIVE ONLY** — they show the
+rules fire and self-check, they do not rank anything:
+
+    horizon_content_weight     823.7 flips/game
+    horizon_multiplier_weight  189.3
+    horizon_growth_weight       94.3
+    scale_defender              83.0
+    scale_attacker              40.7
+    scale_ferry                 10.0
+    emergency_value_cap          8.3   (BINDING rate, not a flip)
+    horizon_bundle_weight        0.0   (inert: a lump credit)
+
+    emergency_cap self-check    606/606   100.0%
+    building_anchor self-check 7974/7974  100.0%
+
+Ranking these against each other wants the 40-game corpus re-taken
+under the new binary. Nobody has bought that run.
+
+### Blocks — the post-mortem's second finding, acted on
+
+`benchmark/tuning-blocks.ini` is cut by evidence of reachability, not
+by subject matter. **Old names are untouched and still resolve**
+(S/X/G/M, ALL/ECON/MIL, DECAYTECH, the six G sub-blocks), so cached
+results and existing scripts keep working.
+
+    TIER A, fit      AUCTION  (5)  DEFOPS   (6)
+    TIER B, screened BFEAR    (9)  BASSAULT (6)
+                     BSITE    (6)  BCIVIL   (7)
+    RESCREEN         (8) answerable offline, do not buy games
+    TIER C           pinned; not a block, stays inside ALL
+
+Tier B is 28 rather than the doc's 26 because the cut at 26 falls
+inside a five-way tie at 73.3 firings/game. RESCREEN is the four
+horizon components, the three military scales and
+`emergency_value_cap` — the eight knobs this epic makes offline-
+screenable, which is precisely the set no campaign should spend games
+on until `knobscreen.py` has priced them.
+
+Verified: every name exists in `tuning-params.ini`, no duplicates
+inside a block, no overlap between campaign blocks, all inside ALL.
+No campaign block triggers tune.py's width NOTE.
+
+### The campaign, budgeted and NOT launched
+
+`benchmark/screen-campaign.sh`. Screen on `contested.conf --mixed`
+full length, report on paired contested + lategame-80 holdout full
+length, no truncation. Stage 1 fits tier A; stage 2 group-screens
+tier B from stage 1's vector; the holdout is REPORT ONLY. Both stages
+run `--accept paired --accept-z 2`, `--reeval` on fresh seeds with the
+incumbent re-measured on the same sample, and `--race 8`.
+
+`tune.py --dry-run --sigma-seed 115`:
+
+    stage 1  AUCTION   5 params, 50 cands   <= 1656 games
+             DEFOPS    6 params, 50 cands   <= 1656
+    stage 2  BFEAR     9 params, 24 cands   <=  784
+             BASSAULT  6 params, 24 cands   <=  784
+             BSITE     6 params, 24 cands   <=  784
+             BCIVIL    7 params, 24 cands   <=  784
+    holdout  2 configs x 20 seeds x 2 arms       80
+    TOTAL <= 6608 games, ~35 h at 192 s/game and --jobs 10
+
+    expected SE: objective +/- 25.7 (20 seeds)
+                 race rung +/- 40.7 ( 8 seeds)
+                 reeval    +/- 40.7 ( 8 seeds)
+
+The script prints both budgets and refuses to start without a typed
+`yes`. Two limits are in its header rather than left to be
+discovered: the replicated block best is taken on 8 fresh seeds at
+SE 40.7 while the effects on the table are the ~16–24 point gate
+contrasts from 2026-08-25, so this budget detects a large block
+effect and cannot resolve a small one — a block that returns its
+incumbent is evidence of "not big", never of "nothing"; and σ = 115
+is the **paired** contested per-seed σ, while the **mixed** venue's
+own σ has never been measured, so every SE here is one venue's number
+carried to another.
+
+Also stated plainly in the script: tune.py runs a (μ,λ) ES per block,
+not a Plackett–Burman. The blocking and the acceptance rule are what
+make it a group screen; the sampler is not.
+
+### Next
+
+1. **Re-take the 40-game screen corpus under a binary carrying the
+   three new lines**, then re-run `knobscreen.py`. Eight knobs get
+   measured flip rates at zero game cost, and RESCREEN empties into
+   tier A or tier C on the evidence. Do this BEFORE the campaign:
+   `horizon_content_weight` at 823.7 flips/game on three games, if it
+   survives 40, is the largest flip rate ever measured on this
+   project and belongs in AUCTION.
+2. Measure the **mixed** venue's per-seed σ — from the archived s1/s3
+   mixed corpus, or from stage 1's own generation 0 — so the
+   campaign's SEs stop being borrowed from the paired venue.
+3. `benchmark/screen-campaign.sh` is a human's decision to take, not
+   an agent's. It is written, budgeted and unlaunched on purpose.
+4. `founder_tier_gate` stays at 0: the 80-game adjudication above is
+   null on the cities gap and on score. The screen's remark that it
+   "is currently untested" predates that read and is corrected in
+   place by the next commit.
