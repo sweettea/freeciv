@@ -22868,7 +22868,6 @@ One item is deliberately not a knob: if the `deep-march` HP column
 confirms that waves arrive wounded while the launch gate priced them
 healthy, the fix is to price the stream at expected arrival HP, which
 is a model change and must not be turned into a fudge factor.
-||||||| 453d12f523
 ## S-SETTLERPIPE: the delivered settler is eaten by the JOIN, and 24–52% of joins are premature (2026-08-29)
 
 Branch `worktree-agent-ae224e019cdf907d8`. **Log census, no new
