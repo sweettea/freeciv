@@ -5,6 +5,8 @@
             [--gens G] [--pop P] [--params a,b,...] [--server BIN]
             [--jobs J] [--out DIR] [--portbase N] [--mixed]
             [--blocks S,E,M] [--rounds R]
+            [--accept best|paired --accept-z Z]
+            [--reeval K --reeval-seeds N]
 
 --blocks runs alternating block coordinate descent: each named block
 (defined in tuning-blocks.ini) is evolved in turn with every other
@@ -47,6 +49,22 @@ paired diff against the block's incumbent on the seeds both ran. An
 8-seed objective on a venue whose per-seed sigma is 115 has SE ~41:
 without that column a +48.9 reads as a gain, and the 2026-08-25
 post-mortem is a whole campaign that selected exactly that.
+
+Selection. By default the block best is the generation's highest
+mean -- an UNREPLICATED max over the population, and every report of
+it now says so. Two flags replace it with a replicated number, and
+they compose:
+
+  --accept paired --accept-z Z   a challenger becomes the block best
+      only if its paired diff against the incumbent, on the seeds
+      both ran, clears Z standard errors. Z has no default: the right
+      threshold is a property of the campaign's budget.
+  --reeval K --reeval-seeds N    each generation's top K candidates,
+      and the incumbent, are re-evaluated on N seeds the search never
+      saw (the ones after --count in the TRAIN file), and the block
+      best is taken from THAT number. The incumbent is re-evaluated
+      on the same fresh seeds, so the floor a champion must clear is
+      measured on the same sample it is.
 
 Discipline: refuses to optimise against the holdout seed file. Report
 final numbers with --report-holdout TUNINGFILE, which evaluates a fixed
@@ -346,6 +364,7 @@ def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
     sigma = [(allp[i]["hi"] - allp[i]["lo"]) / 6.0 for i in idx]
     best = (None, list(cur))
     best_se = float("nan")
+    best_label = "incumbent held (no candidate accepted)"
 
     # The incumbent is fixed for the whole block, so one evaluation
     # serves every generation. Printing it each generation is what
@@ -401,9 +420,65 @@ def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
                   + "  " + " ".join(f"{allp[i]['name']}={vals[i]:.3g}"
                                     for i in idx), flush=True)
 
-        if best[0] is None or scored[0][0] > best[0]:
-            best = scored[0]
-            best_se = stats[order[0]][1]
+        # --- who, if anyone, becomes the block best -------------
+        # The 2026-08-25 post-mortem's first requirement: never select
+        # by unreplicated max. The generation's leader is a CANDIDATE
+        # for the block best, not the block best.
+        champ = order[0]
+        champ_obj, champ_se, _ = stats[champ]
+        champ_diffs, champ_inc = diffs[champ], inc_diffs
+        floor_obj = inc_obj
+        label = f"unreplicated max over {len(cands)} candidates"
+
+        if args.reeval:
+            # Re-evaluate the generation's top K on seeds the search
+            # never saw, together with the incumbent, so the champion
+            # AND the floor it must clear are measured on one fresh
+            # sample.
+            topk = order[: args.reeval]
+            rdirs = [cand_dirs[k] for k in topk] + [incdir]
+            rtfs = [tuning_files[k] for k in topk] + [inc_tf.resolve()]
+            rdiffs = eval_population(args, args.reeval_pool, rdirs, rtfs,
+                                     baseline, args.portbase)
+            rstats = [blend_stats(d) for d in rdiffs]
+            for j, k in enumerate(topk):
+                ro, rse, rn = rstats[j]
+                print(f"[{tag}] gen {gen} reeval cand {k}: "
+                      f"obj {pm(ro, rse)} (n={rn})", flush=True)
+            ri_obj, ri_se, ri_n = rstats[-1]
+            print(f"[{tag}] gen {gen} reeval incumbent: "
+                  f"obj {pm(ri_obj, ri_se)} (n={ri_n})", flush=True)
+            j = max(range(len(topk)), key=lambda j: rstats[j][0])
+            champ = topk[j]
+            champ_obj, champ_se, _ = rstats[j]
+            champ_diffs, champ_inc = rdiffs[j], rdiffs[-1]
+            floor_obj = ri_obj
+            label = (f"replicated on {len(args.reeval_pool)} fresh seeds"
+                     f" (top {len(topk)} re-evaluated)")
+
+        pd, pse, _pn = paired_stats(champ_diffs, champ_inc)
+        z = zscore(pd, pse)
+        # The block best may never sit below the incumbent measured on
+        # the same seeds -- without --reeval that is automatic, since
+        # generation 0 candidate 0 IS the incumbent, but a fresh-seed
+        # champion needs it said.
+        better = champ_obj > floor_obj and (best[0] is None
+                                            or champ_obj > best[0])
+        if args.accept == "paired":
+            take = better and z == z and z >= args.accept_z
+            label += ("; paired z=%s vs --accept-z %.2f"
+                      % (f"{z:+.2f}" if z == z else "n/a", args.accept_z))
+        else:
+            take = better
+        print(f"[{tag}] gen {gen} champion cand {champ}: "
+              f"obj {pm(champ_obj, champ_se)}, incumbent {floor_obj:+.1f},"
+              f" paired {pm(pd, pse)} -- "
+              f"{'ACCEPTED' if take else 'rejected'}; {label}",
+              flush=True)
+
+        if take:
+            best = (champ_obj, cands[champ])
+            best_se, best_label = champ_se, label
         else:
             sigma = [s * 0.7 for s in sigma]   # stagnation: narrow
 
@@ -413,11 +488,20 @@ def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
         wsum = sum(weights)
         mean = [sum(w * scored[i][1][j] for i, w in enumerate(weights))
                 / wsum for j in idx]
+        held = best[0] is None
         print(f"[{tag}] gen {gen} best {scored[0][0]:+.1f}; "
-              f"block best {pm(best[0], best_se)}; "
-              f"incumbent {pm(inc_obj, inc_se)}", flush=True)
+              + ("block best none accepted; " if held else
+                 f"block best {pm(best[0], best_se)}; ")
+              + f"incumbent {pm(inc_obj, inc_se)}", flush=True)
 
-    return best
+    if best[0] is None:
+        # Nothing cleared the gate. The block's answer is its own
+        # incumbent, reported with the incumbent's number rather than
+        # with some candidate's lucky one.
+        return {"obj": inc_obj, "se": inc_se, "vals": list(cur),
+                "label": best_label}
+    return {"obj": best[0], "se": best_se, "vals": best[1],
+            "label": best_label}
 
 
 def parse_arena_manifest(path):
@@ -609,6 +693,32 @@ def main():
     ap.add_argument("--mixed", action="store_true",
                     help="head-to-head seat-mirrored games; objective is"
                          " within-game deep-side minus baseline-side")
+    ap.add_argument("--accept", choices=("best", "paired"),
+                    default="best",
+                    help="how a challenger becomes the block best."
+                         " best (default, legacy): the generation's"
+                         " highest mean wins -- an UNREPLICATED max,"
+                         " which is what selected noise in the"
+                         " 2026-08-25 campaign. paired: it wins only"
+                         " if its paired diff against the incumbent on"
+                         " the shared seeds clears --accept-z.")
+    ap.add_argument("--accept-z", type=float,
+                    help="required with --accept paired: how many"
+                         " standard errors the challenger's paired"
+                         " diff vs the incumbent must clear. No"
+                         " default -- the right value is a property of"
+                         " the campaign's budget, not of the tool.")
+    ap.add_argument("--reeval", type=int, metavar="K",
+                    help="re-evaluate each generation's top K"
+                         " candidates, and the incumbent, on"
+                         " --reeval-seeds seeds the search never saw,"
+                         " and take the block best from THAT number."
+                         " This is what makes 'block best' a"
+                         " replicated quantity.")
+    ap.add_argument("--reeval-seeds", type=int, metavar="N",
+                    help="required with --reeval: how many fresh"
+                         " training seeds (the ones after --count in"
+                         " the seed file) the re-evaluation uses.")
     ap.add_argument("--arena", metavar="MANIFEST",
                     help="run all-deep games under this per-seat tuning"
                          " manifest (the server's FREECIV_DEEP_ARENA"
@@ -621,8 +731,26 @@ def main():
         sys.exit("refusing to optimise against holdout seeds; "
                  "use --report-holdout TUNINGFILE for final numbers")
 
-    seeds = [int(x) for x in
-             Path(args.seeds).read_text().split()][: args.count]
+    if args.accept == "paired" and args.accept_z is None:
+        sys.exit("--accept paired requires --accept-z: the acceptance"
+                 " threshold is a campaign decision, and this tool"
+                 " will not pick one for you")
+    if args.reeval and not args.reeval_seeds:
+        sys.exit("--reeval K requires --reeval-seeds N")
+
+    all_seeds = [int(x) for x in Path(args.seeds).read_text().split()]
+    seeds = all_seeds[: args.count]
+    # Fresh seeds for replicated selection come from the same TRAIN
+    # file, after the ones the search itself uses: fresh with respect
+    # to the optimiser, still never the holdout.
+    args.reeval_pool = []
+    if args.reeval:
+        args.reeval_pool = all_seeds[args.count:
+                                     args.count + args.reeval_seeds]
+        if len(args.reeval_pool) < args.reeval_seeds:
+            sys.exit(f"--reeval-seeds {args.reeval_seeds} needs"
+                     f" {args.count + args.reeval_seeds} seeds in"
+                     f" {args.seeds}, which holds {len(all_seeds)}")
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -654,7 +782,7 @@ def main():
         with concurrent.futures.ThreadPoolExecutor(args.jobs) as ex:
             futs = {}
             for c, config in enumerate(args.configs):
-                for i, s in enumerate(seeds):
+                for i, s in enumerate(seeds + args.reeval_pool):
                     futs[ex.submit(run_game, config, args, "baseline", s,
                                    out / "baseline" / f"cfg{c}"
                                    / f"seed-{s}",
@@ -725,23 +853,26 @@ def main():
             tag = f"r{rnd}-{bname}"
             print(f"=== round {rnd} block {bname}: "
                   f"{len(idx)} params", flush=True)
-            obj, vals = run_block(args, seeds, allp, idx, cur, baseline,
-                                  out, rng, tag)
-            gain = obj - history[-1][2] if history else None
-            history.append((rnd, bname, obj))
-            cur = vals
-            print(f"=== round {rnd} block {bname} done: obj {obj:+.1f}"
-                  + (f" (delta {gain:+.1f})" if gain is not None else ""),
-                  flush=True)
+            res = run_block(args, seeds, allp, idx, cur, baseline,
+                            out, rng, tag)
+            gain = res["obj"] - history[-1][2] if history else None
+            history.append((rnd, bname, res["obj"], res["se"],
+                            res["label"]))
+            cur = res["vals"]
+            print(f"=== round {rnd} block {bname} done: obj"
+                  f" {pm(res['obj'], res['se'])}"
+                  + (f" (delta {gain:+.1f})" if gain is not None else "")
+                  + f" [{res['label']}]", flush=True)
 
     tf = out / "best-tuning.ini"
     write_tuning(tf, allp, cur)
     print("\nALTERNATION TABLE (objective after each block pass)")
-    for rnd, bname, obj in history:
-        print(f"  round {rnd}  block {bname:<6} obj {obj:+.1f}")
+    for rnd, bname, obj, se, label in history:
+        print(f"  round {rnd}  block {bname:<6} obj {pm(obj, se)}"
+              f"  [{label}]")
     if args.rounds > 1:
         first = {}
-        for rnd, bname, obj in history:
+        for rnd, bname, obj, _se, _label in history:
             first.setdefault(bname, []).append(obj)
         print("\nCOUPLING READ: per-block gain in the last round vs the"
               " first")
