@@ -161,7 +161,7 @@ def main():
         print(f"\n  rung {rung}")
         print(f"    {'band':<11} {'n':>7} {'pre':>7} {'density':>8} "
               f"{'shadow':>7} {'barb':>6} {'surv':>6} {'post>0':>7} "
-              f"{'mean post':>10} {'mean evid':>10}")
+              f"{'mean post':>10} {'mean evid':>10} {'evid=0':>7}")
         for b in sorted(acc):
             a = acc[b]
             n = max(a["n"], 1)
@@ -170,7 +170,8 @@ def main():
                   f"{100*a['pre']/n:>6.1f}% {100*a['density']/n:>7.1f}% "
                   f"{100*a['shadow']/n:>6.1f}% {100*a['barb']/n:>5.1f}% "
                   f"{100*a['surv']/n:>5.1f}% {100*a['post']/n:>6.1f}% "
-                  f"{a['post_sum']/n:>10.2f} {ev:>10.2f}")
+                  f"{a['post_sum']/n:>10.2f} {ev:>10.2f} "
+                  f"{100*(a['evid_n']-a['evid_pos'])/max(a['evid_n'],1):>6.1f}%")
 
     print("\n[2] delivered shields per player-game, by class and band")
     for rung in rungs:
