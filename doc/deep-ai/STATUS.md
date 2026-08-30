@@ -23099,8 +23099,11 @@ do not fix.
    components on `deep-decay-sum` (four ECON knobs, 2323 firings a
    game); log the military choice's class on `deep-bid` (the three
    `scale_*` military keys); log the pre-cap military value.
-3. `founder_tier_gate` off→on changes 7.2% of city-turn merges and has
-   never been A/B'd. It is a gate, not a tuning parameter.
+3. `founder_tier_gate` off→on changes 7.2% of city-turn merges. It is
+   a gate, not a tuning parameter. **Correction (2026-08-30):** "has
+   never been A/B'd" was wrong when written — the 80-game 2×2
+   recorded earlier in this file is null on the cities gap in both
+   seat orderings and on score. The gate stays at 0.
 
 ---
 

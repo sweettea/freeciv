@@ -101,8 +101,14 @@ touched, which is the scale-free number.
 σ step lands on the other setting, so their "flip" count is what the
 *other mode* would change, not a tuning gradient. They belong in a
 gate A/B, not in a parameter search. `founder_tier_gate` off→on would
-change 7.2% of all city-turn merges: that is a large, adjudicable
-change and it is currently untested.
+change 7.2% of all city-turn merges — a large change, and one that
+**has since been adjudicated**: an 80-game 2×2 (two seat orderings ×
+20 seeds) came back null on the pre-registered cities gap in both
+orderings (Δ −0.35, t −0.20 and Δ −1.15, t −0.51 at T201) and on
+score. The gate stays at 0. A high flip rate is a necessary condition
+for a knob to matter and this is what it looks like when the
+condition is met and the effect is not there; the screen's claim is a
+claim about reachability, never about value.
 
 ### Inert under replay — three knobs that provably cannot move anything
 
