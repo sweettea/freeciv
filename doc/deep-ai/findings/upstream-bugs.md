@@ -434,3 +434,22 @@ exhausted). Not fixed in place per rule 2's spirit for common/.
     attempt for shape fidelity at power 1.0 and reports honestly
     (`switched=` is the post-call state change, not the attempt).
     Found 2026-08-14.
+50. **`city_data->diplomat_threat` is set by any hostile-capable unit,
+    not by a diplomat** — the field's own comment reads "Enemy diplomat
+    or spy is near the city" (`daicity.h:58`) and it is the sole
+    trigger for `dai_choose_diplomat_defensive()`'s "totally arbitrary"
+    16000 want (`daidiplomat.c:126`). It is set at
+    `daimilitary.c:905` by `utype_acts_hostile(unit_type_get(punit))
+    && 2 >= move_time`, and `utype_acts_hostile()` is
+    `utype_can_do_action(putype, ACTION_HOSTILE)`
+    (`common/unittype.c:470`), which `common/actres.c` marks TRUE for
+    ACTRES_ATTACK, ACTRES_PILLAGE, ACTRES_BOMBARD, ACTRES_CONQUER_CITY
+    and ACTRES_CAPTURE_UNITS as well as for the six spy families. An
+    approaching Warriors therefore buys a Diplomat, at a want that
+    outranks every military emergency. Measured on the end state of 40
+    contested/lategame games (`benchmark/diploprice.py` [D6]): of the
+    cities with an enemy hostile-capable unit within two tiles, only
+    28.6% (contested) / 21.2% (lategame) had an enemy diplomat within
+    the same radius. Deep prices the defensive diplomat off observed
+    diplomat-class presence instead (`deep_diplomat_defence_price()`,
+    deepdefence.c, behind `diplo_price_gate`). Found 2026-08-30.
