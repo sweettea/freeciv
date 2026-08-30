@@ -117,10 +117,16 @@ deep_settler_tile_behavior(const struct tile *ptile,
   const struct player *owner = tile_owner(ptile);
 
   if (owner != NULL && !pplayers_allied(owner, param->owner)) {
+    /* Counted, because this is the refusal the refusal ladder cannot
+     * see: pf drops a TB_IGNORE node before the search is ever offered
+     * the tile (path_finding.c:288), so every bucket on
+     * deep-siteladder is already post-truncation. Observation only. */
+    deep_site_note_tbskip(ptile, TRUE);
     return TB_IGNORE;
   }
   if (is_non_allied_unit_tile(ptile, param->owner,
                               utype_has_flag(param->utype, UTYF_FLAGLESS))) {
+    deep_site_note_tbskip(ptile, FALSE);
     return TB_IGNORE;
   }
 

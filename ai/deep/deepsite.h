@@ -25,6 +25,12 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
                                             struct unit *punit,
                                             int boat_cost);
 void deep_contemplate_new_city(struct ai_type *ait, struct city *pcity);
+
+/* The settler pathfinder's tile-behaviour callback refused a tile
+   before the pf map could queue it, so the refusal ladder never saw
+   it: `owned` for a non-allied owner, otherwise a non-allied unit.
+   Reported as tbskip=/tbown=/tbunit=/tbland= on deep-siteladder. */
+void deep_site_note_tbskip(const struct tile *ptile, bool owned);
 void deep_site_free(void);
 
 /* Local isthmus test, pure map geometry: among the tile's eight
