@@ -3446,6 +3446,27 @@ struct deep_tuning {
    * census gives no threshold and rule 7 forbids inventing one.
    * Inert while the gate is 0. */
   int diplo_gap_floor;
+  /* Fund mil-infra -- the EFT_DEFEND_BONUS building and the veterancy
+   * swap -- from stock's MEASURED assess_danger() figure rather than
+   * from deep's post-injection anticipatory fear, and refuse the run
+   * outright below mil_infra_threat_floor.
+   *
+   * The census does NOT say this family is overpriced. It says it is
+   * unfinished: 288 shields per player-game on contested and 321 on
+   * lategame-80, with 44.0% / 25.2% of Barracks runs delivering,
+   * 38.4% / 40.9% of City Walls, 20.9% of Coastal Defense (which
+   * burns 67.0 shields per player-game in the abandoning switch), and
+   * deep ending with half to a TENTH of baseline's Barracks while its
+   * surviving army is 47% / 91% raw recruits against baseline's 19% /
+   * 32%. So the gate does not lower the want; it declines to start a
+   * run in a city with no measured threat. 0 = today's funding basis
+   * and no refusal, byte for byte. */
+  int mil_infra_gate;
+  /* Measured danger below which mil-infra is refused. PLACEHOLDER;
+   * the tested value is 1, the unit case -- at least one enemy unit
+   * that stock's own assessment scored above zero. Inert while the
+   * gate is 0. */
+  int mil_infra_threat_floor;
 };
 
 void deep_tuning_init(void);

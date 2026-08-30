@@ -5254,6 +5254,15 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
   struct adv_data *ai = adv_data_get(pplayer, NULL);
   struct unit_type *punittype;
   unsigned int our_def, urgency;
+  /* Stock's OWN assess_danger() figure, before deep injects a
+   * single anticipatory term. Hoisted to function scope because
+   * the mil-infra gate several hundred lines below has to be able
+   * to tell a MEASURED threat from a feared one, and the injection
+   * block overwrites city_data->danger in place. */
+  unsigned int fear_pre = 0;
+  /* "allow" until the gate refuses; "off" is not a separate state
+   * because a shut gate allows everything by construction. */
+  const char *infra_verdict = "allow";
   struct tile *ptile = pcity->tile;
   struct unit *virtualunit;
   struct ai_city *city_data = def_ai_city_data(pcity, ait);
@@ -5304,8 +5313,9 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
      * line when near == 0, and the prior writes none at all).
      * Observation only: the locals hold values this block was already
      * computing, in the order it already computed them. */
-    unsigned int fear_pre = city_data->danger;
     unsigned int surv, floored;
+
+    fear_pre = city_data->danger;
 
     if (fmult != 1.0 && over + shadow + density + prior + barb > 0) {
       deep_plr_data(pplayer)->stance_fear_gated++;
@@ -5578,6 +5588,30 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
                  choice->want);
       }
     }
+    /* THE MIL-INFRA GATE (S-DIPLOPRICE). Mil-infra is 288 shields per
+     * player-game on contested and 321 on lategame-80, and the census
+     * found it is NOT overpriced -- it is unfinished. 44.0% / 25.2%
+     * of Barracks runs deliver, 38.4% / 40.9% of City Walls runs,
+     * 20.9% of Coastal Defense runs, and deep ends with half
+     * (contested) to a tenth (lategame-80) of BASELINE's Barracks
+     * while carrying 47% / 91% raw recruits against baseline's 19% /
+     * 32%. Repricing the want downward would be the wrong correction;
+     * what the gate does instead is refuse to START a run in a city
+     * with no MEASURED threat, and fund the ones it allows from
+     * stock's own assess_danger() figure rather than from deep's
+     * anticipatory fear -- which is the same evidence S-FEARSEAT is
+     * instrumenting, read off the field that epic's `deep-fear pre`
+     * prints.
+     *
+     * mil_infra_threat_floor is PLACEHOLDER. Its tested value is 1,
+     * the unit case: at least one enemy unit that stock's own
+     * assessment scored above zero. Anything larger would be invented.
+     * findings/diploprice-verdict-2026-08-30.md section 1.3. */
+    if (deep_tuning_get()->mil_infra_gate > 0
+        && fear_pre < (unsigned int) deep_tuning_get()->mil_infra_threat_floor) {
+      infra_verdict = "refuse";
+      build_walls = FALSE;
+    }
     if (build_walls) {
       /* We will build walls if we can and want and (have "enough"
        * defenders or can just buy the walls straight away) */
@@ -5592,9 +5626,15 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
         /* Deep's injected fears (boat shadow, density, menace) fund
          * WALLS as well as bodies: walls are the upkeep-free defence,
          * the capital-for-labour answer in gold-upkeep rulesets
-         * (human idea 2026-07-30). */
+         * (human idea 2026-07-30). With the mil-infra gate open the
+         * funding basis is stock's MEASURED danger instead: a wall
+         * bought against a fear is a wall the queue drops when the
+         * fear moves on, and 895 / 801 abandoned City Walls runs are
+         * what that costs. */
         pcity->server.adv->building_want[wall_id]
-          += deep_tuning_get()->wall_fear_weight * city_data->danger;
+          += deep_tuning_get()->wall_fear_weight
+             * (deep_tuning_get()->mil_infra_gate > 0
+                ? fear_pre : city_data->danger);
       }
 
       if (wall_id != B_LAST
@@ -6260,9 +6300,29 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
      * G1 owns. */
     if (floor_def >= MAX(deep_tuning_get()->garrison_floor, 1)
         && city_data->grave_danger == 0) {
-      adjust_ai_unit_choice(pcity, choice);
+      /* The mil-infra gate's second seat, and the one the census
+       * points at hardest: 2013 / 595 Barracks runs started, 44.0% /
+       * 25.2% delivered, and deep finishes with 1.64 / 0.77 Barracks
+       * per player against baseline's 3.23 / 7.43 while its surviving
+       * army is 47% / 91% green against baseline's 19% / 32%. A
+       * veterancy swap in a city with no MEASURED threat is a run
+       * that starts and does not finish. */
+      if (deep_tuning_get()->mil_infra_gate > 0
+          && fear_pre
+             < (unsigned int) deep_tuning_get()->mil_infra_threat_floor) {
+        infra_verdict = "refuse";
+      } else {
+        adjust_ai_unit_choice(pcity, choice);
+      }
     }
   }
+
+  log_base(deep_metric_log_level(),
+           "deep-milinfra turn=%d player=\"%s\" city=%d pre=%u"
+           " danger=%u floor=%d verdict=%s",
+           game.info.turn, player_name(pplayer), pcity->id, fear_pre,
+           city_data->danger, deep_tuning_get()->mil_infra_threat_floor,
+           infra_verdict);
 
   /* SUCCESSOR-IMMINENT DEFERRAL (CONSEQ item 4, human 2026-08-05:
    * "some units and buildings expire too"). If the unit type that
