@@ -23256,3 +23256,173 @@ make it a group screen; the sampler is not.
    null on the cities gap and on score. The screen's remark that it
    "is currently untested" predates that read and is corrected in
    place by the next commit.
+
+## W25 — screen corpus retake and mixed-venue sigma (2026-08-30)
+
+Branch `worktree-agent-ae7ba60aa890a4359`. Items 1 and 2 of the
+previous entry's "Next", both done. **40 games bought, and they are
+the same 40 games**; the mixed-sigma half bought none. Nothing was
+tuned, ranked or selected, and the campaign is still unlaunched.
+
+### Task A — the corpus, re-taken and re-logged
+
+`benchmark/rescreen-corpus.sh`, binary sha `7f4a6473b05362d6`, ports
+7930–7959, `--jobs 4`, `nice -n 10`. Compiled defaults
+(`defaults.ini` sha `8b363d05`), contested + lategame-80, the 20
+holdout seeds, `tune.py --report-holdout` — which evaluates one fixed
+file and has no optimiser, so running on holdout seeds selects
+nothing. The 40 `ai/baseline` games were hardlinked in from
+`s6-nogates-*` as `nogates-holdout.sh` does; only the 40 deep games
+were run. Corpus lives in the main tree at
+`benchmark/results/w25-screen-corpus/`, game logs zstd'd, 80 MB.
+
+**All 40 scorelogs are byte-identical to the archived s6 corpus** (id
+line excluded) and all 40 maphashes match — not a 3-seed sample, the
+whole corpus. The report reproduces s6 exactly:
+
+    contested    -58.4 +/- 21.2   lategame-80  -57.9 +/- 16.3
+
+4 471 631 `deep-` lines over 117 tags, against 4 452 k over 116. The
+only difference between the two corpora is what the server wrote.
+
+### RESCREEN priced — all eight flip, none inert
+
+`knobscreen.py`, 40 games, no UNMEASURED rows:
+
+    knob                       flips/game  flip rate  ->
+    horizon_content_weight         753.23     32.3%   tier A AUCTION
+    horizon_multiplier_weight      144.62      6.2%   tier A AUCTION
+    scale_attacker                 112.90      3.2%   tier A DEFOPS
+    horizon_bundle_weight           83.88      3.6%   tier A AUCTION
+    horizon_growth_weight           78.85      3.4%   tier A AUCTION
+    emergency_value_cap             51.27      1.3%   TIER C, pinned
+    scale_defender                  42.75      1.2%   tier A DEFOPS
+    scale_ferry                     16.15      0.45%  tier A DEFOPS
+
+`horizon_content_weight` is the **second largest flip rate in the
+whole screen** (after `garrison_floor_danger` at 63.5%) and larger
+than `switch_cost_gain`, which the previous screen ranked first.
+
+`emergency_value_cap` is tier C **despite** flipping: its rule sees
+"the clamp engages", which is an input to a decision and not a
+decision; at the merge — the one comparison whose winner is logged —
+it stays provably inert on 143 k comparisons; and its default 0.0 is
+at the bottom of its range, so −1σ is a no-op and 51.27 is what
+turning the cap ON would clamp, not a gradient. Same class as
+`founder_tier_gate` and `garrison_floor`, same treatment: a gate A/B
+if anyone wants it, never a search dimension.
+
+New `emergency_cap` self-check: **17 530 decisions, 100.0%** agreement
+with the server (the smoke corpus had 606). All eight rules still
+self-check at 100.0% except `founder_pool` and `garrison_floor` at
+99.9%, unchanged.
+
+**The three-game smoke numbers were wrong, exactly as labelled.**
+`horizon_bundle_weight` read 0.0 and was called inert; it flips 83.9.
+`scale_defender` and `scale_attacker` swap order (83.0/40.7 became
+42.8/112.9). `emergency_value_cap` was under by 6×. Buying the 40
+re-plays was the difference between pinning a live knob and fitting
+it.
+
+Tier A's original eleven reproduce **to the digit** (274.70 / 114.15 /
+113.05 / 93.17 / 63.40 / 53.33 / 51.55 / 15.25 / 11.22 / 9.90 / 4.90),
+as they must on byte-identical games.
+
+Census: reconstructible 17 → 24, of which flipping 14 → 22;
+dead-path 92 → **89** (the three military scales now run); partial
+84 → 80. **The inert set falls 166 → 163.**
+
+### Blocks
+
+    TIER A, fit      AUCTION (9)  DEFOPS (9)      was 5 and 6
+    TIER B, screened BFEAR (9) BASSAULT (6) BSITE (6) BCIVIL (7)
+    RESCREEN         RETIRED, kept as the record
+    TIER C           163 pinned; not a block
+
+18 tier-A constants would be 18 against 20 seeds in one block — the
+ratio the 2026-08-23 campaign died of — so the 10-wide cap forces two,
+and the cut is at the **domestic/military merge**: AUCTION is the bid
+side plus the horizon anchor bids are priced against, DEFOPS is what
+produces a military want plus what that want is worth. The alternative
+cut would run a block boundary through a comparison that fires 93 k
+times a game. `scale_defender` sits with `garrison_floor_danger`
+because the floor produces the want the scale multiplies.
+
+Tier B unchanged, and its cut is now clean: with the four horizon
+components promoted out, the top 28 by firing rate is exactly the four
+tier-B blocks, the old five-way tie at 73.3 sits wholly inside, and
+the first name outside is `wrace_margin_turns` at 69.7.
+
+Campaign cost is **unchanged** — a block pass is `pop × gens × seeds`
+games whatever it moves, and `--dry-run` still prints 1 656 per
+stage-1 block pass at 9 constants as it did at 5. Verified: no
+duplicates, no cross-block overlap, every name in `tuning-params.ini`
+and inside `ALL`, no width NOTE.
+
+### Task B — the mixed venue's own sigma, offline
+
+1 120 archived `--mixed` games (`s1-mil-mixed` + `s3-mil-r2`, 70
+candidates × 8 seeds × 2 mirrored arms), scored with tune.py's own
+`mixed_sides()`. A mixed per-seed datum costs two games and so does a
+paired gap, so the sigmas are comparable per unit of machine time.
+
+    pooled within-candidate across-seed sigma      104.4
+    between-candidate sigma of candidate means      44.2
+      of which the 8-seed sampling SE               36.9
+      true between-candidate spread                 24.4
+    seed-effect sigma                               59.8
+    within-seed sigma across candidates             91.9
+    PAIRED candidate-vs-candidate per-seed sigma   119.2
+
+Paired contested reference, recomputed not cited: 115.3 / 105.4 /
+94.9 on the s4 / s5 / s6 holdout arms (64.2 / 72.7 / 72.9 on
+lategame-80).
+
+Three readings:
+
+1. **The mixed venue is not quieter.** 104.4 sits inside 94.9–115.3.
+   Its advantage was always its T100 surrogate correlation, which is
+   a different property. σ = 115 was pessimistic by ~9%.
+2. **Most between-candidate spread is the seed sample.** 44.2 apparent,
+   36.9 of it sampling SE, 24.4 real — the post-mortem's diagnosis as
+   a variance decomposition.
+3. **Pairing does not tighten the contrast on `--mixed`; it loosens
+   it.** There is no shared baseline term to cancel (the opponent is
+   inside each game), so pairing removes only the seed effect while
+   differencing two nearly independent games adds. ρ between two
+   candidates at one seed is **0.16**, and 119.2 > 104.4 follows.
+   `tune.py`'s docstring and `--dry-run` footer asserted the opposite
+   and are corrected.
+
+### The restated campaign SE budget
+
+    objective   +/- 23.3   (20 seeds, sigma 104.4)   was 25.7
+    race rung   +/- 36.9   ( 8 seeds, sigma 104.4)   was 40.7
+    reeval obj  +/- 36.9   ( 8 seeds, sigma 104.4)   was 40.7
+    ACCEPTANCE  +/- 42.2   ( 8 fresh seeds, sigma 119.2)  NOT BUDGETED
+
+The acceptance row is the one `--accept-z 2` gates on and it was
+missing from the header. **The bar a champion must clear is ~84
+points**, against the ~16–24 point gate contrasts of 2026-08-25. The
+campaign as written cannot accept an effect of the size this project
+has been finding — measured now, not guessed. `--reeval-seeds` is the
+lever (16 → bar 60 at +64 games/generation; 32 → bar 42 at +192), and
+`train.txt` holds 100 seeds so up to 80 is available for free.
+
+Also corrected in the header: 3312 + 3136 = 6448, so the campaign is
+6528 games including the report, not 6608.
+
+### Next
+
+1. **Read the acceptance bar before launching anything.** The design
+   question `screen-campaign.sh` now poses is whether to raise
+   `--reeval-seeds` before spending 35 hours, and that is a human's
+   call. It is still unlaunched on purpose.
+2. `horizon_content_weight` flips a third of every credited
+   improvement's argmax at ±1σ. That is a reachability claim and not
+   a value claim — but it is the largest reachability number on the
+   project and AUCTION is where it gets tested.
+3. The 163-knob inert set still has 89 knobs on code that never runs.
+   Turning one of those gates on makes the screen price its knobs the
+   same afternoon at zero game cost; that remains the cheapest
+   measurement available.
