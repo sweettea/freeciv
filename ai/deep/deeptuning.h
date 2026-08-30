@@ -3417,6 +3417,35 @@ struct deep_tuning {
    * a rating of 0 or less is already refused, so a floor of 0
    * excludes nothing. */
   double op_draft_attack_floor;
+  /* Substitute deep's own trigger for stock's on the DEFENSIVE
+   * diplomat. `dai_choose_diplomat_defensive()` writes a
+   * self-described "totally arbitrary" 16000 whenever
+   * `city_data->diplomat_threat` is set, and that flag -- documented
+   * as "Enemy diplomat or spy is near the city", daicity.h:58 -- is
+   * set at daimilitary.c:905 for ACTRES_ATTACK, ACTRES_PILLAGE,
+   * ACTRES_BOMBARD and ACTRES_CONQUER_CITY as readily as for a spy
+   * (upstream bug 50). The line it funds is deep's third largest:
+   * 138 shields + 43.5 gold per player-game on contested, 193.6 +
+   * 42.0 on lategame-80, 41.2% / 34.7% of its runs delivering, and
+   * 85% / 83% of the survivors standing inside one of our own cities
+   * having never reached a seam. Of the cities with a hostile-capable
+   * unit within two tiles, 28.6% / 21.2% had an enemy diplomat within
+   * the same radius. 0 = stock's flag decides, byte for byte. */
+  int diplo_price_gate;
+  /* Minimum number of foreign diplomat-class units observed inside
+   * stock's own `2 >= move_time` window for a defensive diplomat to
+   * be warranted. PLACEHOLDER. The tested value is 1, which is not a
+   * magnitude but the literal reading of the flag's own comment.
+   * Inert while the gate is 0. */
+  int diplo_evidence_floor;
+  /* Additionally require that a hostile neighbour in contact knows at
+   * least this many techs we do not -- the only quantity in the game
+   * that says what an enemy diplomat would come here to take, and the
+   * one stock computes for the OFFENSIVE diplomat and never for this
+   * one. PLACEHOLDER, shipping UNTESTED at 0 (requires nothing): the
+   * census gives no threshold and rule 7 forbids inventing one.
+   * Inert while the gate is 0. */
+  int diplo_gap_floor;
 };
 
 void deep_tuning_init(void);

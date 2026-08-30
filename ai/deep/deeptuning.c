@@ -373,6 +373,15 @@ static const struct deep_tuning deep_tuning_defaults = {
   .op_draft_attack_floor = 0.0,         /* PLACEHOLDER; 0 = the draft's
                                          * shipped test, which already
                                          * refuses a rating <= 0 */
+  .diplo_price_gate = 0,                /* 0 = stock's flag decides the
+                                         * defensive diplomat,
+                                         * byte for byte */
+  .diplo_evidence_floor = 0,            /* PLACEHOLDER; 0 = no evidence
+                                         * is required. Inert while the
+                                         * gate is 0 */
+  .diplo_gap_floor = 0,                 /* PLACEHOLDER, UNTESTED; 0 =
+                                         * no tech gap is required.
+                                         * Inert while the gate is 0 */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -699,7 +708,10 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(op_regate_sunk_gain) \
   TUNE_INT(op_regate_eta_freeze) \
   TUNE_INT(op_contact_quorum) \
-  TUNE_DOUBLE(op_draft_attack_floor)
+  TUNE_DOUBLE(op_draft_attack_floor) \
+  TUNE_INT(diplo_price_gate) \
+  TUNE_INT(diplo_evidence_floor) \
+  TUNE_INT(diplo_gap_floor)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 

@@ -5395,6 +5395,8 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
      * calibrated value instead. */
     struct adv_choice *dip = adv_new_choice();
     struct deep_dip_evidence ev;
+    const struct deep_tuning *dt = deep_tuning_get();
+    const char *verdict = "off";
 
     deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
     dai_choose_diplomat_defensive(ait, pplayer, pcity, dip, our_def);
@@ -5409,18 +5411,59 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
      * ones: deep-density's silence at near==0 cost the last census
      * its denominator. Observation only. */
     deep_diplomat_evidence(pplayer, pcity, &ev);
+    if (dip->want > 0) {
+      verdict = "allow";
+      /* THE GATE (S-DIPLOPRICE). Stock's trigger claims to mean "an
+       * enemy diplomat is near this city" and fires on any unit that
+       * can attack, pillage or bombard -- upstream bug 50. Measured
+       * on the end state of 40 games, only 28.6% (contested) / 21.2%
+       * (lategame-80) of the cities with a hostile-capable unit
+       * within two tiles had an enemy diplomat within the same
+       * radius, and the whole 138-shield line is spent on the flag.
+       *
+       * With the gate open deep substitutes its own trigger: the
+       * evidence the flag's own comment describes, counted here, in
+       * stock's own window. It does not touch the WANT -- a warranted
+       * defensive diplomat is still worth diplomat_defence_value --
+       * because nothing in the census gives a magnitude and rule 7
+       * forbids inventing one to have something to fit. What it
+       * changes is WHETHER the choice is made at all.
+       *
+       * Both floors are PLACEHOLDER. diplo_evidence_floor's tested
+       * value is 1, which is not a magnitude but the literal reading
+       * of "an enemy diplomat or spy is near the city".
+       * diplo_gap_floor ships and is deliberately untested: the
+       * census gives no threshold for what an enemy diplomat would
+       * come here to take, so a number would be invented. */
+      if (dt->diplo_price_gate > 0
+          && (ev.dip < dt->diplo_evidence_floor
+              || ev.gap < dt->diplo_gap_floor)) {
+        verdict = "refuse";
+        dip->want = 0;
+      }
+    }
+    /* DIPLOMAT census. 138 shields and 43.5 gold per player-game
+     * (findings/diploprice-verdict-2026-08-30.md §1.1) leave this
+     * function on a flag no line has ever printed, and the archive
+     * can only see the trigger as an END-STATE snapshot. `threat` is
+     * stock's flag, `dip`/`host` are the two populations under
+     * stock's own threshold, and their disagreement is the whole
+     * question. Written for EVERY city-turn, including the quiet
+     * ones: deep-density's silence at near==0 cost the last census
+     * its denominator. */
     log_base(deep_metric_log_level(),
              "deep-dipthreat turn=%d player=\"%s\" city=%d threat=%d"
              " hasdip=%d dip=%d host=%d dipeta=%d gap=%d ourdef=%u"
-             " stockwant=" ADV_WANT_PRINTF,
+             " verdict=%s stockwant=" ADV_WANT_PRINTF,
              game.info.turn, player_name(pplayer), pcity->id,
              city_data->diplomat_threat ? 1 : 0,
              city_data->has_diplomat ? 1 : 0,
-             ev.dip, ev.host, ev.dip_eta, ev.gap, our_def, dip->want);
+             ev.dip, ev.host, ev.dip_eta, ev.gap, our_def, verdict,
+             dip->want);
     if (dip->want > 0) {
       deep_want_apply(dip, (struct deep_want) {
         .tier = DWT_EMERGENCY,
-        .value = deep_tuning_get()->diplomat_defence_value });
+        .value = dt->diplomat_defence_value });
       if (deep_want_cmp(deep_want_from_choice(dip),
                         deep_want_from_choice(choice)) > 0) {
         adv_choice_copy(choice, dip);
