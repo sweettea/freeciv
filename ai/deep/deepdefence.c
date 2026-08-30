@@ -775,13 +775,23 @@ static unsigned int deep_density_prior(struct player *pplayer)
   density_fear_value / (1 + distance) of standing danger. The land
   sibling of the boat shadow; zero with no neighbours in range, so
   sprawling maps pay nothing.
+
+  The census line is UNCONDITIONAL and carries the seat that asked
+  (site=), because a term that only speaks when it is nonzero cannot
+  be told from a term that never ran: the 2026-08-30 fear census had
+  to reconstruct "density was 0 here" from the ABSENCE of a line, and
+  a zero share and a missing instrument look identical that way. Both
+  seats call this (the once-per-turn ledger and the build choice), and
+  they see different numbers, so a line that did not say which one it
+  came from could not be counted per seat either.
 **************************************************************************/
 static double deep_density_fear_raw(const struct player *pplayer,
                                     const struct tile *ptile,
                                     double *raw_out, int *near_out,
                                     int *cross_out, int *disc_out);
 
-static unsigned int deep_density_fear(struct city *pcity)
+static unsigned int deep_density_fear(struct city *pcity,
+                                      const char *site)
 {
   struct player *pplayer = city_owner(pcity);
   double fear, raw;
@@ -790,15 +800,13 @@ static unsigned int deep_density_fear(struct city *pcity)
   fear = deep_density_fear_raw(pplayer, city_tile(pcity), &raw, &n_near,
                                &n_cross, &n_disc);
 
-  if (n_near > 0) {
-    log_base(deep_metric_log_level(),
-             "deep-density turn=%d player=\"%s\" city=%d near=%d"
-             " cross=%d discounted=%d raw=%.2f gated=%.2f ramp=%.2f"
-             " fear=%u",
-             game.info.turn, player_name(pplayer), pcity->id, n_near,
-             n_cross, n_disc, raw, fear, deep_anticipation_ramp(),
-             (unsigned int) (fear * deep_anticipation_ramp()));
-  }
+  log_base(deep_metric_log_level(),
+           "deep-density turn=%d player=\"%s\" city=%d site=%s near=%d"
+           " cross=%d discounted=%d raw=%.2f gated=%.2f ramp=%.2f"
+           " fear=%u",
+           game.info.turn, player_name(pplayer), pcity->id, site, n_near,
+           n_cross, n_disc, raw, fear, deep_anticipation_ramp(),
+           (unsigned int) (fear * deep_anticipation_ramp()));
 
   return (unsigned int) (fear * deep_anticipation_ramp());
 }
@@ -2186,9 +2194,20 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
     double sat = deep_fear_satisfaction(&(wld.map), pcity, city_data);
     unsigned int over = deep_overseas_danger(&(wld.map), pcity);
     unsigned int shadow = deep_boat_shadow_fear(&(wld.map), pcity);
-    unsigned int density = deep_density_fear(pcity);
+    unsigned int density = deep_density_fear(pcity, "ledger");
     unsigned int barb = deep_barbarian_fear(pcity);
     unsigned int credit;
+    /* FEAR census, the ledger half of the build seat's line, printed
+     * with the identical field list so the two seats can be
+     * subtracted. They disagree today and nobody knows why: both read
+     * assess_danger() (which ASSIGNS, daimilitary.c:981), but at
+     * different moments in the turn, and the build seat's `pre` is
+     * nonzero on 12.5% of T1-25 evaluations while deep-def reports 0
+     * on 94% of the early picks. Observation only -- the locals below
+     * hold values this block already computed, in the order it
+     * already computed them. */
+    unsigned int fear_pre = city_data->danger;
+    unsigned int surv, floored;
 
     if (sat < 1.0) {
       log_base(deep_metric_log_level(),
@@ -2207,8 +2226,8 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
      * below. The wave itself is an omniscient read of aplayer->units
      * with no visibility test (RC6), not an OBSERVED one; see
      * findings/omniscience-census-2026-08-11.md S5. */
-    city_data->danger
-      += deep_survival_deficit_fear(&(wld.map), pcity, updisc, TRUE);
+    surv = deep_survival_deficit_fear(&(wld.map), pcity, updisc, TRUE);
+    city_data->danger += surv;
     credit = deep_incoming_defence_credit(ait, pcity)
              + deep_muster_reserve_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
@@ -2227,8 +2246,20 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
      * of the help already on its way. Before the floor, which is a
      * danger == 0 rule the stake cannot reach anyway. */
     deep_apply_capital_stake(ait, pcity, city_data, "ledger");
+    floored = city_data->danger;
     deep_apply_garrison_floor(&(wld.map), pcity, city_data, updisc,
                               menace, TRUE);
+    /* prior= is 0 by construction here and not omitted: the density
+     * prior is a build-seat term only, and a column that vanished
+     * between the two sites would be read as a difference. */
+    log_base(deep_metric_log_level(),
+             "deep-fear turn=%d player=\"%s\" city=%d site=ledger"
+             " pre=%u over=%u shadow=%u density=%u prior=%u barb=%u"
+             " surv=%u credit=%u updisc=%.3f sat=%.3f fmult=%.3f"
+             " prefloor=%u post=%u",
+             game.info.turn, player_name(pplayer), pcity->id,
+             fear_pre, over, shadow, density, 0u, barb, surv,
+             credit, updisc, sat, fmult, floored, city_data->danger);
   } city_list_iterate_end;
   deep_capstake_census(pplayer);
 }
@@ -5200,7 +5231,7 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     double fmult = deep_stance_fear_mult(pplayer);
     unsigned int over = deep_overseas_danger(nmap, pcity);
     unsigned int shadow = deep_boat_shadow_fear(nmap, pcity);
-    unsigned int density = deep_density_fear(pcity);
+    unsigned int density = deep_density_fear(pcity, "build");
     unsigned int prior = deep_density_prior(pplayer);
     unsigned int barb = deep_barbarian_fear(pcity);
     unsigned int credit;
@@ -7160,12 +7191,14 @@ static void deep_spend_gold(struct ai_type *ait, struct player *pplayer)
        * comparable: what the gold actually bought, in shields. */
       log_base(deep_metric_log_level(),
                "deep-buy turn=%d player=\"%s\" city=%d kind=\"%s\""
-               " gold=%d shields=%d want=%.1f urgency=%d tier=\"%s\"",
+               " gold=%d shields=%d want=%.1f urgency=%d danger=%u"
+               " grave=%u tier=\"%s\"",
                game.info.turn, player_name(pplayer), pcity->id,
                adv_choice_rule_name(&bestchoice), buycost,
                MAX(0, city_production_build_shield_cost(pcity)
                       - pcity->shield_stock),
-               (double) bestchoice.want, city_data->urgency, "normal");
+               (double) bestchoice.want, city_data->urgency,
+               city_data->danger, city_data->grave_danger, "normal");
       really_handle_city_buy(pplayer, pcity);
     } else if (deep_sell_to_defend(ait, pplayer, pcity, &bestchoice,
                                    buycost, expenses)) {
@@ -7184,12 +7217,14 @@ static void deep_spend_gold(struct ai_type *ait, struct player *pplayer)
         CITY_LOG(LOG_BUY, pcity, "now we can afford it (sold something)");
         log_base(deep_metric_log_level(),
                  "deep-buy turn=%d player=\"%s\" city=%d kind=\"%s\""
-                 " gold=%d shields=%d want=%.1f urgency=%d tier=\"%s\"",
+                 " gold=%d shields=%d want=%.1f urgency=%d danger=%u"
+                 " grave=%u tier=\"%s\"",
                  game.info.turn, player_name(pplayer), pcity->id,
                  adv_choice_rule_name(&bestchoice), buycost,
                  MAX(0, city_production_build_shield_cost(pcity)
                         - pcity->shield_stock),
-                 (double) bestchoice.want, city_data->urgency, "sold");
+                 (double) bestchoice.want, city_data->urgency,
+                 city_data->danger, city_data->grave_danger, "sold");
         really_handle_city_buy(pplayer, pcity);
       }
       increase_maxbuycost(pplayer, buycost);
