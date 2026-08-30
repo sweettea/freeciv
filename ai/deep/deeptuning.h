@@ -3699,6 +3699,63 @@ struct deep_tuning {
    * tuner can find out rather than so anyone can assume. Only read
    * while frontier_transit_gate is non-zero. */
   int frontier_transit_stance_floor;
+  /* S-FRONTIER (b): an empty site search may not ZERO the founder want
+   * when the failure is one a turn could undo.
+   *
+   * deep_contemplate_new_city() writes founder_want = 0 whenever the
+   * search returns NULL, and the want is only recomputed every
+   * AI_CITY_RECALC_SPEED turns or so, so one empty search removes the
+   * city from the founder queue until the next recalculation. The
+   * funnel census says how often that is: `w0` reaches 72% of fresh
+   * searches at T51-75 while `held` per city falls from 0.594 in
+   * T26-50 to 0.231, and the founder stock never recovers -- 0.531 a
+   * seat at T75 against baseline's 2.525
+   * (findings/city-ledger-2026-08-30.md S6).
+   *
+   * But an empty search is not evidence of a full map. The ladder
+   * says why it was empty, and three of its reasons are undone by a
+   * turn passing: a border moved, another of our own settlers released
+   * its reservation, or a tile the pathfinder skipped stopped being
+   * skipped. deep_site_blocked_seen_turn() already records exactly
+   * that -- it is the signal founder_join_guard reads on the
+   * consumption side, and this is the same signal on the production
+   * side.
+   *
+   * The rule: when the search that just failed was refused something
+   * a turn could undo, and this player still has counted sites to
+   * fill, the previous want DECAYS rather than being deleted.
+   *
+   * 0 = today's zero exactly, byte for byte. Counter: deep-founderfloor,
+   * one line per empty fresh search, gate on or off. */
+  int founder_floor_gate;
+  /* The fraction of the previous want that survives such a search.
+   *
+   * PLACEHOLDER 1.0 and NOT MEASURED. 1.0 is the limit case -- the
+   * undoable empty search does not touch the want at all -- and it is
+   * the only value that follows from the argument above without
+   * choosing a decay rate nobody measured. It is also the value with
+   * the obvious failure mode, which is why the gate is adjudicated
+   * before it is swept: while the block persists, the want persists,
+   * so a player permanently walled in keeps bidding for founders it
+   * cannot place. Flagged in STATUS for a tuning pass. Only read while
+   * founder_floor_gate is non-zero. */
+  double founder_floor_want;
+  /* The counted sites at which the floor is fully paid; below it the
+   * floor is scaled down in proportion, and at zero sites it is not
+   * paid at all.
+   *
+   * "Counted sites" is deep_remaining_sites() -- the reachable free
+   * land over this player's own land per city -- the same estimate the
+   * founder pool and founder_site_cap already size themselves by. This
+   * is what stops the floor from being a standing bid on a full map:
+   * an empty search on a map with nothing left zeroes the want exactly
+   * as it does today.
+   *
+   * PLACEHOLDER 1.0 and NOT MEASURED. One counted site is the unit
+   * case -- there is somewhere for one more city -- not a fitted
+   * magnitude. Flagged in STATUS for a tuning pass. Only read while
+   * founder_floor_gate is non-zero. */
+  double founder_floor_reach_ref;
 };
 
 void deep_tuning_init(void);

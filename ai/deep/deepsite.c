@@ -2722,6 +2722,54 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
 }
 
 /**********************************************************************//**
+  S-FRONTIER (b): what an EMPTY site search leaves of the founder want.
+
+  Today the answer is zero, unconditionally, and because the want is
+  only recomputed every AI_CITY_RECALC_SPEED turns that zero stands for
+  several turns after the condition that caused it may have passed. The
+  funnel census measured the consequence: `w0` at 72% of fresh searches
+  in T51-75 and a founder stock a fifth of baseline's.
+
+  The discrimination this makes is the one deep already makes on the
+  consumption side. founder_join_guard declines to dissolve a founder
+  when the last search was refused something a turn could undo, and
+  deep_site_blocked_seen_turn() is the record of exactly that -- a
+  border, one of our own reservations, or a tile the pathfinder
+  skipped. Here the same signal keeps the want that PRODUCES a founder,
+  and deep_remaining_sites() bounds it so that an empty search on a
+  genuinely full map still zeroes the want exactly as it does today.
+
+  Returns the want to write. Sign is preserved: a negative want means
+  "and I need a boat first" (daicity.h:60), and a floor that flipped it
+  would be inventing an errand rather than keeping one.
+**************************************************************************/
+static adv_want deep_founder_floor(struct player *pplayer, adv_want prev)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int blocked = deep_site_blocked_seen_turn(pplayer);
+  bool undoable = (blocked == game.info.turn);
+  double sites = 0.0, reach = 0.0;
+  adv_want kept = 0;
+
+  if (tune->founder_floor_gate > 0 && undoable && prev != 0) {
+    sites = deep_remaining_sites(pplayer);
+    reach = (tune->founder_floor_reach_ref > 0.0
+             ? MIN(1.0, sites / tune->founder_floor_reach_ref)
+             : 1.0);
+    kept = (adv_want) (tune->founder_floor_want * (double) prev * reach);
+  }
+
+  log_base(deep_metric_log_level(),
+           "deep-founderfloor turn=%d player=\"%s\" prev=%d blocked=%d"
+           " undoable=%d sites=%.2f reach=%.2f kept=%d gate=%d",
+           game.info.turn, player_name(pplayer), (int) prev, blocked,
+           undoable ? 1 : 0, sites, reach, (int) kept,
+           tune->founder_floor_gate);
+
+  return kept;
+}
+
+/**********************************************************************//**
   Estimate the founder want of a new city built by pcity; derived from
   stock contemplate_new_city(), going through the deep site evaluator
   so production decisions and settler routing finally price sites the
@@ -2786,7 +2834,8 @@ void deep_contemplate_new_city(struct ai_type *ait, struct city *pcity)
       cityresult_destroy(result);
     } else {
       CITY_LOG(LOG_DEBUG, pcity, "want no city");
-      city_data->founder_want = 0;
+      city_data->founder_want = deep_founder_floor(pplayer,
+                                                   city_data->founder_want);
     }
 
     /* THE decision line. `want` keeps its sign (negative means "and I

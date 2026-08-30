@@ -435,6 +435,17 @@ static const struct deep_tuning deep_tuning_defaults = {
   .frontier_transit_stance_floor = 0,   /* PLACEHOLDER; 0 = a peace
                                          * partner only. Inert while
                                          * the gate is 0 */
+  .founder_floor_gate = 0,              /* 0 = an empty search zeroes
+                                         * the founder want, byte for
+                                         * byte */
+  .founder_floor_want = 1.0,            /* PLACEHOLDER, unmeasured: the
+                                         * whole previous want
+                                         * survives. Inert while the
+                                         * gate is 0 */
+  .founder_floor_reach_ref = 1.0,       /* PLACEHOLDER, unmeasured: one
+                                         * counted site pays the floor
+                                         * in full. Inert while the
+                                         * gate is 0 */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -782,7 +793,10 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(mil_infra_threat_floor) \
   TUNE_INT(frontier_transit_gate) \
   TUNE_DOUBLE(frontier_transit_price) \
-  TUNE_INT(frontier_transit_stance_floor)
+  TUNE_INT(frontier_transit_stance_floor) \
+  TUNE_INT(founder_floor_gate) \
+  TUNE_DOUBLE(founder_floor_want) \
+  TUNE_DOUBLE(founder_floor_reach_ref)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 

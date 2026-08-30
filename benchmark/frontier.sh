@@ -45,7 +45,7 @@
 #                                                  the founder want
 #   c11   both                                     the corner
 #
-# Both act on the SAME T51-75 founder queue -- the transit gate by
+# Both act on the SAME T1-75 founder queue -- the transit gate by
 # giving an empty search somewhere to find, the floor gate by keeping
 # the founder in the build queue when it finds nothing -- so per the
 # S-FEARSINK lesson they want one factorial and not two concurrent
@@ -57,7 +57,7 @@
 # no cell clearing its own SE by a reasonable margin in BOTH venues.
 #
 # CONSTANTS ARE NOT SWEPT HERE. frontier_transit_price 1.0,
-# frontier_transit_stance_floor 2, founder_floor_want 1.0,
+# frontier_transit_stance_floor 0, founder_floor_want 1.0,
 # founder_floor_reach_ref 1.0 are all PLACEHOLDER; the cell tests the
 # interaction at the placeholders.
 #
@@ -84,7 +84,7 @@ ARCHIVE=/home/sweettea/freeciv/benchmark/results/tune-postfix/s6-nogates-war/hol
 # The census lines the tables are read on. Everything else in a
 # contested T150 game.log is hundreds of megabytes we do not have --
 # the disk is at 94%.
-KEEP='deep-tuning|deep-expand |deep-siteladder |deep-sitewall |deep-city |deep-transit '
+KEEP='deep-tuning|deep-expand |deep-siteladder |deep-sitewall |deep-city |deep-transit |deep-founderfloor '
 
 [ -x "$FIX" ] || { echo "no pinned server at $FIX" >&2; exit 1; }
 
