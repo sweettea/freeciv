@@ -185,6 +185,27 @@ void deep_want_scale_apply(const struct player *pplayer,
      * is the only treatment W01's gating map allows before the combat
      * model prices them (W10 lineage). A grave-danger defender keeps
      * its own value and keeps the tier. 0 = no cap. */
+
+    /* The cap's own census, emitted whether or not the cap is on and
+     * whether or not it binds. The conditional line below is the only
+     * thing that ever recorded this seam, and with `cap` at its 0
+     * default it never fires -- so the population the cap would act
+     * on, the emergency military values that actually reach the
+     * merge, is observable NOWHERE, and an offline screen cannot
+     * price emergency_value_cap even to confirm it inert (knob screen
+     * 2026-08-30, recommendation 3). `pre` is the value before any
+     * cap, `cap` the cap in force, `bind` whether it changes this
+     * one, and `class` says which producer formed the bid. Pure read:
+     * nothing is recomputed and nothing is assigned. */
+    log_base(deep_metric_log_level(),
+             "deep-milcap turn=%d player=\"%s\" city=%d who=\"%s\""
+             " pick=\"%s\" class=%d pre=%.1f cap=%.1f bind=%d",
+             game.info.turn, player_name(pplayer), pcity->id, who,
+             adv_choice_rule_name(choice),
+             (int) deep_want_class_of(choice),
+             (double) w.value, cap,
+             (cap > 0 && w.value > cap) ? 1 : 0);
+
     if (cap > 0 && w.value > cap) {
       log_base(deep_metric_log_level(),
                "deep-scale turn=%d player=\"%s\" city=%d who=\"%s\""
