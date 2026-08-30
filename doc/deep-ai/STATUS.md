@@ -22975,6 +22975,12 @@ by unit tests, not by a score.
       `python3 -m unittest discover -s benchmark/tests`).
 - Flags default to the previous behaviour; the result-cache layout is
   untouched, so an interrupted campaign resumes under the new tune.py.
+- **One deliberate exception to "defaults unchanged":** a generation
+  whose leader is the incumbent itself used to set the block best and
+  skip the sigma decay; it now counts as stagnation and the spread
+  narrows. The block still returns the same vector with the same
+  objective — only the next generation's sigma differs. Called out
+  because it is a search-trajectory change, not a display one.
 - Docs: `benchmark/README.md` §"Selection discipline and budgeting",
   plus the `tune.py` module docstring.
 

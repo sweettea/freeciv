@@ -545,6 +545,14 @@ def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
         # the same seeds -- without --reeval that is automatic, since
         # generation 0 candidate 0 IS the incumbent, but a fresh-seed
         # champion needs it said.
+        #
+        # This is the ONE place the default path's behaviour differs
+        # from before the W25 fixes: a generation whose leader is the
+        # incumbent itself used to set the block best and skip the
+        # sigma decay (best was None, so the first branch always
+        # took), and now counts as the stagnation it is. The block
+        # still returns the same vector with the same objective; only
+        # the next generation's spread differs.
         better = champ_obj > floor_obj and (best[0] is None
                                             or champ_obj > best[0])
         if args.accept == "paired":
