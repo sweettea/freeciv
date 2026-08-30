@@ -77,15 +77,21 @@ R_SWITCH = re.compile(r'deep-prodswitch turn=(\d+) player="([^"]+)" '
                       r'loss=(\d+).*builtlast=(\d)')
 R_BUY = re.compile(r'deep-buy turn=(\d+) player="([^"]+)" city=(\d+) '
                    r'kind="([^"]+)" gold=(\d+) shields=(\d+) want=(\S+) '
-                   r'urgency=(\d+) tier="([^"]+)"')
+                   r'urgency=(\d+) (?:danger=\d+ grave=\d+ )?'
+                   r'tier="([^"]+)"')
 R_FIN = re.compile(r'deep-fin turn=(\d+) player="([^"]+)" gold=(-?\d+) '
                    r'projected=(-?\d+) sell="([^"]+)" city=(\d+)')
 R_DEF = re.compile(r'deep-def turn=(\d+) player="([^"]+)" city=(\d+) '
                    r'danger=(\d+) urgency=(\d+) defense=(\d+) ndef=(\d+) '
                    r'prod="([^"]*)" shield=(-?\d+) food=(-?\d+) '
                    r'menace=(\S+)')
+# The site= and nocap= columns arrived with S-FEARSEAT; both are
+# optional and non-capturing so every group index above stays put and
+# a pre-epic corpus still parses.
 R_DENS = re.compile(r'deep-density turn=(\d+) player="([^"]+)" city=(\d+) '
-                    r'near=(\d+) cross=(\d+) discounted=(\d+) raw=(\S+) '
+                    r'(?:site=\S+ )?'
+                    r'near=(\d+) cross=(\d+) discounted=(\d+) '
+                    r'(?:nocap=\d+ )?raw=(\S+) '
                     r'gated=(\S+) ramp=(\S+) fear=(\d+)')
 
 # Units in civ2civ3 that `munits` counts; the census only needs to tell
