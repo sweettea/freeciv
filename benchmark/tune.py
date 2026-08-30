@@ -41,6 +41,13 @@ and evaluated once. Every game runs through run-game.sh with a TUNING
 file, so results are cached per (tuning content, config, seed) and an
 interrupted run resumes.
 
+Every objective is printed with its standard error (sigma across
+seeds / sqrt(n), blended over configs), and every candidate with its
+paired diff against the block's incumbent on the seeds both ran. An
+8-seed objective on a venue whose per-seed sigma is 115 has SE ~41:
+without that column a +48.9 reads as a gain, and the 2026-08-25
+post-mortem is a whole campaign that selected exactly that.
+
 Discipline: refuses to optimise against the holdout seed file. Report
 final numbers with --report-holdout TUNINGFILE, which evaluates a fixed
 tuning (no optimisation) on the holdout seeds.
@@ -165,6 +172,77 @@ def mixed_sides(scorelog, arm):
     return deep, base
 
 
+def mean_se(values):
+    """(mean, standard error) of a sample. SE is nan below two points."""
+    n = len(values)
+    if n == 0:
+        return float("nan"), float("nan")
+    m = sum(values) / n
+    if n < 2:
+        return m, float("nan")
+    var = sum((v - m) ** 2 for v in values) / (n - 1)
+    return m, (var / n) ** 0.5
+
+
+def blend_stats(per_seed):
+    """(objective, SE, points) for one candidate's {(cfg, seed): diff}.
+
+    The objective is what it always was: the mean over configs of that
+    config's mean paired diff. The SE is the standard error of exactly
+    that statistic -- each config mean has variance s_c^2/n_c and the
+    blend divides their sum by the config count, so
+    SE = sqrt(sum_c s_c^2/n_c) / C. With one config it is the plain
+    sigma-across-seeds / sqrt(n) the post-mortem asked for, and it is
+    the number that stops a campaign selecting noise: on a venue with
+    per-seed sigma 115, an 8-seed objective reads +48.9 +/- 41.
+
+    A candidate with no finished game at all still ranks last rather
+    than being given an invented value."""
+    by_cfg = {}
+    for (c, _seed), v in per_seed.items():
+        by_cfg.setdefault(c, []).append(v)
+    if not by_cfg:
+        return -float("inf"), float("nan"), 0
+    means, var = [], 0.0
+    for vals in by_cfg.values():
+        m, se = mean_se(vals)
+        means.append(m)
+        var += se * se
+    return (sum(means) / len(means), var ** 0.5 / len(means),
+            len(per_seed))
+
+
+def paired_stats(cand, inc):
+    """(mean, SE, points) of cand minus incumbent on the seeds BOTH ran.
+
+    The baseline term cancels, so this is a within-seed contrast and
+    its SE is well below either objective's own -- which is the whole
+    reason a challenger is judged against the incumbent rather than
+    against zero."""
+    return blend_stats({k: cand[k] - inc[k] for k in cand if k in inc})
+
+
+def zscore(mean, se):
+    """mean/SE. nan when the SE is unknown (fewer than two points).
+
+    A zero SE means every seed moved the same way by the same amount,
+    which is evidence, not a missing measurement: it scores +/-inf so
+    a unanimous challenger clears any gate instead of being rejected
+    by a division nobody thought about."""
+    if se != se:
+        return float("nan")
+    if se <= 0:
+        if mean == 0:
+            return float("nan")
+        return float("inf") if mean > 0 else -float("inf")
+    return mean / se
+
+
+def pm(mean, se):
+    """'+12.3 +/- 41.2' -- an objective is never printed without one."""
+    return f"{mean:+.1f} +/- {se:.1f}" if se == se else f"{mean:+.1f} +/- n/a"
+
+
 def run_game(config, args, arm, seed, outdir, port, tuning=None,
              mixed=False, arena=None):
     outdir.mkdir(parents=True, exist_ok=True)
@@ -194,7 +272,11 @@ def eval_population(args, seeds, cand_dirs, tuning_files, baseline,
                     portbase):
     """Evaluate every candidate's every game in ONE pool, so the whole
     population fills the machine instead of one candidate at a time.
-    Returns a list of blended objectives, one per candidate."""
+
+    Returns one {(config index, seed): paired diff} map per candidate.
+    Per-seed rather than pre-averaged, because the SE across seeds and
+    the paired contrast against the incumbent both need the individual
+    seeds; blend_stats() turns a map into the objective and its SE."""
     mixed = getattr(args, "mixed", False)
     arms = ("mixed_db", "mixed_bd") if mixed else ("deep",)
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as ex:
@@ -220,10 +302,11 @@ def eval_population(args, seeds, cand_dirs, tuning_files, baseline,
             try:
                 if mixed:
                     deep, base = f.result()
-                    per_seed = diffs.setdefault((k, c), {})
-                    per_seed[seed] = per_seed.get(seed, 0) + deep - base
+                    per_cand = diffs.setdefault(k, {})
+                    per_cand[(c, seed)] = (per_cand.get((c, seed), 0)
+                                           + deep - base)
                 else:
-                    diffs.setdefault((k, c), {})[seed] \
+                    diffs.setdefault(k, {})[(c, seed)] \
                         = f.result() - baseline[(c, seed)]
             except Exception as exc:                      # noqa: BLE001
                 lost.append((k, c, seed))
@@ -232,22 +315,11 @@ def eval_population(args, seeds, cand_dirs, tuning_files, baseline,
     if lost:
         print(f"  {len(lost)} of {len(futs)} games lost this generation",
               flush=True)
-    objs = []
-    for k in range(len(cand_dirs)):
-        per_cfg = []
-        for c in range(len(args.configs)):
-            got = diffs.get((k, c), {})
-            if got:
-                per_cfg.append(sum(got.values()) / len(got))
-        # A candidate that lost EVERY game is not comparable to one that
-        # merely scored badly; rank it last rather than inventing a value.
-        objs.append(sum(per_cfg) / len(per_cfg) if per_cfg
-                    else -float("inf"))
-    return objs
+    return [diffs.get(k, {}) for k in range(len(cand_dirs))]
 
 
 def eval_candidate(args, seeds, cand_dir, tuning_file, baseline, portbase):
-    """Single-candidate wrapper (holdout reports)."""
+    """Single-candidate wrapper (incumbent and holdout reports)."""
     return eval_population(args, seeds, [cand_dir], [tuning_file],
                            baseline, portbase)[0]
 
@@ -273,6 +345,7 @@ def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
     mean = [cur[i] for i in idx]
     sigma = [(allp[i]["hi"] - allp[i]["lo"]) / 6.0 for i in idx]
     best = (None, list(cur))
+    best_se = float("nan")
 
     # The incumbent is fixed for the whole block, so one evaluation
     # serves every generation. Printing it each generation is what
@@ -284,9 +357,11 @@ def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
     incdir.mkdir(parents=True, exist_ok=True)
     inc_tf = incdir / "tuning.ini"
     write_tuning(inc_tf, allp, cur)
-    inc_obj = eval_candidate(args, seeds, incdir, inc_tf.resolve(),
-                             baseline, args.portbase)
-    print(f"[{tag}] incumbent obj {inc_obj:+.1f}", flush=True)
+    inc_diffs = eval_candidate(args, seeds, incdir, inc_tf.resolve(),
+                               baseline, args.portbase)
+    inc_obj, inc_se, inc_n = blend_stats(inc_diffs)
+    print(f"[{tag}] incumbent obj {pm(inc_obj, inc_se)} (n={inc_n})",
+          flush=True)
 
     for gen in range(args.gens):
         cands = []
@@ -307,16 +382,28 @@ def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
             write_tuning(tf, allp, vals)
             cand_dirs.append(cdir)
             tuning_files.append(tf.resolve())
-        objs = eval_population(args, seeds, cand_dirs, tuning_files,
-                               baseline, args.portbase)
-        scored = sorted(zip(objs, cands), key=lambda t: -t[0])
-        for c, (obj, vals) in enumerate(zip(objs, cands)):
-            print(f"[{tag}] gen {gen} cand {c}: obj {obj:+.1f}  "
-                  + " ".join(f"{allp[i]['name']}={vals[i]:.3g}"
-                             for i in idx), flush=True)
+        diffs = eval_population(args, seeds, cand_dirs, tuning_files,
+                                baseline, args.portbase)
+        stats = [blend_stats(d) for d in diffs]
+        objs = [st[0] for st in stats]
+        order = sorted(range(len(objs)), key=lambda k: -objs[k])
+        scored = [(objs[k], cands[k]) for k in order]
+        for c, ((obj, se, n), vals) in enumerate(zip(stats, cands)):
+            # Every objective carries its SE, and every candidate
+            # carries its paired contrast against the incumbent: a
+            # "+104" whose SE is 41 and whose paired diff is +12 +/- 30
+            # is a candidate nobody should promote.
+            pd, pse, _pn = paired_stats(diffs[c], inc_diffs)
+            z = zscore(pd, pse)
+            print(f"[{tag}] gen {gen} cand {c}: obj {pm(obj, se)}"
+                  f" (n={n})  vs inc {pm(pd, pse)}"
+                  + (f" z={z:+.2f}" if z == z else "")
+                  + "  " + " ".join(f"{allp[i]['name']}={vals[i]:.3g}"
+                                    for i in idx), flush=True)
 
         if best[0] is None or scored[0][0] > best[0]:
             best = scored[0]
+            best_se = stats[order[0]][1]
         else:
             sigma = [s * 0.7 for s in sigma]   # stagnation: narrow
 
@@ -327,8 +414,8 @@ def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
         mean = [sum(w * scored[i][1][j] for i, w in enumerate(weights))
                 / wsum for j in idx]
         print(f"[{tag}] gen {gen} best {scored[0][0]:+.1f}; "
-              f"block best {best[0]:+.1f}; "
-              f"incumbent {inc_obj:+.1f}", flush=True)
+              f"block best {pm(best[0], best_se)}; "
+              f"incumbent {pm(inc_obj, inc_se)}", flush=True)
 
     return best
 
@@ -578,22 +665,24 @@ def main():
         print(f"baseline totals: {baseline}", flush=True)
 
     if args.evaluate:
-        obj = eval_candidate(args, seeds, out / "evaluate",
-                             Path(args.evaluate).resolve(), baseline,
-                             args.portbase)
-        print(f"EVALUATE {args.evaluate}: mean paired diff {obj:+.1f}"
-              f" over {len(seeds)} seeds, configs {args.configs}",
-              flush=True)
+        obj, se, n = blend_stats(
+            eval_candidate(args, seeds, out / "evaluate",
+                           Path(args.evaluate).resolve(), baseline,
+                           args.portbase))
+        print(f"EVALUATE {args.evaluate}: mean paired diff {pm(obj, se)}"
+              f" over {len(seeds)} seeds (n={n}),"
+              f" configs {args.configs}", flush=True)
         return
 
     if args.report_holdout:
         cand = out / "holdout-report"
-        obj = eval_candidate(args, seeds, cand,
-                             Path(args.report_holdout).resolve(),
-                             baseline, args.portbase)
+        obj, se, n = blend_stats(
+            eval_candidate(args, seeds, cand,
+                           Path(args.report_holdout).resolve(),
+                           baseline, args.portbase))
         print(f"HOLDOUT report for {args.report_holdout}: "
-              f"mean paired diff {obj:+.1f} over {len(seeds)} seeds",
-              flush=True)
+              f"mean paired diff {pm(obj, se)} over {len(seeds)} seeds"
+              f" (n={n})", flush=True)
         return
 
     rng = random.Random(args.seed_rng)
