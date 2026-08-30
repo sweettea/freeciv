@@ -613,6 +613,35 @@ struct deep_tuning {
   int density_fear_value;
   int density_fear_radius;
   int density_fear_ramp_turns;
+  /* EVIDENCE, off by default (gate 0 keeps the terms as they ship).
+   *
+   * The anticipatory terms count CITIES and never units: the
+   * 2026-08-30 fear census found deep_density_fear() on 54.9% of
+   * T1-25 build-seat evaluations and 72.1% at T26-50, against a
+   * corpus in which the median deep player's first combat loss is
+   * turn 62 and its first city loss turn 105. A neighbour's mere
+   * existence was buying defenders.
+   *
+   * fear_evidence_floor is the falsifiable form of that sentence: the
+   * least number of non-allied ATTACK-CAPABLE units that must stand
+   * within density_fear_radius of a city before density and prior
+   * convert into danger there at all. Below it the two anticipatory
+   * terms contribute nothing; every evidence-based term (stock's
+   * assessment, the menace, the boat shadow, the barbarian onset, the
+   * survival deficit) is untouched.
+   *
+   * density_fear_capability discounts one NEIGHBOUR rather than the
+   * whole sum: a met non-allied player showing no attack-capable unit
+   * in that radius has its cities weighted by this factor, exactly as
+   * a neighbour whose army cannot cross the water is already weighted
+   * by menace_overseas_weight. Same law, same shape, land side.
+   *
+   * The evidence count is measured and logged (evid= on deep-fear)
+   * whether or not the gate is open, so the arm that does not act on
+   * it still reports the counterfactual. */
+  int fear_evidence_gate;
+  int fear_evidence_floor;
+  double density_fear_capability;
   /* Pre-contact prior from lobby settings: shared-continent startpos
    * on thin land predicts early contact before anyone is met. Value
    * scales by min(1, prior_tiles / land-per-player); off at first

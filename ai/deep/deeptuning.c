@@ -111,6 +111,16 @@ static const struct deep_tuning deep_tuning_defaults = {
   .density_fear_value = 6,              /* PLACEHOLDER, untuned */
   .density_fear_radius = 8,             /* PLACEHOLDER, untuned */
   .density_fear_ramp_turns = 0,         /* PLACEHOLDER, untuned; 0=off */
+  .fear_evidence_gate = 0,              /* off: the terms ship ungated */
+  /* PLACEHOLDER, untuned. 1 is the UNIT CASE: one hostile-capable
+   * unit in the neighbourhood is the least evidence that is not
+   * "somebody lives near us". */
+  .fear_evidence_floor = 1,
+  /* PLACEHOLDER, untuned. Same magnitude as menace_overseas_weight
+   * and floor_interior_weight, which is this project's existing
+   * "it cannot reach us properly" discount, rather than a separately
+   * invented number. */
+  .density_fear_capability = 0.25,
   .density_prior_value = 20,            /* PLACEHOLDER, untuned */
   .density_prior_tiles = 200,           /* PLACEHOLDER, untuned */
   .wall_fear_weight = 0.3,              /* PLACEHOLDER, untuned */
@@ -486,6 +496,9 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(density_fear_value) \
   TUNE_INT(density_fear_radius) \
   TUNE_INT(density_fear_ramp_turns) \
+  TUNE_INT(fear_evidence_gate) \
+  TUNE_INT(fear_evidence_floor) \
+  TUNE_DOUBLE(density_fear_capability) \
   TUNE_INT(density_prior_value) \
   TUNE_INT(density_prior_tiles) \
   TUNE_DOUBLE(wall_fear_weight) \

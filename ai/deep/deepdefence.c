@@ -853,24 +853,90 @@ static unsigned int deep_density_prior(struct player *pplayer)
 static double deep_density_fear_raw(const struct player *pplayer,
                                     const struct tile *ptile,
                                     double *raw_out, int *near_out,
-                                    int *cross_out, int *disc_out);
+                                    int *cross_out, int *disc_out,
+                                    int *cap_out);
+
+/**********************************************************************//**
+  Non-allied units that could attack, standing within
+  density_fear_radius of a tile: the OBSERVED capability the
+  anticipatory terms have never asked about.
+
+  Same neighbour set and same radius as the border-pressure sum, so
+  the evidence and the fear it gates are measured over one
+  neighbourhood and not two. `only` restricts the count to a single
+  player, which is what the per-neighbour capability discount needs;
+  NULL counts everyone.
+
+  Attack strength, not unit count: a Settlers stack is not a
+  capability, and `attack_strength > 0` is the ruleset's own answer to
+  "could this thing take a city from us".
+**************************************************************************/
+static int deep_hostile_capability_near(const struct player *pplayer,
+                                        const struct tile *ptile,
+                                        const struct player *only)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int n = 0;
+
+  players_iterate_alive(aplayer) {
+    if (aplayer == pplayer
+        || (only != NULL && aplayer != only)
+        || pplayers_allied(pplayer, aplayer)
+        || player_diplstate_get(pplayer, aplayer)->type == DS_NO_CONTACT) {
+      continue;
+    }
+    unit_list_iterate(aplayer->units, aunit) {
+      const struct unit_type *ut = unit_type_get(aunit);
+
+      if (ut->attack_strength <= 0
+          || unit_has_type_flag(aunit, UTYF_CIVILIAN)) {
+        continue;
+      }
+      if (real_map_distance(unit_tile(aunit), ptile)
+          <= tune->density_fear_radius) {
+        n++;
+      }
+    } unit_list_iterate_end;
+  } players_iterate_alive_end;
+
+  return n;
+}
+
+/**********************************************************************//**
+  Does the neighbourhood carry enough observed capability for the
+  ANTICIPATORY terms (density, prior) to convert into danger here?
+
+  TRUE with the gate shut, which is what keeps the off arm identical.
+**************************************************************************/
+static bool deep_fear_evidence_met(const struct player *pplayer,
+                                   const struct tile *ptile)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+
+  if (tune->fear_evidence_gate <= 0 || tune->fear_evidence_floor <= 0) {
+    return TRUE;
+  }
+
+  return (deep_hostile_capability_near(pplayer, ptile, NULL)
+          >= tune->fear_evidence_floor);
+}
 
 static unsigned int deep_density_fear(struct city *pcity,
                                       const char *site)
 {
   struct player *pplayer = city_owner(pcity);
   double fear, raw;
-  int n_near = 0, n_cross = 0, n_disc = 0;
+  int n_near = 0, n_cross = 0, n_disc = 0, n_cap = 0;
 
   fear = deep_density_fear_raw(pplayer, city_tile(pcity), &raw, &n_near,
-                               &n_cross, &n_disc);
+                               &n_cross, &n_disc, &n_cap);
 
   log_base(deep_metric_log_level(),
            "deep-density turn=%d player=\"%s\" city=%d site=%s near=%d"
-           " cross=%d discounted=%d raw=%.2f gated=%.2f ramp=%.2f"
-           " fear=%u",
+           " cross=%d discounted=%d nocap=%d raw=%.2f gated=%.2f"
+           " ramp=%.2f fear=%u",
            game.info.turn, player_name(pplayer), pcity->id, site, n_near,
-           n_cross, n_disc, raw, fear, deep_anticipation_ramp(),
+           n_cross, n_disc, n_cap, raw, fear, deep_anticipation_ramp(),
            (unsigned int) (fear * deep_anticipation_ramp()));
 
   return (unsigned int) (fear * deep_anticipation_ramp());
@@ -885,7 +951,8 @@ static unsigned int deep_density_fear(struct city *pcity,
 static double deep_density_fear_raw(const struct player *pplayer,
                                     const struct tile *ptile,
                                     double *raw_out, int *near_out,
-                                    int *cross_out, int *disc_out)
+                                    int *cross_out, int *disc_out,
+                                    int *cap_out)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   double fear = 0.0;
@@ -896,7 +963,7 @@ static double deep_density_fear_raw(const struct player *pplayer,
    * reachable reports discounted=0 -- a measured no-op rather than an
    * argument. */
   double raw = 0.0;
-  int n_near = 0, n_cross = 0, n_disc = 0;
+  int n_near = 0, n_cross = 0, n_disc = 0, n_cap = 0;
 
   if (tune->density_fear_value <= 0) {
     return 0.0;
@@ -904,6 +971,7 @@ static double deep_density_fear_raw(const struct player *pplayer,
 
   players_iterate_alive(aplayer) {
     int floats = -1;    /* Lazily: does this neighbour own sea lift? */
+    int armed = -1;     /* Lazily: any attack-capable unit in range? */
 
     if (aplayer == pplayer
         || pplayers_allied(pplayer, aplayer)
@@ -921,6 +989,22 @@ static double deep_density_fear_raw(const struct player *pplayer,
       w = tune->density_fear_value / (1.0 + d);
       n_near++;
       raw += w;
+      /* Capability discount, the land twin of the reachability gate
+       * below: a neighbour showing no attack-capable unit in this
+       * neighbourhood is a neighbour, not a front. Same lazy
+       * per-player evaluation, same "full weight once the capability
+       * is observed, a standing discount before" shape. Off unless
+       * fear_evidence_gate opens it. */
+      if (tune->fear_evidence_gate > 0) {
+        if (armed < 0) {
+          armed = (deep_hostile_capability_near(pplayer, ptile, aplayer)
+                   > 0) ? 1 : 0;
+        }
+        if (armed == 0) {
+          w *= tune->density_fear_capability;
+          n_cap++;
+        }
+      }
       if (tile_continent(city_tile(acity)) != tile_continent(ptile)) {
         n_cross++;
         /* Reachability gate (task #18, spec'd 0112a65112 from the
@@ -961,6 +1045,9 @@ static double deep_density_fear_raw(const struct player *pplayer,
   if (disc_out != NULL) {
     *disc_out = n_disc;
   }
+  if (cap_out != NULL) {
+    *cap_out = n_cap;
+  }
 
   return fear;
 }
@@ -974,7 +1061,7 @@ unsigned int deep_density_fear_at(const struct player *pplayer,
                                   const struct tile *ptile)
 {
   return (unsigned int) (deep_density_fear_raw(pplayer, ptile, NULL, NULL,
-                                               NULL, NULL)
+                                               NULL, NULL, NULL)
                          * deep_anticipation_ramp());
 }
 
@@ -2273,7 +2360,18 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
      * already computed them. */
     unsigned int fear_pre = city_data->danger;
     unsigned int surv, floored;
+    /* Observed capability in this neighbourhood, measured whether or
+     * not the gate acts on it, so the off arm reports the
+     * counterfactual the census asked for. */
+    int evid = deep_hostile_capability_near(pplayer, city_tile(pcity),
+                                            NULL);
 
+    if (!deep_fear_evidence_met(pplayer, city_tile(pcity))) {
+      /* Anticipatory only. Stock's assessment, the menace, the boat
+       * shadow, the barbarian onset and the survival deficit are
+       * evidence-based already and are not touched. */
+      density = 0;
+    }
     if (sat < 1.0) {
       log_base(deep_metric_log_level(),
                "deep-sat turn=%d player=\"%s\" city=%d",
@@ -2321,10 +2419,11 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
              "deep-fear turn=%d player=\"%s\" city=%d site=ledger"
              " pre=%u over=%u shadow=%u density=%u prior=%u barb=%u"
              " surv=%u credit=%u updisc=%.3f sat=%.3f fmult=%.3f"
-             " prefloor=%u post=%u",
+             " evid=%d prefloor=%u post=%u",
              game.info.turn, player_name(pplayer), pcity->id,
              fear_pre, over, shadow, density, 0u, barb, surv,
-             credit, updisc, sat, fmult, floored, city_data->danger);
+             credit, updisc, sat, fmult, evid, floored,
+             city_data->danger);
   } city_list_iterate_end;
   deep_capstake_census(pplayer);
 }
@@ -5315,7 +5414,14 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
      * computing, in the order it already computed them. */
     unsigned int fear_pre = city_data->danger;
     unsigned int surv, floored;
+    int evid = deep_hostile_capability_near(pplayer, city_tile(pcity),
+                                            NULL);
 
+    if (!deep_fear_evidence_met(pplayer, city_tile(pcity))) {
+      /* Both anticipatory terms; see the once-per-turn site. */
+      density = 0;
+      prior = 0;
+    }
     if (fmult != 1.0 && over + shadow + density + prior + barb > 0) {
       deep_plr_data(pplayer)->stance_fear_gated++;
     }
@@ -5357,10 +5463,11 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
              "deep-fear turn=%d player=\"%s\" city=%d site=build"
              " pre=%u over=%u shadow=%u density=%u prior=%u barb=%u"
              " surv=%u credit=%u updisc=%.3f sat=%.3f fmult=%.3f"
-             " prefloor=%u post=%u",
+             " evid=%d prefloor=%u post=%u",
              game.info.turn, player_name(pplayer), pcity->id,
              fear_pre, over, shadow, density, prior, barb, surv,
-             credit, updisc, sat, fmult, floored, city_data->danger);
+             credit, updisc, sat, fmult, evid, floored,
+             city_data->danger);
 
     if (city_data->danger == 0 && deep_tuning_get()->rotation_want > 0
         && deep_tuning_get()->rotation_power_ratio > 0.0) {
