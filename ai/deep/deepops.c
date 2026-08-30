@@ -5636,6 +5636,60 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
     }
     eta = deep_op_eta(pplayer, op, target);
 
+    /* THE MARCH, one line per operation per turn.
+     *
+     * The exchange-rate census (findings/op-exchange-rate-2026-08-29.md)
+     * could read only the endpoints of a march: the launch line and
+     * whatever terminal line the wave earned. Everything the epic has
+     * to price lives in between. P(arrive | eta) has to be FITTED, and
+     * a curve cannot be fitted to two points per operation.
+     *
+     * `hp`/`hpmax` are the column that settles section 4.2's third
+     * candidate. deep_take_odds_cost() reads live HP, dai_gothere()
+     * spends the wave's blood getting there, and nothing carries a
+     * damage term across the march -- so a wave that arrives at 60%
+     * health was priced healthy. One probe operation lost 45x of its
+     * odds with members and eta both constant; only a per-turn HP
+     * read can say whether that is the population or an anecdote.
+     *
+     * `dist` is the quorum's raw distance (the same k-th smallest the
+     * eta is built from) and `near` the closest member's, so "the
+     * wave is converging" and "the wave has stalled" stop being the
+     * same absence of evidence. Distance CLOSED is the difference
+     * between consecutive lines; storing a launch distance in the op
+     * would be state, and state is not observation.
+     *
+     * Observation only: every field is a pure read of units and tiles
+     * the block above already resolved. */
+    {
+      int hp = 0, hpmax = 0, near = FC_INFINITY;
+      int d[DEEP_OP_MEMBERS];
+      int j, nd = 0, k;
+
+      for (i = 0; i < ns; i++) {
+        int di = real_map_distance(unit_tile(stream[i]),
+                                   city_tile(target));
+
+        hp += stream[i]->hp;
+        hpmax += unit_type_get(stream[i])->hp;
+        near = MIN(near, di);
+        for (j = nd; j > 0 && d[j - 1] > di; j--) {
+          d[j] = d[j - 1];
+        }
+        d[j] = di;
+        nd++;
+      }
+      k = MIN(MAX(op->required, 1), nd);
+      log_base(deep_metric_log_level(),
+               "deep-march turn=%d player=\"%s\" op=%d target=%d"
+               " marched=%d eta=%d members=%d required=%d"
+               " hp=%d hpmax=%d dist=%d near=%d",
+               game.info.turn, player_name(pplayer), oi, op->target_city,
+               game.info.turn - op->march_turn, eta, ns, op->required,
+               hp, hpmax, nd > 0 ? d[k - 1] : -1,
+               nd > 0 ? near : -1);
+    }
+
     if (eta <= 1) {
       /* Contact: the wave stands at the walls. The op takes its
        * members back from the stock attack path and fights the
