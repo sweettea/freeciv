@@ -252,6 +252,18 @@ def eval_candidate(args, seeds, cand_dir, tuning_file, baseline, portbase):
                            baseline, portbase)[0]
 
 
+def incumbent_dir(out, tag):
+    """Where the block's unmutated incumbent is evaluated.
+
+    It is generation 0's candidate 0 by construction -- run_block has
+    always seeded the population with cur untouched -- so evaluating
+    the incumbent here re-uses that directory's DONE markers instead
+    of minting new ones. Every generation after the first therefore
+    re-reads the incumbent for free, and campaigns run before this
+    existed still resume without replaying a single game."""
+    return out / tag / "gen0" / "cand0"
+
+
 def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
     """Evolve only allp[idx]; every other constant stays at cur's value.
 
@@ -261,6 +273,20 @@ def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
     mean = [cur[i] for i in idx]
     sigma = [(allp[i]["hi"] - allp[i]["lo"]) / 6.0 for i in idx]
     best = (None, list(cur))
+
+    # The incumbent is fixed for the whole block, so one evaluation
+    # serves every generation. Printing it each generation is what
+    # makes a population drifting away from a still-unbeaten start
+    # visible while the campaign runs rather than in the post-mortem
+    # (tune-postfix, 2026-08-25: four stages of "block best" that the
+    # incumbent had beaten all along).
+    incdir = incumbent_dir(out, tag)
+    incdir.mkdir(parents=True, exist_ok=True)
+    inc_tf = incdir / "tuning.ini"
+    write_tuning(inc_tf, allp, cur)
+    inc_obj = eval_candidate(args, seeds, incdir, inc_tf.resolve(),
+                             baseline, args.portbase)
+    print(f"[{tag}] incumbent obj {inc_obj:+.1f}", flush=True)
 
     for gen in range(args.gens):
         cands = []
@@ -301,7 +327,8 @@ def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
         mean = [sum(w * scored[i][1][j] for i, w in enumerate(weights))
                 / wsum for j in idx]
         print(f"[{tag}] gen {gen} best {scored[0][0]:+.1f}; "
-              f"block best {best[0]:+.1f}", flush=True)
+              f"block best {best[0]:+.1f}; "
+              f"incumbent {inc_obj:+.1f}", flush=True)
 
     return best
 
