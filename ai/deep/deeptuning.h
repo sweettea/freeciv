@@ -3396,6 +3396,17 @@ struct deep_tuning {
    * did close the distance has earned the cheaper price. 0 = the
    * current eta, as shipped. */
   int op_regate_eta_freeze;
+  /* The k in deep_op_eta()'s k-th smallest member arrival, decoupled
+   * from `required`. `required` is the smallest prefix of the pool
+   * that cleared the formation bar -- a LEGITIMACY number -- and it
+   * is also the number that decides when the wave has ARRIVED, since
+   * contact fires at eta <= 1. So a big wave can never reach the
+   * walls: 133 launches at required >= 9 produced two contacts and
+   * zero cities, against 14.8% strike at required 1-2. A wave with
+   * three blades at the walls and five stragglers six tiles back is
+   * priced as if it were still six tiles back. 0 = k is `required`,
+   * as shipped. */
+  int op_contact_quorum;
 };
 
 void deep_tuning_init(void);

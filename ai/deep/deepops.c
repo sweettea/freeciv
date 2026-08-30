@@ -4391,6 +4391,7 @@ static int deep_op_eta(struct player *pplayer,
                        const struct deep_operation *op,
                        const struct city *target)
 {
+  const struct deep_tuning *tune = deep_tuning_get();
   const struct unit_type *ferrytype
     = best_role_unit_for_player(pplayer, L_FERRYBOAT);
   Continent_id tcont = tile_continent(city_tile(target));
@@ -4428,7 +4429,32 @@ static int deep_op_eta(struct player *pplayer,
   if (n == 0) {
     return 0;
   }
-  k = MIN(MAX(op->required, 1), n);
+  /* THE QUORUM THAT GATES CONTACT (op-arrival; findings/
+   * op-exchange-rate-2026-08-29.md section 4.4).
+   *
+   * `required` is the smallest prefix of the pool that cleared the
+   * formation bar -- a LEGITIMACY number. It is also the k here, and
+   * contact fires at eta <= 1, so the same number decides whether the
+   * wave is allowed to exist and whether it can ever reach the walls:
+   *
+   *   required   launches   strikes        takes
+   *     1-2          27      4 (14.8%)     2 (7.4%)
+   *     3-4         124     20 (16.1%)     4 (3.2%)
+   *     5-6         133      9 ( 6.8%)     6 (4.5%)
+   *     7-8          84      3 ( 3.6%)     1 (1.2%)
+   *     9+          133      2 ( 1.5%)     0 (0.0%)
+   *
+   * 133 launches with a nine-or-more quorum produced two contacts and
+   * no cities. A wave with three blades at the walls and five
+   * stragglers six tiles back is priced as if it were still six tiles
+   * back, so it stands there, re-gates, and aborts.
+   *
+   * op_contact_quorum decouples the two: how many blades have to be
+   * on the target for the wave to be AT the target. 0 keeps the
+   * shipped identity, k = required. */
+  k = tune->op_contact_quorum > 0
+      ? MIN(tune->op_contact_quorum, n)
+      : MIN(MAX(op->required, 1), n);
 
   return t[k - 1];
 }

@@ -367,6 +367,9 @@ static const struct deep_tuning deep_tuning_defaults = {
   .op_regate_eta_freeze = 0,            /* PLACEHOLDER; 0 = price at the
                                          * current eta. Inert while the
                                          * gate is 0 */
+  .op_contact_quorum = 0,               /* PLACEHOLDER; 0 = the k in the
+                                         * eta is `required`, byte for
+                                         * byte */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -691,7 +694,8 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(op_march_loss_rate) \
   TUNE_INT(op_regate_gate) \
   TUNE_DOUBLE(op_regate_sunk_gain) \
-  TUNE_INT(op_regate_eta_freeze)
+  TUNE_INT(op_regate_eta_freeze) \
+  TUNE_INT(op_contact_quorum)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 
