@@ -370,6 +370,9 @@ static const struct deep_tuning deep_tuning_defaults = {
   .op_contact_quorum = 0,               /* PLACEHOLDER; 0 = the k in the
                                          * eta is `required`, byte for
                                          * byte */
+  .op_draft_attack_floor = 0.0,         /* PLACEHOLDER; 0 = the draft's
+                                         * shipped test, which already
+                                         * refuses a rating <= 0 */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -695,7 +698,8 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(op_regate_gate) \
   TUNE_DOUBLE(op_regate_sunk_gain) \
   TUNE_INT(op_regate_eta_freeze) \
-  TUNE_INT(op_contact_quorum)
+  TUNE_INT(op_contact_quorum) \
+  TUNE_DOUBLE(op_draft_attack_floor)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 

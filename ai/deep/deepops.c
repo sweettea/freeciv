@@ -4104,6 +4104,30 @@ static bool deep_op_form(struct ai_type *ait, struct player *pplayer,
             || unit_has_type_flag(u, UTYF_CIVILIAN)
             || u->hp <= 0
             || adv_unit_att_rating(u) <= 0
+            /* THE DRAFT'S QUALITY FLOOR (op-arrival; findings/
+             * op-exchange-rate-2026-08-29.md section 4.5).
+             *
+             * The blade chosen from each city is the weakest DEFENDER
+             * in it, and the release test is marginal on the ODDS,
+             * which are driven by attack rating. So the draft meets a
+             * head count with units that buy almost nothing per
+             * blade, and pays real defence for them:
+             *
+             *   drafted > 0   406 formations   23 strikes   3 takes
+             *   drafted = 0   234 formations   16 strikes  10 takes
+             *
+             * A wave that needed the draft takes a city at ONE SIXTH
+             * the rate of one that did not, and drafted formations
+             * are 63% of everything deep forms. The defensive arm's
+             * deaths rose 15% under the weak-prey gate, which is this
+             * draft's bill arriving.
+             *
+             * op_draft_attack_floor asks the blade to be worth
+             * marching before it is worth borrowing. 0.0 is the
+             * shipped test exactly: adv_unit_att_rating <= 0 is
+             * already refused above, so a floor of 0 excludes
+             * nothing. */
+            || adv_unit_att_rating(u) < tune->op_draft_attack_floor
             || def_ai_unit_data(u, ait)->charge > 0
             || deep_op_claiming(pplayer, u->id) >= 0) {
           continue;

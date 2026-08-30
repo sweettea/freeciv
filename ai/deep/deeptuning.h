@@ -3407,6 +3407,16 @@ struct deep_tuning {
    * priced as if it were still six tiles back. 0 = k is `required`,
    * as shipped. */
   int op_contact_quorum;
+  /* Minimum adv_unit_att_rating for a blade the garrison draft is
+   * allowed to borrow. The draft picks the weakest DEFENDER in each
+   * city while the release test is marginal on the odds, which are
+   * driven by attack rating -- so it meets a head count with units
+   * that buy almost nothing and pays real defence for them. Drafted
+   * formations are 63% of everything deep forms and take a city at
+   * 0.7% against 4.3% for undrafted ones. 0.0 = the shipped test:
+   * a rating of 0 or less is already refused, so a floor of 0
+   * excludes nothing. */
+  double op_draft_attack_floor;
 };
 
 void deep_tuning_init(void);
