@@ -22939,3 +22939,51 @@ while the empty search is plausibly temporary, adding
 run_hold puts more settlers into the pipeline and (B) decides what
 happens at the end of it, so two separate arms cannot attribute
 either.
+
+## W25 — tuner fixes for the next campaign (2026-08-30)
+
+Branch `worktree-agent-a615e98f839d886dd`. All six fixes the
+tune-postfix post-mortem asked for, in `benchmark/tune.py` only —
+**no `ai/` change, so no benchmark game was run and none is claimed**.
+The measurement this epic changes is the tuner's own; it is verified
+by unit tests, not by a score.
+
+- [x] **SE beside every objective.** `eval_population` now returns
+      per-seed diffs; `blend_stats` re-derives the same objective plus
+      `sqrt(sum_c s_c^2/n_c)/C`. Candidates additionally print their
+      **paired diff vs the incumbent** and its z.
+- [x] **Incumbent logged every generation**, evaluated at
+      `gen0/cand0` — the dir the population runs anyway, so it is free
+      and old result dirs still resume.
+- [x] **Replicated selection.** `--accept paired --accept-z Z`
+      (Z required, no default) and `--reeval K --reeval-seeds N`
+      (fresh train seeds after `--count`; the incumbent is
+      re-evaluated on the same fresh seeds as the floor). Block best
+      now carries a label — `unreplicated max over N candidates` or
+      `replicated on N fresh seeds` — everywhere it is printed.
+- [x] **Racing.** `--race K --race-z Z`: everyone plays the first K
+      seeds, the better half by `mean - Z*SE` plays the rest, a
+      raced-out candidate can never win the block.
+- [x] **Sigma schedule.** `--sigma-frac F` (default 1/6 = the old
+      hard-coded `range/6`), documented as a first-generation setting.
+- [x] **`--dry-run [--sigma-seed S]`** prints passes, candidates,
+      seeds, games and the expected SE without launching. On the shape
+      the failed campaign ran, `--sigma-seed 115` prints
+      `objective +/- 40.7` — the post-mortem, in advance.
+- [x] 50 unit tests, `run_game` mocked, no games:
+      `python3 -m pytest benchmark/tests` (also
+      `python3 -m unittest discover -s benchmark/tests`).
+- Flags default to the previous behaviour; the result-cache layout is
+  untouched, so an interrupted campaign resumes under the new tune.py.
+- Docs: `benchmark/README.md` §"Selection discipline and budgeting",
+  plus the `tune.py` module docstring.
+
+**Not done here, and still required before the next campaign** (the
+post-mortem's second finding): *match free parameters to evaluation
+budget*. ECON is 163 constants and ALL is 277; `--dry-run` now warns
+when a block is wider than its seed count, but nobody has yet cut
+`tuning-blocks.ini` into blocks of ≤10. That is a separate epic, and
+it is the one that decides whether a next campaign is worth buying at
+all — the standing fact from 2026-08-25 is that tuning as practiced
+recovered nothing, and the ~40–60 point defaults deficit is the
+target, not retuning.

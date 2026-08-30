@@ -161,6 +161,62 @@ single box via the alternation table.
 Final numbers come only from `--report-holdout`, never from a
 training run.
 
+## Selection discipline and budgeting (W25, 2026-08-30)
+
+The 2026-08-23..24 campaign selected order-statistic noise for four
+stages: a block took the max of 30-40 candidate means, never
+re-evaluated, on an objective whose SE was ~41
+(`doc/deep-ai/findings/tune-postfix-verdict-2026-08-25.md`). `tune.py`
+now says what it is doing, and can be told not to do that.
+
+Always on, no flag:
+
+- Every objective prints as `+12.3 +/- 41.2 (n=8)` -- candidates, the
+  incumbent, the generation summary, `--evaluate` and
+  `--report-holdout` alike.
+- Every candidate also prints its **paired diff against the
+  incumbent** on the seeds both ran, with that diff's SE and z. The
+  baseline cancels in the pairing, so this SE is far below the
+  objective's.
+- The **incumbent is evaluated every block and printed every
+  generation**. It costs nothing: it is evaluated at `gen0/cand0`,
+  which the population runs anyway.
+- Every "block best" carries a label saying which kind of number it
+  is -- `unreplicated max over N candidates` or `replicated on N fresh
+  seeds` -- in the generation line and in the alternation table.
+
+| flag | effect |
+|---|---|
+| `--accept paired --accept-z Z` | a challenger becomes the block best only if its paired diff vs the incumbent clears Z standard errors. **Z is required**; there is no default |
+| `--reeval K --reeval-seeds N` | re-evaluate the generation's top K, and the incumbent, on N seeds after `--count` in `train.txt`, and take the block best from *that* number |
+| `--race K --race-z Z` | all candidates play the first K seeds; the better half by `mean - Z*SE` play the rest. A raced-out candidate can never be the block best |
+| `--sigma-frac F` | initial mutation sigma = `F * range` per constant (default `1/6`, unchanged). `range/6` is a **first-generation** setting, not a standing one |
+| `--dry-run [--sigma-seed S]` | print the schedule -- passes, candidates, seeds, games, expected SE -- and launch nothing |
+
+`--accept paired` and `--reeval` compose: with both, the champion is
+chosen on fresh seeds and then has to clear the gate against the
+incumbent *on those same fresh seeds*.
+
+**Budget before you run.**
+
+    python3 benchmark/tune.py --dry-run --sigma-seed 115 \
+      --blocks ECON --count 8 --gens 4 --pop 6
+
+prints `objective +/- 40.7` -- the post-mortem's whole finding, before
+a game exists. If the effect being chased is smaller than the SE, the
+campaign cannot see it: raise seeds, race, or narrow the block. A
+block moving more constants than it has seeds per candidate gets a
+note saying so.
+
+The result layout is unchanged, so a campaign started before any of
+this resumes into it without replaying a game.
+
+Unit tests for the selection, racing, SE and schedule arithmetic --
+`run_game` mocked, no Freeciv games:
+
+    python3 -m pytest benchmark/tests
+    python3 -m unittest discover -s benchmark/tests
+
 ## Cell sizing: how much room each regime actually gives (2026-08-01)
 
 Human, on `cramped`: "3 players 30x30 seems insanely small, that's
