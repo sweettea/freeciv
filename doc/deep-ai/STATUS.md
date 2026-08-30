@@ -22993,3 +22993,109 @@ it is the one that decides whether a next campaign is worth buying at
 all — the standing fact from 2026-08-25 is that tuning as practiced
 recovered nothing, and the ~40–60 point defaults deficit is the
 target, not retuning.
+||||||| 48c6ffa4eb
+---
+
+## W25 — knob screen and truncated-venue check (2026-08-30)
+
+Offline only. **No games were run.** Both results come out of the
+archived `benchmark/results/tune-postfix/` corpus (2336 games) and are
+written up in `findings/knob-screen-2026-08-30.md`.
+
+Landed:
+
+- [x] `benchmark: add the zero-game knob sensitivity screen`
+      (`knobscreen.py`) — replays 12 logged decision families at each
+      knob's tune.py mutation step (σ = range/6) and counts how many
+      logged decisions FLIP. Ten rules carry a self-check against the
+      outcome the same log line recorded; on the 40-game s6 corpus the
+      seven that had decisions to check agree with the server on
+      **233 672 of 233 686** (five rules exactly 100%, two at 99.9%).
+      Reuses `knobcensus.py`'s instrument map and predicate compiler
+      for the knobs no replay can reach.
+- [x] `benchmark: teach turncorr tune.py's campaign layout` — paired
+      cand-vs-stage-baseline dirs and the `--mixed` seat-mirrored form,
+      T60/T80/T100/T120 checkpoints, and a `--cost` truncation
+      bracket. Pairs **2200** of the campaign's games.
+
+### Part 1 — 60% of the tuning surface is unreachable
+
+Of 277 knobs, on 40 games at compiled defaults:
+
+| class | n |
+|---|---|
+| reconstructible, **flips something** | **14** |
+| reconstructible, flips nothing | 3 |
+| partial (mechanism runs, comparison not logged) | 64 |
+| partial, predicate never fired | 20 |
+| **dead-path (instrument exists, tag never appeared)** | **92** |
+| not-logged (no instrument at all) | 54 |
+| mode (switch / degenerate range) | 28 |
+| unmapped (`weak_prey_*`, post-dates knobcensus) | 2 |
+
+**166 knobs (60%) could not have contributed anything to the post-fix
+campaign's objective, and 92 of them sit on code that never ran.** The
+campaign moved 195 parameters anyway.
+
+Shortlist, flips per game (replicated on s5-defaults: identical
+membership, no entry moves more than two places):
+
+    switch_cost_gain        274.7   (20.2% of 1358 switch prices/game)
+    founder_tier_gate*      256.9   (7.2% of city-turn merges; a GATE)
+    scale_settler           114.2   (1.6% of 7141 auctions/game)
+    garrison_floor_danger   113.1   (63.5% of floor evaluations)
+    garrison_floor*         113.0   (a GATE)
+    upkeep_gold_weight       93.2   (4.0% of building anchors)
+    floor_sea_weight         63.4       floor_border_weight    53.3
+    scale_worker             51.6       expansion_war_survival 15.3
+    horizon_capacity_weight  11.2       founder_pool_per_site   9.9
+    op_take_target            4.9       floor_barb_weight       0.6
+
+Provably inert, with the reason: **`emergency_value_cap`** cannot move
+the domestic/military merge at all (the merge is tier-first and a
+domestic want is always NORMAL), **`expiry_building_gain`** never
+changes the building anchor's argmax over 93 k city-turns, and
+**`floor_air_weight`** multiplies a `wair` that is 0.000 on every
+logged line.
+
+### Part 2 — T100 is an acceptable proxy and not worth adopting
+
+Contested (T150) holdout arms, 20 seeds each, deep−baseline paired gap
+at T vs final:
+
+| arm | T80 r | **T100 r** | T100 ρ | T100 sign | T120 r |
+|---|---|---|---|---|---|
+| s4 tuned | +0.82 | **+0.86** | +0.90 | 70% | +0.92 |
+| s5 defaults+gates | +0.72 | **+0.77** | +0.82 | 85% | +0.86 |
+| s6 defaults | +0.69 | **+0.77** | +0.82 | 75% | +0.86 |
+
+Mixed contested (n=640/480): T100 r = **+0.93 / +0.92**.
+isolated-150 (n=480): +0.76. lategame-80 ends at T80; its only
+truncation, T60, scores r = 0.36–0.88 and is rejected.
+
+σ(final gap) = 94.9–115.3 on the war venue, reproducing the verdict
+doc's σ ≈ 115. Wall clock is 192 s median per game; the share of it
+spent by T100 is bracketed at **0.42–0.66** (work-weighted vs
+turn-linear; the work proxy fails its own fit against measured
+seconds, so a point estimate is not available offline). Surrogate
+efficiency r²/cost is therefore **0.90–1.41** — it straddles 1.0.
+
+**Verdict: do not truncate.** T100 ranks candidates the way the final
+gap does, but the saving is inside the noise, and the last campaign's
+failure was selection-on-noise, which more games of the same objective
+do not fix.
+
+### Next
+
+1. Group-screen design: tier A's 11 continuous knobs in two
+   non-interacting blocks (AUCTION 5, DEFENCE/OPS 6), tier B's 26 in a
+   fractional-factorial *group* screen, tier C pinned. Venue: mixed
+   contested full-length to screen, paired holdout full-length to
+   report.
+2. Three instrumentation changes that convert tier B to measured flip
+   rates offline, in priority order: split `raw` into its four
+   components on `deep-decay-sum` (four ECON knobs, 2323 firings a
+   game); log the military choice's class on `deep-bid` (the three
+   `scale_*` military keys); log the pre-cap military value.
+3. `founder_tier_gate` off→on changes 7.2% of city-turn merges and has
+   never been A/B'd. It is a gate, not a tuning parameter.
