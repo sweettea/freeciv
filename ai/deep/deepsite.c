@@ -2079,6 +2079,140 @@ static struct cityresult *deep_city_desirability(struct ai_type *ait,
   return cr;
 }
 
+/* At most this many of the tiles behind the wall are actually scored
+ * on one census line. The census exists to say whether the hidden land
+ * is FOUNDABLE and what it is worth, not to re-run the search: the pf
+ * map hands them over nearest-first, travel is the dominant term in a
+ * site's net value, and a bound is what keeps an instrumentation line
+ * from costing more than the decision it reports on. 24 is a sample
+ * size, not a tunable: nothing reads it but the log. */
+#define DEEP_SITE_WALL_SAMPLE 24
+
+/* One wall census per player-turn. The shadow pf map costs about what
+ * the real one does, and a contested T150 game runs ~15 000 searches;
+ * one a turn a player is ~1 200 a game, which is affordable, and the
+ * question ("is there land behind the wall right now") is a property of
+ * the turn and not of the settler asking. */
+static int deep_site_wall_turn[MAX_NUM_PLAYER_SLOTS];
+static bool deep_site_wall_init = FALSE;
+
+/**********************************************************************//**
+  S-FRONTIER: price the land deep's own border wall hides.
+
+  deep_settler_tile_behavior() TB_IGNOREs every tile whose owner is not
+  pplayers_allied(), and pf drops such a node outright
+  (path_finding.c:288), so the free land BEHIND a peace partner's
+  border never reaches the search at all -- not as a refusal, as an
+  absence. Every bucket on deep-siteladder is post-truncation, which is
+  why a failed search can report `scored=0` with `seen=110` and still
+  be standing next to somewhere to put a city.
+
+  Stock does not have the wall: find_best_city_placement()'s phase 1
+  sets no get_TB (ai/baseline/default/daisettler.c:913), and a settler
+  is NonMil so players_non_invade() lets it walk. That is the whole
+  deep-vs-baseline asymmetry this epic is about, and it is not visible
+  from inside deep's own numbers -- it needs the counterfactual.
+
+  So: re-run the same pf map with the same unit, the same risk
+  callbacks and the same everything, minus the ownership test, and
+  report what the difference contains. `wextra` is the tiles only the
+  open map offers, `wfree` the ones a city could legally be founded on
+  (city_can_be_built_here(), so ownership, citymindist and terrain are
+  all honoured -- founding inside the border stays refused, because the
+  ruleset refuses it), and `wbest`/`wturns` the best raw site value
+  among a bounded nearest-first sample of those and its travel time.
+  The net is the reader's to compute: it is the same amortize() the
+  loop above applies, and duplicating that arithmetic here would make
+  the census a second implementation of the price rather than a
+  measurement of the opportunity.
+
+  Instrumentation only. Runs after every census line above has been
+  printed, so its mutation of the shared ladder counters is harmless --
+  they are reset at the top of the next search -- and it takes no
+  decision, sets no state a decision reads, and is skipped entirely
+  when the metric log level is off.
+**************************************************************************/
+static void deep_site_wall_census(struct ai_type *ait,
+                                  const struct pf_parameter *parameter,
+                                  struct unit *punit, struct pf_map *pfm,
+                                  int boat_cost,
+                                  const struct cityresult *best)
+{
+  struct player *pplayer = unit_owner(punit);
+  struct pf_parameter open;
+  struct pf_map *openm;
+  const struct civ_map *nmap = &(wld.map);
+  Continent_id curcont = tile_continent(unit_tile(punit));
+  int wseen = 0, wextra = 0, wland = 0, wfree = 0, wscored = 0;
+  int wturns = -1;
+  double wbest = 0.0;
+  int i;
+
+  if (best != NULL) {
+    return;                     /* The search found something. */
+  }
+  if (boat_cost != 0 || parameter->get_TB == NULL) {
+    /* Only the phase-1 LAND leg has the wall. The overseas leg sets
+     * no_fights_or_unknown instead and is a different question, and a
+     * ferry leg is priced by the boat and not by the border. */
+    return;
+  }
+  if (!deep_site_wall_init) {
+    for (i = 0; i < MAX_NUM_PLAYER_SLOTS; i++) {
+      deep_site_wall_turn[i] = -1;
+    }
+    deep_site_wall_init = TRUE;
+  }
+  if (deep_site_wall_turn[player_index(pplayer)] == game.info.turn) {
+    return;                     /* Already censused this player-turn. */
+  }
+  deep_site_wall_turn[player_index(pplayer)] = game.info.turn;
+
+  open = *parameter;
+  open.get_TB = deep_settler_tile_behavior_open;
+  openm = pf_map_new(&open);
+
+  pf_map_move_costs_iterate(openm, ptile, move_cost, FALSE) {
+    wseen++;
+    if (pf_map_move_cost(pfm, ptile) != PF_IMPOSSIBLE_MC) {
+      continue;                 /* The walled search had it too. */
+    }
+    wextra++;
+    if (tile_continent(ptile) != curcont
+        || terrain_has_flag(tile_terrain(ptile), TER_NO_CITIES)) {
+      continue;
+    }
+    wland++;
+    if (!city_can_be_built_here(nmap, ptile, punit, FALSE)) {
+      continue;                 /* Owned, too close, or wrong terrain. */
+    }
+    wfree++;
+    if (wscored < DEEP_SITE_WALL_SAMPLE) {
+      struct cityresult *cr = deep_city_desirability(ait, pplayer, punit,
+                                                     ptile);
+
+      wscored++;
+      if (cr != NULL) {
+        if ((double) cr->total > wbest) {
+          wbest = (double) cr->total;
+          wturns = move_cost / parameter->move_rate;
+        }
+        cityresult_destroy(cr);
+      }
+    }
+  } pf_map_move_costs_iterate_end;
+
+  pf_map_destroy(openm);
+
+  log_base(deep_metric_log_level(),
+           "deep-sitewall turn=%d player=\"%s\" unit=%d boat=%d seen=%d"
+           " wseen=%d wextra=%d wland=%d wfree=%d wscored=%d"
+           " wbest=%.1f wturns=%d",
+           game.info.turn, player_name(pplayer), punit->id, boat_cost,
+           deep_site_lad_seen, wseen, wextra, wland, wfree, wscored,
+           wbest, wturns);
+}
+
 /**********************************************************************//**
   Find nearest and best city placement in a PF iteration; derived from
   stock settler_map_iterate(), calling the deep evaluator.
@@ -2540,6 +2674,12 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
              deep_site_contest_ours, deep_site_contest_want,
              best != NULL ? index_to_map_pos_x(tile_index(best->tile)) : -1,
              best != NULL ? index_to_map_pos_y(tile_index(best->tile)) : -1);
+  }
+
+  /* S-FRONTIER's census, last of all: it mutates the ladder counters
+   * every line above has already been printed from. */
+  if (log_do_output_for_level(deep_metric_log_level())) {
+    deep_site_wall_census(ait, parameter, punit, pfm, boat_cost, best);
   }
 
   pf_map_destroy(pfm);

@@ -16,6 +16,9 @@
 /* common */
 #include "fc_types.h"
 
+/* common/aicore */
+#include "path_finding.h"
+
 struct workermap;
 
 struct cityresult *deep_find_best_city_placement(struct ai_type *ait,
@@ -49,6 +52,16 @@ struct city *deep_settler_nearest_own_city(struct player *pplayer,
 bool deep_settler_overnight_veto(struct unit *punit,
                                  const struct tile *ptile,
                                  double tolerance);
+
+/* The site search's tile behaviour MINUS its ownership wall -- the
+ * counterfactual pf parameter the S-FRONTIER wall census pathfinds
+ * with, so it can price the free land a non-allied border hides from
+ * deep's settlers and never hides from stock's. Not used by any
+ * decision. */
+enum tile_behavior
+deep_settler_tile_behavior_open(const struct tile *ptile,
+                                enum known_type known,
+                                const struct pf_parameter *param);
 
 /* Base-want census: candidates priced, positives, largest want, and
  * the behaviour metric -- workers actually building a base now. */

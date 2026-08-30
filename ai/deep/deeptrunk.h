@@ -120,6 +120,17 @@ adv_want deep_trunk_source_dividend(const struct player *pplayer,
 bool deep_trunk_soft_open(const struct player *pplayer,
                           const struct tile *ptile);
 
+/* S-FRONTIER: may a deep civilian safely CROSS this tile on its way
+ * somewhere else? Unowned, our own, an ally's and a peace partner's
+ * ground; not war, cease-fire or no-contact. Unconditional -- it is
+ * the counterfactual the wall census pathfinds with, and a census that
+ * read the gate it exists to size would measure nothing. Same
+ * ownership taxonomy as deep_trunk_soft_open(), different question:
+ * that one asks whether a ROAD may cross, this whether a SETTLER may
+ * walk. */
+bool deep_frontier_reachable(const struct player *pplayer,
+                             const struct tile *ptile);
+
 /* W12G, the keepable-bid gate's own instrument: a corridor bid the
  * founder's own site value refused. Called by the task source when the
  * best beyond-ceiling candidate this turn beat the advisor's champion

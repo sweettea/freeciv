@@ -171,6 +171,47 @@ deep_settler_tile_behavior(const struct tile *ptile,
 }
 
 /**********************************************************************//**
+  deep_settler_tile_behavior() with the OWNERSHIP wall taken out, for
+  the S-FRONTIER census alone.
+
+  The function above returns TB_IGNORE for every tile whose owner is not
+  pplayers_allied(), and path_finding.c:288 drops such a node before it
+  can be reached, entered or offered as a destination. That is a WALL,
+  not a filter: the free land BEHIND a peace partner's border is not
+  refused by the site search, it is invisible to it, and no bucket on
+  deep-siteladder can see it because every bucket is already
+  post-truncation.
+
+  Stock has no such wall -- find_best_city_placement()'s phase 1 sets no
+  get_TB at all (ai/baseline/default/daisettler.c:913) -- and a settler
+  is NonMil, so players_non_invade() does not stop it walking through a
+  peace partner's territory either. So the wall is deep's own policy,
+  and this variant is the counterfactual that prices it: same unit, same
+  risk callbacks, same everything, minus the ownership test.
+
+  It deliberately keeps the non-allied UNIT test, which is not a policy:
+  a tile occupied by a non-allied unit cannot be entered.
+
+  It also deliberately does NOT call deep_site_note_tbskip(). The census
+  runs after deep-siteladder is printed, and must not move its counters.
+**************************************************************************/
+enum tile_behavior
+deep_settler_tile_behavior_open(const struct tile *ptile,
+                                enum known_type known,
+                                const struct pf_parameter *param)
+{
+  if (!deep_frontier_reachable(param->owner, ptile)) {
+    return TB_IGNORE;
+  }
+  if (is_non_allied_unit_tile(ptile, param->owner,
+                              utype_has_flag(param->utype, UTYF_FLAGLESS))) {
+    return TB_IGNORE;
+  }
+
+  return TB_NORMAL;
+}
+
+/**********************************************************************//**
   W12H: tile behaviour for the CORRIDOR pathfinder alone.
 
   Same as deep_settler_tile_behavior() except that the ownership test is

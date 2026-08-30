@@ -511,6 +511,43 @@ bool deep_trunk_soft_open(const struct player *pplayer,
 }
 
 /**********************************************************************//**
+  S-FRONTIER: is this tile ground a deep CIVILIAN could safely cross on
+  its way to somewhere else?
+
+  The same taxonomy deep_trunk_soft_open() reads, with the corridor
+  gate taken out: TRUE for unowned, our own, an ally's and a PEACE
+  PARTNER's ground, FALSE for war, cease-fire and no-contact. The
+  header block at deep_trunk_own_class() records why that cut is the
+  right one and why it is a policy at all -- nothing in the core rules
+  stops a NonMil unit entering anyone's territory, so the question is
+  risk and not legality, and a civilian on a peace partner's ground
+  does not die where one on a war enemy's does.
+
+  Written here rather than in deepsettler.c so that the ownership
+  taxonomy has exactly one definition. Two consumers so far, and they
+  ask different questions of it: the corridor planner asks whether a
+  ROAD may cross, this asks whether a SETTLER may walk.
+
+  Unconditional on purpose. It is the counterfactual the S-FRONTIER
+  wall census pathfinds with -- what deep's site search WOULD see if
+  its own border wall came down -- and a census that read the gate it
+  exists to size would measure nothing.
+**************************************************************************/
+bool deep_frontier_reachable(const struct player *pplayer,
+                             const struct tile *ptile)
+{
+  switch (deep_trunk_own_class(pplayer, ptile)) {
+  case DEEP_TRUNK_OWN_NONE:
+  case DEEP_TRUNK_OWN_SELF:
+  case DEEP_TRUNK_OWN_ALLY:
+  case DEEP_TRUNK_OWN_PEACE:
+    return TRUE;
+  default:
+    return FALSE;
+  }
+}
+
+/**********************************************************************//**
   Remember this refresh's plan tiles and their ownership classes, so the
   next refresh can say which of them gained a road.
 **************************************************************************/
