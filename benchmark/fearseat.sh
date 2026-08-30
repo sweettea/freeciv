@@ -187,8 +187,12 @@ do_identity() {
   echo "identity: $same identical, $diff different"
   # The proof must not be able to pass vacuously: the pinned binary
   # has to be the one that emits this epic's new columns.
-  if ! zstdcat "$out/deep/seed-101/game.log.zst" 2>/dev/null \
-       | grep -qa "deep-fear .* site=ledger"; then
+  # grep -c, not grep -q: with `set -o pipefail` an early-exiting
+  # grep -q kills zstdcat with SIGPIPE and the pipeline reports 141,
+  # which reads as "the string is absent" when it is present. That
+  # false STOP cost one launch on 2026-08-30.
+  if [ "$(zstdcat "$out/deep/seed-101/game.log.zst" 2>/dev/null \
+          | grep -ac 'deep-fear .* site=ledger')" = 0 ]; then
     echo "STOP: the pinned binary does not emit site=ledger." >&2
     diff=$((diff + 1))
   fi
