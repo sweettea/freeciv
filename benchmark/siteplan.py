@@ -17,8 +17,13 @@ population's total and not a margin over an opponent.
 
 The census columns come from deep's own per-player-per-turn lines:
 
-  born/found/alive  deep-expand (founders created, cities founded,
-                    founders standing at census time)
+  found/alive       deep-expand (cities founded, founders standing).
+                    The same line's born= is NOT read: a unit built in
+                    end-turn processing has a birth_turn the next
+                    census no longer matches, so it undercounts about
+                    four to one. Settlers delivered come from
+                    deep-prodswitch builtlast=1, the corrected census
+                    S-PRODKEEP settled on.
   joins             deep-join ... done=1, the irreversible act
   guard             deep-joinguard held=1 -- emitted in BOTH arms, so
                     the c00 column is the counterfactual: how many joins
@@ -39,6 +44,8 @@ CELLS = ("c00", "c10", "c01", "c11")
 R_EXPAND = re.compile(r'deep-expand turn=(\d+) player="[^"]+" .*'
                       r' born=(\d+) alive=(\d+) found=(\d+) sites=(\S+)')
 R_JOIN = re.compile(r'deep-join turn=\d+ .* done=1')
+R_BUILT = re.compile(r'deep-prodswitch turn=\d+ .*from="([^"]*)" to="([^"]*)"'
+                     r'.* builtlast=(\d)')
 R_GUARD = re.compile(r'deep-joinguard turn=\d+ .* held=(\d) gate=(\d)')
 R_CAP = re.compile(r'deep-sitecap turn=\d+ .* capped=(\d) gate=(\d)')
 R_LAD = re.compile(r'deep-siteladder turn=\d+ .* found=(\d) noterr=\d+'
@@ -66,27 +73,42 @@ def game_metrics(d, marks):
                 row[f"{tag}{key}"] = v / nseat
 
     text = gamelog(d)
-    born = found = alive_n = alive_s = 0
+    found = 0
     sites_n = sites_s = 0.0
-    last_turn_alive = {}
+    alive_by_turn = {}
     for m in R_EXPAND.finditer(text):
-        turn, b, al, fo, si = (int(m.group(1)), int(m.group(2)),
-                               int(m.group(3)), int(m.group(4)),
-                               float(m.group(5)))
-        born += b
+        turn, al, fo, si = (int(m.group(1)), int(m.group(3)),
+                            int(m.group(4)), float(m.group(5)))
         found += fo
-        alive_n += 1
-        alive_s += al
         sites_n += 1
         sites_s += si
-        last_turn_alive[turn] = last_turn_alive.get(turn, 0) + al
-    row["born"] = born
+        alive_by_turn[turn] = alive_by_turn.get(turn, 0) + al
     row["found"] = found
-    row["alive_mean"] = alive_s / alive_n if alive_n else 0.0
-    row["alive_end"] = (last_turn_alive.get(max(last_turn_alive), 0)
-                        / nseat) if last_turn_alive else 0.0
     row["sites"] = sites_s / sites_n if sites_n else 0.0
+    # Founders standing, per seat, at the same cuts the city curve uses.
+    # `born` on the same line is NOT used: a unit built in end-turn
+    # processing has a birth_turn the next census no longer matches, so
+    # it undercounts by roughly four to one. Settlers actually delivered
+    # are counted from deep-prodswitch builtlast=1 below, which is the
+    # corrected census S-PRODKEEP settled on.
+    if alive_by_turn:
+        last = max(alive_by_turn)
+        for t in marks + [last]:
+            key = "end" if t == last else str(t)
+            near = [x for x in alive_by_turn if x <= t]
+            if near:
+                row[f"alive{key}"] = alive_by_turn[max(near)] / nseat
     row["joins"] = len(R_JOIN.findall(text))
+
+    built = starts = 0
+    for m in R_BUILT.finditer(text):
+        if m.group(1) == "Settlers":
+            starts += 0
+            built += 1 if m.group(3) == "1" else 0
+        if m.group(2) == "Settlers":
+            starts += 1
+    row["settlers_built"] = built
+    row["settler_starts"] = starts
 
     held = fired = 0
     for m in R_GUARD.finditer(text):
@@ -147,8 +169,10 @@ def venue(root):
           f"cells {' '.join(f'{c}={len(v)}' for c, v in cells.items())}")
 
     keys = [k for k in ("score", "cities45", "cities100", "cities40",
-                        "cities60", "citiesend", "popend", "born", "found",
-                        "alive_mean", "alive_end", "joins", "guard_seen",
+                        "cities60", "citiesend", "popend", "found",
+                        "settlers_built", "settler_starts", "alive45",
+                        "alive100", "alive40", "alive60", "aliveend",
+                        "joins", "guard_seen",
                         "guard_fired", "cap_seen", "cap_fired", "sites",
                         "empty_searches", "empty_offpeace", "empty_tbland")
             if any(k in r for v in cells.values() for r in v.values())]
