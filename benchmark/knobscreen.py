@@ -59,6 +59,25 @@ Usage
     --validate  print, per replay rule, how often the base-value replay
                 agrees with the outcome the log recorded, which is the
                 only check that the reconstruction is the real formula
+
+CORPUS VINTAGE.  Three log fields postdate the 2026-08-30 screen and
+seven knobs are screenable only on a corpus that carries them:
+
+  deep-decay-sum bund/cont/mult/grow  horizon_bundle_weight,
+                                      horizon_content_weight,
+                                      horizon_multiplier_weight,
+                                      horizon_growth_weight
+  deep-bid       milclass             scale_defender, scale_attacker,
+                                      scale_ferry
+  deep-milcap    (whole tag)          emergency_value_cap, at its own
+                                      seam rather than at the merge
+
+On an older corpus the fields are simply absent, every rule still
+replays the knobs it always could, and the seven above are listed under
+UNMEASURED rather than silently reported as flipping nothing.  The
+distinction matters: "this knob flips no decision" and "this corpus
+cannot see this knob" are different claims and the screen must not
+conflate them.
 """
 
 import argparse
@@ -88,6 +107,19 @@ SHIELD_WEIGHTING = 17.0                       # advbuilding.h:20
 TRAIT_DEFAULT_VALUE = 50                      # traits.h
 
 LINE = re.compile(rb"(deep-[a-z0-9-]+) (.*)")
+
+# Fields (and one whole tag) that postdate the 2026-08-30 screen, and
+# the knobs that are screenable only where they are present.  Reported
+# as UNMEASURED on an older corpus rather than as zero flips.
+NEW_FIELDS = {
+    ("deep-decay-sum", "bund"): ["horizon_bundle_weight"],
+    ("deep-decay-sum", "cont"): ["horizon_content_weight"],
+    ("deep-decay-sum", "mult"): ["horizon_multiplier_weight"],
+    ("deep-decay-sum", "grow"): ["horizon_growth_weight"],
+    ("deep-bid", "milclass"): ["scale_defender", "scale_attacker",
+                               "scale_ferry"],
+    ("deep-milcap", "pre"): ["emergency_value_cap"],
+}
 FIELD = re.compile(rb'([a-z_0-9]+)=("[^"]*"|\(-?\d+,-?\d+\)|[^\s]+)')
 
 
@@ -305,9 +337,17 @@ def _r_auction_dom(j, t):
     return None if r is None else r[0]
 
 
+# enum deep_want_class (deepwant.h): 0 building, 1 defender,
+# 2 attacker, 3 ferry, 4 other.  deep_want_scale_apply() multiplies a
+# NORMAL-tier military bid by its class's key and leaves the EMERGENCY
+# tier alone, so `milclass` is the whole of what the three military
+# scale keys needed to become screenable.
+_MIL_SCALE = {1: "scale_defender", 2: "scale_attacker", 3: "scale_ferry"}
+
+
 @rule("auction_merge", ["deep-bid", "deep-founderbid"],
       ["scale_settler", "scale_worker", "founder_tier_gate",
-       "emergency_value_cap"],
+       "emergency_value_cap"] + sorted(set(_MIL_SCALE.values())),
       join=lambda ev: (ev.get("turn"), ev.get("city")),
       note="does the domestic winner beat the military choice on "
            "(tier, value)?")
@@ -322,6 +362,13 @@ def _r_auction_merge(j, t):
     cap = t["emergency_value_cap"]
     if miltier == 1 and cap > 0 and mil > cap:
         mil = cap
+    # The class scale, NORMAL tier only and positive wants only, which
+    # is deep_want_scale_apply()'s own guard.
+    cls = bid.get("milclass")
+    if cls is not None and miltier == 0 and mil > 0:
+        knob = _MIL_SCALE.get(int(cls))
+        if knob is not None:
+            mil = mil * t[knob]
     # founder_tier_gate: deep_founder_contests_emergency() lets a
     # founder want that outranks an emergency military want on
     # MAGNITUDE take the build (deepdefence.c:7885).
@@ -358,15 +405,30 @@ def _c_auction_dom(j, t):
 #
 #   add = MAX(raw * gmult  - upkeep_per_turn * upkeep_gold_weight * bdur, 0)
 #         then  * keep,  keep = 1 - expiry_building_gain * (1 - ob/bdur)
-#   raw carries the capacity component separately as `capadd`, and
-#   cap_credit is linear in horizon_capacity_weight (deephorizon.c:579).
+#   raw carries five named components, each of which is EXACTLY linear
+#   in one horizon_*_weight -- amortize() multiplies its benefit by
+#   pow(discount, delay) and deep_decay_reprice() by dur/steps, neither
+#   of which reads the weight -- so a knob is re-priced by scaling its
+#   own component and leaving the rest of `raw` alone.  The unnamed
+#   remainder (culture, pop insurance, heal, veteran, health) is what
+#   no single one of these knobs scales.
+
+_HORIZON_COMPONENT = {
+    "horizon_capacity_weight": "capadd",     # deephorizon.c:579
+    "horizon_bundle_weight": "bund",         # deephorizon.c:1014
+    "horizon_content_weight": "cont",        # deephorizon.c:704
+    "horizon_multiplier_weight": "mult",     # deephorizon.c:935
+    "horizon_growth_weight": "grow",         # deephorizon.c:772
+}
+
 
 def _decay_add(ev, t, base):
     raw = f(ev, "raw")
-    capw = t["horizon_capacity_weight"]
-    b_capw = base.get("horizon_capacity_weight", 1.0)
-    if capw != b_capw and b_capw:
-        raw = raw + f(ev, "capadd") * (capw / b_capw - 1.0)
+    for knob, field in _HORIZON_COMPONENT.items():
+        w = t[knob]
+        b = base.get(knob, 1.0)
+        if w != b and b and field in ev:
+            raw = raw + f(ev, field) * (w / b - 1.0)
     add = raw
     gmult = f(ev, "gmult", 1.0)
     if add > 0 and gmult != 1.0:
@@ -388,8 +450,8 @@ def _decay_add(ev, t, base):
 
 
 @rule("building_anchor", ["deep-decay-sum", "deep-decay-city"],
-      ["upkeep_gold_weight", "expiry_building_gain",
-       "horizon_capacity_weight"],
+      ["upkeep_gold_weight", "expiry_building_gain"]
+      + list(_HORIZON_COMPONENT),
       join=lambda ev: (ev.get("turn"), ev.get("city")),
       note="argmax over credited improvements (pre+add) and the best "
            "uncredited competitor -- the anchor the settler bids against")
@@ -525,6 +587,29 @@ def _c_floor(ev, t):
     return _r_floor(ev, t) == int(f(ev, "applied"))
 
 
+# ---- R12: the emergency cap's own seam (deepwant.c) -----------------
+# deep-milcap is emitted for every EMERGENCY-tier military choice that
+# reaches the merge, cap on or off, so the population the cap acts on
+# is finally observable.  What this rule reports is a BINDING rate, not
+# a decision flip: the cap changes the value that enters the debit
+# chain, and the merge itself is tier-first (the 2026-08-30 screen's
+# finding, which this rule now measures at the seam instead of
+# inferring at the merge).  Read it as "how often would a cap one sigma
+# from here touch anything at all"; a nonzero rate is a necessary
+# condition for the knob to matter and nothing more.
+
+@rule("emergency_cap", ["deep-milcap"], ["emergency_value_cap"],
+      note="BINDING rate, not a decision flip: cap > 0 and pre > cap")
+def _r_milcap(ev, t):
+    cap = t["emergency_value_cap"]
+    return cap > 0 and f(ev, "pre") > cap
+
+
+@check_of("emergency_cap")
+def _c_milcap(ev, t):
+    return _r_milcap(ev, t) == (f(ev, "bind") > 0)
+
+
 # ---- R9: the founder pool (deepsettler.c) ---------------------------
 # `founders <= (int)(founder_pool_per_site * sites)` refuses the
 # dissolve.  founders and sites are both logged.
@@ -632,6 +717,7 @@ def scan_game(path, only_rule):
     """One game log -> (tag counter, tuning dict, per-rule event lists)."""
     tags = collections.Counter()
     fires = collections.Counter()
+    fields = collections.Counter()
     tuning = None
     want = wanted_tags()
     probes = build_probes()
@@ -671,6 +757,9 @@ def scan_game(path, only_rule):
             if not rules:
                 continue
             ev = parse_fields(m.group(2))
+            for (tg, fl) in NEW_FIELDS:
+                if tg == tag and fl in ev:
+                    fields[(tg, fl)] += 1
             for r in rules:
                 if r["join"] is None:
                     single[r["name"]].append(ev)
@@ -689,12 +778,12 @@ def scan_game(path, only_rule):
             proc.wait()
     for name, byk in joins.items():
         single[name] = list(byk.values())
-    return tags, tuning, single, fires
+    return tags, tuning, single, fires, fields
 
 
 def screen_game(path, knobs, only_rule):
-    """-> (tags, flips, touched, agree, checked, instrument fires)"""
-    tags, tuning, events, fires = scan_game(path, only_rule)
+    """-> (tags, flips, touched, agree, checked, fires, new fields)"""
+    tags, tuning, events, fires, fields = scan_game(path, only_rule)
     base = base_values(tuning, knobs)
     flips = collections.Counter()
     touched = collections.Counter()
@@ -733,7 +822,7 @@ def screen_game(path, knobs, only_rule):
                         t1["_ratio_" + kname] = (v / b) if b else float("inf")
                     if decide(ev, t1) != d0:
                         flips[(kname, rname, label)] += 1
-    return tags, flips, touched, agree, checked, fires
+    return tags, flips, touched, agree, checked, fires, fields
 
 
 def collect_logs(roots, seeds_cap):
@@ -821,14 +910,21 @@ def main():
     agree = collections.Counter()
     checked = collections.Counter()
     fires = collections.Counter()
-    for tg, fl, tc, ag, ck, fr in results:
+    fields = collections.Counter()
+    for tg, fl, tc, ag, ck, fr, fd in results:
         tags_seen.update(tg)
         flips.update(fl)
         touched.update(tc)
         agree.update(ag)
         checked.update(ck)
         fires.update(fr)
+        fields.update(fd)
     n = len(logs)
+    unmeasured = {}
+    for (tg, fl), kns in sorted(NEW_FIELDS.items()):
+        if not fields.get((tg, fl)):
+            for k in kns:
+                unmeasured.setdefault(k, []).append(f"{tg}.{fl}")
 
     rule_knobs = {}
     for rname, r in RULES.items():
@@ -892,6 +988,14 @@ def main():
             print(f"{k:{w}s} {cls:16s} {s:9.4g} "
                   f"{(tc/n if rn else 0):9.1f} {best/n:10.2f} "
                   f"{fr/n:10.1f}  {det}")
+        print()
+
+    if unmeasured:
+        print("UNMEASURED on this corpus -- the log field the knob's "
+              "replay needs is absent,")
+        print("so its flip count below is NOT a finding of insensitivity:")
+        for k in sorted(unmeasured):
+            print(f"  {k:34s} needs {', '.join(unmeasured[k])}")
         print()
 
     print(f"corpus: {n} game logs, "
