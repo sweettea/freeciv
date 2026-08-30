@@ -23396,3 +23396,150 @@ narrower rule — found-or-cancel recency alone — would have declined
 
 Retention: `benchmark/results/siteplan/` — 363 games, saves deleted,
 logs filtered to nine deep census tags and zstd-compressed.
+**Pre-registered falsification:** an arm that ramps anticipatory fear
+must show fewer T10–50 military deliveries with **no rise in
+`unitslost` before T75** — the arms agree there to ±0.03 today. If
+`unitslost` rises, the diagnosis is wrong and the document gets
+re-read, not the tuning re-swept.
+
+**Design constraints:** `density_fear_ramp_turns`,
+`fear_evidence_floor` and `mil_opportunity_price` move the same
+decision in the same window — one **factorial** cell, not three arms.
+S-FEARSEAT and **S-SETTLERSINK (B)** both act on what the T50–75 queue
+produces and cannot be attributed from two concurrent A/Bs.
+`upkeep_gold_weight` must **not** ride along: it moves the T100+
+building auction and would make the military result unreadable.
+
+Two lines nobody has priced, recorded so they are not lost: the
+**Diplomat** is the third-largest shield line in the game (138.0
+shields + 43.5 gold per player-game, 12.4%/11.9% of picks at T26–50 and
+T51–75, from `dai_choose_diplomat_defensive`'s self-described "totally
+arbitrary 16000"), and **mil-infra** (Barracks + City Walls + Coastal
+Defense) is 290 shields/player-game, larger than content.
+
+---
+
+## S-FEARSEAT — the early army's seat, gated and adjudicated (2026-08-30)
+
+**Every gate ships at 0.** The census's diagnosis SURVIVES its
+falsification test — halving the opening army costs nothing
+defensively — and the fix still does not pay, because the shields it
+frees do not become durable cities. Full write-up:
+`findings/fearseat-verdict-2026-08-30.md`.
+
+Cell: `benchmark/fearseat.sh`, **TRAINING seeds 1–20**, deep self-play,
+paired vs an off rung, six rungs × two venues (contested T151,
+lategame-80 T81), **243 games**, pinned `.pin-bin/fix`
+(`bc40c9a4540ea1a9`), ports 7960–7999, nice 10, jobs 4.
+
+### Landed
+
+- [x] `ai/deep: instrument the ledger seat, the density zero and the
+      buy danger` — `deep-fear … site=ledger`, `deep-density`
+      unconditional with `site=`, `deep-buy danger=/grave=`.
+      Observation only.
+- [x] `ai/deep: gate the boat shadow on a hull within reach and a hull
+      count` — `boat_shadow_gate`, `boat_shadow_distance` (hull
+      reaches, not tiles), `boat_shadow_count`.
+- [x] `ai/deep: require observed capability before anticipatory fear
+      converts` — `fear_evidence_gate`, `fear_evidence_floor`,
+      `density_fear_capability`; `evid=` measured whether or not the
+      gate acts, so the off arm reports the counterfactual.
+- [x] `ai/deep: charge the marginal defender the founder bid it
+      displaces` — `mil_opportunity_gate`, `mil_opportunity_price`.
+- [x] `ai/deep: hold the token garrison floor off until
+      garrison_floor_turn` — inert, **unadjudicated**, no rung sets it.
+- [x] `benchmark:` the cell driver, six rungs, `fearcell.py`, the
+      BANTICIP tier-B block, contentcensus regex compatibility.
+
+**Identity:** contested seeds 101–103 on compiled defaults reproduce
+the archived `s6-nogates-war` holdout scorelogs **byte for byte**.
+`meson test -C build` 7/7 at every commit.
+
+### The pre-registered falsification: NOT triggered
+
+`mil_opportunity_price` halves the opening army — contested
+munits@25 **−0.61 ± 0.06 (t −9.8)**, unitsbuilt@25 −0.74 ± 0.09,
+T1‑25 military shields **15.8 → 8.0** — and **nothing dies for it**:
+unitslost@50 +0.07 ± 0.09, unitslost@75 −0.16 ± 0.36. No rung, in
+either venue, shows a rise in `unitslost` that clears its SE. The
+census's "the early army is pure opportunity cost" is now confirmed by
+intervention.
+
+The factor that did it was the opportunity **price**, not the fear
+terms: the ramp and the evidence gate change what the danger *is* and
+moved the opening army by nothing measurable; the price changes what
+the danger has to *beat*.
+
+### But the shields do not become cities (contested, `price` − off)
+
+    cities@25  +0.050 ± 0.031
+    cities@50  +0.188 ± 0.064   (t +2.91)
+    cities@75  +0.055 ± 0.069
+    cities@end +0.018 ± 0.075
+
+The gain appears exactly where the shields were freed and is gone 25
+turns later. **That is the census's secondary pre-registration firing:
+the remaining defect is downstream, and it belongs to S-SETTLERSINK.**
+
+### Scores (paircmp, 20 paired training seeds per venue)
+
+| rung | contested | wins | lategame-80 | wins |
+|---|---|---|---|---|
+| `density_fear_ramp_turns=62` | **−2.48 ± 1.63** | 3/20 | +1.93 ± 1.27 | 15/20 |
+| `fear_evidence_gate` | **−2.40 ± 1.32** | 1/20 | **+3.84 ± 1.42** | 13/20 |
+| `mil_opportunity_gate` | +0.10 ± 2.37 | 10/20 | +0.25 ± 1.86 | 8/20 |
+| all three | +0.98 ± 2.08 | 11/20 | **+3.22 ± 1.54** | 15/20 |
+| `boat_shadow_gate` | +0.00 ± 0.74 | 8/20 | −0.71 ± 0.90 | 6/20 |
+
+**The venues disagree by more than their SEs on the two time-shaped
+knobs, and that is a finding, not noise.** Anticipation deferred is not
+anticipation avoided: contested `ramp` raises the T76‑125 density share
+(55.7→60.8%, 54.8→60.4%) and mean injected danger (10.83→14.03,
+11.55→20.36), grows the late army (T101‑125 military 84.9→92.6) and
+ends smaller (pop −1.77 ± 0.75, techs −1.06 ± 0.49). **lategame-80 ends
+at T81 and never receives that bill.** Do not read its +2.7σ as a win.
+
+### Every rung reached its seat (2nd pre-registration)
+
+Density share of build-seat evaluations, T1‑25: off 54.0% → ramp
+**9.8%** → all **3.8%**. Boat shadow at T51‑75: 42.1% → **3.3%** — the
+distance test removes **81.2%** of the flat term's firings (10 593 of
+13 051 coastal city-turns where an enemy owned a hull had no hull
+within reach). `evid=0` holds on 38.0%/32.5% of T1‑25/T26‑50
+evaluations, which is exactly the third the floor of 1 can zero.
+
+### Constants owed to tuning (all PLACEHOLDER, all in BANTICIP)
+
+`density_fear_ramp_turns` (62 was **measured** — median turn combat
+first touches a deep player is 62.5, min 27, max 120, n=20; the value
+is sound, the sign is venue-dependent), `fear_evidence_floor` (1),
+`density_fear_capability` (0.25), `mil_opportunity_price` (1.0 — and
+the calibration fact that matters more: a founder bid runs ~750 in the
+opening against a military bid of ~175–235, so 1.0 zeroes the military
+bid on 19.5% of firings; the two sides are not in one currency, RC4),
+`boat_shadow_distance` (1.0), `boat_shadow_count` (1, axis untested),
+`garrison_floor_turn` (0, never run). `upkeep_gold_weight` was
+deliberately kept out of this cell.
+
+### Attribution
+
+**S-SETTLERSINK was adjudicated concurrently in another worktree and
+both epics act on the T50–75 queue.** This A/B's base has neither of
+its gates, so these numbers are the fear seat's effect on that base.
+**The combined reading needs a 2×2 after both merge** — and §4 of the
+verdict makes that the next question, not a formality: the fear seat
+now demonstrably delivers shields into the founder queue at T50 and
+they are gone by T75.
+
+### Next
+
+1. **The 2×2 with S-SETTLERSINK.** The one experiment that can say
+   whether either epic works.
+2. `boat_shadow_gate` deserves a **held-out confirm run**: it deletes
+   four fifths of a geography-blind term at measured zero score cost
+   with `unitslost` down in both venues. Cheapest correctness fix on
+   the board.
+3. Restate the census's top line: the early army is not the *cause* of
+   the missing cities; it is the largest claimant on a settler pipeline
+   that would not have kept the shields anyway. **Fix the pipe first.**

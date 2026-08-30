@@ -450,6 +450,9 @@ static double deep_defender_upkeep_discount(const struct civ_map *nmap,
   float: fourth application of the no-fear-before-the-threat-class
   law.
 **************************************************************************/
+static unsigned int deep_boat_shadow_hulls(const struct player *pplayer,
+                                           const struct tile *ptile);
+
 static unsigned int deep_boat_shadow_fear(const struct civ_map *nmap,
                                           struct city *pcity)
 {
@@ -460,8 +463,70 @@ static unsigned int deep_boat_shadow_fear(const struct civ_map *nmap,
     return 0;
   }
 
+  if (tune->boat_shadow_gate > 0) {
+    /* The geometry arm. A hull that cannot get here is not a landing,
+     * and one hull may not be one either: the count scales the fear
+     * linearly up to boat_shadow_count and no further. */
+    unsigned int hulls = deep_boat_shadow_hulls(city_owner(pcity),
+                                                city_tile(pcity));
+    int need = MAX(tune->boat_shadow_count, 1);
+    double scale = MIN(1.0, (double) hulls / need);
+    unsigned int fear = (unsigned int) (tune->boat_shadow_fear * scale);
+
+    log_base(deep_metric_log_level(),
+             "deep-shadow turn=%d player=\"%s\" city=%d hulls=%u need=%d"
+             " scale=%.3f fear=%u afloat=%d",
+             game.info.turn, player_name(city_owner(pcity)), pcity->id,
+             hulls, need, scale, fear,
+             deep_boat_shadow_afloat(city_owner(pcity)) ? 1 : 0);
+
+    return fear;
+  }
+
   return (deep_boat_shadow_afloat(city_owner(pcity))
           ? tune->boat_shadow_fear : 0);
+}
+
+/**********************************************************************//**
+  Hostile transport hulls within reach of one tile.
+
+  "Within reach" is deep_overseas_danger()'s own window --
+  move_rate/SINGLE_MOVE + 1 tiles, the distance from which a loaded
+  ferry is already feared -- scaled by boat_shadow_distance, so the
+  shadow of an EMPTY hull is measured with the same ruler as the
+  danger of a full one. Reading the reach off each hull's own type
+  rather than off a tile constant is what keeps the term meaningful
+  when the trireme becomes a Transport.
+
+  Ownership, not cargo: this is the fear that funds a garrison BEFORE
+  the boats load, which is the whole reason the term exists.
+**************************************************************************/
+static unsigned int deep_boat_shadow_hulls(const struct player *pplayer,
+                                           const struct tile *ptile)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  unsigned int hulls = 0;
+
+  players_iterate_alive(aplayer) {
+    if (aplayer == pplayer || !pplayers_at_war(pplayer, aplayer)) {
+      continue;
+    }
+    unit_list_iterate(aplayer->units, aunit) {
+      const struct unit_type *ut = unit_type_get(aunit);
+      int reach;
+
+      if (ut->transport_capacity <= 0 || !deep_utype_is_sea(ut)) {
+        continue;
+      }
+      reach = (int) (tune->boat_shadow_distance
+                     * (ut->move_rate / SINGLE_MOVE + 1));
+      if (real_map_distance(unit_tile(aunit), ptile) <= reach) {
+        hulls++;
+      }
+    } unit_list_iterate_end;
+  } players_iterate_alive_end;
+
+  return hulls;
 }
 
 /**********************************************************************//**
@@ -775,30 +840,104 @@ static unsigned int deep_density_prior(struct player *pplayer)
   density_fear_value / (1 + distance) of standing danger. The land
   sibling of the boat shadow; zero with no neighbours in range, so
   sprawling maps pay nothing.
+
+  The census line is UNCONDITIONAL and carries the seat that asked
+  (site=), because a term that only speaks when it is nonzero cannot
+  be told from a term that never ran: the 2026-08-30 fear census had
+  to reconstruct "density was 0 here" from the ABSENCE of a line, and
+  a zero share and a missing instrument look identical that way. Both
+  seats call this (the once-per-turn ledger and the build choice), and
+  they see different numbers, so a line that did not say which one it
+  came from could not be counted per seat either.
 **************************************************************************/
 static double deep_density_fear_raw(const struct player *pplayer,
                                     const struct tile *ptile,
                                     double *raw_out, int *near_out,
-                                    int *cross_out, int *disc_out);
+                                    int *cross_out, int *disc_out,
+                                    int *cap_out);
 
-static unsigned int deep_density_fear(struct city *pcity)
+/**********************************************************************//**
+  Non-allied units that could attack, standing within
+  density_fear_radius of a tile: the OBSERVED capability the
+  anticipatory terms have never asked about.
+
+  Same neighbour set and same radius as the border-pressure sum, so
+  the evidence and the fear it gates are measured over one
+  neighbourhood and not two. `only` restricts the count to a single
+  player, which is what the per-neighbour capability discount needs;
+  NULL counts everyone.
+
+  Attack strength, not unit count: a Settlers stack is not a
+  capability, and `attack_strength > 0` is the ruleset's own answer to
+  "could this thing take a city from us".
+**************************************************************************/
+static int deep_hostile_capability_near(const struct player *pplayer,
+                                        const struct tile *ptile,
+                                        const struct player *only)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  int n = 0;
+
+  players_iterate_alive(aplayer) {
+    if (aplayer == pplayer
+        || (only != NULL && aplayer != only)
+        || pplayers_allied(pplayer, aplayer)
+        || player_diplstate_get(pplayer, aplayer)->type == DS_NO_CONTACT) {
+      continue;
+    }
+    unit_list_iterate(aplayer->units, aunit) {
+      const struct unit_type *ut = unit_type_get(aunit);
+
+      if (ut->attack_strength <= 0
+          || unit_has_type_flag(aunit, UTYF_CIVILIAN)) {
+        continue;
+      }
+      if (real_map_distance(unit_tile(aunit), ptile)
+          <= tune->density_fear_radius) {
+        n++;
+      }
+    } unit_list_iterate_end;
+  } players_iterate_alive_end;
+
+  return n;
+}
+
+/**********************************************************************//**
+  Does the neighbourhood carry enough observed capability for the
+  ANTICIPATORY terms (density, prior) to convert into danger here?
+
+  TRUE with the gate shut, which is what keeps the off arm identical.
+**************************************************************************/
+static bool deep_fear_evidence_met(const struct player *pplayer,
+                                   const struct tile *ptile)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+
+  if (tune->fear_evidence_gate <= 0 || tune->fear_evidence_floor <= 0) {
+    return TRUE;
+  }
+
+  return (deep_hostile_capability_near(pplayer, ptile, NULL)
+          >= tune->fear_evidence_floor);
+}
+
+static unsigned int deep_density_fear(struct city *pcity,
+                                      const char *site)
 {
   struct player *pplayer = city_owner(pcity);
   double fear, raw;
-  int n_near = 0, n_cross = 0, n_disc = 0;
+  int n_near = 0, n_cross = 0, n_disc = 0, n_cap = 0;
 
   fear = deep_density_fear_raw(pplayer, city_tile(pcity), &raw, &n_near,
-                               &n_cross, &n_disc);
+                               &n_cross, &n_disc, &n_cap);
 
-  if (n_near > 0) {
-    log_base(deep_metric_log_level(),
-             "deep-density turn=%d player=\"%s\" city=%d near=%d"
-             " cross=%d discounted=%d raw=%.2f gated=%.2f ramp=%.2f"
-             " fear=%u",
-             game.info.turn, player_name(pplayer), pcity->id, n_near,
-             n_cross, n_disc, raw, fear, deep_anticipation_ramp(),
-             (unsigned int) (fear * deep_anticipation_ramp()));
-  }
+  log_base(deep_metric_log_level(),
+           "deep-density turn=%d player=\"%s\" city=%d site=%s near=%d"
+           " cross=%d discounted=%d nocap=%d raw=%.2f gated=%.2f"
+           " ramp=%.2f fear=%u",
+           game.info.turn, player_name(pplayer), pcity->id, site, n_near,
+           n_cross, n_disc, n_cap, raw, fear, deep_anticipation_ramp(),
+           (unsigned int) (fear * deep_anticipation_ramp()));
 
   return (unsigned int) (fear * deep_anticipation_ramp());
 }
@@ -812,7 +951,8 @@ static unsigned int deep_density_fear(struct city *pcity)
 static double deep_density_fear_raw(const struct player *pplayer,
                                     const struct tile *ptile,
                                     double *raw_out, int *near_out,
-                                    int *cross_out, int *disc_out)
+                                    int *cross_out, int *disc_out,
+                                    int *cap_out)
 {
   const struct deep_tuning *tune = deep_tuning_get();
   double fear = 0.0;
@@ -823,7 +963,7 @@ static double deep_density_fear_raw(const struct player *pplayer,
    * reachable reports discounted=0 -- a measured no-op rather than an
    * argument. */
   double raw = 0.0;
-  int n_near = 0, n_cross = 0, n_disc = 0;
+  int n_near = 0, n_cross = 0, n_disc = 0, n_cap = 0;
 
   if (tune->density_fear_value <= 0) {
     return 0.0;
@@ -831,6 +971,7 @@ static double deep_density_fear_raw(const struct player *pplayer,
 
   players_iterate_alive(aplayer) {
     int floats = -1;    /* Lazily: does this neighbour own sea lift? */
+    int armed = -1;     /* Lazily: any attack-capable unit in range? */
 
     if (aplayer == pplayer
         || pplayers_allied(pplayer, aplayer)
@@ -848,6 +989,22 @@ static double deep_density_fear_raw(const struct player *pplayer,
       w = tune->density_fear_value / (1.0 + d);
       n_near++;
       raw += w;
+      /* Capability discount, the land twin of the reachability gate
+       * below: a neighbour showing no attack-capable unit in this
+       * neighbourhood is a neighbour, not a front. Same lazy
+       * per-player evaluation, same "full weight once the capability
+       * is observed, a standing discount before" shape. Off unless
+       * fear_evidence_gate opens it. */
+      if (tune->fear_evidence_gate > 0) {
+        if (armed < 0) {
+          armed = (deep_hostile_capability_near(pplayer, ptile, aplayer)
+                   > 0) ? 1 : 0;
+        }
+        if (armed == 0) {
+          w *= tune->density_fear_capability;
+          n_cap++;
+        }
+      }
       if (tile_continent(city_tile(acity)) != tile_continent(ptile)) {
         n_cross++;
         /* Reachability gate (task #18, spec'd 0112a65112 from the
@@ -888,6 +1045,9 @@ static double deep_density_fear_raw(const struct player *pplayer,
   if (disc_out != NULL) {
     *disc_out = n_disc;
   }
+  if (cap_out != NULL) {
+    *cap_out = n_cap;
+  }
 
   return fear;
 }
@@ -901,7 +1061,7 @@ unsigned int deep_density_fear_at(const struct player *pplayer,
                                   const struct tile *ptile)
 {
   return (unsigned int) (deep_density_fear_raw(pplayer, ptile, NULL, NULL,
-                                               NULL, NULL)
+                                               NULL, NULL, NULL)
                          * deep_anticipation_ramp());
 }
 
@@ -1817,6 +1977,7 @@ static void deep_apply_garrison_floor(const struct civ_map *nmap,
   unsigned int applied;
 
   if (city_data->danger != 0
+      || game.info.turn < tune->garrison_floor_turn
       || unit_list_size(city_tile(pcity)->units) >= tune->garrison_floor) {
     return;
   }
@@ -2186,10 +2347,32 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
     double sat = deep_fear_satisfaction(&(wld.map), pcity, city_data);
     unsigned int over = deep_overseas_danger(&(wld.map), pcity);
     unsigned int shadow = deep_boat_shadow_fear(&(wld.map), pcity);
-    unsigned int density = deep_density_fear(pcity);
+    unsigned int density = deep_density_fear(pcity, "ledger");
     unsigned int barb = deep_barbarian_fear(pcity);
     unsigned int credit;
+    /* FEAR census, the ledger half of the build seat's line, printed
+     * with the identical field list so the two seats can be
+     * subtracted. They disagree today and nobody knows why: both read
+     * assess_danger() (which ASSIGNS, daimilitary.c:981), but at
+     * different moments in the turn, and the build seat's `pre` is
+     * nonzero on 12.5% of T1-25 evaluations while deep-def reports 0
+     * on 94% of the early picks. Observation only -- the locals below
+     * hold values this block already computed, in the order it
+     * already computed them. */
+    unsigned int fear_pre = city_data->danger;
+    unsigned int surv, floored;
+    /* Observed capability in this neighbourhood, measured whether or
+     * not the gate acts on it, so the off arm reports the
+     * counterfactual the census asked for. */
+    int evid = deep_hostile_capability_near(pplayer, city_tile(pcity),
+                                            NULL);
 
+    if (!deep_fear_evidence_met(pplayer, city_tile(pcity))) {
+      /* Anticipatory only. Stock's assessment, the menace, the boat
+       * shadow, the barbarian onset and the survival deficit are
+       * evidence-based already and are not touched. */
+      density = 0;
+    }
     if (sat < 1.0) {
       log_base(deep_metric_log_level(),
                "deep-sat turn=%d player=\"%s\" city=%d",
@@ -2207,8 +2390,8 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
      * below. The wave itself is an omniscient read of aplayer->units
      * with no visibility test (RC6), not an OBSERVED one; see
      * findings/omniscience-census-2026-08-11.md S5. */
-    city_data->danger
-      += deep_survival_deficit_fear(&(wld.map), pcity, updisc, TRUE);
+    surv = deep_survival_deficit_fear(&(wld.map), pcity, updisc, TRUE);
+    city_data->danger += surv;
     credit = deep_incoming_defence_credit(ait, pcity)
              + deep_muster_reserve_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
@@ -2227,8 +2410,21 @@ static void deep_credit_incoming_defence(struct ai_type *ait,
      * of the help already on its way. Before the floor, which is a
      * danger == 0 rule the stake cannot reach anyway. */
     deep_apply_capital_stake(ait, pcity, city_data, "ledger");
+    floored = city_data->danger;
     deep_apply_garrison_floor(&(wld.map), pcity, city_data, updisc,
                               menace, TRUE);
+    /* prior= is 0 by construction here and not omitted: the density
+     * prior is a build-seat term only, and a column that vanished
+     * between the two sites would be read as a difference. */
+    log_base(deep_metric_log_level(),
+             "deep-fear turn=%d player=\"%s\" city=%d site=ledger"
+             " pre=%u over=%u shadow=%u density=%u prior=%u barb=%u"
+             " surv=%u credit=%u updisc=%.3f sat=%.3f fmult=%.3f"
+             " evid=%d prefloor=%u post=%u",
+             game.info.turn, player_name(pplayer), pcity->id,
+             fear_pre, over, shadow, density, 0u, barb, surv,
+             credit, updisc, sat, fmult, evid, floored,
+             city_data->danger);
   } city_list_iterate_end;
   deep_capstake_census(pplayer);
 }
@@ -5200,7 +5396,7 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     double fmult = deep_stance_fear_mult(pplayer);
     unsigned int over = deep_overseas_danger(nmap, pcity);
     unsigned int shadow = deep_boat_shadow_fear(nmap, pcity);
-    unsigned int density = deep_density_fear(pcity);
+    unsigned int density = deep_density_fear(pcity, "build");
     unsigned int prior = deep_density_prior(pplayer);
     unsigned int barb = deep_barbarian_fear(pcity);
     unsigned int credit;
@@ -5219,7 +5415,14 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
      * computing, in the order it already computed them. */
     unsigned int fear_pre = city_data->danger;
     unsigned int surv, floored;
+    int evid = deep_hostile_capability_near(pplayer, city_tile(pcity),
+                                            NULL);
 
+    if (!deep_fear_evidence_met(pplayer, city_tile(pcity))) {
+      /* Both anticipatory terms; see the once-per-turn site. */
+      density = 0;
+      prior = 0;
+    }
     if (fmult != 1.0 && over + shadow + density + prior + barb > 0) {
       deep_plr_data(pplayer)->stance_fear_gated++;
     }
@@ -5261,10 +5464,11 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
              "deep-fear turn=%d player=\"%s\" city=%d site=build"
              " pre=%u over=%u shadow=%u density=%u prior=%u barb=%u"
              " surv=%u credit=%u updisc=%.3f sat=%.3f fmult=%.3f"
-             " prefloor=%u post=%u",
+             " evid=%d prefloor=%u post=%u",
              game.info.turn, player_name(pplayer), pcity->id,
              fear_pre, over, shadow, density, prior, barb, surv,
-             credit, updisc, sat, fmult, floored, city_data->danger);
+             credit, updisc, sat, fmult, evid, floored,
+             city_data->danger);
 
     if (city_data->danger == 0 && deep_tuning_get()->rotation_want > 0
         && deep_tuning_get()->rotation_power_ratio > 0.0) {
@@ -7160,12 +7364,14 @@ static void deep_spend_gold(struct ai_type *ait, struct player *pplayer)
        * comparable: what the gold actually bought, in shields. */
       log_base(deep_metric_log_level(),
                "deep-buy turn=%d player=\"%s\" city=%d kind=\"%s\""
-               " gold=%d shields=%d want=%.1f urgency=%d tier=\"%s\"",
+               " gold=%d shields=%d want=%.1f urgency=%d danger=%u"
+               " grave=%u tier=\"%s\"",
                game.info.turn, player_name(pplayer), pcity->id,
                adv_choice_rule_name(&bestchoice), buycost,
                MAX(0, city_production_build_shield_cost(pcity)
                       - pcity->shield_stock),
-               (double) bestchoice.want, city_data->urgency, "normal");
+               (double) bestchoice.want, city_data->urgency,
+               city_data->danger, city_data->grave_danger, "normal");
       really_handle_city_buy(pplayer, pcity);
     } else if (deep_sell_to_defend(ait, pplayer, pcity, &bestchoice,
                                    buycost, expenses)) {
@@ -7184,12 +7390,14 @@ static void deep_spend_gold(struct ai_type *ait, struct player *pplayer)
         CITY_LOG(LOG_BUY, pcity, "now we can afford it (sold something)");
         log_base(deep_metric_log_level(),
                  "deep-buy turn=%d player=\"%s\" city=%d kind=\"%s\""
-                 " gold=%d shields=%d want=%.1f urgency=%d tier=\"%s\"",
+                 " gold=%d shields=%d want=%.1f urgency=%d danger=%u"
+                 " grave=%u tier=\"%s\"",
                  game.info.turn, player_name(pplayer), pcity->id,
                  adv_choice_rule_name(&bestchoice), buycost,
                  MAX(0, city_production_build_shield_cost(pcity)
                         - pcity->shield_stock),
-                 (double) bestchoice.want, city_data->urgency, "sold");
+                 (double) bestchoice.want, city_data->urgency,
+                 city_data->danger, city_data->grave_danger, "sold");
         really_handle_city_buy(pplayer, pcity);
       }
       increase_maxbuycost(pplayer, buycost);
@@ -7967,6 +8175,61 @@ static bool deep_choice_is_founder(const struct adv_choice *choice)
 }
 
 /**********************************************************************//**
+  Charge the military bid the founder bid it is about to displace.
+
+  Every other debit in this seam prices what the BUILD costs -- its
+  upkeep, its switch, its chance of never finishing. None of them
+  prices what the shields would otherwise have bought, and in the band
+  that creates deep's whole city deficit what they would otherwise
+  have bought is a city (131 shields of military against 15 of
+  settlers, T51-75, findings/content-military-gold-2026-08-30.md S2).
+
+  So: when the domestic auction's own winner is a founder, the
+  military side pays `mil_opportunity_price` times that founder's
+  bid. Applied to the bid the auction will actually compare -- after
+  the class scale, the bell and both absolute debits -- because this
+  is a handicap on the COMPARISON, not a cost of the build. Never
+  below zero, and never charged when the domestic winner is a building
+  or a worker: there is no founder being displaced then, and a
+  military tax is not what this is.
+
+  Inert at gate 0.
+**************************************************************************/
+static void deep_mil_opportunity_charge(struct player *pplayer,
+                                        struct city *pcity,
+                                        struct adv_choice *mil,
+                                        const struct adv_choice *dom)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  enum deep_want_class cls;
+  adv_want charge, before;
+
+  if (tune->mil_opportunity_gate <= 0
+      || tune->mil_opportunity_price <= 0.0
+      || mil->want <= 0
+      || dom == NULL
+      || dom->want <= 0
+      || !deep_choice_is_founder(dom)) {
+    return;
+  }
+  cls = deep_want_class_of(mil);
+  if (cls != DWC_DEFENDER && cls != DWC_ATTACKER) {
+    return;
+  }
+
+  before = mil->want;
+  charge = (adv_want) (tune->mil_opportunity_price * dom->want);
+  mil->want = MAX(0, mil->want - charge);
+
+  log_base(deep_metric_log_level(),
+           "deep-milopp turn=%d player=\"%s\" city=%d class=%d"
+           " mil=" ADV_WANT_PRINTF " founder=" ADV_WANT_PRINTF
+           " charge=" ADV_WANT_PRINTF " after=" ADV_WANT_PRINTF,
+           game.info.turn, player_name(pplayer), pcity->id, (int) cls,
+           before, dom->want, charge, mil->want);
+}
+
+/**********************************************************************//**
   Does deep's own founder want outbid the military choice, on
   MAGNITUDE, at the stage where the two are still comparable?
 
@@ -8348,6 +8611,13 @@ static void deep_city_choose_build(struct ai_type *ait,
           = deep_prod_keep_credit(pplayer, pcity, &(city_data->choice),
                                   "mil")
             + deep_prod_keep_credit(pplayer, pcity, newchoice, "dom");
+
+        /* The opportunity price, last of all, because it is the only
+         * debit here that is not a property of the build: it is what
+         * the OTHER side of this comparison is worth, so it acts on
+         * the bid the auction is about to read. Off by default. */
+        deep_mil_opportunity_charge(pplayer, pcity, &(city_data->choice),
+                                    newchoice);
 
         dom_won_after
           = deep_merge_domestic_wins(newchoice, &city_data->choice,

@@ -519,6 +519,14 @@ struct deep_tuning {
    * (same fix family as overseas_fear). */
   int garrison_floor;
   int garrison_floor_danger;
+  /* Turn before which the token garrison floor does not apply. The
+   * floor is the term that makes a city with ZERO assessed danger
+   * requisition a unit anyway, and it fires from turn one; the
+   * archived corpus puts the median deep player's first combat loss
+   * at turn 62. 0 (the default) keeps the floor from turn one, which
+   * is the shipped behaviour. Adjudicated by nothing yet -- it owes
+   * the tuning pile both a value and an arm. */
+  int garrison_floor_turn;
   /* Slope on the met-neighbour militarisation ratio (their summed
    * military rating / ours) that scales the garrison floor: 0 before
    * contact, capped at 1. Zero disables the scaling entirely. Each
@@ -587,11 +595,82 @@ struct deep_tuning {
    * boat shadow funds the garrison before the boats load. Also
    * vetoes grow-hard on exposed coasts via the CM danger gate. */
   int boat_shadow_fear;
+  /* The boat shadow's GEOMETRY, off by default (gate 0 keeps the flat
+   * term exactly as it shipped).
+   *
+   * With the gate open the shadow stops being a world-wide step
+   * function and becomes the same reachability question the embarked
+   * -cargo term already asks, pointed at the EMPTY hull: a hostile
+   * transport counts against this city only while it is within
+   * boat_shadow_distance of its own one-move reach
+   * (move_rate/SINGLE_MOVE + 1 tiles, deep_overseas_danger()'s own
+   * formula), and boat_shadow_count hulls inside that ring are what a
+   * landing takes -- fewer scale the fear down linearly, more do not
+   * scale it up. One model of what a hull can do to a coast, not two.
+   *
+   * boat_shadow_distance is measured in HULL REACHES, not tiles, so
+   * it keeps its meaning across rulesets and across the trireme-to-
+   * transport ladder. Only the per-city fear term is gated; the
+   * corridor pricing in deeptrunk.c still asks
+   * deep_boat_shadow_afloat(). */
+  int boat_shadow_gate;
+  double boat_shadow_distance;
+  int boat_shadow_count;
   /* Border-pressure fear: each met non-allied city within the radius
    * adds value/(1+dist) standing danger. 0 disables. */
   int density_fear_value;
   int density_fear_radius;
   int density_fear_ramp_turns;
+  /* EVIDENCE, off by default (gate 0 keeps the terms as they ship).
+   *
+   * The anticipatory terms count CITIES and never units: the
+   * 2026-08-30 fear census found deep_density_fear() on 54.9% of
+   * T1-25 build-seat evaluations and 72.1% at T26-50, against a
+   * corpus in which the median deep player's first combat loss is
+   * turn 62 and its first city loss turn 105. A neighbour's mere
+   * existence was buying defenders.
+   *
+   * fear_evidence_floor is the falsifiable form of that sentence: the
+   * least number of non-allied ATTACK-CAPABLE units that must stand
+   * within density_fear_radius of a city before density and prior
+   * convert into danger there at all. Below it the two anticipatory
+   * terms contribute nothing; every evidence-based term (stock's
+   * assessment, the menace, the boat shadow, the barbarian onset, the
+   * survival deficit) is untouched.
+   *
+   * density_fear_capability discounts one NEIGHBOUR rather than the
+   * whole sum: a met non-allied player showing no attack-capable unit
+   * in that radius has its cities weighted by this factor, exactly as
+   * a neighbour whose army cannot cross the water is already weighted
+   * by menace_overseas_weight. Same law, same shape, land side.
+   *
+   * The evidence count is measured and logged (evid= on deep-fear)
+   * whether or not the gate is open, so the arm that does not act on
+   * it still reports the counterfactual. */
+  int fear_evidence_gate;
+  int fear_evidence_floor;
+  double density_fear_capability;
+  /* OPPORTUNITY, off by default (gate 0 charges nothing).
+   *
+   * The defender want is priced against the city's own danger and
+   * against nothing else. What it actually competes with is the
+   * founder bid in the same auction, and in the T51-75 band that
+   * creates deep's entire city deficit the military side delivers 131
+   * shields per player against the settler side's 15 -- so the
+   * marginal defender is bought at a price that never mentions the
+   * city it displaces.
+   *
+   * mil_opportunity_price charges the military bid
+   * price x (the founder bid it is displacing) whenever the domestic
+   * auction's own winner IS a founder, using the bid the auction is
+   * about to compare. At price 1.0 -- the unit case -- a defender has
+   * to beat the founder by the founder's own worth, which is the
+   * plainest statement of "shields spent here are a city not
+   * founded". Nothing is charged when the domestic winner is a
+   * building or a worker: there is no founder to displace, and this
+   * is an opportunity price, not a military tax. */
+  int mil_opportunity_gate;
+  double mil_opportunity_price;
   /* Pre-contact prior from lobby settings: shared-continent startpos
    * on thin land predicts early contact before anyone is met. Value
    * scales by min(1, prior_tiles / land-per-player); off at first
