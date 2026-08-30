@@ -7698,6 +7698,18 @@ static void deep_prodswitch_log(struct ai_type *ait, struct player *pplayer,
   `founder` keeps its sign: negative means "I want to found and I need
   a boat first" (daicity.h:60), so its magnitude is the want and its
   sign is the errand.
+
+  `milclass` is the PRODUCER of the military bid (enum deep_want_class:
+  0 building, 1 defender, 2 attacker, 3 ferry, 4 other). Without it
+  `mil` is a merged bid with no producer tag, and the three military
+  scale keys -- scale_defender, scale_attacker, scale_ferry -- cannot
+  be screened even when they are off their 1.0 defaults, because
+  nothing says which of them this city-turn's bid would have been
+  multiplied by (knob screen 2026-08-30, recommendation 2; the same
+  hole the want corpus flagged in 2026-08). Pure classification of a
+  choice that already exists: deep_want_class_of() reads
+  choice->type and, for an attacker, the ruleset's own
+  transport_capacity.
 **************************************************************************/
 static void deep_bid_log(struct player *pplayer, struct city *pcity,
                          const struct ai_city *city_data)
@@ -7719,12 +7731,15 @@ static void deep_bid_log(struct player *pplayer, struct city *pcity,
            "deep-bid turn=%d player=\"%s\" city=%d"
            " founder=" ADV_WANT_PRINTF " worker=" ADV_WANT_PRINTF
            " expand=%d mil=" ADV_WANT_PRINTF " miltier=%d"
+           " milclass=%d"
            " build=" ADV_WANT_PRINTF " size=%d",
            game.info.turn, player_name(pplayer), pcity->id,
            (adv_want) city_data->founder_want,
            (adv_want) city_data->worker_want,
            pplayer->ai_common.expand,
-           mil.value, (int) mil.tier, build, city_size_get(pcity));
+           mil.value, (int) mil.tier,
+           (int) deep_want_class_of(&city_data->choice),
+           build, city_size_get(pcity));
 }
 
 /**********************************************************************//**
