@@ -73,7 +73,8 @@ def make_args(**kw):
                            server=None, portbase=7000, gens=3, pop=6,
                            accept="best", accept_z=None, reeval=None,
                            reeval_seeds=None, reeval_pool=[],
-                           race=None, race_z=None)
+                           race=None, race_z=None,
+                           sigma_frac=tune.SIGMA_FRAC_DEFAULT)
     for k, v in kw.items():
         setattr(a, k, v)
     return a
@@ -240,6 +241,32 @@ class TestRacingABlock(BlockCase):
         # population; the later seeds by fewer candidates.
         self.assertEqual(played[self.seeds[0]], 6)
         self.assertLess(played[self.seeds[-1]], 6)
+
+
+class TestInitialSigma(unittest.TestCase):
+    def test_the_default_is_the_historical_range_over_six(self):
+        allp = [{"lo": -10.0, "hi": 20.0}, {"lo": 0.0, "hi": 3.0}]
+        self.assertEqual(
+            tune.initial_sigma(allp, [0, 1], tune.SIGMA_FRAC_DEFAULT),
+            [30.0 / 6.0, 3.0 / 6.0])
+
+    def test_the_fraction_scales_every_constant(self):
+        allp = [{"lo": -10.0, "hi": 20.0}, {"lo": 0.0, "hi": 3.0}]
+        self.assertEqual(tune.initial_sigma(allp, [0, 1], 0.01),
+                         [0.3, 0.03])
+
+    def test_constants_outside_the_block_get_no_sigma(self):
+        allp = [{"lo": 0.0, "hi": 6.0}, {"lo": 0.0, "hi": 60.0}]
+        self.assertEqual(tune.initial_sigma(allp, [1], 0.5), [30.0])
+
+
+class TestSigmaSchedule(BlockCase):
+    def test_a_narrow_sigma_keeps_the_population_near_the_start(self):
+        scorer = make_scorer(40.0, 5.0)
+        wide = self.block(make_args(gens=1), scorer)
+        self.setUp()
+        narrow = self.block(make_args(gens=1, sigma_frac=0.001), scorer)
+        self.assertGreater(abs(wide["vals"][0]), abs(narrow["vals"][0]))
 
 
 class TestIncumbentReuse(BlockCase):

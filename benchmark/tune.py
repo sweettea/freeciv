@@ -7,7 +7,7 @@
             [--blocks S,E,M] [--rounds R]
             [--accept best|paired --accept-z Z]
             [--reeval K --reeval-seeds N]
-            [--race K --race-z Z]
+            [--race K --race-z Z] [--sigma-frac F]
 
 --blocks runs alternating block coordinate descent: each named block
 (defined in tuning-blocks.ini) is evolved in turn with every other
@@ -72,6 +72,12 @@ candidate plays the first K seeds, the better half by mean - z*SE
 plays the remaining ones, and a raced-out candidate can never be the
 block best. Halving a pop-10 generation after 3 of 8 seeds is 25
 games instead of 40 with more seeds behind the survivors.
+
+--sigma-frac F sets the initial mutation spread to F * range per
+constant. The default is 1/6, unchanged, and range/6 is a
+first-generation setting rather than a standing one: from a hand-tuned
+start point it puts most of a generation far below the incumbent, and
+the stagnation decay is what walks it back down.
 
 Discipline: refuses to optimise against the holdout seed file. Report
 final numbers with --report-holdout TUNINGFILE, which evaluates a fixed
@@ -349,6 +355,23 @@ def eval_candidate(args, seeds, cand_dir, tuning_file, baseline, portbase):
                            baseline, portbase)[0]
 
 
+SIGMA_FRAC_DEFAULT = 1.0 / 6.0
+
+
+def initial_sigma(allp, idx, frac):
+    """Per-parameter mutation sigma at the START of a block pass.
+
+    frac * (hi - lo) per constant. The historical value, and still the
+    default, is range/6 -- but that is a FIRST-generation setting, not
+    a standing one. From a hand-tuned start point it puts most of the
+    population far worse than the incumbent (the post-fix ECON block's
+    generation 0: nine of ten candidates between -40 and -108), which
+    is fine as an opening spread and wasteful as a steady state. The
+    stagnation decay already in run_block narrows it from there; this
+    flag sets where it starts."""
+    return [(allp[i]["hi"] - allp[i]["lo"]) * frac for i in idx]
+
+
 def race_survivors(stats, z, protect=()):
     """Indices that continue past a race rung: the better half.
 
@@ -389,7 +412,7 @@ def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
     block pass inherits whatever the previous blocks decided rather
     than silently reverting them to compiled defaults."""
     mean = [cur[i] for i in idx]
-    sigma = [(allp[i]["hi"] - allp[i]["lo"]) / 6.0 for i in idx]
+    sigma = initial_sigma(allp, idx, args.sigma_frac)
     best = (None, list(cur))
     best_se = float("nan")
     best_label = "incumbent held (no candidate accepted)"
@@ -773,6 +796,17 @@ def main():
                     help="required with --reeval: how many fresh"
                          " training seeds (the ones after --count in"
                          " the seed file) the re-evaluation uses.")
+    ap.add_argument("--sigma-frac", type=float,
+                    default=SIGMA_FRAC_DEFAULT,
+                    help="initial mutation sigma as a fraction of each"
+                         " constant's range (default 1/6, the value"
+                         " the tuner has always used, so leaving it"
+                         " alone changes nothing). range/6 is a"
+                         " FIRST-GENERATION setting: from a hand-tuned"
+                         " start it makes most of the population far"
+                         " worse than the incumbent. The stagnation"
+                         " decay (x0.7 after a generation that accepts"
+                         " nothing) narrows it from there.")
     ap.add_argument("--race", type=int, metavar="K",
                     help="successive halving: evaluate every candidate"
                          " on the FIRST K seeds, drop the worse half"
