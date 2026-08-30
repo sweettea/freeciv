@@ -1574,6 +1574,33 @@ static int deep_site_lad_tbown = 0;
 static int deep_site_lad_tbunit = 0;
 static int deep_site_lad_tbland = 0;
 
+/* The last turn on which a search of this player's saw land it was
+ * refused for a reason a turn can undo: a peace partner's border
+ * (offpeace), a non-allied owner the pathfinder never queued (tbland),
+ * or a citymindist reservation another settler of ours holds
+ * (mindist). One int per player slot, written where the ladder line is
+ * emitted and read by the join guard (deepsettler.c).
+ *
+ * Only counters computed UNCONDITIONALLY may appear here. The
+ * metric-gated splits (nomin, noterr, nomap, nolegal) are richer and
+ * are deliberately not used: a decision that reads them would change
+ * behaviour with the log level. */
+static int deep_site_blocked_turn[MAX_NUM_PLAYER_SLOTS];
+static bool deep_site_blocked_init = FALSE;
+
+/**********************************************************************//**
+  The last turn a search of this player's saw temporarily-blocked land,
+  or -1 if it never has.
+**************************************************************************/
+int deep_site_blocked_seen_turn(const struct player *pplayer)
+{
+  if (!deep_site_blocked_init) {
+    return -1;
+  }
+
+  return deep_site_blocked_turn[player_index(pplayer)];
+}
+
 /**********************************************************************//**
   The settler pathfinder refused a tile before the pf map could offer
   it to the ladder. `owned` separates the two reasons the callback has.
@@ -2312,6 +2339,22 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
    * and settler cost -- the pair that says whether a search came home
    * empty because there was nothing there or because what was there
    * did not survive its own price. */
+  /* What this search was refused that a turn could undo, recorded
+   * before the line is printed and independently of whether it is:
+   * the join guard reads it, so it may not depend on the log level. */
+  if (deep_site_lad_offpeace + deep_site_lad_mindist
+      + deep_site_lad_tbland > 0) {
+    if (!deep_site_blocked_init) {
+      int i;
+
+      for (i = 0; i < MAX_NUM_PLAYER_SLOTS; i++) {
+        deep_site_blocked_turn[i] = -1;
+      }
+      deep_site_blocked_init = TRUE;
+    }
+    deep_site_blocked_turn[player_index(pplayer)] = game.info.turn;
+  }
+
   if (deep_site_lad_seen > 0) {
     log_base(deep_metric_log_level(),
              "deep-siteladder turn=%d player=\"%s\" unit=%d boat=%d"

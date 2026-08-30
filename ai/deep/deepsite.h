@@ -31,6 +31,13 @@ void deep_contemplate_new_city(struct ai_type *ait, struct city *pcity);
    it: `owned` for a non-allied owner, otherwise a non-allied unit.
    Reported as tbskip=/tbown=/tbunit=/tbland= on deep-siteladder. */
 void deep_site_note_tbskip(const struct tile *ptile, bool owned);
+
+/* The last turn on which a site search of this player's was refused
+   land for a reason a turn can undo -- a peace partner's border, a
+   non-allied owner the pathfinder never queued, or another settler's
+   citymindist reservation -- or -1 if it never was. Read by the
+   founder join guard. */
+int deep_site_blocked_seen_turn(const struct player *pplayer);
 void deep_site_free(void);
 
 /* Local isthmus test, pure map geometry: among the tile's eight

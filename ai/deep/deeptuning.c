@@ -351,6 +351,11 @@ static const struct deep_tuning deep_tuning_defaults = {
                                          * a founder walking toward a site
                                          * that opens while it walks. Inert
                                          * while the gate is 0 */
+  .founder_join_guard_gate = 0,         /* 0 = today's join exactly */
+  .founder_join_guard_mult = 1.0,       /* PLACEHOLDER, unmeasured: one
+                                         * settler-build-time, the
+                                         * break-even window. Inert while
+                                         * the gate is 0 */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -669,7 +674,9 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(weak_prey_gate) \
   TUNE_DOUBLE(weak_prey_gain) \
   TUNE_INT(founder_site_cap_gate) \
-  TUNE_DOUBLE(founder_site_cap_slack)
+  TUNE_DOUBLE(founder_site_cap_slack) \
+  TUNE_INT(founder_join_guard_gate) \
+  TUNE_DOUBLE(founder_join_guard_mult)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 

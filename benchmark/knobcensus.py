@@ -1554,6 +1554,19 @@ MAP = {
         "How many founders above the counted sites the cap tolerates. "
         "PLACEHOLDER 1.0, never measured; inert while "
         "founder_site_cap_gate is 0."),
+    "founder_join_guard_gate": (
+        "S3", "mode", "direct", [("deep-joinguard", "held=1 gate=1")],
+        "S-SITEPLAN (b): a founder is not dissolved into a city while a "
+        "site may open inside one settler-build-time -- we founded, a "
+        "mission was cancelled under a walking founder, or a search was "
+        "refused land on a border, a reservation or an owner the "
+        "pathfinder skipped (deepsettler.c "
+        "deep_founder_join_guarded()). The deep-joinguard line is "
+        "emitted in BOTH arms with the three signals apart. Default 0."),
+    "founder_join_guard_mult": (
+        "S3", "weight", "direct", [("deep-joinguard", "window")],
+        "The guard window in settler-build-times. PLACEHOLDER 1.0, "
+        "never measured; inert while founder_join_guard_gate is 0."),
     "terrain_chain_gate": (
         "S1", "gate", "direct", [("deep-terrachain", "lift>0")],
         "W29: below the gate a cultivate or plant is worth the terrain "
