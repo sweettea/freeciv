@@ -833,12 +833,22 @@ static void dpai_city_free(struct city *pcity)
 }
 
 /**********************************************************************//**
-  City-ownership ledger (benchmark/cities.py). city_got fires both when
-  a city is founded and when one is taken; founded==turn tells the
-  extractor which. city_lost fires when a city is taken away or
-  destroyed; the server does not say which here, and both count as a
-  defence failure. The stock AI has no handler on either hook, so
-  logging is all these do.
+  City-ownership ledger (benchmark/cities.py, benchmark/cityledger.py).
+  city_got fires both when a city is founded and when one is taken;
+  founded==turn tells the extractor which. city_lost fires when a city
+  is taken away or destroyed, and both count as a defence failure.
+
+  This comment used to say "the server does not say which here". It
+  does: remove_city() calls city_lost and then city_destroyed for the
+  same city (server/citytools.c:1728-1729), while transfer_city()
+  calls city_lost alone -- so a loss followed by a destruction of the
+  same id in the same turn is a RAZING and a loss without one is a
+  HAND-OVER. cityledger.py had to infer that split from whether the
+  all-player city total was conserved; dpai_city_destroyed() below
+  names it at the source instead.
+
+  The stock AI has no handler on any of these hooks, so logging is all
+  they do.
 **************************************************************************/
 static void dpai_city_got(struct player *pplayer, struct city *pcity)
 {
@@ -909,6 +919,36 @@ static void dpai_city_lost(struct player *pplayer, struct city *pcity)
            city_size_get(pcity), pcity->turn_founded,
            TILE_XY(city_tile(pcity)));
   deep_tuning_scope_restore(deep_scope);
+}
+
+/**********************************************************************//**
+  The other half of the loss: remove_city() ran, so this city was RAZED
+  rather than handed over.
+
+  Called through CALL_FUNC_EACH_AI (server/citytools.c:1729), i.e. once
+  per removed city for every registered AI type rather than once for
+  the owner's -- so this fires exactly once per real city removal in
+  any game, whoever owned it, and the reader joins it to the preceding
+  deep-city lost= line on the id.
+
+  No scope is set: nothing here reads a tunable, the owner may not be a
+  deep player at all, and the hook has no player argument to scope by.
+  Logging only, as with city_got/city_lost.
+**************************************************************************/
+static void dpai_city_destroyed(struct city *pcity)
+{
+  struct player *powner = city_owner(pcity);
+
+  if (server_state() != S_S_RUNNING) {
+    return;   /* Game-end teardown frees every city through
+               * remove_city(); that is not a razing. */
+  }
+  log_base(deep_metric_log_level(),
+           "deep-city turn=%d player=\"%s\" razed=%d size=%d founded=%d"
+           " at=(%d,%d)",
+           game.info.turn, powner != NULL ? player_name(powner) : "-",
+           pcity->id, city_size_get(pcity), pcity->turn_founded,
+           TILE_XY(city_tile(pcity)));
 }
 
 /**********************************************************************//**
@@ -1671,8 +1711,8 @@ bool fc_ai_deep_setup(struct ai_type *ai)
   ai->funcs.city_free = dpai_city_free;
   /*
     ai->funcs.city_created = NULL;
-    ai->funcs.city_destroyed = NULL;
   */
+  ai->funcs.city_destroyed = dpai_city_destroyed;
   ai->funcs.city_got = dpai_city_got;
   ai->funcs.city_lost = dpai_city_lost;
   ai->funcs.city_save = dpai_city_save;
