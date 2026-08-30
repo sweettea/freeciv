@@ -8,6 +8,7 @@
             [--accept best|paired --accept-z Z]
             [--reeval K --reeval-seeds N]
             [--race K --race-z Z] [--sigma-frac F]
+            [--dry-run [--sigma-seed SIGMA]]
 
 --blocks runs alternating block coordinate descent: each named block
 (defined in tuning-blocks.ini) is evolved in turn with every other
@@ -78,6 +79,11 @@ constant. The default is 1/6, unchanged, and range/6 is a
 first-generation setting rather than a standing one: from a hand-tuned
 start point it puts most of a generation far below the incumbent, and
 the stagnation decay is what walks it back down.
+
+--dry-run prints the schedule -- block passes, candidates, seeds,
+games, and with --sigma-seed the SE the objective will have -- and
+launches nothing, so a campaign is budgeted against the effect it is
+chasing before the first game rather than after the last.
 
 Discipline: refuses to optimise against the holdout seed file. Report
 final numbers with --report-holdout TUNINGFILE, which evaluates a fixed
@@ -581,6 +587,140 @@ def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
             "label": best_label}
 
 
+def resolve_plan(args, params):
+    """(block name -> constants, ordered block names) to be evolved."""
+    if args.blocks:
+        blocks = parse_blocks(HERE / "tuning-blocks.ini")
+        unknown = set(args.blocks.split(",")) - set(blocks)
+        if unknown:
+            sys.exit(f"unknown blocks: {sorted(unknown)}")
+        return blocks, args.blocks.split(",")
+    return {"all": [p["name"] for p in params]}, ["all"]
+
+
+def schedule(args, seeds, allp, blocks, plan):
+    """What a campaign would cost, without launching any of it.
+
+    Game counts are UPPER bounds: a candidate vector that repeats
+    across blocks or rounds hits the result cache and costs nothing,
+    and so does any game a previous run already finished. The
+    incumbent is free by construction -- it is generation 0's
+    candidate 0 -- so it appears in no count here.
+
+    Expected SEs come from --sigma-seed, a per-seed sigma the campaign
+    supplies from its own past data (e.g. 115 on contested); they say
+    what the objective's error bar will be BEFORE a game is played,
+    which is the number that decides whether the budget can see the
+    effect being chased."""
+    cfgs = len(args.configs)
+    arms = 2 if args.mixed else 1
+    n = len(seeds)
+    rung = args.race if args.race else n
+    surv = max(1, (args.pop + 1) // 2) if args.race else args.pop
+    per_gen = (args.pop * cfgs * rung * arms
+               + (surv * cfgs * (n - rung) * arms if args.race else 0))
+    flat_per_gen = args.pop * cfgs * n * arms
+    fresh = len(args.reeval_pool)
+    reeval_gen = (args.reeval or 0) * cfgs * fresh * arms
+    # The incumbent's fresh-seed games are one directory per block, so
+    # they are paid once per block rather than once per generation.
+    per_block = args.gens * (per_gen + reeval_gen) + (
+        cfgs * fresh * arms if args.reeval else 0)
+
+    rows = []
+    for rnd in range(args.rounds):
+        for bname in plan:
+            names = set(blocks[bname])
+            rows.append({
+                "round": rnd, "block": bname,
+                "params": len([p for p in allp if p["name"] in names]),
+                "candidates": args.gens * args.pop,
+                "games": per_block,
+            })
+    baseline = 0 if args.mixed else cfgs * (n + fresh)
+    return {
+        "rows": rows, "arms": arms, "configs": cfgs, "seeds": n,
+        "fresh": fresh, "rung": rung, "survivors": surv,
+        "per_gen": per_gen, "flat_per_gen": flat_per_gen,
+        "per_block": per_block, "baseline": baseline,
+        "total": baseline + sum(r["games"] for r in rows),
+        "se": expected_se(args.sigma_seed, cfgs, n),
+        "se_rung": expected_se(args.sigma_seed, cfgs, rung),
+        "se_fresh": expected_se(args.sigma_seed, cfgs, fresh),
+    }
+
+
+def expected_se(sigma_seed, cfgs, n):
+    """SE of the blended objective for a per-seed sigma, before any
+    game is run: sigma / sqrt(configs * seeds). None when no sigma
+    was supplied -- this tool does not invent one."""
+    if sigma_seed is None or n <= 0 or cfgs <= 0:
+        return None
+    return sigma_seed / (cfgs * n) ** 0.5
+
+
+def print_schedule(sched, args, seeds):
+    print("DRY RUN -- no game is launched\n")
+    print(f"configs ({sched['configs']}): {', '.join(args.configs)}")
+    print(f"seeds ({sched['seeds']}): "
+          + " ".join(str(s) for s in seeds))
+    if args.reeval:
+        print(f"fresh seeds for --reeval {args.reeval} "
+              f"({sched['fresh']}): "
+              + " ".join(str(s) for s in args.reeval_pool))
+    if args.mixed:
+        print("mixed: 2 seat-mirrored games per candidate-seed,"
+              " no separate baseline arm")
+    print(f"\npopulation {args.pop} x {args.gens} generations"
+          f" x {args.rounds} round(s) over {len(sched['rows'])}"
+          f" block pass(es)")
+    if args.race:
+        print(f"race: all {args.pop} play the first {sched['rung']}"
+              f" seeds, {sched['survivors']} survivors play the"
+              f" remaining {sched['seeds'] - sched['rung']}")
+    print(f"games per generation: {sched['per_gen']}"
+          + (f" (flat schedule: {sched['flat_per_gen']})"
+             if sched['per_gen'] != sched['flat_per_gen'] else ""))
+    print(f"games per block pass: {sched['per_block']}")
+
+    print("\n  %-5s %-8s %7s %11s %8s"
+          % ("round", "block", "params", "candidates", "games"))
+    for r in sched["rows"]:
+        print("  %-5d %-8s %7d %11d %8d"
+              % (r["round"], r["block"], r["params"], r["candidates"],
+                 r["games"]))
+    if sched["baseline"]:
+        print(f"\nbaseline arm (once, tuning-independent):"
+              f" {sched['baseline']} games")
+    print(f"TOTAL <= {sched['total']} games"
+          " (cache hits make it fewer, never more)")
+
+    if sched["se"] is None:
+        print("\nexpected SE: pass --sigma-seed SIGMA (the per-seed"
+              " sigma of the paired diff on this venue) to size the"
+              " budget against the effect being chased")
+    else:
+        print(f"\nexpected SE at sigma {args.sigma_seed:g} per seed:")
+        print(f"  objective  +/- {sched['se']:.1f}"
+              f"  ({sched['seeds']} seeds x {sched['configs']} configs)")
+        if args.race:
+            print(f"  race rung  +/- {sched['se_rung']:.1f}"
+                  f"  ({sched['rung']} seeds x {sched['configs']})")
+        if args.reeval:
+            print(f"  reeval     +/- {sched['se_fresh']:.1f}"
+                  f"  ({sched['fresh']} seeds x {sched['configs']})")
+        print("  the paired diff vs the incumbent is tighter than"
+              " this: pairing cancels the seed, and its sigma is not"
+              " this sigma")
+    for r in sched["rows"]:
+        if sched["se"] is not None and r["params"] > sched["seeds"]:
+            print(f"\nNOTE: block {r['block']} moves {r['params']}"
+                  f" constants on {sched['seeds']} seeds per"
+                  f" candidate. ~40 noisy scalars cannot set ~80"
+                  f" params (findings/tune-postfix-verdict-2026-08-25).")
+            break
+
+
 def parse_arena_manifest(path):
     """[(key, ini path)] from a manifest in the server's OWN format
     (ai/deep/deeptuning.c): an [arena] section whose keys are seat
@@ -796,6 +936,17 @@ def main():
                     help="required with --reeval: how many fresh"
                          " training seeds (the ones after --count in"
                          " the seed file) the re-evaluation uses.")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="print the campaign's schedule -- block"
+                         " passes, candidates, seeds, games and the"
+                         " expected SE -- and launch nothing, so a"
+                         " campaign can be budgeted before it starts")
+    ap.add_argument("--sigma-seed", type=float, metavar="SIGMA",
+                    help="per-seed sigma of the paired diff on this"
+                         " venue, taken from past data, used by"
+                         " --dry-run to predict the objective's SE."
+                         " No default: it is a measurement, not a"
+                         " setting.")
     ap.add_argument("--sigma-frac", type=float,
                     default=SIGMA_FRAC_DEFAULT,
                     help="initial mutation sigma as a fraction of each"
@@ -876,6 +1027,14 @@ def main():
 
     args.configs = args.config.split(",")
 
+    if args.dry_run:
+        if args.arena:
+            sys.exit("--dry-run describes an optimisation campaign;"
+                     " an --arena run has no schedule to predict")
+        b, pl = resolve_plan(args, params)
+        print_schedule(schedule(args, seeds, allp, b, pl), args, seeds)
+        return
+
     # Arena games carry their opponents inside themselves: no baseline
     # arm, no optimiser, and the report is per seat.
     if args.arena:
@@ -943,15 +1102,7 @@ def main():
         print(f"start from {args.start}: {len(start)} constants pinned",
               flush=True)
 
-    if args.blocks:
-        blocks = parse_blocks(HERE / "tuning-blocks.ini")
-        unknown = set(args.blocks.split(",")) - set(blocks)
-        if unknown:
-            sys.exit(f"unknown blocks: {sorted(unknown)}")
-        plan = args.blocks.split(",")
-    else:
-        blocks = {"all": [p["name"] for p in params]}
-        plan = ["all"]
+    blocks, plan = resolve_plan(args, params)
 
     history = []
     for rnd in range(args.rounds):
