@@ -5324,6 +5324,15 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
     int present = 0;
     struct unit *here[DEEP_OP_MEMBERS];
     double odds_now = 0.0, surv_now = 0.0, loss_now = 0.0;
+    /* The net-value block's own eff worth, hoisted so the march line
+     * can report it WITHOUT calling deep_conquest_worth() a second
+     * time. That function is not pure -- it feeds the culture and
+     * weak-prey censuses -- so a read taken under the metric log
+     * level would make those censuses depend on the log level, which
+     * is the trap deep_op_pick_target() documents. 0 means the gate
+     * never priced it (op_net_value off, or the odds bar said no
+     * before the question arose). */
+    double eff_worth_now = 0.0;
     const char *abandon = NULL;
     int joined = 0;
     bool go;
@@ -5419,6 +5428,8 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
         double value = odds_now * eff_worth;
         double cost = tune->attack_loss_gain * loss_now * SHIELD_WEIGHTING;
 
+        eff_worth_now = eff_worth;
+
         if (value - cost <= 0.0) {
           log_base(deep_metric_log_level(),
                    "deep-netval turn=%d player=\"%s\" op=%d refuse"
@@ -5493,14 +5504,34 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
       }
       deep_plr_data(pplayer)->ops_launched++;
       deep_brief_allies(pplayer, target, TRUE, op->march_eta);
+      /* THE LOSS FORECAST, on the branch that spends the blades.
+       *
+       * The launch gate already computes what the assault is expected
+       * to cost -- loss_now, and value - cost with it -- and until now
+       * wrote it down only when the answer was NO (deep-netval
+       * refuse). So every operation that actually launched carried an
+       * unrecorded prediction, and the exchange-rate census could
+       * price the take against nothing (findings/op-exchange-rate
+       * -2026-08-29.md). `patience` says which release opened the
+       * gate, because the half-quorum wait-cap path does not consult
+       * odds, survivors or net value at all and its launches must not
+       * be pooled with the ones that cleared the bar.
+       *
+       * Observation only: every field is a value the gate above
+       * already computed, re-read under the metric log level. */
       log_base(deep_metric_log_level(),
                "deep-op turn=%d player=\"%s\" op=%d march target=%d"
                " present=%d required=%d waited=%d eta=%d odds=%.3f"
-               " surv=%.2f bar=%d",
+               " surv=%.2f bar=%d loss=%.2f cost=%.1f eworth=%.1f"
+               " patience=%d",
                game.info.turn, player_name(pplayer), oi, op->target_city,
                present, op->required, game.info.turn - op->formed_turn,
                op->march_eta, odds_now, surv_now,
-               tune->op_launch_odds ? 1 : 0);
+               tune->op_launch_odds ? 1 : 0,
+               loss_now,
+               tune->attack_loss_gain * loss_now * SHIELD_WEIGHTING,
+               eff_worth_now,
+               go ? 0 : 1);
       /* Fall through: the first march turn re-gates immediately. */
     } else if (abandon != NULL) {
       /* Dissolve rather than retarget: a retarget is a fresh
