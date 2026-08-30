@@ -3342,6 +3342,38 @@ struct deep_tuning {
    * on: with the odds gate off there is no odds_now to compare and the
    * floor would silently become "never launch". */
   double op_patience_odds_floor;
+
+  /* PRICING THE JOURNEY. One gate over the three terms that make the
+   * launch decision ask P(this operation ends holding that city)
+   * instead of P(this stream beats that garrison, arriving together
+   * and fresh). 0 = not one of them is computed and the binary is the
+   * shipped one; the three ship together because they are one
+   * hypothesis with three handles, and splitting them into three A/Bs
+   * would be three reads of one causal chain. */
+  int op_arrival_gate;
+  /* P(the march survives one more turn), compounded over the quorum's
+   * eta and folded into the net-value product: the gate compares
+   * P(arrive) x P(win) x worth against cost instead of P(win) x
+   * worth. Measured proxy for the factor that is missing: contacts
+   * over launches is 7.8% pooled, 100% at eta 0-1, 2.9% at eta 2,
+   * 1.3% at eta 3-4 and 0.0% at eta 5+. 1.0 = no decay. */
+  double op_arrival_decay;
+  /* Refuse to launch at all when the quorum's eta exceeds this. The
+   * blunt form of the same claim: 117 launches at eta >= 5 produced
+   * zero contacts and zero cities, so past some distance the product
+   * is zero and no worth redeems it. It refuses the half-quorum
+   * patience release too -- a wave the arrival model will not pay for
+   * must not be released by a clock either. 0 = no cap. */
+  int op_launch_eta_cap;
+  /* Expected members lost per turn of march, charged into the
+   * net-value cost at the mean build cost of the force standing at
+   * the staging tile, through the same attack_loss_gain x
+   * SHIELD_WEIGHTING referee the duel loss uses. The cost side has
+   * only ever charged the duel, and the per-operation ledger says the
+   * duel is not where the blades go: 354 member deaths against 2
+   * kills at the walls over 232 closed operations, 1.78 per operation
+   * booked dead in transit. 0.0 = the duel alone, as shipped. */
+  double op_march_loss_rate;
 };
 
 void deep_tuning_init(void);

@@ -348,6 +348,16 @@ static const struct deep_tuning deep_tuning_defaults = {
   .op_patience_odds_floor = 0.0,        /* PLACEHOLDER; 0 = the half-quorum
                                          * wait-cap release asks nothing,
                                          * byte for byte */
+  .op_arrival_gate = 0,                 /* 0 = the launch path prices the
+                                         * duel and never the march,
+                                         * byte for byte */
+  .op_arrival_decay = 1.0,              /* PLACEHOLDER; 1.0 = no decay.
+                                         * Inert while the gate is 0 */
+  .op_launch_eta_cap = 0,               /* PLACEHOLDER; 0 = no cap.
+                                         * Inert while the gate is 0 */
+  .op_march_loss_rate = 0.0,            /* PLACEHOLDER; 0 = the duel is the
+                                         * whole cost. Inert while the gate
+                                         * is 0 */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -665,7 +675,11 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_DOUBLE(prod_keep_gain) \
   TUNE_INT(weak_prey_gate) \
   TUNE_DOUBLE(weak_prey_gain) \
-  TUNE_DOUBLE(op_patience_odds_floor)
+  TUNE_DOUBLE(op_patience_odds_floor) \
+  TUNE_INT(op_arrival_gate) \
+  TUNE_DOUBLE(op_arrival_decay) \
+  TUNE_INT(op_launch_eta_cap) \
+  TUNE_DOUBLE(op_march_loss_rate)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 
