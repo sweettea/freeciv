@@ -3307,6 +3307,50 @@ struct deep_tuning {
    * that was actually chosen. */
   int weak_prey_gate;
   double weak_prey_gain;
+
+  /* S-SITEPLAN (a): never carry more founders than there are sites
+   * left to put them on.
+   *
+   * The settler-pipeline census (findings/settler-pipeline-2026-08-29)
+   * found deep dissolving 27-39% of the founders it delivers, and the
+   * obvious response -- stop dissolving them -- has an obvious failure
+   * mode: baseline, which never dissolves one, ends its games holding
+   * 19-40 idle settlers. A join guard without a production cap buys
+   * that hoard. This is the cap, and it is the reason the two ship as
+   * one arm.
+   *
+   * The rule, at the seam where the founder bid is made and before the
+   * domestic advisor compares it: withdraw the bid when the founders
+   * this player ALREADY has -- alive, plus under construction in any
+   * OTHER city -- reach the sites still counted for it.
+   *
+   * "Sites still counted" is deep_remaining_sites() (deepdefence.c),
+   * the free reachable land divided by this player's own land per
+   * city. Not a new estimate: it is the same quantity the founder
+   * pool gate has sized itself by since 2026-08-03, read here for the
+   * production side of the same question.
+   *
+   * The city being decided is excluded from the count on purpose. The
+   * question at this seam is "should ONE MORE founder be started", and
+   * counting a city's own run against its own bid would withdraw the
+   * bid of a city already building a settler -- forfeiting the stock
+   * it has paid in, which is the exact defect founder_run_hold exists
+   * to stop.
+   *
+   * 0 = today's bid exactly. Counter: deep-sitecap, one line per
+   * city-turn with a founder bid, gate on or off. */
+  int founder_site_cap_gate;
+
+  /* How many founders above the counted sites the cap tolerates.
+   *
+   * PLACEHOLDER 1.0 and NOT MEASURED. deep_remaining_sites() is an
+   * estimate of capacity, not a list of tiles, so a cap set exactly at
+   * it would refuse the founder that walks toward a site opening while
+   * it walks. One is the smallest slack that admits that founder; it
+   * is not evidence that one is the right number, and it is flagged in
+   * STATUS for a tuning pass. Only read while founder_site_cap_gate is
+   * non-zero. */
+  double founder_site_cap_slack;
 };
 
 void deep_tuning_init(void);

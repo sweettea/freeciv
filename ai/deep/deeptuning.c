@@ -345,6 +345,12 @@ static const struct deep_tuning deep_tuning_defaults = {
                                          * disarmed rival's city worth 2x a
                                          * peer's. Inert while the gate is
                                          * 0 */
+  .founder_site_cap_gate = 0,           /* 0 = today's founder bid exactly */
+  .founder_site_cap_slack = 1.0,        /* PLACEHOLDER, unmeasured: the
+                                         * smallest slack that still admits
+                                         * a founder walking toward a site
+                                         * that opens while it walks. Inert
+                                         * while the gate is 0 */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -661,7 +667,9 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(prod_keep_gate) \
   TUNE_DOUBLE(prod_keep_gain) \
   TUNE_INT(weak_prey_gate) \
-  TUNE_DOUBLE(weak_prey_gain)
+  TUNE_DOUBLE(weak_prey_gain) \
+  TUNE_INT(founder_site_cap_gate) \
+  TUNE_DOUBLE(founder_site_cap_slack)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 
