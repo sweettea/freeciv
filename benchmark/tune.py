@@ -252,10 +252,26 @@ def blend_stats(per_seed):
 def paired_stats(cand, inc):
     """(mean, SE, points) of cand minus incumbent on the seeds BOTH ran.
 
-    The baseline term cancels, so this is a within-seed contrast and
-    its SE is well below either objective's own -- which is the whole
-    reason a challenger is judged against the incumbent rather than
-    against zero."""
+    This is a within-seed contrast, which is why a challenger is
+    judged against the incumbent rather than against zero. Whether it
+    is TIGHTER than either objective's own SE depends on the venue,
+    and the earlier wording here asserted that it always is:
+
+      paired venue  the two candidates share a baseline term and it
+                    cancels along with the seed effect, so the
+                    contrast is genuinely tighter.
+      --mixed       there is no shared term -- the opponent lives
+                    inside each game and diverges with the
+                    candidate's own tuning -- so pairing removes only
+                    the seed effect while differencing two nearly
+                    independent games ADDS variance. Measured on 1120
+                    archived contested --mixed games: rho between two
+                    candidates at one seed is 0.16, and the paired
+                    per-seed sigma is 119.2 against the objective's
+                    104.4 (findings/screen-corpus-2026-08-30.md).
+
+    So --accept-z must be sized against the paired sigma of the venue
+    in use, not against the objective's."""
     return blend_stats({k: cand[k] - inc[k] for k in cand if k in inc})
 
 
@@ -717,9 +733,18 @@ def print_schedule(sched, args, seeds):
         if args.reeval:
             print(f"  reeval     +/- {sched['se_fresh']:.1f}"
                   f"  ({sched['fresh']} seeds x {sched['configs']})")
-        print("  the paired diff vs the incumbent is tighter than"
-              " this: pairing cancels the seed, and its sigma is not"
-              " this sigma")
+        print("  the paired diff vs the incumbent has its OWN sigma,"
+              " not this one, and it is not always smaller:")
+        print("    paired venue -- the shared baseline term cancels"
+              " too, so the contrast is tighter")
+        print("    --mixed      -- no shared term exists (the opponent"
+              " is inside each game), so pairing removes only the"
+              " seed effect while")
+        print("                    differencing two nearly independent"
+              " games adds; MEASURED 119.2 vs the objective's 104.4"
+              " on contested --mixed")
+        print("                    (findings/screen-corpus-2026-08-30.md"
+              " Part 2). Size --accept-z against THAT number.")
     for r in sched["rows"]:
         if sched["se"] is not None and r["params"] > sched["seeds"]:
             print(f"\nNOTE: block {r['block']} moves {r['params']}"
