@@ -5204,6 +5204,21 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     unsigned int prior = deep_density_prior(pplayer);
     unsigned int barb = deep_barbarian_fear(pcity);
     unsigned int credit;
+    /* FEAR census. deep_log_defence() runs in first_activities and
+     * reports stock's assess_danger() alone, so no line deep has ever
+     * written names the fear a defender is actually bought with. `pre`
+     * is what the assess_danger() call a few lines above left in the
+     * field (it ASSIGNS total_danger, daimilitary.c:981, so this is
+     * stock's figure and not an accumulation), `surv` the
+     * survival-deficit term, `floored` the danger the garrison floor
+     * found, and `post` what the defender want is finally priced
+     * against -- so which term ordered a unit is answerable without
+     * re-deriving it from the component logs (deep-density writes no
+     * line when near == 0, and the prior writes none at all).
+     * Observation only: the locals hold values this block was already
+     * computing, in the order it already computed them. */
+    unsigned int fear_pre = city_data->danger;
+    unsigned int surv, floored;
 
     if (fmult != 1.0 && over + shadow + density + prior + barb > 0) {
       deep_plr_data(pplayer)->stance_fear_gated++;
@@ -5214,8 +5229,8 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
     city_data->danger += (unsigned int) (prior * updisc * sat * fmult);
     city_data->danger += (unsigned int) (barb * updisc * sat * fmult);
     /* NOT scaled: see the once-per-turn site. */
-    city_data->danger
-      += deep_survival_deficit_fear(nmap, pcity, updisc, FALSE);
+    surv = deep_survival_deficit_fear(nmap, pcity, updisc, FALSE);
+    city_data->danger += surv;
     credit = deep_incoming_defence_credit(ait, pcity)
              + deep_muster_reserve_credit(ait, pcity);
     city_data->danger -= MIN(city_data->danger, credit);
@@ -5238,8 +5253,18 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
      * actually bought from; site="build" on the log line tells the two
      * apart, and only the ledger's feeds the per-turn census. */
     deep_apply_capital_stake(ait, pcity, city_data, "build");
+    floored = city_data->danger;
     deep_apply_garrison_floor(nmap, pcity, city_data, updisc,
                               deep_garrison_menace(pplayer), FALSE);
+
+    log_base(deep_metric_log_level(),
+             "deep-fear turn=%d player=\"%s\" city=%d site=build"
+             " pre=%u over=%u shadow=%u density=%u prior=%u barb=%u"
+             " surv=%u credit=%u updisc=%.3f sat=%.3f fmult=%.3f"
+             " prefloor=%u post=%u",
+             game.info.turn, player_name(pplayer), pcity->id,
+             fear_pre, over, shadow, density, prior, barb, surv,
+             credit, updisc, sat, fmult, floored, city_data->danger);
 
     if (city_data->danger == 0 && deep_tuning_get()->rotation_want > 0
         && deep_tuning_get()->rotation_power_ratio > 0.0) {
