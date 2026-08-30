@@ -23815,3 +23815,159 @@ off — fix the 99.6% blocked-land signal first); `boat_shadow_distance`
 
 Retention: `benchmark/results/fearsink/` — 203 games, saves deleted,
 logs filtered to seven deep census tags and zstd-compressed (94 MB).
+
+---
+
+## S-CITYLEDGER — the T50–75 births and deaths, censused (2026-08-30)
+
+**Founding-rate, not attrition — and to the exclusion of attrition.**
+The instrumentation task S-FEARSINK §9 closed on. Full write-up:
+`findings/city-ledger-2026-08-30.md`.
+
+**No games were run and no instrumentation was written.** The census is
+readable from data already on disk. Phase 2 was not entered.
+
+### The reader
+
+`benchmark/cityledger.py`, two independent readers over any corpus:
+
+- **scorelog tag 3 (`cities`) per player per turn** — works for EVERY
+  arm including `ai/baseline`, and survives the log filtering the recent
+  A/B corpora applied. A per-player rise is a city gained, a fall one
+  lost; the ALL-PLAYER total splits the loss (conserved = changed hands,
+  down = `remove_city()`).
+- **`deep-city` lines** (`deepai.c:843`/`:894`) — names a founding
+  against a conquest exactly and carries the size and age of every city
+  that died.
+
+Calibration the two forced: **the score snapshot is taken at the start
+of a turn**, so a city founded during turn *t* first appears in the
+sample for *t+1*. Uncorrected, every band edge is off by one turn and
+the readers disagree by 1.4 foundings a game; corrected they agree band
+for band. The reconstruction is checked against the scorelog's own count
+at every band edge and closes in 19–20 of 20 games per arm.
+
+The server logs none of this itself: `remove_city()`/`transfer_city()`
+announce through `notify_player()`, a client packet, so `game.log`
+carries no city event at `LOG_NORMAL`.
+
+### The verdict (contested, `c10` − `c00`, 20 paired seeds, per seat)
+
+| band | d(found) | d(died) | d(cities held) |
+|---|---:|---:|---:|
+| T26–50 | +0.087 ± 0.060 | +0.006 ± 0.006 | **+0.163 ± 0.064** |
+| **T51–75** | **−0.100 ± 0.072** | **−0.013 ± 0.015** | **+0.062 ± 0.066** |
+
+Cumulative extra foundings +0.163 ± 0.064 through T50 and +0.062 ± 0.066
+through T75 — **the city curve to three decimals.** The whole T51–75
+band holds **0.006 city deaths a seat**: one city across 20 games and
+160 seats. The death term never once works against the treated arm — in
+every cell of the 2×2 and in both venues the treated arm loses *fewer*
+cities. Econ `c10` − `c00`: cumulative d(found) +0.242 ± 0.163 through
+T50, **−0.117 ± 0.314 through T75**, d(died) −0.108 ± 0.099.
+
+**The founder queue has a conserved T1–75 output on a fixed map.** Every
+intervention measured so far moves foundings in time rather than adding
+any, and deep's own accounting shows why: at T51–75 `c10` has `sites`
+2.802 left against `c00`'s 3.092 and runs 74.3% empty site searches
+against 68.9%.
+
+### Against baseline, the real deficit
+
+Contested, 20 paired seeds, per seat. Cumulative missing foundings
+−0.106 ± 0.075 through T50 and **−0.637 ± 0.143 through T75**, against a
+final gap of −0.644 ± 0.147. **Deep loses 0.131 cities a seat a game,
+baseline 0.394.** The fork is one band wide: T51–75, baseline founds
+1.087 a seat and deep 0.556 (d −0.531 ± 0.128). Econ: cumulative
+d(found) −1.183 ± 0.232 through T75 against a stock gap of
+−1.142 ± 0.203, attrition again favouring deep.
+
+Founder stock (scorelog tag 6 = units that can `ACTION_FOUND_CITY`, so
+readable for both arms), per seat: deep 0.531 at T75 against baseline's
+2.525, **d −1.994 ± 0.221**. Deep converts a founder-turn to a city
+about twice as well as baseline and has about five times fewer of them.
+This does not contradict S-FEARSINK §5's "deep is not settler-starved" —
+that was the margin inside deep's own arms; this is the level against
+the control.
+
+### What kills the ones that do die
+
+`cityledger.py` names each death by joining `deep-city` to the
+all-player total, and the split validates itself against the server
+(conquest at size 1 runs `remove_city()`, `citytools.c:2042`; at size
+≥ 2 it transfers, `:2135`):
+
+- **contested**: 23 cities in 160 seat-games. `taken` n=12, mean size
+  4.75, median age 82, 83% with combat on the tile; `razed` n=11, mean
+  size 2.09, median age 54, 73% with combat. Nothing in T51–75.
+- **lategame-80**: a second and larger channel, and it is not war.
+  `razed` n=74 = **0.617/seat/game, 100% size 1, 1% with combat, median
+  age exactly 5** — `mgr_turninterval` (`common/game.h:527`, default 5)
+  counted from the founding turn. `do_city_migration()` **removes** a
+  size-1 city whose only citizen migrates (`cityturn.c:4279`).
+  `lategame-80.conf` enables migration and its own comment already says
+  neither module models it (that is W17). 24% loss rate on deep's
+  post-opening expansion in that venue.
+
+### Where the foundings stop (`cityledger.py --why`)
+
+`siteplan/war/c00`, 60 games; `s6-nogates-war` reproduces within 2 pts.
+
+| band | fresh searches /pl-turn | **came home empty** | `sites` |
+|---|---:|---:|---:|
+| T1–25 | 0.165 | 6.1% | 9.28 |
+| T26–50 | 0.374 | 44.0% | 5.50 |
+| **T51–75** | 0.511 | **71.6%** | 3.24 |
+| T126–150 | 0.669 | 97.2% | 3.26 |
+
+In a failed search `scored` is **0.00** — not one tile ever reaches the
+scorer, so this is not a threshold, not `site_enough_result`, and not
+the travel price. And when a search does succeed its `best_net` is 357.8
+at T51–75 against 387.9 at T1–25: deep is not settling worse land later,
+it is finding none.
+
+**The largest single refusal is a peaceful neighbour's border.** At
+T51–75, `offpeace` is 43.3 of the 110.5 tiles a failed search sees —
+**39%** — rising to 79.8 of 381.7 by T126–150. That is stock's
+categorical, unpriced *"Land theft does not make for good neighbors"*
+(`ai/default/daisettler.c:751`, mirrored `deepsite.c:2170`).
+`ai/baseline` carries it identically, so it is not by itself the
+differential — but it is the single largest thing between deep's
+settlers and a city, and deep's own diplomacy chooses the peace that
+closes the frontier.
+
+### Landed
+
+- [x] `benchmark: census city births and deaths per 25-turn band`
+- [x] `doc: record the city ledger's verdict`
+
+No `ai/` code was touched. Nothing to add to `findings/upstream-bugs.md`:
+no cause was mislabelled upstream. One `ai/deep` comment is wrong —
+`dpai_city_lost`'s *"the server does not say which here"* — because
+`remove_city()` calls `city_lost` and then `city_destroyed`
+(`citytools.c:1728-1729`) and `ai/deep` leaves `funcs.city_destroyed`
+commented out at NULL (`deepai.c:1674`). A two-line handler would name
+the cause at the source and retire the ledger's heuristic.
+
+### Proposed next: S-FRONTIER, as a 2×2
+
+Two levers this census sized, on the same T51–75 queue, so per the
+S-FEARSINK lesson they want one factorial and not two concurrent arms.
+All constants **PLACEHOLDER, no values proposed** (rule 7).
+
+1. **Price the closed frontier.** `frontier_theft_gate`,
+   `frontier_theft_price`, `frontier_theft_stance_floor`,
+   `frontier_theft_reach`. **First commit must establish legality**: does
+   the ruleset permit founding inside a peaceful owner's border, and
+   what incident does it raise? If the server refuses the action the
+   line is dead and the census redirects to `nomin` (30.5 tiles a failed
+   search, deep's own spacing).
+2. **A founder floor.** `held` per city falls from 0.594 (T26–50) to
+   0.231 (T51–75) while `w0` reaches 72%: an empty search zeroes the
+   founder want, so a search that failed for a reason a turn could undo
+   removes the founder from the build queue and the stock never
+   recovers. `founder_floor_gate`, `founder_floor_want`,
+   `founder_floor_reach_ref`.
+3. **Kept separate, W17-local:** `migration_seed_gate`,
+   `migration_seed_margin` for the econ venue's 0.617 razed cities. Do
+   not bundle it with either of the above.
