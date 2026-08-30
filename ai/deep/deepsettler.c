@@ -2336,6 +2336,27 @@ BUILD_CITY:
     /* Check that the mission is still possible. If the tile has become
      * unavailable, call it off. */
     if (!city_can_be_built_here(nmap, ptile, punit, FALSE)) {
+      /* The one exit from a city mission that wrote nothing: the
+       * settler is already walking and the destination stops being
+       * foundable under it. Until this line the link could only be
+       * counted by set-difference -- a `mission` with no `stall` on
+       * the same unit-turn -- which is 4.6% of mission-turns in the
+       * war venue and 5.0% in the econ one
+       * (findings/settler-pipeline-2026-08-29.md). The reason names
+       * the same ladder rungs deep-siteladder uses, so the two
+       * censuses are read on one vocabulary. */
+      log_base(deep_metric_log_level(),
+               "deep-settler turn=%d player=\"%s\" unit=%d at=(%d,%d)"
+               " cancel target=(%d,%d) reason=%s towner=%d dist=%d",
+               game.info.turn, player_name(pplayer), punit->id,
+               TILE_XY(unit_tile(punit)), TILE_XY(ptile),
+               (terrain_has_flag(tile_terrain(ptile), TER_NO_CITIES)
+                ? "noterr"
+                : (citymindist_prevents_city_on_tile(nmap, ptile)
+                   ? "nomin"
+                   : (tile_city(ptile) != NULL ? "city" : "nolegal"))),
+               deep_settler_tile_claim(pplayer, ptile),
+               real_map_distance(unit_tile(punit), ptile));
       dai_unit_new_task(ait, punit, AIUNIT_NONE, NULL);
       set_unit_activity(punit, ACTIVITY_IDLE, ACTION_NONE);
       send_unit_info(NULL, punit);

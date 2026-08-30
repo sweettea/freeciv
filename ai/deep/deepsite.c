@@ -1507,6 +1507,15 @@ int deep_site_spacing_bucket(int d)
  * valuation defect, and only the third is fixable by pricing. */
 static int deep_site_lad_seen = 0;    /* tiles the pf map offered */
 static int deep_site_lad_off = 0;     /* land bridge / peaceful border */
+/* `off` folded two opposite findings into one number, and reading the
+ * war venue's 69%-of-seen `off` on a failed search cost a savegame
+ * dump to resolve: "the settler is standing on an island the search
+ * walked off" and "over half the land it can reach belongs to a
+ * neighbour it is at peace with" are the same digit there.
+ * (findings/settler-pipeline-2026-08-29.md.) The pair sums to `off`,
+ * which is the same arithmetic self-check the rest of the ladder has. */
+static int deep_site_lad_offbridge = 0; /* accidental land bridge */
+static int deep_site_lad_offpeace = 0;  /* owned by a peace partner */
 static int deep_site_lad_nofound = 0; /* city_can_be_built_here, unknown */
 static int deep_site_lad_mindist = 0; /* citymindist reservation scan */
 static int deep_site_lad_danger = 0;  /* adv_danger_at */
@@ -2017,6 +2026,8 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
   deep_wait_memo_n = 0;
   deep_site_lad_seen = 0;
   deep_site_lad_off = 0;
+  deep_site_lad_offbridge = 0;
+  deep_site_lad_offpeace = 0;
   deep_site_lad_nofound = 0;
   deep_site_lad_mindist = 0;
   deep_site_lad_danger = 0;
@@ -2064,6 +2075,7 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
         && tile_continent(ptile) != curcont) {
       /* We have an accidental land bridge. Ignore it. */
       deep_site_lad_off++;
+      deep_site_lad_offbridge++;
       continue;
     }
     if (BORDERS_DISABLED != game.info.borders) {
@@ -2074,6 +2086,7 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
           && pplayers_in_peace(powner, pplayer)) {
         /* Land theft does not make for good neighbors. */
         deep_site_lad_off++;
+        deep_site_lad_offpeace++;
         continue;
       }
     }
@@ -2248,7 +2261,8 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
              "deep-siteladder turn=%d player=\"%s\" unit=%d boat=%d"
              " seen=%d off=%d nofound=%d mindist=%d danger=%d taken=%d"
              " starve=%d scored=%d neg=%d best_raw=%.1f best_net=%.1f"
-             " found=%d noterr=%d nomin=%d nomap=%d nolegal=%d",
+             " found=%d noterr=%d nomin=%d nomap=%d nolegal=%d"
+             " offbridge=%d offpeace=%d",
              game.info.turn, player_name(pplayer), punit->id, boat_cost,
              deep_site_lad_seen, deep_site_lad_off, deep_site_lad_nofound,
              deep_site_lad_mindist, deep_site_lad_danger,
@@ -2257,7 +2271,8 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
              deep_site_lad_best_raw, deep_site_lad_best_net,
              best != NULL ? 1 : 0,
              deep_site_lad_noterr, deep_site_lad_nomin,
-             deep_site_lad_nomap, deep_site_lad_nolegal);
+             deep_site_lad_nomap, deep_site_lad_nolegal,
+             deep_site_lad_offbridge, deep_site_lad_offpeace);
   }
 
   /* The spacing census, one line per SEARCH. n<d> counts the candidates

@@ -22868,3 +22868,74 @@ One item is deliberately not a knob: if the `deep-march` HP column
 confirms that waves arrive wounded while the launch gate priced them
 healthy, the fix is to price the stream at expected arrival HP, which
 is a model change and must not be turned into a fudge factor.
+||||||| 453d12f523
+## S-SETTLERPIPE: the delivered settler is eaten by the JOIN, and 24–52% of joins are premature (2026-08-29)
+
+Branch `worktree-agent-ae224e019cdf907d8`. **Log census, no new
+benchmark batch** — the 20-seed gates-off holdout arms of
+`tune-postfix` (`s6-nogates-war`, `s6-nogates-econ`), each paired
+against its own baseline arm on the same seeds and maps. Answers the
+question S-PRODKEEP §5 left open: `founder_run_hold` raises delivery
+24.8% → 30.7% with flat score, so the stall is downstream of DELIVERY.
+Full write-up: `findings/settler-pipeline-2026-08-29.md`.
+
+- **The link is the join.** Of the 1312 founder units that reach
+  `deep_auto_settler_run()` in the war venue: **750 (57.2%) found,
+  510 (38.9%) are dissolved into an existing city, 26 (2.0%) die.**
+  Econ venue 65.4% / 27.0% / 3.7%. `deep_settler_join_city()` is
+  deep-only — stock has no `ACTRES_JOIN_CITY` actor — and fires 25.5
+  times a game against a **5.1-city deficit**.
+- **The arms are at EXACT city parity to T45** (23.2 vs 23.2) and then
+  separate: 37.0 vs 42.1 at T150, with deep's settlers alive at 1.5
+  against baseline's 19.2 (econ: 5.1 vs 40.4 at T75). Baseline does
+  not found faster, it founds longer, because it never spends a
+  settler on anything but a city.
+- **Counterfactual from deep's own record:** joins followed by that
+  same player founding a city within 10 turns — war **124/511
+  (24.3%, 6.2/game)**, econ **235/453 (51.9%, 11.8/game)** — against
+  deficits of 5.1 and 7.5. The pool gate meant to prevent this reads
+  **1.62 founders in hand against a 0.20 target** and never binds;
+  `founder_pool_per_site` multiplies `deep_remaining_sites()`, which
+  goes to zero exactly when a founder in hand is most valuable.
+- **Why the search that triggers the join fails: legality, never
+  valuation.** On all 21 010 empty searches across both venues,
+  `scored` is **exactly zero** — not one tile ever priced. A stranded
+  settler's failed search is 69% `off` (allied land it refuses; the
+  new `offpeace` split says 96.8% diplomacy, 3.2% geography) and 21%
+  inside citymindist.
+- **Ruled out, with numbers:** escort wait (11–17 settler-turns/game
+  held), settler deaths (2.0%), target churn (12% of units re-pick),
+  founding refusal at the tile (748 arrivals with moves left produced
+  750 cities).
+- **Two real but secondary links.** (a) The arrival gate: 787/1535
+  arrivals land with 0 move fragments and `moves_left <= 0` returns
+  before the founding attempt — **1.05 wasted turns per city
+  founded**, legitimate under classic's `MinMoveFrags 1` and
+  **inherited from `ai/default/daisettler.c:1000`**, so a free win
+  rather than an explanation. (b) 14–27 mission cancels/game, **96%
+  `nomin`** — a race lost to somebody else's city inside our target's
+  citymindist, at ~1 tile/turn over a 6.2-turn mean walk.
+
+Landed (instrumentation only; three contested seeds reproduce the
+archived s6-nogates-war scorelogs **byte for byte**):
+
+- [x] `ai/deep: log the city mission cancelled under a walking settler`
+      — the one exit that wrote nothing. `cancels` = 48 against a
+      set-difference estimate of 48 over the probe games, so the line
+      closes exactly the population that was invisible.
+- [x] `ai/deep: split the site ladder's off bucket into bridge and
+      peace` — `offbridge` + `offpeace` sum to `off` on all 2903 lines.
+- [x] `benchmark: add the settler-pipeline census` (`settlerpipe.py`).
+
+**Next — S-SETTLERSINK, in order:** (A) `tbskip=` on
+`deep-siteladder`, because `deep_settler_tile_behavior()` drops every
+non-allied tile before the ladder counts anything and the truncation
+is currently unmeasurable; (B) the headline arm — decline the join
+while the empty search is plausibly temporary, adding
+`founder_hold_gate` / `founder_hold_turns` / `founder_hold_pool_floor`
+(**all PLACEHOLDER, none picked**); (C) price the arrival turn
+(`site_arrival_turn_gate`); (D) price the race (`site_race_gain`).
+**(B) must be a 2×2 with `founder_run_hold`, not its own cell** —
+run_hold puts more settlers into the pipeline and (B) decides what
+happens at the end of it, so two separate arms cannot attribute
+either.
