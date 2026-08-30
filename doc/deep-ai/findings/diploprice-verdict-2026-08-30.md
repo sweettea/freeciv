@@ -220,6 +220,71 @@ project has been caught by that four times.
 
 ---
 
-## 3. The adjudication
+## 3. The adjudication — PARKED at 10 / 96 games
 
-*(filled in when the factorial reports)*
+**No verdict. Both gates ship at 0 because nothing has adjudicated
+them, not because anything measured them at zero.** The 2x2 was
+launched twice and stopped twice for machine contention, the second
+time to leave the box to a tuning campaign. What exists is the control
+cell and nothing to compare it with.
+
+State on 2026-08-30:
+
+    benchmark/results/diploprice/
+      ident/                3 games  contested seeds 101-103, PASSED
+                            (byte-identical to the archived
+                            s6-nogates-war scorelogs, `id` excluded)
+      ab/contested/00/     10 games  training seeds 1-9, 11 -- the
+                            control cell, complete but for seeds 10
+                            and 12
+      ab/contested/{10,01,11}/   0 games
+      ab/lategame-80/*/          0 games
+
+Saves deleted, logs zstd'd, 8.8 MB on disk. The runner is resumable on
+the DONE marker, so a resume re-runs only what is missing.
+
+### Resume command
+
+    cd <this worktree>
+    JOBS=3 setsid bash ./benchmark/diploprice.sh run    # ~86 games left
+    ./benchmark/diploprice.sh report
+
+The pinned binary is `.pin-bin/fix/freeciv-server` (a wrapper; the
+real ELF is `.pin-bin/fix/lib/freeciv-server.real`, sha256
+`432441a64e7095fa99b0e50d6172a534edaf4bb5f28bcda6722b6b5b54ea1e29`).
+**Re-pin with `.pin-bin/pin.sh` only if the tree has moved**; the ten
+finished control games were produced by that exact binary and a
+different one makes them uncomparable. Two traps this epic already
+paid for, recorded so a resume does not pay them again:
+
+1. Copying `build/freeciv-server` alone gives a server that cannot
+   start -- it links `libfreeciv.so` out of `build/`. `.pin-bin/pin.sh`
+   copies the library and installs a wrapper. The failure is SILENT
+   inside `run-game.sh`: the loader error lands in `game.log` and no
+   scorelog is written.
+2. `TUNING` pointing at a file that does not exist **segfaults the
+   server at startup**, with no output at all. Every cell here loads
+   a real file, which is also why cell 00 has one.
+
+### What a resume must report
+
+Per venue, paired against cell 00: Diplomat and mil-infra shields per
+player-game, settlers and cities at T50 / T75 / end, `unitslost`,
+cities taken from us, and the paired score difference with its SE. The
+two pre-registered falsifications are written into the cell files and
+are the first thing to check:
+
+- **D** must cut Diplomat picks and deliveries and must NOT raise
+  `unitslost` or city transfers. The line it refuses has never been
+  observed doing anything.
+- **M** must cut mil-infra STARTS and abandoned runs while leaving
+  DELIVERED mil-infra shields at least flat. M is a churn fix, not a
+  repricing; if delivered Barracks and City Walls fall with the
+  starts, the gate is cutting the runs that would have finished and
+  must not ship.
+
+### Attribution, unchanged by the park
+
+S-FEARSEAT and S-SETTLERSINK are adjudicating on the same T50-75 queue.
+Nothing from this epic can be added to their results: the combined
+reading needs a factorial after the merge, not three concurrent arms.

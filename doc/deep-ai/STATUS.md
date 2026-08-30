@@ -23566,3 +23566,99 @@ run.
    tunings, not across venues.
 4. **Not the duel model, not target selection.** §4.7 and S-WEAKPREY
    measured those and found them innocent; nothing here changes that.
+
+## S-DIPLOPRICE: the census lands, the 2x2 is parked (2026-08-30)
+
+Branch `worktree-agent-a50671fcef53cd1f2`, 6 commits. The two unpriced
+shield lines `findings/content-military-gold-2026-08-30.md` §4 closed
+on. Full write-up: `findings/diploprice-verdict-2026-08-30.md`.
+
+**Status: census done, both gates built and inert, adjudication PARKED
+at 10 of 96 games.** Both gates ship at 0 because nothing has measured
+them, not because anything measured them at zero. Do not read the
+absence of a number as a null result.
+
+### The census (archived holdout, contested / lategame-80, 40 games)
+
+`benchmark/diploprice.py`. [D1]/[D2] reproduce the earlier census's
+published figures exactly -- 12.4% of T26-50 picks, 138.0 delivered
+shields, 43.5 gold -- so the two readers agree.
+
+**The Diplomat is bought, garrisoned and never used.**
+
+- 41.2% / 34.7% of Diplomat runs deliver; 1020 / 1386 are abandoned
+- 138.0 / 193.6 delivered shields + 43.5 / 42.0 gold per player-game
+- 227.1 / 194.0 diplomat-turns per player-game, of which **6.4% / 3.0%
+  ever stand where any action is legal**; deep takes 0 actions
+- 2.64 / 4.88 alive at the end, **85.3% / 82.6% inside our own cities**
+- cities held whose original owner was someone else -- conquest AND
+  incite, an upper bound on incites suffered -- 0.08 / 0.53 per
+  player-game, and **baseline suffers more** (0.23 / 0.65)
+
+**The trigger is not what its comment says.** `diplomat_threat` is
+documented "Enemy diplomat or spy is near the city" (daicity.h:58) and
+set at daimilitary.c:905 for ACTRES_ATTACK, ACTRES_PILLAGE,
+ACTRES_BOMBARD and ACTRES_CONQUER_CITY too -- an approaching Warriors
+buys a Diplomat at a want that outranks every military emergency.
+Measured on the end state: of cities with a hostile-capable unit
+within two tiles, **28.6% / 21.2%** had an enemy diplomat within the
+same radius. **Upstream bug 50.**
+
+**Mil-infra is not overpriced -- it is unfinished.** 288 / 321 shields
+per player-game, with Barracks delivering 44.0% / 25.2%, City Walls
+38.4% / 40.9%, Coastal Defense 20.9% (burning 67.0 shields per
+player-game in the abandoning switch). Deep ends with **half
+(contested) to a tenth (lategame-80) of BASELINE's Barracks** -- 1.64 /
+0.77 against 3.23 / 7.43 -- while its surviving army is **47% / 91%
+raw recruits against baseline's 19% / 32%**. Same signature as the
+Colosseum: a want that holds the queue and does not finish. **A gate
+that lowers this want would be correcting the wrong thing**, and the
+one built here refuses to START a run instead.
+
+### What landed
+
+- `benchmark: census the Diplomat and mil-infra shield lines`
+- `ai/deep: log the evidence behind the defensive diplomat want` --
+  `deep-dipthreat` per city-turn; `deep-spy` gains `garrison`
+- `ai/deep: gate the defensive diplomat on observed diplomat presence`
+  -- `diplo_price_gate` / `diplo_evidence_floor` / `diplo_gap_floor`
+- `ai/deep: gate mil-infra on stock's measured danger` --
+  `mil_infra_gate` / `mil_infra_threat_floor`, at the wall want and at
+  the veterancy swap, funded from the hoisted `fear_pre` (the same
+  quantity S-FEARSEAT's `deep-fear pre` prints)
+- `benchmark: add the diploprice 2x2 and its four cell tunings`
+- `benchmark: add the per-cell shield-line table to the diploprice
+  report`
+
+Byte-neutral at every default with both gates compiled in: contested
+seeds 101-103 reproduce the archived s6-nogates-war scorelogs exactly
+(`id` excluded). `meson test` 7/7 at every commit.
+
+**Liveness, one contested game at cell 11:** the diplomat gate refuses
+331 of 569 warranted choices (58.2%), the mil-infra gate 2813 of 3664
+city-turns (76.8%). Neither can score as a no-op for want of firing.
+
+### Constants owed to tuning (all PLACEHOLDER, all in M/MIL/ALL)
+
+`diplo_price_gate`, `diplo_evidence_floor` (cell value 1: the literal
+reading of the flag's own comment, not a fitted magnitude),
+`diplo_gap_floor` (**shipped gated and deliberately UNTESTED** -- the
+census gives no threshold and rule 7 forbids inventing one),
+`mil_infra_gate`, `mil_infra_threat_floor` (cell value 1: the unit
+case, one enemy unit stock's own assessment scored above zero).
+
+### Resume
+
+    JOBS=3 setsid bash ./benchmark/diploprice.sh run    # ~86 games
+    ./benchmark/diploprice.sh report
+
+`ab/contested/00` holds 10 finished control games (training seeds 1-9,
+11) from the pinned binary `432441a6`; re-pin only if the tree moves,
+or they become uncomparable. Two traps already paid for: copying
+`build/freeciv-server` without `libfreeciv.so` yields a server that
+cannot start and writes no scorelog, and a `TUNING` path that does not
+exist **segfaults the server at startup with no output**.
+
+**Attribution:** S-FEARSEAT and S-SETTLERSINK act on the same T50-75
+queue. The combined reading needs a factorial after the merge, not
+three concurrent arms.
