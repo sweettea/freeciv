@@ -5367,7 +5367,7 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
     double eff_worth_now = 0.0;
     const char *abandon = NULL;
     int joined = 0;
-    bool go;
+    bool go, patience;
 
     if (op->muster) {
       joined = deep_muster_enroll(ait, pplayer, op, staging);
@@ -5490,14 +5490,40 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
                                     here, present);
     }
 
-    if (go
-        /* The half-quorum patience release is for a wave that formed
-         * against a priced quorum. A muster never formed against one
-         * (ERA 3b): its release is the odds test, and its patience
-         * rule is the stall clock, not this one. */
-        || (!op->muster
-            && game.info.turn - op->formed_turn >= tune->op_muster_wait
-            && present >= (op->required + 1) / 2)) {
+    /* THE HALF-QUORUM PATIENCE RELEASE, and the one question it was
+     * never made to answer.
+     *
+     * It is for a wave that formed against a priced quorum. A muster
+     * never formed against one (ERA 3b): its release is the odds
+     * test, and its patience rule is the stall clock, not this one.
+     *
+     * What the census found (findings/op-exchange-rate-2026-08-29.md
+     * section 4.3): this clause released 273 of 501 launches at a mean
+     * predicted take probability of 0.08-0.15, and those launches took
+     * a city 1.1% of the time against 4.4% for the ones that cleared
+     * the bar. Because it is the right side of an `||` evaluated after
+     * the net-value test has already set `go` false, it overrode the
+     * odds bar, the survivor floor AND an explicit refusal -- value
+     * 794 against cost 1053, and 898 against 1671, both launched.
+     *
+     * op_patience_odds_floor does not turn patience into the bar; it
+     * gives patience a floor. Below it the wave falls through to the
+     * wait-cap branch it always had -- retarget from where it stands,
+     * or bank the members -- which is a strictly better use of the
+     * blades than a march nobody priced.
+     *
+     * The floor is read only when op_launch_odds is on, because
+     * odds_now is 0 by construction otherwise and the floor would
+     * quietly become "never launch". At 0.0 this is the shipped
+     * expression, term for term. */
+    patience = (!op->muster
+                && game.info.turn - op->formed_turn >= tune->op_muster_wait
+                && present >= (op->required + 1) / 2
+                && (tune->op_patience_odds_floor <= 0.0
+                    || !tune->op_launch_odds
+                    || odds_now >= tune->op_patience_odds_floor));
+
+    if (go || patience) {
       /* Land or sea, the wave marches shadowed: the ferry system
        * carries the crossing (transported members stay on stock's
        * leash throughout), while the op re-gates the landing every

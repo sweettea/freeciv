@@ -345,6 +345,9 @@ static const struct deep_tuning deep_tuning_defaults = {
                                          * disarmed rival's city worth 2x a
                                          * peer's. Inert while the gate is
                                          * 0 */
+  .op_patience_odds_floor = 0.0,        /* PLACEHOLDER; 0 = the half-quorum
+                                         * wait-cap release asks nothing,
+                                         * byte for byte */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -661,7 +664,8 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(prod_keep_gate) \
   TUNE_DOUBLE(prod_keep_gain) \
   TUNE_INT(weak_prey_gate) \
-  TUNE_DOUBLE(weak_prey_gain)
+  TUNE_DOUBLE(weak_prey_gain) \
+  TUNE_DOUBLE(op_patience_odds_floor)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 

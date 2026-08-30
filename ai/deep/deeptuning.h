@@ -3307,6 +3307,41 @@ struct deep_tuning {
    * that was actually chosen. */
   int weak_prey_gate;
   double weak_prey_gain;
+
+  /* --- op-arrival: the launch gate's missing factors. ---
+   *
+   * findings/op-exchange-rate-2026-08-29.md. Every knob here defaults
+   * to the identity value, so the off arm is the shipped binary byte
+   * for byte and the A/B is a clean paired comparison. */
+
+  /* The odds the HALF-QUORUM PATIENCE RELEASE must still clear.
+   *
+   * The launch block reads
+   *
+   *   if (go || (!muster && waited >= op_muster_wait
+   *              && present >= (required + 1) / 2))
+   *
+   * and the second clause is a head count on a clock: it consults no
+   * odds, no survivor floor and no net value. Worse, it is the right
+   * side of an `||` evaluated AFTER the net-value test has set `go`
+   * false, so it overrides an explicit refusal -- caught twice in 27
+   * probe launches.
+   *
+   * The measured population: 273 of 501 launches (54.5%) came through
+   * it at mean predicted odds 0.08-0.15, and took a city 1.1% of the
+   * time against the bar-clearing population's 4.4%. A patience knob
+   * was acting as a launch authority.
+   *
+   * At > 0 the release must ALSO clear this odds floor. Set it below
+   * the assault bar or it is not a patience rule any more -- it is the
+   * bar with extra steps. A wave that waits out the clock and cannot
+   * clear the floor falls through to the wait-cap branch it always
+   * had: retarget from where it stands, or bank its members.
+   *
+   * 0.0 = today's behaviour exactly. Only read when op_launch_odds is
+   * on: with the odds gate off there is no odds_now to compare and the
+   * floor would silently become "never launch". */
+  double op_patience_odds_floor;
 };
 
 void deep_tuning_init(void);
