@@ -3705,6 +3705,43 @@ static double deep_op_assault_bar(struct player *pplayer,
   the launch-rate reality check is readable off any late line without
   re-aggregating the stream.
 **************************************************************************/
+/**********************************************************************//**
+  The garrison standing in `target` right now, as a count and as the
+  best basic defence rating in it. Pure observation, extracted from
+  deep_opodds_log() so the march re-gate can report the same pair.
+
+  WHY THE RE-GATE NEEDS IT (findings/op-exchange-rate-2026-08-29.md):
+  the abort re-gate is the single largest way an operation ends, and
+  in 57-71% of those aborts the wave had the SAME OR MORE members than
+  it launched with -- the force did not shrink, the priced odds did.
+  Two causes produce that and they call for opposite fixes: the
+  garrison grew, or the travel estimate inflated and charged more
+  virtual reinforcement for it. The line already carries eta; without
+  the garrison beside it the two are not separable.
+**************************************************************************/
+static void deep_op_garrison_read(const struct city *target,
+                                  int *n_out, int *best_out)
+{
+  int n = 0, best = 0;
+
+  unit_list_iterate(city_tile(target)->units, punit) {
+    int rating;
+
+    if (unit_owner(punit) != city_owner(target)
+        || unit_has_type_flag(punit, UTYF_CIVILIAN)) {
+      continue;
+    }
+    n++;
+    rating = adv_unit_def_rating_basic(punit);
+    if (rating > best) {
+      best = rating;
+    }
+  } unit_list_iterate_end;
+
+  *n_out = n;
+  *best_out = best;
+}
+
 static void deep_opodds_log(struct player *pplayer, int oi,
                             struct city *target, const char *verdict,
                             double odds, double bar, int required,
@@ -3718,19 +3755,7 @@ static void deep_opodds_log(struct player *pplayer, int oi,
   if (!log_do_output_for_level(deep_metric_log_level())) {
     return;
   }
-  unit_list_iterate(city_tile(target)->units, punit) {
-    int rating;
-
-    if (unit_owner(punit) != city_owner(target)
-        || unit_has_type_flag(punit, UTYF_CIVILIAN)) {
-      continue;
-    }
-    def_n++;
-    rating = adv_unit_def_rating_basic(punit);
-    if (rating > def_best) {
-      def_best = rating;
-    }
-  } unit_list_iterate_end;
+  deep_op_garrison_read(target, &def_n, &def_best);
 
   log_base(deep_metric_log_level(),
            "deep-opodds turn=%d player=\"%s\" op=%d target=%d"
@@ -4993,11 +5018,18 @@ static void deep_op_drive_strike(struct ai_type *ait,
           dai_unit_new_task(ait, stream[i], AIUNIT_NONE, NULL);
         }
       }
-      log_base(deep_metric_log_level(),
-               "deep-op turn=%d player=\"%s\" op=%d regate target=%d"
-               " odds=%.2f eta=0 members=%d",
-               game.info.turn, player_name(pplayer), oi,
-               op->target_city, odds, ns);
+      {
+        int def_n = 0, def_best = 0;
+
+        deep_op_garrison_read(target, &def_n, &def_best);
+        log_base(deep_metric_log_level(),
+                 "deep-op turn=%d player=\"%s\" op=%d regate target=%d"
+                 " odds=%.2f eta=0 members=%d def_n=%d def_best=%d"
+                 " marched=%d",
+                 game.info.turn, player_name(pplayer), oi,
+                 op->target_city, odds, ns, def_n, def_best,
+                 game.info.turn - op->march_turn);
+      }
       deep_op_dissolve(op, oi, "abort-strike", pplayer);
       return;
     }
@@ -5667,11 +5699,18 @@ static void deep_op_drive(struct ai_type *ait, struct player *pplayer,
               dai_unit_new_task(ait, stream[i], AIUNIT_NONE, NULL);
             }
           }
-          log_base(deep_metric_log_level(),
-                   "deep-op turn=%d player=\"%s\" op=%d regate target=%d"
-                   " odds=%.2f eta=%d members=%d",
-                   game.info.turn, player_name(pplayer), oi,
-                   op->target_city, odds, eta, ns);
+          {
+            int def_n = 0, def_best = 0;
+
+            deep_op_garrison_read(target, &def_n, &def_best);
+            log_base(deep_metric_log_level(),
+                     "deep-op turn=%d player=\"%s\" op=%d regate target=%d"
+                     " odds=%.2f eta=%d members=%d def_n=%d def_best=%d"
+                     " marched=%d",
+                     game.info.turn, player_name(pplayer), oi,
+                     op->target_city, odds, eta, ns, def_n, def_best,
+                     game.info.turn - op->march_turn);
+          }
           deep_op_dissolve(op, oi, "abort-odds", pplayer);
           return;
         }
