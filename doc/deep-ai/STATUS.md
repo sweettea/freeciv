@@ -22871,6 +22871,8 @@ is a model change and must not be turned into a fudge factor.
 
 ---
 
+||||||| 8e24d684a8
+||||||| 453d12f523
 ## S-SETTLERPIPE: the delivered settler is eaten by the JOIN, and 24–52% of joins are premature (2026-08-29)
 
 Branch `worktree-agent-ae224e019cdf907d8`. **Log census, no new
@@ -23256,3 +23258,159 @@ make it a group screen; the sampler is not.
    null on the cities gap and on score. The screen's remark that it
    "is currently untested" predates that read and is corrected in
    place by the next commit.
+||||||| 8e24d684a8
+## S-CONTENTCENSUS: the deficit is one quantity, and only the military want is in its window (2026-08-30)
+
+Branch `worktree-agent-ad856cc423e029ff4`. **Log census on finished
+games** — the 20-seed gates-off holdout arms of `tune-postfix`
+(`s6-nogates-war`, `s6-nogates-econ`) against their paired baseline
+arms — plus **3 probe games** run only to verify this session's
+instrument commit. Answers the three "Secondary signatures" of
+`findings/defaults-deficit-census-2026-08-25.md` (hypotheses 3 and 4).
+Full write-up: `findings/content-military-gold-2026-08-30.md`.
+
+**All figures are PER PLAYER.** The 2026-08-25 census quoted 8-player
+empire sums ("munits 7.3 vs 1.0 at T16", "treasury 250–450 vs ~2000");
+those are 0.92 vs 0.12 and 32.4 vs 264.7 per player, and both reproduce
+exactly.
+
+### The organizing fact
+
+`get_civ_score()` at T151 contested, deep − base: citizens **−3.99**,
+techs×2 **−2.24**, culture/50 **−2.07**, wonders×5 +0.67, units +0.24;
+total −7.50 ± 2.84. Citizens per city are **5.67 vs 5.72**. The three
+negative terms are one quantity — the 0.65 missing cities — and that
+gap is built in one window and never moves:
+
+    cities, deep − base   T25 −0.12±0.06   T50 −0.11±0.07
+                          T75 −0.63±0.14  T151 −0.65±0.16
+
+Econ: −0.47±0.10 (T25), **−1.15±0.20 (T50)**, −1.05±0.21 (T81).
+**A signature outside T50–T75 cannot be the lever.** That test decides
+the ranking.
+
+### Ranked verdict
+
+1. **The early military want.** In T51–75 deep delivers **131 shields
+   per player of military hardware against 15 of settlers**, and its
+   treasury flips from buying Settlers (563 buys, 13 073 gold through
+   T50) to buying Phalanxes (212 buys in T51–75) in the same band.
+   Standing army 3–10× baseline's from T10 (munits T25 +0.84±0.10,
+   T50 +2.11±0.12; econ T25 +2.92±0.14) against combat outcomes that
+   are **indistinguishable**: unitslost deep − base = −0.04±0.02 (T25),
+   +0.03±0.08 (T50), −0.04±0.23 (T75), both venues. The army is also
+   free to keep (below), so the whole cost is shields taken when they
+   are worth most.
+2. **Gold — the same lever in a second currency, not a defect of its
+   own.** Revenue is at parity (1215 vs 1265), deep's standing building
+   bill is **37% BELOW** baseline's (10.73 vs 17.02 gold/turn), unit
+   gold upkeep is zero, incite/bribe never fires. The treasury is empty
+   because deep buys: 421 gold/player-game, 22 buys, 2.41 gold/shield,
+   half of it military. Independent residual: `deep-fin` fire-sells
+   0.47 buildings/player-game at 2–4 gold.
+3. **Content — real as a want, falsified as an over-investment.**
+
+### Two of the 2026-08-25 hypotheses are corrected, not confirmed
+
+- **H4's "upkeep drag" does not exist.** civ2civ3 sets `uk_gold = 0`
+  for all 57 unit types; `effect_base_unit_upkeep_shield` excludes
+  Monarchy and Despotism (139 of 160 contested deep player-games); and
+  every city keeps 4 units food-free against deep's 0.97 military units
+  per city at T50.
+- **H3's "preemptive content-building at enormous scale" is right about
+  the want and wrong about the outcome.** The want is real and it is
+  deep's: Colosseum holds **23.1% of city-turns at T101–125** and
+  **75.6% of its want is `deep_content_credit()`** against a stock
+  valuation of exactly zero (`advdata.c`'s impr_calc `#if 0`s the
+  happiness family), with **66.2% of the credits speculative** —
+  `delay > 0`, i.e. nobody on pacification duty when the credit was
+  paid. But deep ends with **FEWER Colosseums per citizen than baseline
+  (0.056 vs 0.066)**, riots are 0.00–0.01 in both arms, and deep's
+  realized pacification load is at parity through T100 and **−0.81 by
+  T150**. Only **16.0%** of Colosseum runs complete (econ 8.0%), and
+  content delivers **0.0 shields before T50 and 12.8 in T51–75**. It is
+  a delivery problem in the last third of a game already lost — restate
+  it as churn, not as over-pricing. (`upkeep_gold_weight = 0.125`
+  remains a flagged PLACEHOLDER: it charges a 3-gold Colosseum 9
+  want-units against a mean credit of 161.)
+
+### Landed
+
+- [x] `ai/deep: log the injected fear vector at the build seat` —
+      `deep-fear ... site=build` with pre/over/shadow/density/prior/
+      barb/surv/credit/updisc/sat/fmult/prefloor/post. Observation
+      only. **All three probe games (contested seeds 101–103, same
+      config and runner shas as the archived provenance) reproduce the
+      archived `s6-nogates-war` scorelogs BYTE FOR BYTE** (`id` line
+      excluded; maphashes match). `meson test -C build` 7/7.
+- [x] `benchmark: add the content, military and gold census`
+      (`contentcensus.py`). Note for reuse: the baseline arm's
+      `game.log` is 461 lines with no AI decision line at all, so every
+      cross-arm number comes from the scorelog or the final savegame.
+- [x] `doc: localize the content, military and gold signatures`.
+- [x] `doc: drop a stray diff3 merge marker from STATUS.md`.
+
+### What the instrument immediately said
+
+Two anticipatory terms, both step functions of geography rather than of
+threat (3 seeds, 11 395 build-seat evaluations):
+
+- **`deep_density_fear()` owns the opening** — present on **54.9%** of
+  T1–25 evaluations against stock's 12.5%, and 72.1% vs 4.5% at T26–50,
+  where it is 85% of the pre+density sum. A count of non-allied cities
+  within radius 8, no land capability test at all.
+- **`deep_boat_shadow_fear()` joins at T51 and is the largest single
+  term in the causal window** — 30.9% of T51–75 evaluations at a
+  conditional value of **exactly 25.0**, because `deepdefence.c:453`
+  returns the flat `boat_shadow_fear` knob for **every coastal city**
+  as soon as **any** player we are at war with owns **one**
+  transport-capable ship **anywhere on the map**. No distance, no
+  count, no decay — and it is deliberately exempt from
+  `density_fear_ramp_turns` as an "evidence-based term" that "already
+  gates on real capability signals".
+
+The line also **refuted two live errors in this census**:
+`deep_density_prior()` fires **0.0% of the time in every band** (it
+returns 0 the moment any met non-allied player exists — turn one on a
+32×32 eight-player map), which was this session's working hypothesis;
+and **one seed was not enough** — seed 101 alone read density at 88.2%
+and no boat shadow at all. The seat conclusion survived the other two
+seeds; the magnitudes did not. Any arm reading `deep-fear` for
+magnitudes wants the full holdout set.
+
+### Next: S-FEARSEAT (proposed, not started)
+
+Instrument the remaining seats first (`site=ledger` on
+`deep_credit_incoming_defence`, which currently disagrees with
+`deep-def`; `deep-density` unconditionally; the danger behind a
+`deep-buy`). Then knobs, all identity by default, **no values chosen**:
+`density_fear_ramp_turns` (**already exists, set to 0, and its own
+comment describes this exact failure — cheapest first cell**),
+`density_fear_capability`, `boat_shadow_distance` /
+`boat_shadow_count`, `fear_evidence_floor`, `fear_defender_conversion`,
+`garrison_floor_turn`, and `mil_opportunity_price`. The last three
+named are model changes, not fudges — the boat shadow needs a distance
+and a count before it needs a smaller constant, and
+`mil_opportunity_price` charges the marginal defender the founder bid
+it displaces.
+
+**Pre-registered falsification:** an arm that ramps anticipatory fear
+must show fewer T10–50 military deliveries with **no rise in
+`unitslost` before T75** — the arms agree there to ±0.03 today. If
+`unitslost` rises, the diagnosis is wrong and the document gets
+re-read, not the tuning re-swept.
+
+**Design constraints:** `density_fear_ramp_turns`,
+`fear_evidence_floor` and `mil_opportunity_price` move the same
+decision in the same window — one **factorial** cell, not three arms.
+S-FEARSEAT and **S-SETTLERSINK (B)** both act on what the T50–75 queue
+produces and cannot be attributed from two concurrent A/Bs.
+`upkeep_gold_weight` must **not** ride along: it moves the T100+
+building auction and would make the military result unreadable.
+
+Two lines nobody has priced, recorded so they are not lost: the
+**Diplomat** is the third-largest shield line in the game (138.0
+shields + 43.5 gold per player-game, 12.4%/11.9% of picks at T26–50 and
+T51–75, from `dai_choose_diplomat_defensive`'s self-described "totally
+arbitrary 16000"), and **mil-infra** (Barracks + City Walls + Coastal
+Defense) is 290 shields/player-game, larger than content.
