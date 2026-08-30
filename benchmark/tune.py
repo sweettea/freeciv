@@ -995,6 +995,13 @@ def main():
                  " for you")
     if args.reeval and not args.reeval_seeds:
         sys.exit("--reeval K requires --reeval-seeds N")
+    if args.reeval and (args.report_holdout or args.evaluate):
+        # Replicated SELECTION only means anything while something is
+        # being selected. In a report the flag would silently widen
+        # the seed set the report claims to be over -- and under
+        # --report-holdout those extra seeds would be holdout seeds.
+        sys.exit("--reeval selects between candidates; a report"
+                 " evaluates one file. Drop it, or raise --count.")
 
     all_seeds = [int(x) for x in Path(args.seeds).read_text().split()]
     seeds = all_seeds[: args.count]
