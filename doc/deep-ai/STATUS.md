@@ -23543,3 +23543,164 @@ they are gone by T75.
 3. Restate the census's top line: the early army is not the *cause* of
    the missing cities; it is the largest claimant on a settler pipeline
    that would not have kept the shields anyway. **Fix the pipe first.**
+
+---
+
+## S-FEARSINK — the 2×2 of the fear seat and the settler sink (2026-08-30)
+
+**The pre-registered combination fails, the interaction is null, and
+every gate still ships at 0.** Full write-up:
+`findings/fearsink-verdict-2026-08-30.md`.
+
+The hypothesis both parent epics wrote down: `mil_opportunity_gate`
+frees T1‑25 military shields and converts them to +0.19 cities at T50
+that vanish by T75 because the join eats them, so with
+`founder_site_cap_gate` + `founder_join_guard_gate` also on, the gain
+should persist. **It does not, in either venue.**
+
+Cell: `benchmark/fearsink.sh`, **TRAINING seeds 1–20**, deep self-play,
+five cells × two venues (contested T151, lategame-80 T81), paired on
+the seed, **203 games**, pinned `.pin-bin/fix` (`87916423ae86faf1`),
+ports 7960–7999, nice 10, jobs 3. No cache reuse from either parent —
+both pinned a different binary, and run.sh's cache is keyed on the
+binary sha for exactly that reason.
+
+### No new code
+
+The brief's one open question — does the site cap withdraw a founder
+bid that the opportunity price then still charges as displacement? —
+is **no, and it cannot**. `deep_founder_site_capped()` zeroes
+`founder_want` *before* `domestic_advisor_choose_build()` runs
+(`deepdefence.c:8509`); `domestic_advisor_choose_build()` cannot return
+a founder at `founder_want == 0` (`daidomestic.c:542-603`); and
+`deep_mil_opportunity_charge()` charges only when the choice the
+advisor **returned** is a founder (`deepdefence.c:8198`). Confirmed by
+measurement too (`benchmark/sinkseam.py`, six c11 games): cap fired on
+370 city-turns, a charge was made on 1738, **both on 0**.
+
+### Landed
+
+- [x] `benchmark/fearsink.{sh,py}` — the five-cell driver and the
+      report, which computes the **interaction per seed** with its own
+      paired SE (the four cells are not independent samples) and
+      carries `milopp_fired`, so the seams' overlap is a number.
+- [x] `benchmark/sinkspend.py` — delivered shields per seat by
+      contentcensus class and band, per cell. This is what produced the
+      finding below.
+- [x] `benchmark/sinkseam.py` — the withdrawn-bid check above.
+- [x] `benchmark/sinkgo.sh`, `sinkwait.sh`, `sinkmon.sh`, and the five
+      `benchmark/tuning/fearsink-*.ini` cells.
+
+**Identity:** contested seeds 101–103 at compiled defaults reproduce
+the archived `s6-nogates-war` scorelogs byte for byte (3 identical, 0
+different), four vacuity guards held. `meson test -C build` 7/7.
+
+**Both parents replicate exactly on the merged base**, which exercises
+the gates rather than only their absence: `c10` gives munits@25
+−0.613 ± 0.063, milsh T1‑25 15.81 → 8.00, cities@50 +0.188 ± 0.064
+(t 2.91), cities@75 +0.055, cities@end +0.018 — the fearseat verdict's
+`price` rung to the decimal. `c01` gives joins 25.65 → 0.00, settlers
+built −6.50, founders alive end +1.52, cap 46.8 firings a game, score
++2.08/seat = +16.6 over 8 seats against siteplan's +16.32 ± 9.15.
+
+### The 2×2 (score per seat, paired, n = 20 a cell)
+
+| cell | contested | wins | lategame-80 | wins |
+|---|---|---|---|---|
+| `c10` mil_opportunity | −1.05 ± 2.12 | 9/20 | +0.25 ± 1.86 | 8/20 |
+| `c01` sitecap + joinguard | +2.08 ± 1.82 | 13/20 | +2.07 ± 1.18 | 12/20 |
+| `c11` all three | −0.79 ± 1.86 | 9/20 | +1.57 ± 1.51 | 15/20 |
+| `boat` boat_shadow | −0.46 ± 0.85 | 7/20 | −0.71 ± 0.90 | 6/20 |
+| **INTERACTION** | **−1.83 ± 2.33** | | **−0.75 ± 2.16** | |
+
+The corner is not more than the sum; it is slightly less, in both
+venues, inside its SE in both. This is a null, **not** the
+venue-sign-flip pattern the fear verdict warns about — `c01` is
+positive in both at the same magnitude and `c10` is a wash in both.
+
+### The city curve — the hypothesis, falsified
+
+Cities per seat vs `c00`. Contested `c11`: +0.050 at T25,
+**+0.144 at T50 (t 2.15)**, +0.030 at T75, **−0.102 at end** — the same
+shape `c10` has alone. Econ `c11`: +0.325 at T50 (t 2.60), +0.225 at
+T75, +0.317 at end, and `c11` − `c01` there is −0.09 at T75 and +0.04
+at end, so the combination adds nothing the pair did not have on its
+own. `unitslost` rose nowhere (contested `c11` −0.019 ± 0.033 at T50,
+−0.354 ± 0.326 at T75), so the falsification stays un-triggered on the
+combined base as well.
+
+### The seams overlap, significantly, by construction
+
+Predicted from the code before the run: the cap counts founders alive,
+the guard raises founders alive by +0.85/seat at T75, so with both on
+the cap binds more and the price finds fewer founders to charge.
+Contested interaction terms: `cap_fired` **+22.55 ± 8.55 (t +2.64)**,
+`milopp_fired` **−41.70 ± 9.80 (t −4.25)**, `milopp_zeroed`
+−29.00 ± 6.27. `c10` charges 305.9 times a game, `c11` only 264.2.
+**The two gates partially disarm each other with no defect involved** —
+the attribution two concurrent single-factor arms could never have made.
+
+### THE FINDING: the freed shields never reach the founder queue
+
+The fear verdict inferred from the city curve that the price's shields
+*"reach the founder queue and evaporate"*. The delivery ledger
+(`sinkspend.py`) says they never arrive. Contested `c10` − `c00`,
+delivered shields per seat per game:
+
+| class | T1‑25 | T26‑50 | T51‑75 |
+|---|---:|---:|---:|
+| military | −7.81 ± 1.17 | **+17.56 ± 2.84** | +2.81 |
+| diplomat | −5.44 ± 1.55 | −9.38 ± 3.93 | +7.31 |
+| **expansion** | **−1.88 ± 0.79** | **−0.94 ± 3.25** | +0.19 |
+| TOTAL | −14.94 ± 2.20 | +4.25 | +20.00 |
+
+1. **Expansion delivery FALLS under the price in every band and both
+   venues.** The freed shields are not spent on settlers at any point.
+2. **The opening army is deferred, not cancelled**: −7.81 in T1‑25 and
+   **+17.56 in T26‑50**, a net +9.8 MORE military over T1‑50. The fear
+   verdict's own "anticipation deferred is not anticipation avoided",
+   now true of the price and not only of the ramp.
+3. **The price's largest proportional casualty in the opening is the
+   Diplomat** — 83% of the T1‑25 line, 42% of T1‑50 — because
+   `deep_want_class_of()` reads the defensive diplomat as a defender.
+   **At no measurable score cost.** First measurement of what cutting
+   that line is worth, and the third-largest shield line in the game.
+
+And the +0.19 cities at T50 come from **conversion, not supply**:
+contested `c10` builds 2.30 fewer settlers a game and founds 0.95 more
+cities; `c01` −6.50 / +0.40; `c11` −7.20 / +0.35. Every arm here
+delivers fewer settlers and gets at least as many cities out of them.
+
+### Constants owed to tuning (rule 7)
+
+None added; all inherited PLACEHOLDERs, deliberately not swept.
+`mil_opportunity_price` 1.0 (zeroes the military bid on **22.5%** of
+firings here — 68.9 of 305.9 a game — and §5 says 1.0 is large enough
+to *defer* the army rather than decline it, so a value well below 1.0
+or an RC4 currency fix is what it wants); `founder_site_cap_slack` 1.0
+(now known to be reachable at 46.8 firings a game alone and **69.3
+beside the guard**, so any sweep must state which arm); 
+`founder_join_guard_mult` 1.0 (still equivalent to switching the join
+off — fix the 99.6% blocked-land signal first); `boat_shadow_distance`
+1.0 and `boat_shadow_count` 1; `garrison_floor_turn` 0, still never run.
+
+### Next, in order
+
+1. **Instrument T50–75 city births and deaths.** The restated top line:
+   the binding constraint is not how many settlers deep builds, nor
+   what it does with them at the end — it is that the T50 cities it
+   *does* gain do not survive to T75, with `unitslost` flat. Nothing in
+   either parent epic or this one touches that. Instrument before
+   building.
+2. **The Diplomat line.** A 42% cut of its T1‑50 shields costs nothing
+   measurable. Cheapest untested saving on the board and a large line
+   (138.0 shields + 43.5 gold per player-game).
+3. **A held-out confirm of `c01` at n ≥ 60.** It is the only thing
+   across both epics positive in both venues at consistent magnitude
+   (+2.08 and +2.07 per seat), now measured that way twice on two
+   different bases. Training-seed adjudication cannot promote it.
+4. `boat_shadow_gate` still deserves its held-out confirm: measured
+   inert twice now, `unitslost` down both times.
+
+Retention: `benchmark/results/fearsink/` — 203 games, saves deleted,
+logs filtered to seven deep census tags and zstd-compressed (94 MB).
