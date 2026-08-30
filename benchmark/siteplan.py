@@ -67,7 +67,10 @@ def game_metrics(d, marks):
     nseat = max(1, len(sl.series.get("cities", {})))
     for t in marks + [end]:
         key = "end" if t == end else str(t)
-        for tag in ("cities", "pop"):
+        for tag in ("cities", "pop", "techs", "munits", "settlers",
+                    "landarea", "bnp", "mfg", "wonders",
+                    "unitsbuilt", "unitslost", "unitskilled",
+                    "culture"):
             v = sl.frozen_total(tag, min(t, end))
             if v is not None:
                 row[f"{tag}{key}"] = v / nseat
@@ -164,14 +167,25 @@ def venue(root):
     if "c00" not in cells:
         print(f"{root}: no c00 arm")
         return
-    seeds = sorted(set.intersection(*(set(v) for v in cells.values())))
-    print(f"\n=== {root.name}: {len(seeds)} paired seeds, "
-          f"cells {' '.join(f'{c}={len(v)}' for c, v in cells.items())}")
+    # Pairwise, not global: a cell still filling must not shrink the
+    # sample of a contrast between two cells that are complete.
+    pairs = {c: sorted(set(cells["c00"]) & set(v))
+             for c, v in cells.items() if c != "c00"}
+    seeds = sorted(cells["c00"])
+    print(f"\n=== {root.name}: cells "
+          f"{' '.join(f'{c}={len(v)}' for c, v in cells.items())}; "
+          f"paired vs c00: "
+          f"{' '.join(f'{c}={len(v)}' for c, v in pairs.items())}")
 
     keys = [k for k in ("score", "cities45", "cities100", "cities40",
                         "cities60", "citiesend", "popend", "found",
                         "settlers_built", "settler_starts", "alive45",
                         "alive100", "alive40", "alive60", "aliveend",
+                        "techsend", "munitsend", "settlersend",
+                        "settlers45", "settlers100", "landareaend",
+                        "bnpend", "mfgend", "wondersend",
+                        "unitsbuiltend", "unitslostend", "unitskilledend",
+                        "cultureend",
                         "joins", "guard_seen",
                         "guard_fired", "cap_seen", "cap_fired", "sites",
                         "empty_searches", "empty_offpeace", "empty_tbland")
@@ -182,11 +196,12 @@ def venue(root):
     for k in keys:
         vals = []
         for c in cells:
-            xs = [cells[c][s][k] for s in seeds if k in cells[c][s]]
+            xs = [r[k] for r in cells[c].values() if k in r]
             vals.append(mean(xs) if xs else float("nan"))
         print(f"    {k:<16}" + "".join(f"{v:>12.2f}" for v in vals))
 
     for c in [x for x in cells if x != "c00"]:
+        seeds = pairs[c]
         print(f"\n  {c} - c00, paired on {len(seeds)} seeds")
         print(f"    {'metric':<16}{'c00':>10}{c:>10}{'delta':>10}"
               f"{'se':>8}{'t':>7}   wins")
