@@ -186,4 +186,40 @@ job:
 
 ## 2. What landed
 
-*(filled in below as the epic proceeds)*
+Branch `worktree-agent-a50671fcef53cd1f2`, five commits. Byte-neutral
+at every compiled default: contested seeds 101-103 reproduce the
+archived `tune-postfix/s6-nogates-war` scorelogs exactly (`id` line
+excluded), with both gates compiled in. `meson test` 7/7 at every
+commit.
+
+- `benchmark: census the Diplomat and mil-infra shield lines` --
+  `diploprice.py`, whose [D1]/[D2] reproduce the earlier census's
+  published figures exactly, so the reader is reading the same thing.
+- `ai/deep: log the evidence behind the defensive diplomat want` --
+  `deep-dipthreat`, one per city per build evaluation, carrying
+  stock's flag beside the two populations under stock's own
+  threshold; `deep-spy` gains `garrison` so the 227 diplomat-turns
+  split into duty and travel.
+- `ai/deep: gate the defensive diplomat on observed diplomat presence`
+  -- `diplo_price_gate` over `diplo_evidence_floor` and
+  `diplo_gap_floor`.
+- `ai/deep: gate mil-infra on stock's measured danger` --
+  `mil_infra_gate` over `mil_infra_threat_floor`, at the wall want and
+  at the veterancy swap, funded from the hoisted `fear_pre`.
+- `benchmark: add the diploprice 2x2 and its four cell tunings` --
+  `diploprice.sh`, four cell inis whose derivations and
+  pre-registered falsifications are written in the files.
+
+### Liveness, one contested game at cell 11
+
+The diplomat gate refuses **331 of 569** warranted choices (58.2%);
+the mil-infra gate refuses **2813 of 3664** city-turns (76.8%). Both
+mechanisms execute, hard. A gate that changes nothing and a gate that
+changes nothing measurable look identical in a score table, and this
+project has been caught by that four times.
+
+---
+
+## 3. The adjudication
+
+*(filled in when the factorial reports)*

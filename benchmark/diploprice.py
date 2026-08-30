@@ -530,12 +530,55 @@ def section_infra(deep, base, rules, rulesdir):
             print(f"  {tag:<12} " + "  ".join(cells))
 
 
+def section_cells(dirs, rules):
+    """One row per factorial cell: the two shield lines and the gates.
+
+    The A/B cells keep no savegames (disk), so this reads the log side
+    only -- which is the side the gates act on. `refuse%` is the gate
+    firing; `deliv%` and `delivered` are what the epic promised to
+    move, and for mil-infra the pre-registered direction is STARTS
+    down with DELIVERED flat.
+    """
+    print(f"  {'cell':<28} {'games':>5} "
+          f"{'dip.start':>9} {'dip.blt':>8} {'dip.dlv%':>9} {'dip.sh':>7} "
+          f"{'dipRef%':>8} "
+          f"{'inf.start':>9} {'inf.blt':>8} {'inf.dlv%':>9} {'inf.sh':>7} "
+          f"{'infRef%':>8}")
+    for d in dirs:
+        d = Path(d)
+        root = d / "deep" if (d / "deep").is_dir() else d
+        L = log_ledger(root)
+        npg = max(player_games(root), 1)
+        ref = {"dip": [0, 0], "inf": [0, 0]}
+        for g in games(root):
+            for ln in loglines(g):
+                if "deep-dipthreat " in ln and " verdict=" in ln:
+                    ref["dip"][1] += 1
+                    if "verdict=refuse" in ln:
+                        ref["dip"][0] += 1
+                elif "deep-milinfra " in ln:
+                    ref["inf"][1] += 1
+                    if "verdict=refuse" in ln:
+                        ref["inf"][0] += 1
+        cells = []
+        for fam, key in ((DIPL, "dip"), (INFRA, "inf")):
+            st = sum(L["starts"][k] for k in fam)
+            bl = sum(L["built"][k] for k in fam)
+            sh = sum(L["built"][k] * rules.get(k, (0, 0))[0] for k in fam)
+            r, n = ref[key]
+            cells += [f"{st:>9}", f"{bl:>8}", f"{100*bl/max(st,1):>8.1f}%",
+                      f"{sh/npg:>7.1f}", f"{100*r/max(n,1):>7.1f}%"]
+        print(f"  {d.parent.name + '/' + d.name:<28} {L['ngames']:>5} "
+              + " ".join(cells))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("deep")
     ap.add_argument("base", nargs="?")
+    ap.add_argument("more", nargs="*")
     ap.add_argument("--section", default="all",
-                    choices=("all", "diplomat", "infra"))
+                    choices=("all", "diplomat", "infra", "cells"))
     ap.add_argument("--rules", default=None)
     a = ap.parse_args()
     rulesdir = a.rules or (Path(__file__).resolve().parent.parent
@@ -543,6 +586,10 @@ def main():
     rules = ruleset_upkeep(rulesdir)
     rules.update({k: v for k, v in ruleset_unit_cost(rulesdir).items()
                   if k not in rules})
+    if a.section == "cells":
+        section_cells([a.deep] + ([a.base] if a.base else []) + a.more,
+                      rules)
+        return
     deep = Path(a.deep)
     base = Path(a.base) if a.base else None
     if a.section in ("all", "diplomat"):

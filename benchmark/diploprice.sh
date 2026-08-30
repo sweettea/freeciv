@@ -187,6 +187,15 @@ do_report() {
   local cell venue
   for venue in $VENUES; do
     [ -d "$OUT/ab/$venue" ] || continue
+    # paircmp.py reads metrics.csv, which extract.py writes.
+    for cell in $CELLS; do
+      [ -d "$OUT/ab/$venue/$cell" ] || continue
+      "$here/extract.py" --root "$OUT/ab/$venue/$cell" \
+        --csv "$OUT/ab/$venue/$cell/metrics.csv" >/dev/null 2>&1
+    done
+    echo "############ venue $venue: the two shield lines, per cell"
+    python3 "$here/diploprice.py" --section cells $OUT/ab/$venue/*/
+    echo
     echo "############ venue $venue: paired against cell 00"
     for cell in $CELLS; do
       [ "$cell" = 00 ] && continue
