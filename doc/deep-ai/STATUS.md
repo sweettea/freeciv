@@ -22868,7 +22868,7 @@ One item is deliberately not a knob: if the `deep-march` HP column
 confirms that waves arrive wounded while the launch gate priced them
 healthy, the fix is to price the stream at expected arrival HP, which
 is a model change and must not be turned into a fudge factor.
-||||||| 453d12f523
+
 ## S-SETTLERPIPE: the delivered settler is eaten by the JOIN, and 24–52% of joins are premature (2026-08-29)
 
 Branch `worktree-agent-ae224e019cdf907d8`. **Log census, no new
@@ -22939,3 +22939,153 @@ while the empty search is plausibly temporary, adding
 run_hold puts more settlers into the pipeline and (B) decides what
 happens at the end of it, so two separate arms cannot attribute
 either.
+
+## S-OPARRIVAL: the census replicates, the gates do not pay (2026-08-30)
+
+Branch `worktree-agent-a824462efa465663d`, 8 commits. The `op-arrival`
+epic proposed in `findings/op-exchange-rate-2026-08-29.md` §9: one
+instrument commit, five gated mechanisms, and the pre-registered
+factorial that adjudicates them. **144 games, TRAINING seeds 1–16,
+contested.conf, arm deep**, paired against a control that is the
+shipped binary at compiled defaults. Full write-up:
+`findings/op-arrival-verdict-2026-08-29.md`.
+
+### The verdict in two sentences
+
+Every diagnosis the exchange-rate census made replicates on an
+independent seed set. **None of the three gates built to act on them
+moves the score, and the biggest effect in an eight-cell factorial is
++0.34 ± 0.53 — under one standard error.** All gates ship at 0.
+
+### The census replicates (control cell, 85 assault ops, 16 seeds)
+
+Six independent claims, six replications, on seeds none of the four
+original corpora contained:
+
+- **Take rate by launch eta** — the whole diagnosis, cut in the same
+  place: eta 0–1 → 100% strike / 16.7% take (n=6); eta 2 → 12.0/16.0
+  (n=25); eta 3–4 → 0.0/10.0 (n=20); **eta 5+ → 0.0/0.0 (n=21)**.
+  Twenty-one launches, zero contacts, zero cities.
+- **`required` gates contact** — required 1–2: 66.7% strike; **9+:
+  6.2% strike, 0.0% take (n=16)**.
+- **The garrison draft** — drafted 3.8% take (n=52) against undrafted
+  15.2% (n=33), and drafted formations are 61% of everything formed
+  (census: 63%).
+- **The patience release** — 36 of 72 marches, mean predicted odds
+  **0.109** against the bar-clearing population's **0.923**, take 5.6%
+  vs 13.9%.
+- **The re-gate's inflating eta** — 31 of 48 dead marches (65%) had the
+  wave INTACT (5.32 → 5.87 members) while odds fell 0.428 → 0.063 and
+  **eta rose 4.71 → 5.12**.
+- **Eta honesty** — reached the walls at eta 1.33; never arrived at
+  4.39, after 7.31 turns of marching.
+
+### The 2×2×2 factorial (A = arrival, P = patience, R = re-gate)
+
+Paired per seed, control mean score 83.90.
+
+    cell  gates    score  delta     se      t   launched   takes
+    000   control  83.90      —      —      —      4.88     0.44
+    100   A        83.81  -0.09   0.56  -0.15      4.06     0.12
+    010   P        84.04  +0.14   0.65  +0.22      3.00     0.50
+    001   R        84.23  +0.33   0.29  +1.14      4.75     0.31
+    110   A+P      84.16  +0.27   0.56  +0.48      1.31     0.12
+    101   A+R      83.98  +0.09   0.64  +0.13      3.19     0.12
+    011   P+R      83.92  +0.02   0.65  +0.04      2.69     0.44
+    111   A+P+R    84.24  +0.34   0.53  +0.65      1.25     0.12
+    eta   cap only 83.76  -0.14   0.53  -0.27      3.19     0.31
+
+Main effects: **A +0.03, P +0.11, R +0.12.** Nothing clears one SE.
+
+The gates fired hard, and the factorial earned its keep:
+
+- **A costs cities.** All four A-cells land at 0.12 takes/game against
+  0.44 (Δ −0.31 ± 0.12, t = −2.61). At decay 0.447 the net-value
+  product is crushed so far that `go` is *never* true and **the
+  patience release becomes 100% of all launches** — the gate meant to
+  discipline the clock handed the clock the whole decision. No separate
+  A/B could have seen that interaction.
+- **P is free.** Launches −1.88 ± 0.55 (t = −3.38), patience releases
+  −1.94 ± 0.43 (t = −4.48), `abort-odds` −0.81 ± 0.29 (t = −2.78),
+  takes **+0.06 ± 0.11**. Cell 011 cuts launches 45% with takes exactly
+  unchanged. Thirty fewer wasted marches per sixteen games, same
+  cities, no score.
+- **R does nothing.** `abort-odds` 40 → 36 and `abort-march` 10 → 14:
+  the waves the sunk-cost credit rescues die one gate later, having
+  marched longer.
+
+### The pre-registered falsification
+
+Predicted: fewer ops, fewer `unitslost`, **unchanged `unitskilled`**.
+Got (eta cell, paired): launches −1.69 ± 0.78 (t −2.17) ✓; `unitslost`
+−0.47 ± 0.37 (t −1.25) ✓ directionally; `unitskilled` **−0.30 ± 0.38
+(t −0.78)** — it fell, by 0.8 SE. Neither confirmation nor
+falsification: the capped launches demonstrably take no cities (21 of
+them, directly counted, zero takes), and refusing them buys nothing
+measurable. The blades freed do not convert anywhere else.
+
+### The result that outlives the gates
+
+**Cutting deep's assault launches by 75% moves score by less than one
+SE in either direction** (111: 1.25 launches/game, +0.34 ± 0.53; 000:
+4.88). Across 144 games the operations layer's launch volume is very
+nearly a free variable. The census's 354-deaths-for-2-kills exchange is
+real; what these games add is that fixing it does not pay, because the
+deaths were not buying anything the score noticed either. This is the
+causal version of the census's "8.0% of the army is in an operation,
+0.1% at the walls".
+
+### What landed
+
+Byte-neutral at every default: contested holdout seeds 101–103
+reproduce the archived `tune-postfix/s6-nogates-war` scorelogs exactly
+(`id` line excluded), before and after the epic. `meson test` 7/7 at
+every commit.
+
+- `ai/deep: log each marching turn's convergence` — `deep-march`, one
+  line per marching op per turn: eta, members, summed HP, quorum
+  distance. P(arrive | eta) has to be fitted and the log had only
+  endpoints.
+- `ai/deep: give the half-quorum patience release an odds floor`
+- `ai/deep: price the march in the assault launch gate` —
+  `op_arrival_gate` over decay, eta cap, march loss.
+- `ai/deep: give the march re-gate a memory of the march` —
+  `op_regate_gate` over sunk credit, eta freeze.
+- `ai/deep: separate the contact quorum from the required force`
+- `ai/deep: put an attack-rating floor under the garrison draft`
+- `benchmark: add the op-arrival factorial and its funnel census` —
+  `oparrival.sh`, `oparrival.py`, nine cell tunings whose derivations
+  are written in the files.
+
+### Constants owed to tuning (all PLACEHOLDER, all registered in M/MIL/ALL)
+
+`op_patience_odds_floor` (tested 0.35 = `op_abort_floor`, structural),
+`op_arrival_gate` / `op_arrival_decay` (0.447) / `op_launch_eta_cap`
+(4) / `op_march_loss_rate` (0.56), `op_regate_gate` /
+`op_regate_sunk_gain` (1.0) / `op_regate_eta_freeze` (1) — all tested,
+all shipping at 0.
+
+**Two shipped gated and deliberately untested.** `op_contact_quorum` is
+on the same causal chain as A and P, so running it alone would be the
+attribution error the factorial exists to avoid — it belongs in the
+*next* factorial. `op_draft_attack_floor` has no magnitude derivable
+from the census, and rule 7 forbids inventing one to have something to
+run.
+
+### Next
+
+1. **The draft is the one large replicated funnel effect never
+   tested** — drafted formations take cities at a quarter the undrafted
+   rate and are 61% of everything formed. Needs a derived threshold
+   first: a census of `adv_unit_att_rating` for drafted vs free blades
+   against the odds each buys, which the `deep-opodds` line does not
+   currently carry.
+2. **Stop tightening the launch gate.** If launch volume is free at the
+   margin, the question is the 46% of the army in `DEFEND_HOME`, not
+   which of the remaining 8% marches — a defence-side question.
+3. **A second venue before any of it.** All four census corpora and
+   this factorial are contested/T150. `tech50war-200` concludes wars
+   and gives operations room; the replication in §3 is across seeds and
+   tunings, not across venues.
+4. **Not the duel model, not target selection.** §4.7 and S-WEAKPREY
+   measured those and found them innocent; nothing here changes that.
