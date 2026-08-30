@@ -72,7 +72,8 @@ def make_args(**kw):
     a = argparse.Namespace(configs=["cfg0"], jobs=4, mixed=False,
                            server=None, portbase=7000, gens=3, pop=6,
                            accept="best", accept_z=None, reeval=None,
-                           reeval_seeds=None, reeval_pool=[])
+                           reeval_seeds=None, reeval_pool=[],
+                           race=None, race_z=None)
     for k, v in kw.items():
         setattr(a, k, v)
     return a
@@ -175,6 +176,70 @@ class TestReeval(BlockCase):
                          accept="paired", accept_z=3.0)
         res = self.block(args, make_scorer(0.0, 300.0))
         self.assertEqual(res["vals"], [0.0])
+
+
+class TestRaceSurvivors(unittest.TestCase):
+    """The rung's ordering, on its own."""
+
+    def test_keeps_the_better_half_rounding_up(self):
+        stats = [(m, 1.0, 3) for m in (10.0, 50.0, 30.0, 40.0, 20.0)]
+        self.assertEqual(tune.race_survivors(stats, 0.0), [1, 2, 3])
+
+    def test_uncertainty_is_charged_against_the_mean(self):
+        # A wide +100 loses to a tight +60 once its own SE is charged
+        # for: that is the difference between racing on the mean and
+        # racing on a lower confidence bound.
+        stats = [(100.0, 100.0, 2), (60.0, 0.0, 8)]
+        self.assertEqual(tune.race_survivors(stats, 1.0), [1])
+        self.assertEqual(tune.race_survivors(stats, 0.0), [0])
+
+    def test_unknown_se_falls_back_to_the_mean(self):
+        stats = [(10.0, float("nan"), 1), (5.0, 0.0, 4)]
+        self.assertEqual(tune.race_survivors(stats, 2.0), [0])
+
+    def test_a_candidate_with_no_games_ranks_last(self):
+        stats = [(-float("inf"), float("nan"), 0), (-500.0, 1.0, 3)]
+        self.assertEqual(tune.race_survivors(stats, 0.0), [1])
+
+    def test_protected_indices_always_survive(self):
+        stats = [(-99.0, 1.0, 3), (1.0, 1.0, 3), (2.0, 1.0, 3)]
+        self.assertEqual(tune.race_survivors(stats, 0.0, protect=(0,)),
+                         [0, 1, 2])
+
+    def test_population_of_one(self):
+        self.assertEqual(tune.race_survivors([(0.0, 1.0, 3)], 1.0), [0])
+
+
+class TestRacingABlock(BlockCase):
+    def test_racing_plays_fewer_games(self):
+        scorer = make_scorer(40.0, 5.0)
+        plain, raced = [], []
+        self.block(make_args(gens=1), scorer, plain)
+        self.setUp()                       # a fresh, empty result dir
+        self.block(make_args(gens=1, race=2, race_z=1.0), scorer, raced)
+        self.assertLess(len(raced), len(plain))
+
+    def test_a_raced_out_candidate_cannot_be_the_block_best(self):
+        # Signal is monotone in x, and the slice orders the population
+        # the same way the full seed set would, so whatever wins must
+        # be one of the survivors -- never a candidate dropped at the
+        # rung.
+        args = make_args(gens=1, pop=6, race=2, race_z=1.0)
+        res = self.block(args, make_scorer(40.0, 5.0))
+        self.assertGreater(res["obj"], 0.0)
+        self.assertGreater(res["vals"][0], 0.0)
+
+    def test_survivors_are_scored_on_every_seed(self):
+        calls = []
+        args = make_args(gens=1, pop=6, race=2, race_z=1.0)
+        self.block(args, make_scorer(40.0, 5.0), calls)
+        played = {}
+        for _arm, seed in calls:
+            played[seed] = played.get(seed, 0) + 1
+        # Every seed of the first slice is played by the whole
+        # population; the later seeds by fewer candidates.
+        self.assertEqual(played[self.seeds[0]], 6)
+        self.assertLess(played[self.seeds[-1]], 6)
 
 
 class TestIncumbentReuse(BlockCase):

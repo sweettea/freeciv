@@ -7,6 +7,7 @@
             [--blocks S,E,M] [--rounds R]
             [--accept best|paired --accept-z Z]
             [--reeval K --reeval-seeds N]
+            [--race K --race-z Z]
 
 --blocks runs alternating block coordinate descent: each named block
 (defined in tuning-blocks.ini) is evolved in turn with every other
@@ -65,6 +66,12 @@ they compose:
       best is taken from THAT number. The incumbent is re-evaluated
       on the same fresh seeds, so the floor a champion must clear is
       measured on the same sample it is.
+
+--race K --race-z Z spends the budget rather than raising it: every
+candidate plays the first K seeds, the better half by mean - z*SE
+plays the remaining ones, and a raced-out candidate can never be the
+block best. Halving a pop-10 generation after 3 of 8 seeds is 25
+games instead of 40 with more seeds behind the survivors.
 
 Discipline: refuses to optimise against the holdout seed file. Report
 final numbers with --report-holdout TUNINGFILE, which evaluates a fixed
@@ -342,6 +349,27 @@ def eval_candidate(args, seeds, cand_dir, tuning_file, baseline, portbase):
                            baseline, portbase)[0]
 
 
+def race_survivors(stats, z, protect=()):
+    """Indices that continue past a race rung: the better half.
+
+    Ordering is by mean - z*SE, not by mean, so the remaining seeds
+    are spent on candidates that are plausibly good rather than on
+    ones that merely drew a lucky slice -- a wide SE pushes a
+    candidate down its own ranking. protect names indices that
+    survive regardless; generation 0's candidate 0 is the incumbent,
+    whose full-seed games are already on disk.
+
+    Ties and odd populations round UP, so a population of one keeps
+    its one candidate and a population of five keeps three."""
+    def key(k):
+        m, se, _n = stats[k]
+        return m - z * se if se == se else m
+
+    n = len(stats)
+    ranked = sorted(range(n), key=lambda k: -key(k))
+    return sorted(set(ranked[: max(1, (n + 1) // 2)]) | set(protect))
+
+
 def incumbent_dir(out, tag):
     """Where the block's unmutated incumbent is evaluated.
 
@@ -401,8 +429,30 @@ def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
             write_tuning(tf, allp, vals)
             cand_dirs.append(cdir)
             tuning_files.append(tf.resolve())
-        diffs = eval_population(args, seeds, cand_dirs, tuning_files,
-                                baseline, args.portbase)
+        if args.race:
+            # Successive halving: everyone plays the first slice, the
+            # better half plays the rest. The budget a raced-out
+            # candidate would have burned buys seeds for the ones
+            # still alive, which is the only lever that raises n per
+            # candidate without raising the campaign's cost.
+            first, rest = seeds[: args.race], seeds[args.race:]
+            diffs = eval_population(args, first, cand_dirs, tuning_files,
+                                    baseline, args.portbase)
+            keep = race_survivors([blend_stats(d) for d in diffs],
+                                  args.race_z,
+                                  protect=(0,) if gen == 0 else ())
+            more = eval_population(args, rest, [cand_dirs[k] for k in keep],
+                                   [tuning_files[k] for k in keep],
+                                   baseline, args.portbase)
+            for j, k in enumerate(keep):
+                diffs[k] = {**diffs[k], **more[j]}
+            print(f"[{tag}] gen {gen} race: {len(keep)} of {len(cands)}"
+                  f" continue past {len(first)} seeds"
+                  f" ({sorted(keep)})", flush=True)
+        else:
+            keep = list(range(len(cands)))
+            diffs = eval_population(args, seeds, cand_dirs, tuning_files,
+                                    baseline, args.portbase)
         stats = [blend_stats(d) for d in diffs]
         objs = [st[0] for st in stats]
         order = sorted(range(len(objs)), key=lambda k: -objs[k])
@@ -417,6 +467,7 @@ def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
             print(f"[{tag}] gen {gen} cand {c}: obj {pm(obj, se)}"
                   f" (n={n})  vs inc {pm(pd, pse)}"
                   + (f" z={z:+.2f}" if z == z else "")
+                  + ("" if c in keep else " RACED OUT")
                   + "  " + " ".join(f"{allp[i]['name']}={vals[i]:.3g}"
                                     for i in idx), flush=True)
 
@@ -424,7 +475,10 @@ def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
         # The 2026-08-25 post-mortem's first requirement: never select
         # by unreplicated max. The generation's leader is a CANDIDATE
         # for the block best, not the block best.
-        champ = order[0]
+        # A raced-out candidate was measured on a slice; it is not
+        # eligible to be the block best, whatever that slice said.
+        elig = [k for k in order if k in keep] or order
+        champ = elig[0]
         champ_obj, champ_se, _ = stats[champ]
         champ_diffs, champ_inc = diffs[champ], inc_diffs
         floor_obj = inc_obj
@@ -435,7 +489,7 @@ def run_block(args, seeds, allp, idx, cur, baseline, out, rng, tag):
             # never saw, together with the incumbent, so the champion
             # AND the floor it must clear are measured on one fresh
             # sample.
-            topk = order[: args.reeval]
+            topk = elig[: args.reeval]
             rdirs = [cand_dirs[k] for k in topk] + [incdir]
             rtfs = [tuning_files[k] for k in topk] + [inc_tf.resolve()]
             rdiffs = eval_population(args, args.reeval_pool, rdirs, rtfs,
@@ -719,6 +773,20 @@ def main():
                     help="required with --reeval: how many fresh"
                          " training seeds (the ones after --count in"
                          " the seed file) the re-evaluation uses.")
+    ap.add_argument("--race", type=int, metavar="K",
+                    help="successive halving: evaluate every candidate"
+                         " on the FIRST K seeds, drop the worse half"
+                         " by mean - z*SE (z from --race-z), and play"
+                         " the remaining seeds only for the"
+                         " survivors. Concentrates the budget on live"
+                         " candidates; a raced-out candidate can never"
+                         " be the block best.")
+    ap.add_argument("--race-z", type=float,
+                    help="required with --race: standard errors"
+                         " subtracted from a candidate's mean before"
+                         " the rung is ordered. Larger is more"
+                         " conservative about dropping a wide"
+                         " estimate. No default.")
     ap.add_argument("--arena", metavar="MANIFEST",
                     help="run all-deep games under this per-seat tuning"
                          " manifest (the server's FREECIV_DEEP_ARENA"
@@ -735,6 +803,11 @@ def main():
         sys.exit("--accept paired requires --accept-z: the acceptance"
                  " threshold is a campaign decision, and this tool"
                  " will not pick one for you")
+    if args.race is not None and args.race_z is None:
+        sys.exit("--race requires --race-z: how many standard errors"
+                 " to charge a candidate for its own uncertainty is a"
+                 " campaign decision, and this tool will not pick one"
+                 " for you")
     if args.reeval and not args.reeval_seeds:
         sys.exit("--reeval K requires --reeval-seeds N")
 
@@ -751,6 +824,9 @@ def main():
             sys.exit(f"--reeval-seeds {args.reeval_seeds} needs"
                      f" {args.count + args.reeval_seeds} seeds in"
                      f" {args.seeds}, which holds {len(all_seeds)}")
+    if args.race is not None and not 1 <= args.race < len(seeds):
+        sys.exit(f"--race {args.race} must leave seeds for the second"
+                 f" rung: 1 <= K < {len(seeds)}")
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
