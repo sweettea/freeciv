@@ -22755,3 +22755,116 @@ back, and is the obvious next read; it was not run here.
   expected losses against the take at the launch gate, since that is
   where §5 says the loss is; (b) the mixed `deep_vs_classic` cell for
   the same gate; (c) only then a `weak_prey_gain` sweep.
+
+## S-OPXRATE: the wave does not arrive (2026-08-29)
+
+Branch `worktree-agent-ac34e1b3eb70f75a1`, 4 commits. Log census only:
+S-WEAKPREY §7's item (a) — *"re-read the exchange rate — price the
+wave's expected losses against the take at the launch gate"*. No new
+benchmark batches; one six-game emission probe on training seeds 1–6,
+used for nothing but proving two new log fields fire.
+
+Full write-up with every table:
+`doc/deep-ai/findings/op-exchange-rate-2026-08-29.md`.
+
+### The finding, and it corrects S-WEAKPREY §5
+
+S-WEAKPREY handed off with *"the wave arrives at a weaker enemy and
+still trades badly."* **It does not arrive.** Over four retained
+corpora — `weakprey/ab/{off,on}` (48 games) and `tune-postfix/{s5,s6}
+-*-war/holdout-report` (40 games), 640 assault operations:
+
+    formed 640 -> march 501 (78.3%) -> strike 39 (6.1%) -> take 13 (2.0%)
+    of the 13 takes, 8 were walk-ins; 5 operations in 640 took a city
+    by fighting for it.
+
+The launch gate's own forecast on the 228 launches that cleared its
+bar averages **P(take) 0.88–0.93**; their realized capture rate is
+**4.4%**. A twentyfold calibration error, and not a combat-model one:
+the 232 operations whose `deep-employop` ledger survived booked
+**354 member deaths and 2 kills at the walls** (0.006 kills/death).
+`deep_take_odds_cost()` answers P(win | arrived together and fresh);
+the decision needs P(this operation ends holding that city). The gap
+is the march, and no seat in the launch path prices it.
+
+### Ranked, with the numbers
+
+1. **P(arrive) is missing entirely.** Contacts over launches 7.8%.
+   By launch eta: eta 0–1 → 30/30 strike; eta 2 → 6/205; eta 3–4 →
+   2/149; **eta ≥ 5 → 0 of 117, and 0 cities.**
+2. **The half-quorum patience release bypasses the model.** 273 of
+   501 launches (54.5%) at mean predicted odds 0.08–0.15, take rate
+   1.1% vs the bar-clearing 4.4%. It is the right side of an `||`
+   evaluated after `go` was set false, so it overrides the odds bar,
+   the survivor floor **and an explicit net-value refusal** — caught
+   twice in 27 probe launches.
+3. **`required` gates contact as well as legitimacy** (it is the `k`
+   in `deep_op_eta()`). required ≥ 9: 133 launches, 2 contacts, 0
+   cities.
+4. **The march re-gate has no memory and an inflating denominator.**
+   `abort-odds` is 302 of 640 terminals. In 57–71% of aborted marches
+   the wave was **intact or larger** and the odds fell 0.86–0.95 →
+   0.07–0.13 anyway, with eta *higher* than at launch: reinforcement
+   is charged against an eta that rises because the operation is
+   failing, and the sunk march is not in the comparison.
+5. **The garrison draft fills the quorum with the weakest blade in
+   each city.** drafted>0: 406 formations, 3 takes (0.7%);
+   drafted=0: 234, 10 takes (4.3%).
+6. **Overseas is the land model plus a constant.** 307 of 640
+   formations, 1.3% take vs land's 2.7%.
+7. **NOT walls, terrain or veterancy.** 9 of 640 targets held a
+   defender rated above 10; mean garrison 1.2–1.6 at rating 5.4–6.3.
+
+### Against baseline, same holdout seeds
+
+    holdout 101-120, contested, 158 player-games/arm
+                       built  killed   lost    k/l  munits(T150) score
+    deep (s6-nogates)  50.30    9.91  14.72  0.673     15.47      85.1
+    deep (s5-defaults) 50.00    8.96  13.79  0.649     15.60      88.1
+    baseline           49.90    9.31  14.04  0.663     12.70      92.4
+
+Identical exchange rate, +22% standing army, lower score. Deep is
+ahead on k/l at T100 (0.80 vs 0.61) and back at parity by T150 —
+which is the window operations run in (s6 formations by 25-turn band:
+1, 12, 44, 55, 54, 0). Correlation, not attribution. Of 7.09 military
+units per player-turn, **0.567 (8.0%) are in an operation and 0.009
+(0.1%) are at the walls**; 46.1% are DEFEND_HOME garrison.
+
+### What landed
+
+- `benchmark/opxrate.py` / `opxrate_employ.sh` / `opxrate.sh` — the
+  per-operation ledger, the army-by-seat census, the emission probe.
+  Output retained under `benchmark/results/opxrate/`.
+- `ai/deep: log the launch gate's loss forecast on the go path` —
+  `loss=`, `cost=`, `eworth=`, `patience=` on the march line. The
+  gate had always computed the cost and written it down only when the
+  answer was no.
+- `ai/deep: log the garrison the march re-gate re-priced against` —
+  `def_n=`, `def_best=`, `marched=` on both re-gate lines, so
+  "the garrison grew" and "the eta inflated" stop being the same line.
+
+Both are observation only; `meson test -C build` 7/7.
+
+### Next: the `op-arrival` epic (proposed, not started)
+
+One more instrument commit (`deep-march`, per marching turn: eta,
+members, summed HP, distance closed — the arrival curve must be
+*fitted*), then knobs that all default to identity so the off arm is
+byte-identical: `op_arrival_decay`, `op_launch_eta_cap`,
+`op_march_loss_rate`, `op_regate_sunk_gain`, `op_regate_eta_freeze`,
+`op_patience_odds_floor`, `op_contact_quorum`,
+`op_draft_attack_floor`. **No values chosen** (rule 7); ranges go in
+`tuning-params.ini`. The first three of those move which waves fight
+and are on one causal chain, so they want a **factorial** design, not
+concurrent arms.
+
+Pre-registered falsification: an arm that refuses to launch at eta ≥ 5
+should lose **nothing** — those 117 launches produced zero contacts and
+zero cities — so it must show fewer operations and fewer `unitslost`
+with `unitskilled` unchanged. If `unitskilled` falls, the diagnosis is
+wrong and the document gets re-read, not the tuning re-swept.
+
+One item is deliberately not a knob: if the `deep-march` HP column
+confirms that waves arrive wounded while the launch gate priced them
+healthy, the fix is to price the stream at expected arrival HP, which
+is a model change and must not be turned into a fudge factor.
