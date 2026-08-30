@@ -2173,6 +2173,13 @@ void deep_adjust_building_wants(struct ai_type *ait,
        * the modifiers, and the modifiers themselves, so the offline
        * re-pricing can replay them on a re-priced sum. */
       adv_want dk_capadd = 0, dk_raw = 0;
+      /* The four peace-time ladder components, each linear in its own
+       * horizon_*_weight, so the offline screen can re-price one knob
+       * without re-deriving the whole ladder. `raw` is their sum plus
+       * capadd plus the ungated terms (culture, insurance, heal,
+       * veteran, health); the residual is recoverable by subtraction
+       * and is what no single knob scales. */
+      adv_want dk_bund = 0, dk_cont = 0, dk_mult = 0, dk_grow = 0;
       double dk_upk = 0.0, dk_keep = 1.0;
       double dk_bdur = 0.0;
       int dk_ob = -1;
@@ -2223,14 +2230,21 @@ void deep_adjust_building_wants(struct ai_type *ait,
         dk_capadd = cap_credit;
       }
       if (!threatened) {
-        add += deep_bundle_credit(pcity, pimprove, adv);
-        add += deep_content_credit(pcity, pimprove, adv);
-        add += deep_multiplier_credit(pcity, pimprove, adv);
+        /* Named rather than summed straight in, so the census line can
+         * report each one; the call order and the accumulation order
+         * are unchanged, so `add` is bit-identical. */
+        dk_bund = deep_bundle_credit(pcity, pimprove, adv);
+        add += dk_bund;
+        dk_cont = deep_content_credit(pcity, pimprove, adv);
+        add += dk_cont;
+        dk_mult = deep_multiplier_credit(pcity, pimprove, adv);
+        add += dk_mult;
         /* Growth accelerator: peace-time investment like the other two.
          * The structural cap-lifter above keeps its wartime exemption
          * because a size GATE never reopens on its own; a Granary is
          * only ever an optimisation. */
-        add += deep_growth_credit(pcity, pimprove, adv);
+        dk_grow = deep_growth_credit(pcity, pimprove, adv);
+        add += dk_grow;
         /* DARKFX: what a government centre here saves every OTHER
          * city. Peace-time investment like the rest of the ladder. */
         add += deep_gov_center_credit(pcity, pimprove, adv);
@@ -2442,17 +2456,24 @@ void deep_adjust_building_wants(struct ai_type *ait,
          * rebuild this improvement's final credit from its component
          * shapes: pre is stock's array value (not yet touched), raw
          * the component sum the modifiers act on, capadd the share of
-         * raw that came from the city's capacity shape line, then the
-         * modifiers in application order. */
+         * raw that came from the city's capacity shape line, bund /
+         * cont / mult / grow the four peace-time ladder components
+         * beside it, then the modifiers in application order. Each of
+         * the five named components is linear in exactly one
+         * horizon_*_weight, which is what lets an offline screen
+         * re-price one knob from this line alone. */
         log_base(deep_metric_log_level(),
                  "deep-decay-sum turn=%d player=\"%s\" city=%d"
                  " impr=\"%s\" pre=%.3f raw=%.3f capadd=%.3f"
+                 " bund=%.3f cont=%.3f mult=%.3f grow=%.3f"
                  " gmult=%.4f thr=%d upk=%.4f ob=%d keep=%.4f"
                  " add=%.3f bdur=%.3f rate=%.5f",
                  game.info.turn, player_name(pplayer), pcity->id,
                  improvement_rule_name(pimprove),
                  (double) pcity->server.adv->building_want[id],
-                 (double) dk_raw, (double) dk_capadd, gmult,
+                 (double) dk_raw, (double) dk_capadd,
+                 (double) dk_bund, (double) dk_cont,
+                 (double) dk_mult, (double) dk_grow, gmult,
                  threatened ? 1 : 0, dk_upk, dk_ob, dk_keep,
                  add > 0 ? (double) add : 0.0, dk_bdur,
                  deep_decay_rate_now());
