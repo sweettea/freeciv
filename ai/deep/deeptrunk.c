@@ -548,6 +548,41 @@ bool deep_frontier_reachable(const struct player *pplayer,
 }
 
 /**********************************************************************//**
+  S-FRONTIER: may a settler's site search PATH THROUGH this tile?
+
+  deep_frontier_reachable() above with the gate and its stance floor
+  applied, so that the search and the mover ask the same question of
+  the same tiles -- they share deep_settler_apply_risk(), and RC5 (the
+  planner and the executor disagreeing) is the failure mode a second
+  predicate here would reintroduce.
+
+  With frontier_transit_gate at 0 this returns exactly what
+  pplayers_allied() returned before the gate existed, so the shipped
+  default is byte for byte today's wall.
+**************************************************************************/
+bool deep_frontier_transit_open(const struct player *pplayer,
+                                const struct tile *ptile)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+
+  switch (deep_trunk_own_class(pplayer, ptile)) {
+  case DEEP_TRUNK_OWN_NONE:
+  case DEEP_TRUNK_OWN_SELF:
+  case DEEP_TRUNK_OWN_ALLY:
+    return TRUE;
+  case DEEP_TRUNK_OWN_PEACE:
+    return tune->frontier_transit_gate > 0;
+  case DEEP_TRUNK_OWN_CEASE:
+    return tune->frontier_transit_gate > 0
+           && tune->frontier_transit_stance_floor >= 1;
+  default:
+    /* War and no contact. */
+    return tune->frontier_transit_gate > 0
+           && tune->frontier_transit_stance_floor >= 2;
+  }
+}
+
+/**********************************************************************//**
   Remember this refresh's plan tiles and their ownership classes, so the
   next refresh can say which of them gained a road.
 **************************************************************************/

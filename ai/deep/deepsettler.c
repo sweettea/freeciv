@@ -139,7 +139,50 @@ struct deep_settler_risk {
                                  * extra-cost callback and ours cast it
                                  * back. */
   struct unit *punit;
+  /* adv_avoid_risks()'s own extra-cost callback, saved so the frontier
+   * price can CHAIN onto it rather than replace it. prefer_short_stacks
+   * is static in server/advisors/advgoto.c and may not be made visible
+   * (CLAUDE.md rule 4 -- advisors changes are for W28/W29 and inert
+   * extension points only), and dropping it would silently delete the
+   * settler's whole danger pricing. NULL while the gate is shut. */
+  unsigned (*base_EC)(const struct tile *ptile, enum known_type known,
+                      const struct pf_parameter *param);
 };
+
+/**********************************************************************//**
+  S-FRONTIER: charge the path for every foreign tile it enters.
+
+  Chains onto adv_avoid_risks()'s cost rather than replacing it, so a
+  route through a neighbour still pays its danger, its stacking and its
+  ZOC exactly as before and additionally pays
+  frontier_transit_price * PF_TURN_FACTOR per foreign tile -- the same
+  unit adv_avoid_risks() charges an enemy ZOC 20 of.
+
+  This is why the design needs no `reach` constant. A corridor through
+  a neighbour gets steadily more expensive the deeper it runs, the
+  travel discount de-ranks the sites behind it on the same curve it
+  de-ranks every other distant site, and nothing has to decide how many
+  tiles is too many.
+
+  Only installed while frontier_transit_gate is non-zero.
+**************************************************************************/
+static unsigned deep_settler_transit_EC(const struct tile *ptile,
+                                        enum known_type known,
+                                        const struct pf_parameter *param)
+{
+  const struct deep_settler_risk *risk = param->data;
+  const struct player *owner = tile_owner(ptile);
+  unsigned cost = (risk->base_EC != NULL
+                   ? risk->base_EC(ptile, known, param) : 0);
+
+  if (owner != NULL && owner != param->owner
+      && !pplayers_allied(owner, param->owner)) {
+    cost += (unsigned) (deep_tuning_get()->frontier_transit_price
+                        * (double) PF_TURN_FACTOR);
+  }
+
+  return cost;
+}
 
 /**********************************************************************//**
   Tile behaviour for settler pathfinding: the worker rule (never path
@@ -154,6 +197,16 @@ deep_settler_tile_behavior(const struct tile *ptile,
   const struct player *owner = tile_owner(ptile);
 
   if (owner != NULL && !pplayers_allied(owner, param->owner)) {
+    if (deep_frontier_transit_open(param->owner, ptile)) {
+      /* S-FRONTIER: the wall is down for this owner. The tile is still
+       * not a SITE -- the ruleset refuses founding on foreign ground
+       * (scripts/check-found-city-foreign.sh), and
+       * deep_city_desirability()'s city_can_be_built_here() enforces
+       * that one level in -- it is only ground to walk over, priced by
+       * deep_settler_transit_EC(). */
+      deep_site_note_transit(ptile);
+      return TB_NORMAL;
+    }
     /* Counted, because this is the refusal the refusal ladder cannot
      * see: pf drops a TB_IGNORE node before the search is ever offered
      * the tile (path_finding.c:288), so every bucket on
@@ -351,6 +404,13 @@ static void deep_settler_apply_risk(struct pf_parameter *parameter,
                   deep_tuning_get()->settler_fearfulness_mult
                   * NORMAL_STACKING_FEARFULNESS);
   risk->punit = punit;
+  risk->base_EC = NULL;
+  if (deep_tuning_get()->frontier_transit_gate > 0) {
+    /* Chain, never replace: adv_avoid_risks() has just installed the
+     * settler's whole danger pricing in get_EC. */
+    risk->base_EC = parameter->get_EC;
+    parameter->get_EC = deep_settler_transit_EC;
+  }
   parameter->get_TB = deep_settler_tile_behavior;
   /* Danger maps cannot be combined with fuel maps, and settlers do not
    * burn fuel. */

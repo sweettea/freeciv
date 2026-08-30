@@ -32,6 +32,12 @@ void deep_contemplate_new_city(struct ai_type *ait, struct city *pcity);
    Reported as tbskip=/tbown=/tbunit=/tbland= on deep-siteladder. */
 void deep_site_note_tbskip(const struct tile *ptile, bool owned);
 
+/* S-FRONTIER: the settler pathfinder walked over a tile owned by a
+ * player we are not allied with, because frontier_transit_gate opened
+ * it. Counts the crossing so the gate can be shown to execute; zero by
+ * construction with the gate shut. */
+void deep_site_note_transit(const struct tile *ptile);
+
 /* The last turn on which a site search of this player's was refused
    land for a reason a turn can undo -- a peace partner's border, a
    non-allied owner the pathfinder never queued, or another settler's

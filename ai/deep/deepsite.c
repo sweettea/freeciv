@@ -1605,6 +1605,22 @@ int deep_site_blocked_seen_turn(const struct player *pplayer)
   The settler pathfinder refused a tile before the pf map could offer
   it to the ladder. `owned` separates the two reasons the callback has.
 **************************************************************************/
+/* Foreign tiles the pathfinder was allowed to cross this search, and
+ * how many of them are land. Reset with the rest of the ladder. */
+static int deep_site_transit_n = 0;
+static int deep_site_transit_land = 0;
+
+/**********************************************************************//**
+  S-FRONTIER's counter: the wall came down for this tile.
+**************************************************************************/
+void deep_site_note_transit(const struct tile *ptile)
+{
+  deep_site_transit_n++;
+  if (!is_ocean_tile(ptile)) {
+    deep_site_transit_land++;
+  }
+}
+
 void deep_site_note_tbskip(const struct tile *ptile, bool owned)
 {
   deep_site_lad_tbskip++;
@@ -2261,6 +2277,8 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
   deep_site_lad_nomap = 0;
   deep_site_lad_nolegal = 0;
   deep_site_lad_offlegal = 0;
+  deep_site_transit_n = 0;
+  deep_site_transit_land = 0;
   deep_site_lad_tbskip = 0;
   deep_site_lad_tbown = 0;
   deep_site_lad_tbunit = 0;
@@ -2674,6 +2692,22 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
              deep_site_contest_ours, deep_site_contest_want,
              best != NULL ? index_to_map_pos_x(tile_index(best->tile)) : -1,
              best != NULL ? index_to_map_pos_y(tile_index(best->tile)) : -1);
+  }
+
+  /* S-FRONTIER's gate census, one line per SEARCH that crossed a
+   * foreign tile. `n` is the crossings pf considered and `land` the
+   * ones that are not water, and `found` beside them is the whole
+   * point: a search that crossed a border and came home with a site is
+   * a city the wall was costing. Nothing is written with the gate
+   * shut, so the default arm is byte for byte silent. */
+  if (deep_site_transit_n > 0) {
+    log_base(deep_metric_log_level(),
+             "deep-transit turn=%d player=\"%s\" unit=%d boat=%d n=%d"
+             " land=%d seen=%d found=%d best=%.1f",
+             game.info.turn, player_name(pplayer), punit->id, boat_cost,
+             deep_site_transit_n, deep_site_transit_land,
+             deep_site_lad_seen, best != NULL ? 1 : 0,
+             best != NULL ? (double) best->result : 0.0);
   }
 
   /* S-FRONTIER's census, last of all: it mutates the ladder counters

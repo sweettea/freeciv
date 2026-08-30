@@ -131,6 +131,15 @@ bool deep_trunk_soft_open(const struct player *pplayer,
 bool deep_frontier_reachable(const struct player *pplayer,
                              const struct tile *ptile);
 
+/* S-FRONTIER: may a settler's site search and its mover path THROUGH
+ * this tile? deep_frontier_reachable() with frontier_transit_gate and
+ * frontier_transit_stance_floor applied. At the shipped gate 0 this is
+ * pplayers_allied() exactly, so the default is byte for byte today's
+ * wall. One definition for the search and the mover, because they
+ * share deep_settler_apply_risk() and must not disagree (RC5). */
+bool deep_frontier_transit_open(const struct player *pplayer,
+                                const struct tile *ptile);
+
 /* W12G, the keepable-bid gate's own instrument: a corridor bid the
  * founder's own site value refused. Called by the task source when the
  * best beyond-ceiling candidate this turn beat the advisor's champion

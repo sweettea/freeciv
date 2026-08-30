@@ -3644,6 +3644,61 @@ struct deep_tuning {
    * that stock's own assessment scored above zero. Inert while the
    * gate is 0. */
   int mil_infra_threat_floor;
+  /* S-FRONTIER: let a settler's site search PATH THROUGH a peace
+   * partner's border to the free land beyond it, at a price per
+   * foreign tile entered.
+   *
+   * The epic opened on the city ledger's finding that 39% of every
+   * tile a failed T51-75 search sees is refused categorically as land
+   * theft. That axis is dead -- no benchmarked ruleset permits
+   * founding on a foreign tile at all (scripts/check-found-city-
+   * foreign.sh), and the bucket that measured it is an ALLY's border,
+   * not a peace partner's. What the census found instead is one level
+   * further out and is deep's own policy: deep_settler_tile_behavior()
+   * returns TB_IGNORE for every non-allied owner's tile, and pf drops
+   * such a node before it can be reached, entered or offered
+   * (path_finding.c:288). The free land BEHIND a peace partner is not
+   * refused by the search; it is invisible to it.
+   *
+   * Stock does not have the wall: find_best_city_placement()'s phase 1
+   * sets no get_TB at all (ai/baseline/default/daisettler.c:913), and
+   * a settler is NonMil so players_non_invade() does not stop it
+   * walking. So this is a deep-vs-baseline asymmetry deep pays for,
+   * and W12H already established the legality half of the argument for
+   * corridors (findings/, trunk_soft_border_gate).
+   *
+   * The wall census (deep-sitewall) sized it before the gate was
+   * written: it re-runs the same search with the ownership test
+   * replaced by deep_frontier_reachable() and counts what the
+   * difference legally admits.
+   *
+   * 0 = today's wall exactly, byte for byte. Counter: deep-transit,
+   * one line per search that crossed a foreign tile. */
+  int frontier_transit_gate;
+  /* What one foreign tile of transit costs the path, in turns.
+   *
+   * PLACEHOLDER 1.0 and NOT MEASURED. The pf extra-cost scale is
+   * PF_TURN_FACTOR per turn -- the same unit adv_avoid_risks() charges
+   * an enemy ZOC 20 of -- so 1.0 means "a tile of someone else's
+   * ground costs a turn". That is a reference unit, not a fitted
+   * magnitude, and it is flagged in STATUS for a tuning pass. The
+   * price is what keeps `reach` from needing to be a separate
+   * constant: a corridor through a neighbour gets steadily more
+   * expensive the deeper it runs, and amortize() de-ranks the sites
+   * behind it with no special-casing. Only read while
+   * frontier_transit_gate is non-zero. */
+  double frontier_transit_price;
+  /* How bad the relationship may get before transit is refused
+   * outright: 0 admits a PEACE PARTNER (DS_PEACE, DS_ARMISTICE) only,
+   * 1 also a cease-fire, 2 also war and no-contact.
+   *
+   * PLACEHOLDER 0, which is the only value the census argues for: the
+   * question the ownership wall answers wrongly is one of RISK, not
+   * legality (deeptrunk.c's own header block), and a settler that
+   * walks into a war enemy's territory dies there. 1 and 2 exist so a
+   * tuner can find out rather than so anyone can assume. Only read
+   * while frontier_transit_gate is non-zero. */
+  int frontier_transit_stance_floor;
 };
 
 void deep_tuning_init(void);

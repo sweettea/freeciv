@@ -426,6 +426,15 @@ static const struct deep_tuning deep_tuning_defaults = {
   .mil_infra_threat_floor = 0,          /* PLACEHOLDER; 0 refuses
                                          * nothing. Inert while the
                                          * gate is 0 */
+  .frontier_transit_gate = 0,           /* 0 = today's border wall
+                                         * exactly, byte for byte */
+  .frontier_transit_price = 1.0,        /* PLACEHOLDER, unmeasured: one
+                                         * PF_TURN_FACTOR per foreign
+                                         * tile entered. Inert while
+                                         * the gate is 0 */
+  .frontier_transit_stance_floor = 0,   /* PLACEHOLDER; 0 = a peace
+                                         * partner only. Inert while
+                                         * the gate is 0 */
 };
 
 static struct deep_tuning deep_tuning_active;
@@ -770,7 +779,10 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(diplo_evidence_floor) \
   TUNE_INT(diplo_gap_floor) \
   TUNE_INT(mil_infra_gate) \
-  TUNE_INT(mil_infra_threat_floor)
+  TUNE_INT(mil_infra_threat_floor) \
+  TUNE_INT(frontier_transit_gate) \
+  TUNE_DOUBLE(frontier_transit_price) \
+  TUNE_INT(frontier_transit_stance_floor)
 
 static void deep_tuning_load_file(struct deep_tuning *t, const char *path);
 
