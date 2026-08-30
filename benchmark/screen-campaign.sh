@@ -164,9 +164,11 @@ COMMON=(--config "$CFG" --mixed --seeds "$TRAIN" --count 20
         --race 8 --race-z 1.0
         --server "$SERVER" --jobs "$JOBS" --portbase "$PORTBASE")
 
-S1=(--blocks AUCTION,DEFOPS --pop 10 --gens 5 --reeval 3 --reeval-seeds 8)
+# --reeval-seeds 32: chosen 2026-08-30 (bar ~42 against 16-24 point
+# effects; 8 gave a bar of ~84). +192 games per generation.
+S1=(--blocks AUCTION,DEFOPS --pop 10 --gens 5 --reeval 3 --reeval-seeds 32)
 S2=(--blocks BFEAR,BASSAULT,BSITE,BCIVIL --pop 8 --gens 3
-    --reeval 2 --reeval-seeds 8)
+    --reeval 2 --reeval-seeds 32)
 
 echo "=== BUDGET: stage 1 (fit, tier A) ==="
 python3 benchmark/tune.py "${COMMON[@]}" "${S1[@]}" \
@@ -187,7 +189,11 @@ read -r reply
 mkdir -p "$OUT"
 
 echo "=== stage 1: fit tier A on mixed contested ($(date)) ==="
-$N python3 benchmark/tune.py "${COMMON[@]}" "${S1[@]}" --out "$OUT/s1-fit"
+# Start from defaults + the five adjudicated gates (postfix-start.ini):
+# the 2026-08-25 resolution measured gates-on at +16.6/+23.8 over
+# gates-off, so that is the incumbent worth beating.
+$N python3 benchmark/tune.py "${COMMON[@]}" "${S1[@]}" \
+  --start benchmark/tuning/postfix-start.ini --out "$OUT/s1-fit"
 
 echo "=== stage 2: group-screen tier B, from stage 1's vector ($(date)) ==="
 $N python3 benchmark/tune.py "${COMMON[@]}" "${S2[@]}" \
