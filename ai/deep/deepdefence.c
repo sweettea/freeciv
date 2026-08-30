@@ -8097,6 +8097,61 @@ static bool deep_choice_is_founder(const struct adv_choice *choice)
 }
 
 /**********************************************************************//**
+  Charge the military bid the founder bid it is about to displace.
+
+  Every other debit in this seam prices what the BUILD costs -- its
+  upkeep, its switch, its chance of never finishing. None of them
+  prices what the shields would otherwise have bought, and in the band
+  that creates deep's whole city deficit what they would otherwise
+  have bought is a city (131 shields of military against 15 of
+  settlers, T51-75, findings/content-military-gold-2026-08-30.md S2).
+
+  So: when the domestic auction's own winner is a founder, the
+  military side pays `mil_opportunity_price` times that founder's
+  bid. Applied to the bid the auction will actually compare -- after
+  the class scale, the bell and both absolute debits -- because this
+  is a handicap on the COMPARISON, not a cost of the build. Never
+  below zero, and never charged when the domestic winner is a building
+  or a worker: there is no founder being displaced then, and a
+  military tax is not what this is.
+
+  Inert at gate 0.
+**************************************************************************/
+static void deep_mil_opportunity_charge(struct player *pplayer,
+                                        struct city *pcity,
+                                        struct adv_choice *mil,
+                                        const struct adv_choice *dom)
+{
+  const struct deep_tuning *tune = deep_tuning_get();
+  enum deep_want_class cls;
+  adv_want charge, before;
+
+  if (tune->mil_opportunity_gate <= 0
+      || tune->mil_opportunity_price <= 0.0
+      || mil->want <= 0
+      || dom == NULL
+      || dom->want <= 0
+      || !deep_choice_is_founder(dom)) {
+    return;
+  }
+  cls = deep_want_class_of(mil);
+  if (cls != DWC_DEFENDER && cls != DWC_ATTACKER) {
+    return;
+  }
+
+  before = mil->want;
+  charge = (adv_want) (tune->mil_opportunity_price * dom->want);
+  mil->want = MAX(0, mil->want - charge);
+
+  log_base(deep_metric_log_level(),
+           "deep-milopp turn=%d player=\"%s\" city=%d class=%d"
+           " mil=" ADV_WANT_PRINTF " founder=" ADV_WANT_PRINTF
+           " charge=" ADV_WANT_PRINTF " after=" ADV_WANT_PRINTF,
+           game.info.turn, player_name(pplayer), pcity->id, (int) cls,
+           before, dom->want, charge, mil->want);
+}
+
+/**********************************************************************//**
   Does deep's own founder want outbid the military choice, on
   MAGNITUDE, at the stage where the two are still comparable?
 
@@ -8464,6 +8519,13 @@ static void deep_city_choose_build(struct ai_type *ait,
           = deep_prod_keep_credit(pplayer, pcity, &(city_data->choice),
                                   "mil")
             + deep_prod_keep_credit(pplayer, pcity, newchoice, "dom");
+
+        /* The opportunity price, last of all, because it is the only
+         * debit here that is not a property of the build: it is what
+         * the OTHER side of this comparison is worth, so it acts on
+         * the bid the auction is about to read. Off by default. */
+        deep_mil_opportunity_charge(pplayer, pcity, &(city_data->choice),
+                                    newchoice);
 
         dom_won_after
           = deep_merge_domestic_wins(newchoice, &city_data->choice,

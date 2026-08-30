@@ -642,6 +642,27 @@ struct deep_tuning {
   int fear_evidence_gate;
   int fear_evidence_floor;
   double density_fear_capability;
+  /* OPPORTUNITY, off by default (gate 0 charges nothing).
+   *
+   * The defender want is priced against the city's own danger and
+   * against nothing else. What it actually competes with is the
+   * founder bid in the same auction, and in the T51-75 band that
+   * creates deep's entire city deficit the military side delivers 131
+   * shields per player against the settler side's 15 -- so the
+   * marginal defender is bought at a price that never mentions the
+   * city it displaces.
+   *
+   * mil_opportunity_price charges the military bid
+   * price x (the founder bid it is displacing) whenever the domestic
+   * auction's own winner IS a founder, using the bid the auction is
+   * about to compare. At price 1.0 -- the unit case -- a defender has
+   * to beat the founder by the founder's own worth, which is the
+   * plainest statement of "shields spent here are a city not
+   * founded". Nothing is charged when the domestic winner is a
+   * building or a worker: there is no founder to displace, and this
+   * is an opportunity price, not a military tax. */
+  int mil_opportunity_gate;
+  double mil_opportunity_price;
   /* Pre-contact prior from lobby settings: shared-continent startpos
    * on thin land predicts early contact before anyone is met. Value
    * scales by min(1, prior_tiles / land-per-player); off at first

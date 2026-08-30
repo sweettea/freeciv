@@ -121,6 +121,10 @@ static const struct deep_tuning deep_tuning_defaults = {
    * "it cannot reach us properly" discount, rather than a separately
    * invented number. */
   .density_fear_capability = 0.25,
+  .mil_opportunity_gate = 0,            /* off: nothing is charged */
+  /* PLACEHOLDER, untuned. 1.0 is the UNIT CASE -- the defender pays
+   * the whole bid it displaces -- and not a level anyone picked. */
+  .mil_opportunity_price = 1.0,
   .density_prior_value = 20,            /* PLACEHOLDER, untuned */
   .density_prior_tiles = 200,           /* PLACEHOLDER, untuned */
   .wall_fear_weight = 0.3,              /* PLACEHOLDER, untuned */
@@ -499,6 +503,8 @@ static bool deep_arena_manifest_tried = FALSE;
   TUNE_INT(fear_evidence_gate) \
   TUNE_INT(fear_evidence_floor) \
   TUNE_DOUBLE(density_fear_capability) \
+  TUNE_INT(mil_opportunity_gate) \
+  TUNE_DOUBLE(mil_opportunity_price) \
   TUNE_INT(density_prior_value) \
   TUNE_INT(density_prior_tiles) \
   TUNE_DOUBLE(wall_fear_weight) \
