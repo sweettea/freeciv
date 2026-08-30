@@ -1622,6 +1622,12 @@ static int deep_site_lad_noterr = 0;  /* TER_NO_CITIES (incl. all water) */
 static int deep_site_lad_nomin = 0;   /* citymindist vs an existing city */
 static int deep_site_lad_nomap = 0;   /* unknown to us under H_MAP */
 static int deep_site_lad_nolegal = 0; /* native/foreign action refusals */
+/* Tiles the peaceful-border branch refused that the RULESET would have
+ * allowed a city on. The S-FRONTIER assertion, made in play rather than
+ * only by reading: if this is ever nonzero the theft axis is alive on
+ * that ruleset. Counted only at the metric log level, because the extra
+ * city_can_be_built_here() runs once per refused tile. */
+static int deep_site_lad_offlegal = 0;
 
 /* Per-search memo for deep_wait_expected(), which walks the unit list
  * twice per body of water. Demand and supply cannot move DURING a
@@ -2120,6 +2126,7 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
   deep_site_lad_nomin = 0;
   deep_site_lad_nomap = 0;
   deep_site_lad_nolegal = 0;
+  deep_site_lad_offlegal = 0;
   deep_site_lad_tbskip = 0;
   deep_site_lad_tbown = 0;
   deep_site_lad_tbunit = 0;
@@ -2167,9 +2174,54 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
       if (NULL != powner
           && powner != pplayer
           && pplayers_in_peace(powner, pplayer)) {
-        /* Land theft does not make for good neighbors. */
+        /* Land theft does not make for good neighbors -- and it is
+         * not on offer, and these are not the neighbors. S-FRONTIER
+         * opened on this branch, because the city ledger measured it
+         * refusing 43.3 of the 110.5 tiles a failed T51-75 search sees
+         * (39%), unpriced. It is a DEAD axis, twice over.
+         *
+         * (a) The refusal is redundant. city_can_be_built_here()
+         * (common/city.c:1591) drops any FOREIGN-owned tile unless the
+         * ruleset carries a Found City enabler permitting DRO_FOREIGN
+         * -- "Cannot steal borders by settling. This has to be settled
+         * by force of arms." -- and neither benchmarked ruleset does.
+         * civ2civ3 and classic both spell it out as two enablers whose
+         * union is "unclaimed, or ours": pioneer requires
+         * CityTile/Claimed FALSE, domestic requires it TRUE with actor
+         * DiplRel/Foreign FALSE. Ownership, not stance: an ALLY's tile
+         * is as foreign as an enemy's. scripts/check-found-city-
+         * foreign.sh pins that for the benchmarked rulesets, and
+         * deep-siteladder's `offlegal` counts, in play, the tiles this
+         * branch refused that the ruleset would in fact have allowed.
+         *
+         * (b) It is not reached by the case it was written for.
+         * pplayers_in_peace() is TRUE for DS_PEACE, DS_ARMISTICE,
+         * DS_ALLIANCE and DS_TEAM (common/player.c:1418), but
+         * deep_settler_tile_behavior() has already TB_IGNOREd every
+         * tile whose owner is not pplayers_allied() -- DS_ALLIANCE or
+         * DS_TEAM only (deepsettler.c:150, and path_finding.c:288
+         * drops a TB_IGNORE node before it can be offered as a
+         * destination at all). So a DS_PEACE neighbour's tile never
+         * arrives here. Everything this branch counts is an ALLY's or
+         * a team-mate's border, and the ledger line "a peaceful
+         * neighbour's border" names the wrong player.
+         *
+         * What IS deep's own policy, and where the closed frontier
+         * actually costs cities, is that TB_IGNORE one level further
+         * out: stock's phase-1 placement search sets no get_TB
+         * whatever (ai/baseline/default/daisettler.c:913), so a
+         * baseline settler -- NonMil, and therefore exempt from every
+         * players_non_invade() check -- walks through a peace
+         * partner's territory to the free land beyond it, and a deep
+         * settler cannot see that land exists. `off` is the near face
+         * of that wall; `tbown`/`tbland` are the wall itself. See
+         * findings/frontier-verdict-2026-08-30.md. */
         deep_site_lad_off++;
         deep_site_lad_offpeace++;
+        if (log_do_output_for_level(deep_metric_log_level())
+            && city_can_be_built_here(&(wld.map), ptile, punit, FALSE)) {
+          deep_site_lad_offlegal++;
+        }
         continue;
       }
     }
@@ -2361,7 +2413,7 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
              " seen=%d off=%d nofound=%d mindist=%d danger=%d taken=%d"
              " starve=%d scored=%d neg=%d best_raw=%.1f best_net=%.1f"
              " found=%d noterr=%d nomin=%d nomap=%d nolegal=%d"
-             " offbridge=%d offpeace=%d"
+             " offbridge=%d offpeace=%d offlegal=%d"
              " tbskip=%d tbown=%d tbunit=%d tbland=%d",
              game.info.turn, player_name(pplayer), punit->id, boat_cost,
              deep_site_lad_seen, deep_site_lad_off, deep_site_lad_nofound,
@@ -2373,7 +2425,7 @@ struct cityresult *deep_settler_map_iterate(struct ai_type *ait,
              deep_site_lad_noterr, deep_site_lad_nomin,
              deep_site_lad_nomap, deep_site_lad_nolegal,
              deep_site_lad_offbridge, deep_site_lad_offpeace,
-             deep_site_lad_tbskip, deep_site_lad_tbown,
+             deep_site_lad_offlegal, deep_site_lad_tbskip, deep_site_lad_tbown,
              deep_site_lad_tbunit, deep_site_lad_tbland);
   }
 

@@ -1731,6 +1731,13 @@ test('baseline-frozen',
 endif
 
 if get_option('aimodules').contains('deep')
+# Pins the answer S-FRONTIER's first question got: no benchmarked
+# ruleset lets a settler found a city inside a foreign border, so
+# deep's categorical "land theft" refusal is a restatement of a server
+# rule and not a policy a price could replace. If that ever stops being
+# true the frontier-theft axis re-opens, and this is where it shows up.
+test('found-city-foreign',
+     find_program('scripts/check-found-city-foreign.sh'))
 test('deepodds',
      executable('deepodds_test',
                 'tests/deepodds_test.c',
