@@ -32,6 +32,7 @@ The census columns come from deep's own per-player-per-turn lines:
   sites             deep_remaining_sites(), mean over player-turns
 """
 import re
+import subprocess
 import sys
 from pathlib import Path
 from statistics import mean, stdev
@@ -55,6 +56,13 @@ R_LAD = re.compile(r'deep-siteladder turn=\d+ .* found=(\d) noterr=\d+'
 
 
 def gamelog(d):
+    # Finished game logs are zstd-compressed as a matter of course
+    # on this box, so both forms have to be readable.
+    zst = d / "game.log.zst"
+    if zst.exists():
+        out = subprocess.run(["zstdcat", str(zst)],
+                             capture_output=True).stdout
+        return out.decode("utf8", "replace")
     p = d / "game.log"
     return p.read_text(errors="replace") if p.exists() else ""
 

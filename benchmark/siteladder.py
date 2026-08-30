@@ -12,6 +12,7 @@ how much; this is by how much, per search, split by whether the search
 came home with a site.
 """
 import re
+import subprocess
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -29,6 +30,13 @@ COLS = ("seen", "off", "offpeace", "mindist", "nomin", "scored",
 
 
 def logtext(d):
+    # Finished game logs are zstd-compressed as a matter of course
+    # on this box, so both forms have to be readable.
+    zst = d / "game.log.zst"
+    if zst.exists():
+        out = subprocess.run(["zstdcat", str(zst)],
+                             capture_output=True).stdout
+        return out.decode("utf8", "replace")
     p = d / "game.log"
     return p.read_text(errors="replace") if p.exists() else ""
 

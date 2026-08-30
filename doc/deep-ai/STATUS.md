@@ -22939,3 +22939,144 @@ while the empty search is plausibly temporary, adding
 run_hold puts more settlers into the pipeline and (B) decides what
 happens at the end of it, so two separate arms cannot attribute
 either.
+
+## S-SITEPLAN: the join is off the hook — removing it does not give deep its cities back (2026-08-30)
+
+Branch `worktree-agent-a79870f3133b2019c`, 8 commits. The response to
+S-SETTLERPIPE, rescoped mid-session by the user from "a global plan of
+the cities we intend to build" to two minimal gated changes on the
+machinery deep already has. Full write-up:
+`findings/siteplan-verdict-2026-08-29.md`.
+
+**Verdict: `founder_site_cap_gate` and `founder_join_guard_gate` both
+stay 0.** The mechanism works completely and the score does not clear
+its SE. What the epic actually bought is a correction to the census
+that motivated it.
+
+### What landed
+
+- [x] `ai/deep: count the tiles the settler search never looked at` —
+      `tbskip=/tbown=/tbunit=/tbland=` on `deep-siteladder`, counted in
+      `deep_settler_tile_behavior()` itself, because pf drops a
+      `TB_IGNORE` node before the ladder can count it. Computed
+      unconditionally (not behind the metric level) since a later
+      commit reads `tbland` in a decision.
+- [x] `ai/deep: cap founders in flight by the sites still counted` —
+      `founder_site_cap_gate` / `founder_site_cap_slack` (PLACEHOLDER
+      1.0). At the bid seam, and by the same withdraw-and-restore the
+      water gate uses, the founder bid is withdrawn when
+      alive + building-elsewhere ≥ `deep_remaining_sites()` + slack.
+      The deciding city is excluded from its own count so a run in
+      progress is never forfeited. Census `deep-sitecap`, both arms.
+- [x] `ai/deep: hold a founder while a site may open before we could
+      rebuild it` — `founder_join_guard_gate` /
+      `founder_join_guard_mult` (PLACEHOLDER 1.0). Window is one
+      settler-build-time computed from real shield rates (cost over the
+      best city surplus, mean **11.3 turns**); signals are
+      `city::turn_founded`, the `deep-settler cancel` line, and the
+      ladder's `offpeace + mindist + tbland`. Placed after the pool
+      gate so its census counts only the joins it alone prevents.
+      Census `deep-joinguard`, both arms, three signals apart.
+- [x] `benchmark/siteplan.{sh,py}`, `siteladder.py`, `siteplan-more.sh`,
+      `waitdone.sh`, and `benchmark/tuning/defaults.ini` (was untracked;
+      the identity proof needs it).
+- [x] Also removed a stray `|||||||` diff3 marker committed into
+      STATUS.md by the merge at `453d12f523`.
+
+### Identity
+
+3 contested games (seeds 101–103) at compiled defaults, byte-compared
+against the **archived** `tune-postfix/s6-nogates-war` holdout games the
+settler-pipeline census was taken on — config, tuning and runner shas
+all match that run's provenance. **3 identical, 0 different**, with
+four guards against a vacuous pass (must emit `tbskip=` and
+`deep-joinguard`; must not emit either gate's `... gate=1` firing).
+
+### The A/B — 2×2 × two venues, 40 TRAINING seeds a cell, 320 games
+
+`benchmark/siteplan.sh`, pinned `.pin-bin/fix` (`14c7c62ecf3acd97`),
+ports 7850–7899. c10 in the war venue was extended to 60 seeds
+afterwards (it is the headline contrast); every other cell is 40. c10 = this epic's two gates, c01 = `founder_run_hold`
+alone, c11 = all three. Paired against c00 on the same seed.
+
+      venue  cell   score Δ     se      t   wins
+      war    c10     +16.32   9.15  +1.78  36/60
+      war    c01      +2.12  10.12  +0.21  20/40
+      war    c11      -0.72  10.90  -0.07  17/40
+      econ   c10      +7.97   6.26  +1.27  22/40
+      econ   c01      -2.02   8.40  -0.24  24/40
+      econ   c11     +13.78   8.02  +1.72  22/40
+
+- **The mechanism is total.** Joins 25.1 → 0.03 (war) and 21.7 → 0.05
+  (econ); settlers built −6.7 and −7.2 a game; settler production
+  starts −11.4 and −18.0; founders standing +1.3 and +1.4 per seat.
+  The cap fired 47 times a game in both venues and held the hoard to
+  ~10 founders a game against baseline's 19–40, so the guard did not
+  buy baseline's problem.
+- **THE FINDING: the join is not what costs deep its cities.** War
+  cities per seat move +0.01 at T45, +0.02 at T100 and −0.07 at the
+  end — nothing, at any cut, with the join removed entirely. The
+  census's counterfactual (24.3% of joins followed within ten turns by
+  that player founding a city) was a correlation: the settler was
+  dissolved near a city that was going to be founded anyway.
+- **Except in the econ venue, where a third of the deficit closes.**
+  Cities per seat **+0.37 at T60 (t +4.68)**, +0.23 at the end
+  (t +2.01), citizens **+1.45 (t +3.91)** — about 2.2 more cities a
+  game against a 7.5-city deficit. And the citizens very nearly
+  account for the score: +1.45 × 6 seats = +8.7 against a measured
+  +7.97. The gain is real, and smaller than the venue's variance.
+- **`founder_run_hold` alone reproduces S-PRODKEEP and explains it.**
+  Score +2.12 and −2.02 (both a wash, as in the −7.0 ± 16.1 that cell
+  published), and it moves **joins UP**: +4.12 in the war venue
+  (t +2.60) and **+17.38 in the econ one (t +10.57)**. More delivered
+  settlers are delivered to the join. That is exactly what the
+  settler-pipeline census predicted, now measured on its own arm.
+- **The interaction changes sign between venues** (war c11 − c10 ≈
+  −16, econ +6), which is why the census insisted on a factorial:
+  two concurrent single-factor arms would have read the war venue's
+  c11 as a failure of gates that were not failing.
+
+### The instrument, and the correction it makes to S-SETTLERPIPE
+
+43 919 searches over the 40 gate-off war games, per search: `tbland`
+(land the pathfinder never offered) is **3.2**, against `offpeace`
+**66.9** and `nomin` **47.9**. On an empty search, 3.3 against 69.9 and
+47.3. So **the truncated horizon is a thin perimeter, not the missing
+map** — the refusal that dominates an empty search is deep's own
+"land theft does not make for good neighbors" rule, which is policy and
+could be priced instead of refused. Honest caveat: a refused tile also
+blocks passage, so this bounds the *perimeter* and not the area behind
+it; `tbfree` still needs a second pf run with the callback removed.
+
+### The guard as built is not the guard as designed
+
+Its own census, read off the gate-OFF arm (5412 join attempts over 40
+games): the blocked-land signal fires on **99.6%** of attempts, so at
+`mult = 1.0` the guard is equivalent to switching the join off. The
+narrower rule — found-or-cancel recency alone — would have declined
+**44.8%**, and is measured but untested.
+
+### Constants owed to tuning (rule 7)
+
+- `founder_site_cap_slack` = 1.0 **PLACEHOLDER, untuned**, range [0,5],
+  in X/ECON/ALL. Reachable (47 firings a game) but not worth sweeping
+  against this result: what is in question is the join, not the cap.
+- `founder_join_guard_mult` = 1.0 **PLACEHOLDER, untuned**, range
+  [0,4]. Near-pointless to sweep while the blocked signal fires 99.6%
+  of the time — the window barely binds. Fix the signal first.
+- `tune-audit.py` CLEAN at 281/281; `meson test -C build` 7/7.
+
+### Next, in order
+
+1. **The narrower guard** (found-or-cancel only, 44.8%). One mode
+   selector in `struct tuning`, a new binary, and therefore its own
+   identity proof against the c00 games retained here.
+2. **Ask the war venue's stall separately.** It is not the join. An
+   empty search there is 69.9 tiles of peace border and 47.3 of
+   citymindist ring; the first is deep's own policy.
+3. `tbfree` — the area behind the refused perimeter.
+4. The free arrival-turn fix (`site_arrival_turn_gate`), still unbuilt:
+   51% of arrivals land on 0 move fragments and found a turn late.
+
+Retention: `benchmark/results/siteplan/` — 363 games, saves deleted,
+logs filtered to nine deep census tags and zstd-compressed.
