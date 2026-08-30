@@ -5061,6 +5061,93 @@ static adv_want deep_deterrence_dividend(const struct civ_map *nmap,
 }
 
 /**********************************************************************//**
+  The evidence the DEFENSIVE DIPLOMAT is bought on, counted rather than
+  assumed.
+
+  Stock's trigger is `city_data->diplomat_threat`, whose comment says
+  "Enemy diplomat or spy is near the city" (daicity.h:58) and whose
+  code (daimilitary.c:905) is
+
+      if (utype_acts_hostile(unit_type_get(punit)) && 2 >= move_time)
+
+  -- and `utype_acts_hostile()` is TRUE for ACTRES_ATTACK,
+  ACTRES_PILLAGE, ACTRES_BOMBARD and ACTRES_CONQUER_CITY as well as for
+  the spy families (common/actres.c), so an approaching Warriors sets
+  the diplomat flag. Upstream bug 50; ai/default keeps it.
+
+  This counts BOTH populations under stock's own threshold, so the flag
+  and the thing the flag claims to mean can be told apart per
+  city-turn. Nothing here is a new constant: the radius is stock's
+  `2 >= move_time` with move_time approximated as distance over the
+  unit's own move rate (the pathfinder is what makes stock's exact,
+  and a census may not pay for one per city per turn), and the
+  populations are `utype_acts_hostile()` and `UTYF_DIPLOMAT`
+  themselves.
+
+  `gap` is the count of techs the most advanced hostile neighbour in
+  contact knows and we do not -- the quantity stock's own
+  count_stealable_techs() computes for the OFFENSIVE diplomat and
+  never for the defensive one, and the only evidence in the game that
+  says what an enemy diplomat would come here to take.
+**************************************************************************/
+struct deep_dip_evidence {
+  int dip;        /* Foreign diplomat-class units inside stock's window */
+  int host;       /* Foreign hostile-capable units, same window */
+  int dip_eta;    /* Turns to the nearest foreign diplomat, -1 if none */
+  int gap;        /* Techs a hostile neighbour has and we do not */
+};
+
+static void deep_diplomat_evidence(const struct player *pplayer,
+                                   const struct city *pcity,
+                                   struct deep_dip_evidence *e)
+{
+  const struct tile *ptile = city_tile(pcity);
+  const struct research *ours = research_get(pplayer);
+
+  e->dip = e->host = e->gap = 0;
+  e->dip_eta = -1;
+
+  players_iterate_alive(aplayer) {
+    bool counted = FALSE;
+
+    if (aplayer == pplayer || pplayers_allied(pplayer, aplayer)
+        || player_diplstate_get(pplayer, aplayer)->type == DS_NO_CONTACT) {
+      continue;
+    }
+    unit_list_iterate(aplayer->units, aunit) {
+      const struct unit_type *at = unit_type_get(aunit);
+      int mr = MAX(1, at->move_rate / SINGLE_MOVE);
+      int d = real_map_distance(unit_tile(aunit), ptile);
+      int eta = (d + mr - 1) / mr;
+
+      if (eta > 2 || !utype_acts_hostile(at)) {
+        continue;
+      }
+      e->host++;
+      counted = TRUE;
+      if (utype_has_flag(at, UTYF_DIPLOMAT)) {
+        e->dip++;
+        if (e->dip_eta < 0 || eta < e->dip_eta) {
+          e->dip_eta = eta;
+        }
+      }
+    } unit_list_iterate_end;
+    if (counted) {
+      const struct research *theirs = research_get(aplayer);
+      int n = 0;
+
+      advance_index_iterate(A_FIRST, idx) {
+        if (research_invention_state(ours, idx) != TECH_KNOWN
+            && research_invention_state(theirs, idx) == TECH_KNOWN) {
+          n++;
+        }
+      } advance_index_iterate_end;
+      e->gap = MAX(e->gap, n);
+    }
+  } players_iterate_alive_end;
+}
+
+/**********************************************************************//**
   THE ATTACKER'S GARRISON CREDIT (NETTHREAT item 3, promoted to lead by
   the human 2026-08-12: "an attack unit's defensive value is the
   under-credited half, so credit it first").
@@ -5307,10 +5394,29 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
      * choice and merge it back as an emergency-tier want with a
      * calibrated value instead. */
     struct adv_choice *dip = adv_new_choice();
+    struct deep_dip_evidence ev;
 
     deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
     dai_choose_diplomat_defensive(ait, pplayer, pcity, dip, our_def);
     deep_techcensus_mark(ait, pplayer, DEEP_TC_STOCK_DIPLOMAT);
+    /* DIPLOMAT census. 138 shields and 43.5 gold per player-game
+     * (findings/diploprice-verdict-2026-08-30.md §1.1) leave this
+     * function on a flag no line has ever printed, and the archive
+     * can only see the trigger as an END-STATE snapshot. `threat` is
+     * stock's flag, `dip`/`host` are the two populations under
+     * stock's own threshold, and their disagreement is the whole
+     * question. Written for EVERY city-turn, including the quiet
+     * ones: deep-density's silence at near==0 cost the last census
+     * its denominator. Observation only. */
+    deep_diplomat_evidence(pplayer, pcity, &ev);
+    log_base(deep_metric_log_level(),
+             "deep-dipthreat turn=%d player=\"%s\" city=%d threat=%d"
+             " hasdip=%d dip=%d host=%d dipeta=%d gap=%d ourdef=%u"
+             " stockwant=" ADV_WANT_PRINTF,
+             game.info.turn, player_name(pplayer), pcity->id,
+             city_data->diplomat_threat ? 1 : 0,
+             city_data->has_diplomat ? 1 : 0,
+             ev.dip, ev.host, ev.dip_eta, ev.gap, our_def, dip->want);
     if (dip->want > 0) {
       deep_want_apply(dip, (struct deep_want) {
         .tier = DWT_EMERGENCY,

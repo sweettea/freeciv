@@ -72,6 +72,7 @@ static const char *const deep_spy_kind_name[DSK_COUNT] = {
  * line says so by starting again from zero. */
 struct deep_spy_census {
   int seen;             /* Diplomat-turns considered */
+  int garrison;         /* ... spent standing in one of OUR cities */
   int at_seam;          /* ... standing where an action is possible */
   int acted[DSK_COUNT]; /* ... where deep acted, by family */
   int abstained;        /* ... at the seam with no positive deep price */
@@ -345,11 +346,13 @@ static void deep_spy_log(const struct player *pplayer)
   }
 
   log_base(deep_metric_log_level(),
-           "deep-spy turn=%d player=\"%s\" on=%d seen=%d at_seam=%d"
+           "deep-spy turn=%d player=\"%s\" on=%d seen=%d garrison=%d"
+           " at_seam=%d"
            " abstained=%d refused=%d embassy=%d steal=%d incite=%d"
            " sabotage=%d",
            game.info.turn, player_name(pplayer),
-           deep_tuning_get()->spy_enabled, c->seen, c->at_seam,
+           deep_tuning_get()->spy_enabled, c->seen, c->garrison,
+           c->at_seam,
            c->abstained, c->refused, c->acted[DSK_EMBASSY],
            c->acted[DSK_STEAL],
            c->acted[DSK_INCITE], c->acted[DSK_SABOTAGE]);
@@ -406,7 +409,14 @@ void deep_spy_manage(struct ai_type *ait, struct player *pplayer)
 
     home = tile_city(unit_tile(punit));
     if (home != NULL && city_owner(home) == pplayer) {
-      continue;                 /* Garrison duty stays stock's. */
+      /* Garrison duty stays stock's. Counted before it is skipped:
+       * `seen` sums garrison and field turns together, so the 227
+       * diplomat-turns per player-game the archive reports cannot be
+       * split into the two populations the defensive-diplomat want
+       * claims to be buying (findings/diploprice-verdict-2026-08-30
+       * §1.5 item 3). */
+      c->garrison++;
+      continue;
     }
 
     /* Every city we could act against from where we stand. Legality,
