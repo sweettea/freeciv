@@ -214,13 +214,105 @@ def do_march(roots):
         print()
 
 
+RE_LEDGER = re.compile(
+    r'deep-employop turn=\d+ player="[^"]+" op=\d+ target=(-?\d+)'
+    r' muster=(\d+) formed=(\d+) launched=(\d+) waited=(\d+) held=(\d+)'
+    r' members0=(\d+) peak=(\d+) final=(\d+) kills=(\d+) losses=(\d+)'
+    r' why=([a-z-]+) dep=(\S+)')
+
+
+def do_exchange(roots):
+    """The per-operation ledger: what an operation cost and bought.
+
+    `kills` is booked only at deep_op_drive_strike()'s ordered-attack
+    seat, so it counts the kills the operations layer DECIDED. A member
+    that kills something under stock's leash during MARCH is not
+    credited here -- which is the point of the number, not a defect in
+    it (findings/op-exchange-rate-2026-08-29.md section 5).
+    """
+    print("%-8s %7s %8s %8s %7s %8s %9s %9s %9s" % (
+        "cell", "closed", "members0", "final", "kills", "losses",
+        "dead", "poached", "k/death"))
+    for root in roots:
+        rows = []
+        for _, path in games(root):
+            for ln in lines(path):
+                m = RE_LEDGER.search(ln)
+                if m:
+                    rows.append(m.groups())
+        if not rows:
+            continue
+        n = len(rows)
+        members0 = sum(int(r[6]) for r in rows)
+        final = sum(int(r[8]) for r in rows)
+        kills = sum(int(r[9]) for r in rows)
+        losses = sum(int(r[10]) for r in rows)
+        dep = Counter()
+        for r in rows:
+            for part in r[12].split(","):
+                k, v = part.split("=")
+                dep[k] += int(v.split("/")[0])
+        deaths = members0 - final
+        print("%-8s %7d %8.2f %8.2f %7d %8d %9.2f %9.2f %9.3f" % (
+            Path(root).name, n, members0 / n, final / n, kills, losses,
+            dep["dead"] / n, dep["poach"] / n,
+            kills / deaths if deaths > 0 else 0.0))
+
+
+PAIR_KEYS = [("formed", ("form", "muster")), ("launched", ("march",)),
+             ("patience", ("patience",)), ("etacap", ("etacap",)),
+             ("netrefuse", ("netrefuse",)), ("strike", ("strike",)),
+             ("take", ("consolidate",)), ("abort-odds", ("abort-odds",)),
+             ("abort-wait", ("abort-wait",)),
+             ("abort-march", ("abort-march",))]
+
+
+def do_pair(roots):
+    """Paired per-seed op counters, control first.
+
+    paircmp.py owns the scorelog metrics; it cannot own these, because
+    its log reader opens `game.log` and this box's housekeeping
+    compresses finished logs to `game.log.zst`. Same paired arithmetic:
+    per seed the difference is taken, then mean, standard error over
+    seeds, t, and the win count.
+    """
+    base = census(roots[0])[0]
+    for root in roots[1:]:
+        cur = census(root)[0]
+        seeds = sorted(set(base) & set(cur))
+        print("---- %s -> %s   (%d paired seeds)"
+              % (Path(roots[0]).name, Path(root).name, len(seeds)))
+        print("    %-14s %8s %8s %8s %7s %6s   wins"
+              % ("counter", "OFF", "ON", "delta", "se", "t"))
+        for name, verbs in PAIR_KEYS:
+            d = [sum(cur[s][v] for v in verbs) - sum(base[s][v] for v in verbs)
+                 for s in seeds]
+            if len(d) < 2:
+                continue
+            m = statistics.mean(d)
+            se = statistics.stdev(d) / (len(d) ** 0.5)
+            off = statistics.mean(sum(base[s][v] for v in verbs)
+                                  for s in seeds)
+            on = statistics.mean(sum(cur[s][v] for v in verbs)
+                                 for s in seeds)
+            print("    %-14s %8.2f %8.2f %+8.2f %7.2f %+6.2f   %d/%d" % (
+                name, off, on, m, se, m / se if se else float("nan"),
+                sum(1 for x in d if x > 0), len(d)))
+        print()
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         sys.exit(__doc__)
     mode, roots = sys.argv[1], sys.argv[2:]
+    if mode == "pair":
+        do_pair(roots)
+        sys.exit(0)
     if mode == "funnel":
         do_funnel(roots)
     elif mode == "march":
         do_march(roots)
+    elif mode == "exchange":
+        do_exchange(roots)
     else:
         sys.exit(__doc__)

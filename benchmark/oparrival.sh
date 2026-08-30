@@ -193,12 +193,29 @@ do_report() {
   echo "############ the operation funnel, per cell"
   python3 "$here/oparrival.py" funnel $OUT/ab/*
   echo
+  echo "############ the per-operation ledger, per cell"
+  python3 "$here/oparrival.py" exchange $OUT/ab/*
+  echo
+  echo "############ the march, per cell"
+  python3 "$here/oparrival.py" march $OUT/ab/*
+  echo
   echo "############ paired score+kills against cell 000"
   for cell in $CELLS; do
     [ "$cell" = 000 ] && continue
     [ -d "$OUT/ab/$cell" ] || continue
     echo "---- 000 -> $cell"
-    "$here/paircmp.py" "$OUT/ab/000" "$OUT/ab/$cell" --arm deep
+    # The op counters are paired seed by seed alongside score and
+    # kills, so "fewer operations" and "unchanged unitskilled" are read
+    # off ONE table with one set of standard errors.
+    "$here/paircmp.py" "$OUT/ab/000" "$OUT/ab/$cell" --arm deep \
+      --pat "ops-formed=deep-op turn=\S+ player=\"[^\"]+\" op=[0-9]+ (form|muster) " \
+      --pat "ops-launched=deep-op turn=\S+ player=\"[^\"]+\" op=[0-9]+ march " \
+      --pat "ops-strike=deep-op turn=\S+ player=\"[^\"]+\" op=[0-9]+ strike " \
+      --pat "ops-take=deep-op turn=\S+ player=\"[^\"]+\" op=[0-9]+ consolidate " \
+      --pat "ops-abort-odds=deep-op turn=\S+ player=\"[^\"]+\" op=[0-9]+ abort-odds " \
+      --pat "launch-patience=deep-op .* march .* patience=1" \
+      --pat "launch-etacap=deep-netval .* etacap " \
+      --pat "netval-refuse=deep-netval .* refuse "
   done
 }
 
