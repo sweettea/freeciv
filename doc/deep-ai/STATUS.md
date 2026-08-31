@@ -23971,3 +23971,267 @@ All constants **PLACEHOLDER, no values proposed** (rule 7).
 3. **Kept separate, W17-local:** `migration_seed_gate`,
    `migration_seed_margin` for the econ venue's 0.617 razed cities. Do
    not bundle it with either of the above.
+
+---
+
+## S-FRONTIER — the border was legal, the wall behind it was ours (2026-08-30)
+
+**The axis the epic was proposed on is dead by ruleset; the one it
+found instead works exactly as measured and moves no score; the second
+axis is a measured loss. Both gates ship at 0.** Full write-up:
+`findings/frontier-verdict-2026-08-30.md`.
+
+Cell: `benchmark/frontier.sh`, **TRAINING seeds 1–20**, deep self-play,
+four cells × two venues (contested T151, lategame-80 T81), paired on the
+seed, **160 games** plus 3 identity, pinned `.pin-bin/fix2`
+(`41490b381285bce1`), ports 7960–7999, nice 10, jobs 3.
+
+    c00   neither                        the base
+    c10   frontier_transit_gate          the site search may cross a
+                                         peace partner's border
+    c01   founder_floor_gate             an undoable empty search does
+                                         not zero the founder want
+    c11   both                           the corner
+
+### The legality answer: NO, twice over
+
+**(a) No benchmarked ruleset permits founding on a foreign tile.**
+`city_can_be_built_here()` (`common/city.c:1591`) drops any
+foreign-owned tile unless an `ACTRES_FOUND_CITY` enabler permits
+`DRO_FOREIGN` — *"Cannot steal borders by settling. This has to be
+settled by force of arms."* civ2civ3 (the server default, and what every
+config selects by leaving `RULESET` empty) and classic both express the
+opposite as two enablers whose union is "unclaimed, or ours": pioneer
+requires `CityTile/Claimed` FALSE, domestic requires it TRUE with actor
+`DiplRel/Foreign` FALSE. The rule is about **ownership, not stance** —
+it holds at war too — so deep's refusal is strictly *weaker* than the
+server's and deleting it could not found one extra city. **No incident
+is raised, because no action occurs.**
+
+**(b) The bucket names the wrong player.** `pplayers_in_peace()` is TRUE
+for DS_PEACE/ARMISTICE/ALLIANCE/TEAM (`common/player.c:1418`), but
+`deep_settler_tile_behavior()` has already `TB_IGNORE`d every owner that
+fails `pplayers_allied()` — ALLIANCE or TEAM only — and
+`path_finding.c:288` drops such a node before it can be offered. **A
+DS_PEACE neighbour's tile never reaches the branch that refuses it.**
+Everything `offpeace` counts is an ALLY's border. Measured too:
+`offlegal`, the new ladder field counting tiles the branch refused that
+the ruleset would have allowed, is **0 on every line of every game**.
+
+**(c) The `nomin` fallback is dead for the same reason.**
+`citymindist_prevents_city_on_tile()` sits inside
+`city_can_be_built_tile_only()` — a server rule, identical in both
+paired arms. The full arithmetic of a failed T51–75 search (110.45 tiles
+seen): `offpeace` 43.29 + `noterr` 30.39 + `nomin` 30.45 + `nolegal`
+0.21 = **94.5% refused by the server**; `mindist` 4.09 (deep's own
+citymap reservation) + `offbridge` 1.82 + `starve` 0.19 = 5.5% deep's
+own; **`scored` 0.00**. Not one of a failed search's refusals is a
+valuation decision a price could change.
+
+`scripts/check-found-city-foreign.sh` pins (a) as a meson test. Not
+vacuous: `granularity` really does permit founding abroad under three of
+its four government-gated enablers.
+
+### Where the frontier actually closes: the pathfinder, and it is ours
+
+`deep_settler_tile_behavior()` TB_IGNOREs every non-allied owner, so the
+free land BEHIND a peace partner's border is not refused by the search —
+it is **invisible** to it, and every bucket on `deep-siteladder` is
+already post-truncation. **Stock has no wall**:
+`find_best_city_placement()`'s phase 1 sets no `get_TB` at all
+(`ai/baseline/default/daisettler.c:913`), and a settler is NonMil so
+`players_non_invade()` does not stop it walking. Baseline walks through
+a peace partner to the land beyond; deep cannot see it is there.
+
+`deep-sitewall` (new) is the counterfactual: same pf map, same unit,
+same risk callbacks, ownership test replaced by
+`deep_frontier_reachable()`. Contested `war/c00`, 20 games, 8890
+censuses, per empty search:
+
+| band | empty searches with land behind | `wextra` | **`wfree`** | `wbest` | `wturns` |
+|---|---:|---:|---:|---:|---:|
+| T1–25 | **41.0%** | 44.5 | **27.12** | 158.9 | 7.0 |
+| T26–50 | **47.8%** | 46.3 | **10.94** | 149.5 | 13.6 |
+| T51–75 | 10.8% | 13.4 | 0.39 | 5.5 | 17.8 |
+| T76–100 | 4.5% | 7.4 | 0.06 | 0.0 | — |
+| T126–150 | 0.7% | 3.6 | 0.01 | 0.0 | — |
+
+`wfree` is `city_can_be_built_here()`, so founding inside the border
+stays refused; this is land *beyond* it. **The census predicts the gate
+exactly**: run the same reader over `c10` and `wextra` is 0.00 in every
+band, because the counterfactual map and the actual map are then the
+same map.
+
+### The 2×2 (score per seat, paired, n = 20 a cell)
+
+| cell | contested | wins | lategame-80 | wins |
+|---|---|---|---|---|
+| `c10` frontier_transit | −0.05 ± 2.22 | 10/20 | +1.53 ± 1.23 | 11/20 |
+| `c01` founder_floor | **−10.17 ± 1.38 (t −7.36)** | **0/20** | −0.77 ± 1.48 | 12/20 |
+| `c11` both | −7.99 ± 1.93 (t −4.14) | 4/20 | −1.06 ± 1.70 | 12/20 |
+| **INTERACTION** | **+2.23 ± 1.84** | | **−1.82 ± 1.50** | |
+
+Interaction = `(c11 − c10) − (c01 − c00)` per seed; the four cells play
+the same map, so the map cancels and that contrast's SE is the only
+honest one.
+
+**Ship rule (clears its SE by a reasonable margin in BOTH venues):
+neither gate qualifies. Both stay 0.**
+
+### `c10`: the mechanism is a large clean win and the score is a wash
+
+Contested `c10 − c00`: `transit_found` +83.70 ± 5.64 (t +14.85),
+`empty%@26-50` **−10.79 ± 1.75 (t −6.16)**, `empty%@1-25` −2.25 ± 0.71,
+`wpos` +15.45 ± 5.20, founders alive@50 **+0.562 ± 0.108 (t +5.21)**,
+settlers@50 +0.594 ± 0.124, cities@50 +0.062 ± 0.035, **cities@75
++0.147 ± 0.059 (t +2.48)**, cities@100 −0.029, cities@end −0.030,
+**`unitslost`@75 −0.690 ± 0.231 (t −2.98)**, **score −0.052 ± 2.224**.
+City ledger: cumulative extra foundings **+0.113 ± 0.068 through T75**
+and **+0.106 ± 0.057 to the end**, `d(died)` never worse than −0.013 in
+any band.
+
+The falsification did NOT fire — `unitslost` goes *down* in both venues,
+so settlers crossing other people's ground are not dying for it.
+
+**The econ +1.53 is not a replication.** On lategame-80 the wall barely
+binds: `transit_found` 19.55 ± 7.09 against contested's 83.70, and
+`empty%` does not move at all (−0.11 / −0.26 / −0.02, all inside SE).
+The map is roomier; there is little behind the border to reach. A
+1.2-sigma score from an arm whose mechanism hardly ran is not support.
+
+### `c01`: the predicted failure mode, and it is expensive
+
+Contested `c01 − c00`: `floor_kept` +280.30 ± 18.88 (t +14.85), `w0`
+−269.30 ± 19.90 (t −13.53), `wpos` +239.85 ± 20.11, **settlers@end
++0.195 ± 0.060 (t +3.28)** but **cities@100 −0.202 ± 0.096 (t −2.11)**,
+**cities@end −0.276 ± 0.132**, `landarea` −2781 ± 1340, pop −4.523 ±
+0.702 (t −6.45), techs −1.157 ± 0.459, **score −10.17 ± 1.38 (t −7.36),
+0/20**. Cumulative foundings −0.200 ± 0.124 to the end: the arm that
+keeps the founder want alive makes **fewer** cities.
+
+A hoard, exactly as `founder_floor_want = 1.0`'s own comment predicted:
+the want never decays, so a walled-in player keeps bidding for founders
+it cannot place for the remaining 75 turns of a T151 game. The econ
+venue ends at T81 and is a wash, consistent with the same mechanism
+given a third of the time. **A decay sweep is not a rescue** — the
+finding is that the undoability signal is not sufficient on its own and
+that `deep_remaining_sites()` did not bound a standing want.
+
+### The interaction
+
+Inside its SE on score in both venues, but **not** null on what the two
+gates share: contested cities@end **+0.335 ± 0.132 (t +2.54)**, pop
+**+1.409 ± 0.584 (t +2.41)**, `landarea` **+3038 ± 1274 (t +2.39)**. The
+transit gate **partially rescues the floor gate's damage**, as the
+structure predicts — the floor fires on empty searches and the transit
+gate removes them. Two pre-registered predictions were wrong and both
+are instructive: `floor_kept`'s interaction is +20.85 not negative
+(transit raises the *count* of searches while cutting their empty
+*rate*, and the count won), and `c01` was predicted not to move the
+search but moved it hard (`search@26-50` +14.35, t +5.44) — a
+production-side gate reaches the search through the founder population.
+
+### THE FINDING: the conserved founder queue, fourth sighting, and the first that cannot be about shields
+
+S-FEARSEAT freed military shields, S-SITEPLAN stopped dissolving
+founders, S-FEARSINK combined them; all three moved foundings in time
+and none moved the total. **This arm added *sites*** — the input all
+three of those verdicts named as the thing probably missing — and got
+the same answer: +0.113 ± 0.068 cumulative foundings through T75 that
+are worth nothing by T100, with attrition running the treated arm's way
+throughout.
+
+The queue is not conserved because of settler supply, not because of the
+join, and not because of site supply. **Whatever converts a founding
+into score is saturating somewhere else, and no expansion-side lever
+measured on this project has found it.**
+
+### Landed
+
+- [x] `test: assert no benchmarked ruleset permits founding inside a foreign border`
+- [x] `ai/deep: census the free land deep's own border wall hides from its settlers`
+- [x] `ai/deep: let a settler's site search cross a peace partner's border`
+- [x] `ai/deep: floor the founder want when an empty search is undoable`
+- [x] `ai/deep: name a razed city at the source instead of inferring it`
+- [x] `doc: record the frontier legality answer and its pre-registration`
+
+New: `scripts/check-found-city-foreign.sh` + its meson test,
+`benchmark/wallcensus.py`, `benchmark/frontier.{sh,py}`, four
+`benchmark/tuning/frontier-*.ini`.
+
+**Identity:** contested holdout seeds 101–103 at compiled defaults
+reproduce the archived `s6-nogates-war/holdout-report/cfg0` scorelogs
+byte for byte (`id` excluded), **3 identical, 0 different**, four
+vacuity guards held. `meson test -C build` **8/8** (the new
+`found-city-foreign` test is the eighth).
+
+**Correction on the record:** commit `2246fc28ec`'s message gives the
+server-refused share of a failed search's tiles as 99.6%. It is 94.5%
+(104.34 of 110.45). Corrected in the findings doc; the conclusion it
+supports is `scored = 0.00` and is unaffected.
+
+**Known instrumentation caveat:** `deep-transit`'s `n`/`lines` are
+UPPER BOUNDS on search-side crossings — `deep_site_note_transit()`'s
+counter is reset by the site search but the same `get_TB` also serves
+the civilian MOVER's pathfinders, which do not reset it. Found by
+reading after the binary was pinned; not fixed, because a live run may
+not be rebuilt. No outcome metric is affected.
+
+### The free by-product
+
+`funcs.city_destroyed` is now wired (`deepai.c`). `remove_city()` calls
+`city_lost` then `city_destroyed` for the same city
+(`server/citytools.c:1728-1729`) while `transfer_city()` calls
+`city_lost` alone, so a loss followed by a destruction of the same id in
+the same turn is a **razing** and a loss without one a **hand-over** —
+named at the source now, for every removed city in any game including
+`ai/baseline`'s (the hook is `CALL_FUNC_EACH_AI`). `dpai_city_lost()`'s
+*"the server does not say which here"* was wrong and is corrected. Not
+in the 2×2's pinned binary; it is a log line.
+
+### Constants owed to tuning (rule 7)
+
+Six added, **all PLACEHOLDER, none swept** — a sweep on top of a gate
+that is a wash or a loss at its placeholder would be unreadable.
+
+`frontier_transit_gate` 0; `frontier_transit_price` 1.0 (one
+`PF_TURN_FACTOR` per foreign tile — a reference unit, not a fitted
+magnitude); `frontier_transit_stance_floor` 0 (peace partner only; 1
+admits a cease-fire, 2 war); `founder_floor_gate` 0;
+`founder_floor_want` 1.0 (the limit case, whose failure mode this cell
+then measured at −10.17 ± 1.38); `founder_floor_reach_ref` 1.0.
+
+Constants the brief named that were NOT created: `frontier_theft_price`,
+`frontier_theft_stance_floor` and `frontier_theft_reach` price an action
+the server does not permit; `frontier_transit_reach` is subsumed by
+`frontier_transit_price`.
+
+### Next, in order
+
+1. **Stop adding foundings. Find out what a marginal city is worth.**
+   Four independent interventions now agree that at the margin it is
+   worth approximately zero, and the fourth added the input the other
+   three blamed. The chain's next epic belongs on the *conversion* side
+   — what a city produces, and why a T50–75 city does not show up in
+   score by T100 — not on the supply side.
+2. **`deep_remaining_sites()` does not bound a standing want.** `c01`
+   is the evidence. Anything that sizes itself by that estimate
+   (`founder_site_cap`, the founder pool) inherits the same weakness
+   and nobody has checked what it says on a full map.
+3. **The Diplomat line** (S-FEARSINK's §5): a 42% cut of its T1–50
+   shields at no measurable score cost, still the cheapest untested
+   saving on the board.
+4. **A held-out confirm of `founder_site_cap` + `founder_join_guard`
+   (`c01` of S-FEARSINK) at n ≥ 60.** Still the only thing positive in
+   both venues at consistent magnitude across two different bases.
+5. `frontier_transit_gate` is the one gate here worth a **held-out**
+   look before it is abandoned: its mechanism is the largest and
+   cleanest any expansion arm has produced (`empty%` −10.8 at t −6.16,
+   `unitslost` DOWN) and its score is a wash rather than a loss. If
+   item 1 ever finds the conversion defect, this gate is the supply
+   side that would then pay.
+
+Retention: `benchmark/results/frontier/` — 163 games, saves deleted,
+logs filtered to six deep census tags and zstd-compressed (75 MB),
+`report.txt` carrying every table above plus the wall census and the
+city ledger for both venues.
