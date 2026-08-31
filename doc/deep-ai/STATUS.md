@@ -24235,3 +24235,227 @@ Retention: `benchmark/results/frontier/` — 163 games, saves deleted,
 logs filtered to six deep census tags and zstd-compressed (75 MB),
 `report.txt` carrying every table above plus the wall census and the
 city ledger for both venues.
+
+## S-MARGINAL — a city is worth 7 to 17 points, and nobody had measured it (2026-08-30)
+
+**Offline analysis of finished data. NO GAMES WERE RUN.** Full write-up:
+`findings/marginal-city-2026-08-30.md`. Reader:
+`benchmark/marginalcity.py`. Designed and NOT launched:
+`benchmark/stacked-lever.sh` + `benchmark/tuning/stacked-{off,on}.ini`.
+
+S-FRONTIER §6 closed by asking for exactly this: *"stop adding
+foundings and go find out what a marginal city is worth, because four
+independent interventions now agree that at the margin it is worth
+approximately zero."*
+
+**It is not approximately zero. It is +6.98 ± 0.59 score at T150 for a
+T51–75 contested founding and +17.13 ± 0.94 for a T1–25 one.** The four
+epics moved the city count by +0.02 to +0.15 a seat, which at that
+price is +0.04 to +2.15 points, against cells whose score SE was 0.85
+to 2.15. **Every one of those cells was built to fail:** the effect it
+was looking for was a third to a half of its own noise floor before the
+first game ran.
+
+### The estimator
+
+One observation per SEAT per game; regress an end-of-game outcome on the
+cities that seat FOUNDED in each 25-turn band, with a fixed effect for
+(arm, seed) so only between-seat variation inside one game identifies
+the coefficient, and with cities taken and cities lost as their own
+regressors. Cluster-robust SEs on the game.
+
+Three self-checks before any number is used. The same regression with
+the end **city count** as the outcome returns **1.00 ± 0.00 for every
+band** and −0.99 ± 0.01 for `lost`, so the event extraction is exact.
+The separately-estimated citizen, tech and culture coefficients sum back
+through `get_civ_score()` to within **0.16 at T51–75**. And deep and
+baseline price a same-band city identically, which a selection artefact
+would have to reproduce in two AIs that choose entirely different sites.
+
+**Caveat stated in the doc and not hidden:** this is observational and
+an upper bound (better land is not a regressor). The experimental
+cross-check — regressing paired d(score) on paired d(cities@end) across
+the 13 arms of each venue, treatment as instrument — gives **+4.82 ±
+2.09 (econ, t 2.3)** and +6.9 ± 7.7 / +19.6 ± 10.8 (war), bracketing it
+from the other side; the two biases run opposite ways and meet.
+
+### 1. The price list
+
+**contested / war, 120 gate-off TRAINING games (the c00/off cells of all
+four epics), 941 seats, at T150:**
+
+| founded in | score | citizens | techs | culture |
+|---|---:|---:|---:|---:|
+| **T1–25** | **+17.13 ± 0.94** | 7.02 ± 0.27 | 2.58 ± 0.25 | 92.3 ± 16.7 |
+| **T26–50** | **+12.44 ± 0.60** | 6.16 ± 0.16 | 1.73 ± 0.13 | 48.4 ± 10.9 |
+| **T51–75** | **+6.98 ± 0.59** | 4.45 ± 0.25 | 1.00 ± 0.11 | 18.4 ± 6.8 |
+| T76–100 | +5.97 ± 0.43 | 4.83 ± 0.21 | 0.72 ± 0.11 | −1.3 ± 7.2 |
+| T101–125 | +5.24 ± 0.55 | 4.00 ± 0.22 | 0.72 ± 0.12 | 6.5 ± 8.9 |
+| T126–150 | +5.18 ± 2.29 | 2.92 ± 0.54 | 0.85 ± 0.44 | 21.9 ± 43.5 |
+| *taken* | +24.99 ± 1.55 | | | |
+| *lost* | −14.16 ± 1.04 | | | |
+
+**lategame-80 / econ, 100 games, 604 seats, at T80:** T1–25
+**+6.13 ± 0.44**, T26–50 **+4.36 ± 0.48**, T51–75 **+3.04 ± 0.30**,
+taken +14.31 ± 0.62, lost −7.05 ± 0.33.
+
+A city is an annuity and the coefficient is the remaining term. The
+econ venue does not disagree about what a city is worth per turn; it
+disagrees about how many turns are left (it stops at T81, and the tech
+column — the compounding half — is 0.16 there against 1.00 on
+contested).
+
+**Eight independent estimates** of a T51–75 contested city, over two
+tunings (`s5-defaults`, `s6-nogates`), two AIs and two seed pools, span
+**6.98 to 8.25**: deep s6 8.25 ± 2.08, deep s5 8.06 ± 1.28, **baseline
+7.87 ± 1.15**, training pool 6.98 ± 0.59. (`w25-screen-corpus/war` is
+byte-identical to `s6-nogates-war`, 20/20 scorelogs with `id` excluded,
+and is not counted twice.)
+
+### 2. There is no yield defect, and the count closes the gap
+
+Per-band coefficients, deep minus baseline, contested at T150:
+−0.79 ± 2.46, −0.11 ± 1.44, **+0.26 ± 1.75**, −1.56 ± 1.53,
+−1.37 ± 2.27, −10.29 ± 6.52 (last cohort 0.075 foundings a seat). Econ:
+−0.73 ± 0.98, +1.11 ± 1.06, +0.87 ± 1.23. **All inside SE.** Given the
+same band, deep converts a city into score exactly as well as baseline.
+
+So the whole gap is the count — and the count at this price closes it.
+Valuing the city ledger's missing foundings:
+
+    contested  -0.100(17.13) -0.006(12.44) -0.531(6.98)
+               -0.125(5.97)  +0.019(5.24)  +0.025(5.18)  = -6.01
+               observed paired score gap                   -7.05 ± 2.80
+
+    econ       -0.508(6.21)  -0.525(4.16)  -0.150(3.41)
+               +0.058(0.17)                               = -5.84
+               observed paired score gap                   -7.33 ± 2.48
+
+**86% of deep's contested score deficit and 80% of its econ one is the
+foundings it does not make, priced at the rate deep's own cities earn.**
+Crude exchange rate: 10.97 score/city (war), 7.21 (econ).
+
+### 3. The four epics, re-read: consistent with the effect AND with zero
+
+Predicted = paired per-band founding delta × the price list, SE
+propagated from both factors. Contested, per seat:
+
+| arm | predicted | observed | obs − pred |
+|---|---:|---:|---:|
+| `mil_opportunity_gate` | **+2.15 ± 1.28** | −1.05 ± 2.12 | −3.19 ± 2.48 |
+| cap+guard (fearsink `c01`) | +0.20 ± 1.00 | +2.08 ± 1.82 | +1.88 ± 2.08 |
+| cap+guard (siteplan `c10`, n=60) | −0.51 ± 0.59 | +2.36 ± 1.30 | +2.88 ± 1.43 |
+| `frontier_transit_gate` | +0.77 ± 1.13 | +0.12 ± 2.15 | −0.65 ± 2.42 |
+| `boat_shadow_gate` | +0.04 ± 0.35 | −0.46 ± 0.85 | −0.49 ± 0.92 |
+| `founder_floor_gate` | −0.97 ± 0.93 | **−10.17 ± 1.38** | **−9.20 ± 1.67** |
+
+lategame-80: `mil_opportunity` +0.28 ± 1.01 vs +0.28 ± 1.86; cap+guard
++1.49 ± 0.82 vs +2.10 ± 1.19 and +1.22 ± 0.52 vs +2.02 ± 0.87;
+siteplan `c11` **+2.15 ± 0.63 vs +2.32 ± 1.12**; transit −0.40 vs
++1.50; boat +0.43 vs −0.70. **Eleven of thirteen econ residuals inside
+1.5 SE**, mean +0.47.
+
+**Verdict.** The four positive arms are consistent with the predicted
+small positive effect and equally consistent with zero — every residual
+inside 2.1 SE, every observed interval containing 0. **The cells did not
+choose between the hypotheses and could not have.** The only arms the
+model fails are `founder_floor_gate` and transit+floor, whose damage
+runs through a settler hoard (`settlers@end` +0.195 ± 0.060, pop
+−4.52 ± 0.70) rather than through cities — which is the model behaving
+correctly by refusing to explain a non-founding mechanism.
+
+### 4. THE METHODOLOGICAL FINDING: the wrong meter
+
+Pooled paired per-seed SD, per seat, over the 13 arms of each venue:
+
+| venue | sd(score) | sd(cities@end) |
+|---|---:|---:|
+| contested | **7.98** | **0.319** |
+| lategame-80 | **6.39** | **0.816** |
+
+Paired seeds per cell to see an effect at z = 2:
+
+| target | contested | lategame-80 |
+|---|---:|---:|
+| score +1 | **255** | 164 |
+| score +2 | 64 | 41 |
+| score +4 | 16 | 11 |
+| cities +0.10 | **41** | 267 |
+| cities +0.20 | 11 | 67 |
+
+At 10.41 score a city, the war venue's city meter has a
+score-equivalent SD of 3.32 against the score's 7.98: **2.4× tighter in
+SD, 5.8× cheaper in games.** Four epics ran 160–360 games each,
+reported a city effect at t = 2.0–5.2, and then adjudicated on a column
+that needed 255 games a cell to resolve what the city column had
+already found. **The ship rule was applied to the noisier of the two
+available statistics.**
+
+### 5. Designed, NOT launched: `benchmark/stacked-lever.sh`
+
+`off` (all gates 0) vs `on` (`mil_opportunity_gate`,
+`founder_site_cap_gate`, `founder_join_guard_gate`,
+`frontier_transit_gate`, `boat_shadow_gate`), **100 TRAINING seeds ×
+2 venues × 2 cells = 400 games** + 3 identity. Every constant at its
+PLACEHOLDER (rule 7). n = 100 is both what the pessimistic case needs
+and the entire training pool (`seeds/train.txt` is 1–100).
+
+Included because each has a city effect clearing its SE in ≥ 1 venue
+with `unitslost` flat or falling in both. **Excluded:**
+`founder_floor_gate` (−10.17 ± 1.38, 0/20, non-city channel) and
+`founder_run_hold` (war interaction with the cap cost ~16 points).
+
+Expected, stated in the script header as a range because the
+sub-additivity is measured (cap × price: `milopp_fired` −41.70 ± 9.80 a
+game with the cap on):
+
+|  | additive | half-additive | SE at n=100 |
+|---|---:|---:|---:|
+| war cities@end | +0.219 ± 0.113 | +0.110 | 0.032 |
+| war score | +3.16 ± 2.01 | +1.58 | 0.80 |
+| econ cities@end | +0.423 ± 0.373 | +0.212 | 0.082 |
+| econ score | +1.80 ± 1.54 | +0.90 | 0.64 |
+
+**Pre-registered:** primary endpoint **cities per seat**, secondary
+score; falsification is `unitslost` at T75; a null is cities@end inside
+its SE in both venues, or a score delta under half the additive
+prediction *with* the city delta at full size (which would be a new
+finding). It is **the corner, not the factorial** — a five-cell design
+at n = 100 is 1000 games — and the header says so.
+
+### Landed
+
+- [x] `benchmark: price a marginal city by its founding band` (`marginalcity.py`)
+- [x] `doc: price a marginal city and re-read four epics against it`
+- [x] `benchmark: add the stacked-lever cell at the n its effect needs`
+
+`tune-audit.py`: **CLEAN, 311/311.** No source changed; no games run;
+every corpus read read-only.
+
+### Next, in order
+
+1. **Run `benchmark/stacked-lever.sh` at n = 100.** 400 games. The only
+   design on the board that lifts the four surviving mechanisms above
+   the noise floor of the venue that judges them.
+2. **Adopt cities-per-seat as the primary endpoint of every expansion
+   cell**, score secondary, stated in the cell's header. Free, and worth
+   a factor of six in games. Does NOT generalise to military or economy
+   levers, whose score channel is not cities.
+3. **Re-read the shelved gates against their predicted effects rather
+   than against zero.** `boat_shadow_gate` is predicted +0.04 ± 0.35 and
+   +0.43 ± 0.52: a correctness fix that was never going to move score,
+   and it should be judged on `unitslost` and the 81.2% of firings it
+   deletes.
+4. **T1–25 is where the money is** — 17.13 a city against 6.98 — and
+   nothing on this chain has moved it (the four epics' T1–25 deltas run
+   −0.008 to +0.075). Deep founds 1.575 a seat there against baseline's
+   1.675; that −0.100 ± 0.065 is worth −1.71 score and is the cheapest
+   *unattempted* city on the board.
+
+### Correction to the record
+
+S-FRONTIER's *"four independent interventions now agree that at the
+margin it is worth approximately zero"* should read: *four independent
+interventions moved the city count by an amount whose score consequence
+was three to ten times smaller than the SE of the column they were read
+in.* They agree about the foundings. None of them measured a value.
