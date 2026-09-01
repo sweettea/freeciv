@@ -314,6 +314,12 @@ do_report() {
     echo "#### the value table this venue's prediction was made with"
     "$here/marginalcity.py" value --root "$v-off=$OUT/$v/off"
     echo "#### SECONDARY: paircmp off -> on"
+    # paircmp.py reads metrics.csv, which extract.py writes (the first
+    # run of this report, 2026-08-31, died here with FileNotFoundError).
+    for c in $CELLS; do
+      "$here/extract.py" --root "$OUT/$v/$c" \
+        --csv "$OUT/$v/$c/metrics.csv" >/dev/null 2>&1
+    done
     "$here/paircmp.py" "$OUT/$v/off" "$OUT/$v/on" --arm deep
     echo "#### the city ledger, births and deaths by band"
     "$here/cityledger.py" --root "$OUT/$v/off" --root "$OUT/$v/on"
