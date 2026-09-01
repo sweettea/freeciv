@@ -24459,3 +24459,56 @@ margin it is worth approximately zero"* should read: *four independent
 interventions moved the city count by an amount whose score consequence
 was three to ten times smaller than the SE of the column they were read
 in.* They agree about the foundings. None of them measured a value.
+
+## S-STACKED — the five-gate expansion stack clears its pre-registered bar in both venues (2026-08-31)
+
+**403 games, 100 paired TRAINING seeds × 2 venues, off vs on.** Full
+write-up: `findings/stacked-lever-2026-08-31.md`. Report:
+`benchmark/results/stacked/report.txt`. This is the cell S-MARGINAL
+designed and did not launch; it is the first cell on the project sized
+to see its own effect.
+
+| | war (contested) | econ (lategame-80) |
+|---|---:|---:|
+| **cities / seat** (primary) | **+0.15 ± 0.04** (t 3.7) | **+0.60 ± 0.07** (t 8.3) |
+| **score / seat** | **+2.39 ± 1.02** (t 2.3, 58/100) | **+4.12 ± 0.61** (t 6.8, 79/100) |
+| unitslost (falsification) | −1.88 ± 0.89 (falls) | +0.31 ± 0.26 (loss *rate* flat, 27.2 → 27.0 %) |
+| pre-registered score, additive / half | +3.16 / +1.58 | +1.80 / +0.90 |
+
+`on` = `mil_opportunity_gate`, `founder_site_cap_gate`,
+`founder_join_guard_gate`, `frontier_transit_gate`, `boat_shadow_gate`
+at 1, every gain at its compiled placeholder; `off` proven byte-identical
+to compiled defaults (identity 3/3 SAME). All five gates fired in both
+venues. Implied value of a stacked city: 16 (war) / 6.9 (econ) points —
+S-MARGINAL's price list, reproduced experimentally. Foundings gained in
+every band, most in T26–50 (+0.208 war, +0.617 econ), where the ledger
+put the deficit; no attrition price.
+
+Flagged, not hidden: econ `unitslost` +0.31 ± 0.26 is 1.2 SE by the
+letter of the pre-registration; the on arm builds +1.37 more units and
+loses them at the same rate. War, the venue where losses were the
+suspected purchase, falls by 2.1 SE. Both venues end with ~1.7 more live
+settlers a seat (100/100, 97/100) — the cap and guard holding inventory
+past the last site; first knob of the tuning pass.
+
+### Landed
+- `7c32edceb4 benchmark: make the stacked report render end to end`
+  (extract.py before paircmp; cityledger.py +x)
+- this doc and `findings/stacked-lever-2026-08-31.md`
+
+### Running
+- **Holdout report**, seeds 101–120, both arms fresh, 83 games,
+  `benchmark/results/stacked-holdout/` (`OUT=` override of the same
+  script). Reporting only; nothing selects on it.
+- Screen campaign, r0-AUCTION gen 3 of 5: incumbent −28.2 ± 26.0 still
+  unbeaten at the 2σ replicated bar (gen bests −6.9, −5.6, +5.6, +11.0).
+
+### Next, in order
+1. Append the holdout to the findings doc.
+2. `ai/deep: enable the five adjudicated expansion gates by default` —
+   one commit, numbers in the body. The campaign's incumbent
+   (`postfix-start.ini`) predates these five; its holdout must be read
+   against a defaults vector that includes them.
+3. Settler-inventory relaxation as a placeholder knob; then the tuning
+   pass over the stack's seven placeholders on the city endpoint.
+4. Re-ledger deep vs baseline with the stack on; the T1–25 band next.
