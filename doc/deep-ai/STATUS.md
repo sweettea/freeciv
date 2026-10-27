@@ -24512,3 +24512,47 @@ past the last site; first knob of the tuning pass.
 3. Settler-inventory relaxation as a placeholder knob; then the tuning
    pass over the stack's seven placeholders on the city endpoint.
 4. Re-ledger deep vs baseline with the stack on; the T1–25 band next.
+
+## S-PANEL — the T50/T100 doctrine panel, and what it saw on day one (2026-10-27)
+
+**Zero games.** `benchmark/panel.py` reads per-seat milestones at fixed
+turns from scorelog tags every arm already logs (cities, pop/city, live
+settlers, units/city, gold band, culture, achievement jumps, Monarchy+
+share), paired by seed. Proposed by `findings/theory-of-play-2026-10-26.md`
+§H; readings in `findings/panel-2026-10-27.md`.
+
+- **Deep leads at T50 and loses T50–T100** (contested, 20 holdout seeds):
+  score +1.5 at T50, city gap +0.1 → −0.74 by T100 → −6.85 ± 2.61 at T150.
+- **Three deficits visible at T50 that no end-of-game table showed:**
+  units/city 3× baseline (1.02 vs 0.33), treasury a quarter of baseline's
+  and never in the 150–500 band, live founders 0.6 vs 1.4 (0.5 vs 2.9 at
+  T100). Baseline books ~4× the achievements by T100 and +135 culture:
+  **~6 of the 6.85-point gap is the unclaimed culture lumps.**
+- **First direct deep-with-stack-on vs baseline** (same 20 holdout seeds):
+  score **−4.15 ± 2.99** at T150 (was −6.85 gates-off), cities −0.47
+  (was −0.64). Direction only at n = 20; the stack closes ~40% of the gap.
+- **The stack's settler inventory starts at T50**, not late (+0.97 live
+  settlers at T50, +1.79 at T100), and restores deep's stock to about
+  baseline's — without baseline's founding rate. After the stack the
+  binding constraint is **site acceptance** (deep-side refusals), not
+  settler supply.
+- Econ: baseline holds **7 live founders a seat at T40** vs deep's 0.9
+  and still founds more; smaller cities, permanent stock, wins.
+
+### Landed
+- `e9de7583c9 benchmark: add the T50/T100 doctrine panel read from scorelogs`
+- `168bfb6de7 doc: derive a theory of play …` (civ2civ3 and classic)
+- `fa37691081 doc: inventory every tuning constant …` (311 knobs; ~140 dead at defaults)
+- `d7a4be4623 benchmark: make params.ini defaults agree with the compiled defaults`
+  (three lift knobs were stale in every tune.py campaign arm; holdouts unaffected)
+
+### Running
+- Informed-starting-values hypothesis (Fable) → blind unit audit (Opus).
+
+### Next, in order
+1. Achievements/culture as a priced term (`Map_Known` = explorers;
+   `Multicultural` = first conquest): the cheapest ~5 points on the board.
+2. Site-acceptance audit: leave-one-out over deep's own refusals (TB_IGNORE
+   wall, site thresholds, crowding) on the cities meter at n = 60.
+3. The empty-city defender switch as a placeholder gate (3× army at T50).
+4. Run the panel on every cell; add it to the holdout scripts.

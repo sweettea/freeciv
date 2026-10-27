@@ -18,7 +18,7 @@ Per seat at turn T (the last logged turn <= T):
     pop           tag 0
     pop/city      0 / 3              Temple-gate compliance is >= 5 at T100
     techs         tag 4
-    mil/city      5 / 3              doctrine: <= 1.0 at T50
+    mil/city      5 / 3              munits = every non-special unit (server/report.c get_munits), so this is UNITS per city, founders and workers included; doctrine: <= 1.0 at T50
     gold          tag 14             doctrine band 150..500; both tails fail
     culture       tag 29             a +1000 step between samples is an achievement
     gov           tag 23             ruleset index; share Monarchy-or-better
@@ -106,14 +106,14 @@ def seed_means(games, cuts):
                       "culture", "achievements", "monarchy_plus", "tribal", "score"):
                 m[k] = st.mean(r[k] for r in rs)
             m["pop_per_city"] = st.mean(r["pop"] / r["cities"] for r in rs if r["cities"] > 0) if any(r["cities"] > 0 for r in rs) else 0.0
-            m["mil_per_city"] = st.mean(r["munits"] / r["cities"] for r in rs if r["cities"] > 0) if any(r["cities"] > 0 for r in rs) else 0.0
+            m["units_per_city"] = st.mean(r["munits"] / r["cities"] for r in rs if r["cities"] > 0) if any(r["cities"] > 0 for r in rs) else 0.0
             m["gold_in_band"] = st.mean(1.0 if 150 <= r["gold"] <= 500 else 0.0 for r in rs)
             out.setdefault(seed, {})[t] = m
     return out
 
 
 COLS = [("cities", "%.2f"), ("pop", "%.1f"), ("pop_per_city", "%.2f"),
-        ("techs", "%.1f"), ("mil_per_city", "%.2f"), ("settlers", "%.2f"),
+        ("techs", "%.1f"), ("units_per_city", "%.2f"), ("settlers", "%.2f"),
         ("gold", "%.0f"), ("gold_in_band", "%.0%"), ("culture", "%.0f"),
         ("achievements", "%.2f"), ("monarchy_plus", "%.0%"), ("tribal", "%.0%"),
         ("score", "%.1f")]
