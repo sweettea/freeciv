@@ -22,8 +22,16 @@ for line in body.split('\n'):
 C_uses = '\n'.join(l for l in C.split('\n') if not l.lstrip().startswith('#define'))
 loaded = {n: t for t, n in re.findall(r'TUNE_(DOUBLE|INT|BOOL)\((\w+)\)', C_uses)}
 
-# 3. defaults
+# 3. defaults -- the VALUES too, not only the names. On 2026-10-26 the
+#    knob inventory found three params.ini defaults that disagreed with
+#    the compiled ones (lift_op_slots 4 vs 0, lift_manifest_max 3 vs 8,
+#    lift_drop_radius 2 vs 12); tune.py seeds every search candidate
+#    from the params.ini column and writes all 311, so every campaign
+#    arm had silently carried the stale values. --report-holdout passes
+#    a file through as-is, so holdout numbers were unaffected.
 defaults = set(re.findall(r'^\s*\.(\w+)\s*=', C, re.M))
+default_vals = {n: float(v) for n, v in
+                re.findall(r'^\s*\.(\w+)\s*=\s*([-\d.]+)', C, re.M)}
 
 # 4. params registry
 params = {}
@@ -59,6 +67,18 @@ for name, ctype in fields:
         bad['in params.ini but NOT in ALL block'].append(name)
     if name in params:
         kind = params[name][3]
+        if name in default_vals:
+            try:
+                pd, lo, hi = (float(params[name][0]), float(params[name][1]),
+                              float(params[name][2]))
+            except ValueError:
+                pd = lo = hi = None
+            if pd is not None and abs(pd - default_vals[name]) > 1e-9:
+                bad['params.ini default != compiled default'].append(
+                    '%s (ini %g, compiled %g)' % (name, pd, default_vals[name]))
+            if lo is not None and not lo <= default_vals[name] <= hi:
+                bad['compiled default outside params.ini range'].append(
+                    '%s (compiled %g, range %g..%g)' % (name, default_vals[name], lo, hi))
         if (ctype == 'double') != (kind == 'float'):
             bad['params.ini type mismatch'].append(
                 '%s (struct %s, ini %s)' % (name, ctype, kind))
