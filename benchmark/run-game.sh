@@ -24,7 +24,7 @@
 #   scorelog.txt   SCORELOG2 per-turn statistics for every player
 #   maphash.txt    sha256 of the turn-1 autosave's terrain rows
 #   commands.serv  the exact server commands used
-#   provenance.txt sha256 of the server binary, config, tuning and this
+#   provenance.txt sha256 of the server binary, its libfreeciv.so, config, tuning and this
 #                  runner -- what any later pairing of two result dirs
 #                  has to agree on to be a single-variable comparison
 #   DONE           written last; presence marks a completed run
@@ -144,6 +144,15 @@ OUT=$(readlink -f "$OUT")
 # answerable from the artefacts.
 {
   echo "server=$SERVER sha256=$(sha256sum "$SERVER" | cut -d' ' -f1)"
+  # The server loads the libfreeciv.so beside it, so that library is the
+  # code that plays; a pin that copies only the binary is not a pin
+  # (the 2026-08-30 screen campaign lost 3660 games to exactly that).
+  solib="$(dirname "$(readlink -f "$SERVER")")/libfreeciv.so"
+  if [ -f "$solib" ]; then
+    echo "libfreeciv=$solib sha256=$(sha256sum "$solib" | cut -d' ' -f1)"
+  else
+    echo "libfreeciv=none sha256=none"
+  fi
   echo "config=$(readlink -f "$CONFIG") sha256=$(sha256sum "$(readlink -f "$CONFIG")" | cut -d' ' -f1)"
   if [ -n "${TUNING:-}" ]; then
     echo "tuning=$(readlink -f "$TUNING")" \
