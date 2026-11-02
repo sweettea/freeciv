@@ -251,6 +251,7 @@ void kill_player(struct player *pplayer)
       map_claim_ownership(ptile, nullptr, nullptr, FALSE);
     }
     if (extra_owner(ptile) == pplayer) {
+      map_world_changed();
       ptile->extras_owner = nullptr;
     }
   } whole_map_iterate_end;
@@ -838,6 +839,7 @@ static void maybe_claim_base(struct tile *ptile, struct player *new_owner,
       map_claim_base(ptile, pextra, new_owner, old_owner);
     } extra_type_by_cause_iterate_end;
 
+    map_world_changed();
     ptile->extras_owner = new_owner;
   }
 }

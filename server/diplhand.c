@@ -133,6 +133,7 @@ void set_diplstate_type(struct player_diplstate *state1,
 
   max = dst_closest(max, state1->max_state);
 
+  map_world_changed();
   state1->type = type;
   state2->type = type;
   state1->max_state = max;

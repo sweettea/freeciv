@@ -4132,6 +4132,7 @@ void unit_change_homecity_handling(struct unit *punit, struct city *new_pcity,
 
     unit_list_remove(old_owner->units, punit);
     unit_list_prepend(new_owner->units, punit);
+    map_world_changed();
     punit->owner = new_owner;
 
     /* Activate AI control of the new owner. */
@@ -6934,6 +6935,7 @@ void handle_unit_orders(struct player *pplayer,
     return;
   }
 
+  map_world_changed();
   punit->has_orders = TRUE;
   punit->orders.length = length;
   punit->orders.index = 0;

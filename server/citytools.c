@@ -1196,6 +1196,7 @@ bool transfer_city(struct player *ptaker, struct city *pcity,
   map_clear_border(pcenter);
   /* city_thaw_workers_queue() later */
 
+  map_world_changed();
   pcity->owner = ptaker;
   pcity->capital = CAPITAL_NOT;
   pcity->acquire_t = CACQ_CONQUEST;
