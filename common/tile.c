@@ -73,7 +73,7 @@ void tile_set_owner(struct tile *ptile, struct player *pplayer,
       /* City tiles are always owned by the city owner. */
       || (tile_city(ptile) != nullptr || ptile->owner != nullptr)) {
     if (ptile->owner != pplayer) {
-      map_world_tile_changed(ptile);
+      map_world_tile_owner_changed(ptile, ptile->owner, pplayer);
     }
     ptile->owner = pplayer;
     ptile->claimer = claimer;

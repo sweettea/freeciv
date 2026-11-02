@@ -149,6 +149,20 @@ bv_extras get_tile_infrastructure_set(const struct tile *ptile,
  * a recomputation. */
 static unsigned int world_generation = 0;
 
+/* The last generation issued. A bump always issues a new value, so a
+ * value that world_generation returns to (see
+ * map_world_tile_owner_changed()) is never reissued for a different
+ * world. */
+static unsigned int world_generation_issued = 0;
+
+/* The last tile owner change, while it is the last bump. */
+static struct {
+  const struct tile *ptile;
+  const struct player *old_owner;
+  unsigned int before;  /* world_generation before the change. */
+  unsigned int after;   /* world_generation the change issued. */
+} world_owner_undo = { nullptr, nullptr, 0, 0 };
+
 /* Per player slot: changes whenever the set of tiles the player knows
  * changes. Pathfinding reads tile knowledge only when the parameter is
  * not omniscient, so caches of such results compare this as well as
@@ -172,7 +186,8 @@ static bool map_world_tile_is_real(const struct tile *ptile)
 ***********************************************************************/
 void map_world_changed(void)
 {
-  world_generation++;
+  world_generation_issued++;
+  world_generation = world_generation_issued;
 }
 
 /*******************************************************************//**
@@ -186,6 +201,47 @@ void map_world_tile_changed(const struct tile *ptile)
   if (map_world_tile_is_real(ptile)) {
     map_world_changed();
   }
+}
+
+/*******************************************************************//**
+  The owner of ptile is changing from old_owner to new_owner.
+
+  A change that exactly undoes the previous bump (same tile, back to
+  the owner it had, nothing else bumped in between) returns the world
+  to the state it had before that bump, so the world generation returns
+  to that state's value and caches made in that state stay valid.
+  City site evaluation in ai/default (cityresult_fill()) sets the owner
+  of a candidate tile to the evaluating player and restores it around
+  every site outside the player's borders; without this, each such
+  evaluation would invalidate every cached search twice. Pathfinding
+  reads the owner, not the claimer.
+
+  @param ptile     Tile whose owner changes
+  @param old_owner Owner before the change
+  @param new_owner Owner after the change
+***********************************************************************/
+void map_world_tile_owner_changed(const struct tile *ptile,
+                                  const struct player *old_owner,
+                                  const struct player *new_owner)
+{
+  if (!map_world_tile_is_real(ptile)) {
+    return;
+  }
+
+  if (world_owner_undo.ptile == ptile
+      && world_owner_undo.old_owner == new_owner
+      && world_generation == world_owner_undo.after) {
+    world_generation = world_owner_undo.before;
+    world_owner_undo.ptile = nullptr;
+
+    return;
+  }
+
+  world_owner_undo.ptile = ptile;
+  world_owner_undo.old_owner = old_owner;
+  world_owner_undo.before = world_generation;
+  map_world_changed();
+  world_owner_undo.after = world_generation;
 }
 
 /*******************************************************************//**
