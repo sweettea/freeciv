@@ -3936,10 +3936,11 @@ static int pf_reverse_mode_get(void)
 
     if (check != nullptr && check[0] != '\0' && check[0] != '0') {
       pf_reverse_mode = PF_REVERSE_CHECK;
-    } else if (shared != nullptr && shared[0] != '\0' && shared[0] != '0') {
-      pf_reverse_mode = PF_REVERSE_SHARED;
-    } else {
+    } else if (shared != nullptr && shared[0] == '0') {
+      /* Escape hatch: the original per-target searches only. */
       pf_reverse_mode = PF_REVERSE_TARGETED;
+    } else {
+      pf_reverse_mode = PF_REVERSE_SHARED;
     }
   }
 
