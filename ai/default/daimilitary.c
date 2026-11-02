@@ -351,7 +351,7 @@ int assess_defense(struct ai_type *ait, struct city *pcity)
   Estimate defense strength of city without considering how buildings
   help defense
 **************************************************************************/
-static int assess_defense_igwall(struct ai_type *ait, struct city *pcity)
+int assess_defense_igwall(struct ai_type *ait, struct city *pcity)
 {
   return assess_defense_backend(ait, pcity, TRUE);
 }
@@ -490,7 +490,7 @@ tactical_req_cb(const struct req_context *context,
   and that the actor player is ignored; also, it's not tested can utype
   attack the city's particular terrain.
 **************************************************************************/
-static bool
+bool
 action_may_happen_unit_on_city(const action_id wanted_action,
                                const struct unit *actor,
                                const struct city *pcity,
@@ -671,9 +671,9 @@ void dai_assess_danger_player(struct ai_type *ait,
   This algorithm is very strange. But I created it by nesting up
   Syela's convoluted if ... else logic, and it seems to work. -- Per
 **************************************************************************/
-static void dai_reevaluate_building(struct city *pcity, adv_want *value,
-                                    unsigned int urgency, unsigned int danger,
-                                    int defense)
+void dai_reevaluate_building(struct city *pcity, adv_want *value,
+                             unsigned int urgency, unsigned int danger,
+                             int defense)
 {
   if (*value == 0 || danger <= 0) {
     return;

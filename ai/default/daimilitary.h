@@ -71,6 +71,14 @@ struct adv_choice *military_advisor_choose_build(struct ai_type *ait,
 void dai_assess_danger_player(struct ai_type *ait,
                               const struct civ_map *nmap, struct player *pplayer);
 int assess_defense_quadratic(struct ai_type *ait, struct city *pcity);
+int assess_defense_igwall(struct ai_type *ait, struct city *pcity);
+bool action_may_happen_unit_on_city(const action_id wanted_action,
+                                    const struct unit *actor,
+                                    const struct city *pcity,
+                                    int turns);
+void dai_reevaluate_building(struct city *pcity, adv_want *value,
+                             unsigned int urgency, unsigned int danger,
+                             int defense);
 int assess_defense_unit(struct ai_type *ait, struct city *pcity,
                         struct unit *punit, bool igwall);
 int assess_defense(struct ai_type *ait, struct city *pcity);
