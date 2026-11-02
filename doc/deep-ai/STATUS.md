@@ -24618,3 +24618,35 @@ Branch `epic/perf-turntime`. Findings: `findings/perf-turntime-2026-11-01.md` §
   `deep_worker_task_value` (18.3%, a `players_iterate` in its hot loop),
   `cm_query_result` 8.8% under it; also `remove_player_from_maps` (1.6%
   in `player_slot_next`, barbarians removed repeatedly).
+
+## S-PERF3 — worker exposure test made cheap, decisions unchanged (2026-11-01)
+
+Branch `epic/perf3-workers`. Findings: `findings/perf-workers-2026-11-01.md`.
+
+- [x] Profile of the worker chain on the late Europe T251 turn: 98% of
+      `deep_worker_task_value()` (18.4% of the turn) was the danger
+      discount's "at-war attacker within worker_guard_radius" scan over
+      every enemy unit and all 512 player slots, 427,858 times (124M
+      `adv_unit_att_rating`, 107M `real_map_distance`). CM is not in this
+      chain (callers: `auto_arrange_workers`, `dai_manage_taxes`); the
+      chain's own pathfinding is 2%.
+- [x] `ai/deep: route the worker exposure test through an oracle`
+      (`FREECIV_DEEP_WORKER_CHECK=1`) and `ai/deep: test worker exposure
+      by the tiles within the guard radius` (square walk, same predicate;
+      exact by construction, no memo, nothing to invalidate).
+- Identity vs .perf-bin/ref (b3102e31): 24/24 races identical (contested-
+  classic deep s1-10, contested deep s1-10, mixed_db s1-3 at T150, long
+  T200 s1) in check and default mode; 0 mismatches over >= 15.9M (races),
+  >= 2.3M (Europe T50-60), >= 1.3M (late T251-256) checked lookups;
+  Europe scorelog + census and late census identical in both modes.
+- Speed, paired (load ~3-5): Europe T50-60 wall 89.4 -> 71.5 s, Worker
+  want ~2.2 -> ~1.3 s/turn, Workers ~1.5 -> ~0.9; late T251-256 wall
+  75.6 -> 64.7 s, s/turn ~11.7 -> ~10.0, Worker want ~2.4 -> ~1.1. Late
+  callgrind -15.8% Ir; deep_worker_task_value 18.4% -> 3.1%. RSS flat.
+- For the coordinator: the largest remaining worker cost is
+  `action_speculate_unit_on_tile` inside `worker_evaluate_improvements`
+  (9.6% of the late turn, 2.34M enabler checks), which is advisors code
+  shared with human auto-workers -- needs an inert extension point or an
+  advisors-rule decision, not a deep change.
+- Next: that extension point (if approved); CM (next epic); a
+  per-generation memo for the 3.1% left only with check-mode evidence.
