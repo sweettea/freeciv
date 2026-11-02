@@ -1194,6 +1194,10 @@ void change_playertile_site(struct player_tile *ptile,
 **************************************************************************/
 void map_set_known(struct tile *ptile, struct player *pplayer)
 {
+  if (!dbv_isset(&pplayer->tile_known, tile_index(ptile))) {
+    /* Pathfinding reads tile knowledge. */
+    map_knowledge_changed(pplayer);
+  }
   dbv_set(&pplayer->tile_known, tile_index(ptile));
 }
 
@@ -1202,6 +1206,10 @@ void map_set_known(struct tile *ptile, struct player *pplayer)
 **************************************************************************/
 void map_clear_known(struct tile *ptile, struct player *pplayer)
 {
+  if (dbv_isset(&pplayer->tile_known, tile_index(ptile))) {
+    /* Pathfinding reads tile knowledge. */
+    map_knowledge_changed(pplayer);
+  }
   dbv_clr(&pplayer->tile_known, tile_index(ptile));
 }
 
@@ -1246,6 +1254,7 @@ void player_map_init(struct player *pplayer)
   } whole_map_iterate_end;
 
   dbv_init(&pplayer->tile_known, MAP_INDEX_SIZE);
+  map_knowledge_changed(pplayer);
 }
 
 /**********************************************************************//**
@@ -1326,6 +1335,7 @@ void remove_player_from_maps(struct player *pplayer)
       reality_changed = TRUE;
     }
     if (extra_owner(ptile) == pplayer) {
+      map_world_changed();
       ptile->extras_owner = nullptr;
       reality_changed = TRUE;
     }
@@ -2201,6 +2211,7 @@ void tile_claim_bases(struct tile *ptile, struct player *powner)
   /* This MUST be before potentially recursive call to map_claim_base(),
    * so that the recursive call will get new owner == base_loser and
    * abort recursion. */
+  map_world_changed();
   ptile->extras_owner = powner;
 
   extra_type_by_cause_iterate(EC_BASE, pextra) {
@@ -2569,6 +2580,7 @@ void create_extra(struct tile *ptile, struct extra_type *pextra,
           }
         } extra_type_by_cause_iterate_end;
 
+        map_world_changed();
         ptile->extras_owner = pplayer;
       }
     } else {

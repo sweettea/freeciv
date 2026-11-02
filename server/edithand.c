@@ -368,6 +368,8 @@ void handle_edit_tile_extra(struct connection *pc, int tile,
 
   conn_list_do_buffer(game.est_connections);
   square_iterate(&(wld.map), ptile_center, size - 1, ptile) {
+    /* Pathfinding reads the extras owner. */
+    map_world_changed();
     ptile->extras_owner = plr_eowner;
     edit_tile_extra_handling(ptile, extra_by_number(id), removal, TRUE);
   } square_iterate_end;
@@ -410,6 +412,8 @@ void handle_edit_tile(struct connection *pc,
   }
 
   if (ptile->extras_owner != eowner) {
+    /* Pathfinding reads the extras owner. */
+    map_world_changed();
     ptile->extras_owner = eowner;
     changed = TRUE;
   }

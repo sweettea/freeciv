@@ -973,6 +973,7 @@ static void update_diplomatics(void)
             && state->auto_cancel_turn != game.info.turn) {
           state->turns_left--;
           if (state->turns_left <= 0) {
+            map_world_changed();
             state->type = DS_PEACE;
             state2->type = DS_PEACE;
             state->turns_left = 0;
@@ -1006,6 +1007,7 @@ static void update_diplomatics(void)
                             "You are now at war with the %s."),
                           player_name(plr1),
                           nation_plural_for_player(plr1));
+            map_world_changed();
             state->type = DS_WAR;
             state2->type = DS_WAR;
             state->turns_left = 0;
@@ -1157,6 +1159,7 @@ static void ai_start_phase(void)
 static void begin_turn(bool is_new_turn)
 {
   log_debug("Begin turn");
+  map_world_changed();
 
   event_cache_remove_old();
 
@@ -1264,6 +1267,7 @@ static void begin_turn(bool is_new_turn)
 static void begin_phase(bool is_new_phase)
 {
   log_debug("Begin phase");
+  map_world_changed();
 
   conn_list_do_buffer(game.est_connections);
 
@@ -1443,6 +1447,7 @@ static void begin_phase(bool is_new_phase)
 static void end_phase(void)
 {
   log_debug("Endphase");
+  map_world_changed();
 
   /*
    * This empties the client Messages window; put this before
@@ -1609,6 +1614,7 @@ static void end_phase(void)
 static void end_turn(void)
 {
   log_debug("Endturn");
+  map_world_changed();
 
   /* Hack: Because observer players never get an end-phase packet we send
    * one here. */

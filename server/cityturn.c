@@ -2979,6 +2979,7 @@ static struct unit *city_create_unit(struct city *pcity,
 
   /* If city has a rally point set, give the unit a move order. */
   if (pcity->rally_point.length) {
+    map_world_unit_changed(punit);
     punit->has_orders = TRUE;
     punit->orders.length = pcity->rally_point.length;
     punit->orders.vigilant = pcity->rally_point.vigilant;

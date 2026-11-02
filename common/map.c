@@ -139,6 +139,105 @@ bv_extras get_tile_infrastructure_set(const struct tile *ptile,
   return pspresent;
 }
 
+/* The world generation. It changes whenever something a pathfinder reads
+ * may have changed: terrain, extras and their owner, tile owner, city
+ * centers and their owner, diplomatic states, settings, the set of
+ * players, the units that can transport or are transported, and turn
+ * and phase boundaries. Tile knowledge has its own per-player counter
+ * (map_knowledge_changed()). Caches of pathfinding results compare it
+ * on every lookup; a change that turns out to be irrelevant only costs
+ * a recomputation. */
+static unsigned int world_generation = 0;
+
+/* Per player slot: changes whenever the set of tiles the player knows
+ * changes. Pathfinding reads tile knowledge only when the parameter is
+ * not omniscient, so caches of such results compare this as well as
+ * the world generation. */
+static unsigned int knowledge_generation[MAX_NUM_PLAYER_SLOTS];
+
+/*******************************************************************//**
+  Return whether ptile is a tile of the current map, and not a virtual
+  tile (tile_virtual_new()), which no pathfinder reads.
+***********************************************************************/
+static bool map_world_tile_is_real(const struct tile *ptile)
+{
+  return (wld.map.tiles != nullptr
+          && ptile >= wld.map.tiles
+          && ptile < wld.map.tiles + MAP_INDEX_SIZE);
+}
+
+/*******************************************************************//**
+  Something pathfinding may read has changed, or may have. Issues a new
+  world generation.
+***********************************************************************/
+void map_world_changed(void)
+{
+  world_generation++;
+}
+
+/*******************************************************************//**
+  As map_world_changed(), but only when ptile is a real map tile: the
+  change of a virtual tile changes nothing any pathfinder reads.
+
+  @param ptile Tile that changed
+***********************************************************************/
+void map_world_tile_changed(const struct tile *ptile)
+{
+  if (map_world_tile_is_real(ptile)) {
+    map_world_changed();
+  }
+}
+
+/*******************************************************************//**
+  The tile, orders or presence of punit is about to change.
+
+  Pathfinding (pf_get_move_scope(), pf_transport_check()) reads the
+  units on a tile only as possible transports: their owner, type,
+  orders, transport depth and the transports carrying them. Pathfinders
+  that read other units (get_zoc, get_TB or is_action_possible
+  callbacks) do not cache their results. So only a unit that can
+  transport, or that is transported, changes the world generation.
+
+  @param punit Unit about to change
+***********************************************************************/
+void map_world_unit_changed(const struct unit *punit)
+{
+  if (unit_type_get(punit)->transport_capacity > 0
+      || unit_transport_get(punit) != nullptr) {
+    map_world_changed();
+  }
+}
+
+/*******************************************************************//**
+  Return the current world generation; see map_world_changed().
+***********************************************************************/
+unsigned int map_world_generation(void)
+{
+  return world_generation;
+}
+
+/*******************************************************************//**
+  The set of tiles pplayer knows has changed, or may have.
+
+  @param pplayer Player whose knowledge changed
+***********************************************************************/
+void map_knowledge_changed(const struct player *pplayer)
+{
+  knowledge_generation[player_index(pplayer)]++;
+}
+
+/*******************************************************************//**
+  Return the current knowledge generation of pplayer; see
+  map_knowledge_changed().
+
+  @param pplayer Player whose knowledge generation to return
+  @return        Knowledge generation
+***********************************************************************/
+unsigned int map_knowledge_generation(const struct player *pplayer)
+{
+  return knowledge_generation[player_index(pplayer)];
+}
+
 /*******************************************************************//**
   Returns TRUE if we are at a stage of the game where the map
   has not yet been generated/loaded.
