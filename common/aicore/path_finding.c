@@ -15,13 +15,17 @@
 #include <fc_config.h>
 #endif
 
+#include <stdlib.h>             /* qsort() */
+
 /* utility */
 #include "bitvector.h"
+#include "genhash.h"
 #include "log.h"
 #include "mem.h"
 #include "support.h"
 
 /* common */
+#include "actions.h"
 #include "game.h"
 #include "map.h"
 #include "movement.h"
@@ -43,6 +47,12 @@
 /* Extra checks for debugging. */
 #define PF_DEBUG
 #endif
+
+/* Define to compute every reverse map position also with a search of its
+ * own, and log any difference from the shared search (see
+ * pf_reverse_map_pos()). This repeats all the work shared searches save,
+ * so it is not part of PF_DEBUG. */
+/* #define PF_REVERSE_DEBUG */
 
 /* ======================== Internal structures ========================== */
 
@@ -3734,26 +3744,28 @@ void pf_reverse_map_destroy(struct pf_reverse_map *pfrm)
 }
 
 /************************************************************************//**
-  Returns the map for the unit type. Creates it if needed. Returns nullptr if
-  'target_tile' is unreachable.
+  Compute the position of the unit described by 'param' at the target of
+  'pfrm' with a search of its own: a normal map from param->start_tile
+  whose get_action (pf_reverse_get_action()) attacks the target only,
+  iterated until the target is reached or the cost bound is.
+
+  This is the original reverse map computation. It is used when shared
+  searches cannot be used, and to check them with PF_REVERSE_DEBUG.
+
+  @param pfrm  Reverse map whose target to reach
+  @param param Parameter of the unit
+  @param pos   Filled with the position when the target is reached
+  @return      Whether the target is reached
 ****************************************************************************/
-static const struct pf_position *
-pf_reverse_map_pos(struct pf_reverse_map *pfrm,
-                   const struct pf_parameter *param)
+static bool pf_reverse_map_pos_targeted(struct pf_reverse_map *pfrm,
+                                        const struct pf_parameter *param,
+                                        struct pf_position *pos)
 {
-  struct pf_position *pos;
   struct pf_map *pfm;
-  struct pf_parameter *copy;
   struct tile *target_tile;
   const struct pf_normal_node *lattice;
   int max_cost;
 
-  /* Check if we already processed something similar. */
-  if (pf_pos_hash_lookup(pfrm->hash, param, &pos)) {
-    return pos;
-  }
-
-  /* We didn't. Build map and iterate. */
   pfm = pf_normal_map_new(param);
   lattice = PF_NORMAL_MAP(pfm)->lattice;
   target_tile = pfrm->target_tile;
@@ -3763,40 +3775,517 @@ pf_reverse_map_pos(struct pf_reverse_map *pfrm,
       if (lattice[tile_index(pfm->tile)].cost >= max_cost) {
         break;
       } else if (pfm->tile == target_tile) {
-        /* Found our position. Insert in hash, destroy map, and return. */
-        pos = fc_malloc(sizeof(*pos));
         pf_normal_map_fill_position(PF_NORMAL_MAP(pfm), target_tile, pos);
-        copy = fc_malloc(sizeof(*copy));
-        *copy = *param;
-        pf_pos_hash_insert(pfrm->hash, copy, pos);
         pf_map_destroy(pfm);
-        return pos;
+        return TRUE;
       }
     } while (pfm->iterate(pfm));
   } else {
     /* No limit for iteration. */
     do {
       if (pfm->tile == target_tile) {
-        /* Found our position. Insert in hash, destroy map, and return. */
-        pos = fc_malloc(sizeof(*pos));
         pf_normal_map_fill_position(PF_NORMAL_MAP(pfm), target_tile, pos);
-        copy = fc_malloc(sizeof(*copy));
-        *copy = *param;
-        pf_pos_hash_insert(pfrm->hash, copy, pos);
         pf_map_destroy(pfm);
-        return pos;
+        return TRUE;
       }
     } while (pfm->iterate(pfm));
   }
   pf_map_destroy(pfm);
 
-  /* Position not found. Let's insert nullptr as position to avoid to iterate
-   * the map again. */
-  copy = fc_malloc(sizeof(*copy));
-  *copy = *param;
-  pf_pos_hash_insert(pfrm->hash, copy, nullptr);
+  return FALSE;
+}
+
+/* ======================= Shared reverse searches ========================
+
+   Callers such as assess_danger() in ai/default build one reverse map
+   per (target, attacking player) and ask it about every unit of that
+   player, so the same search from the same unit is run once per target.
+   Instead, the searches below are run once per parameter key with no
+   target, and are shared by every reverse map until the world changes
+   (map_world_generation()) or, for a search that is not omniscient,
+   until the owner's tile knowledge changes (map_knowledge_generation()).
+   The position at each target is reconstructed from the shared search.
+
+   The shared search uses the reverse parameter with get_action attacking
+   nowhere (data = nullptr) and the same cost bound,
+   move_rate * (max_turns + 1). The targeted search's answer for target
+   T is then:
+
+   (a) T is the start tile: the start node, the same in both searches.
+   (b) T is unknown to the owner (not omniscient): pf_normal_node_init()
+       never calls get_action there, so the targeted graph is the shared
+       graph and the shared node at T is the answer.
+   (c) A non-civilian unit may not invade T: TB_IGNORE is decided before
+       get_action, so T is unreachable in both.
+   (d) Otherwise T is an ATTACK node (TB_DONT_LEAVE, enterable whatever
+       its move scope), entered from an expandable neighbour n at cost
+       cost(n) + MIN(attack_cost, pf_moves_left(cost(n))), where
+       attack_cost is move_rate for units whose attack takes all moves
+       or that attack suicidally, else SINGLE_MOVE (see
+       pf_normal_map_iterate()). The answer is the minimum over all n.
+       It is reachable only below the bound, because the targeted search
+       stops at the first popped cost that reaches it.
+
+   In (d) the shared graph lets paths run through T, where the targeted
+   graph makes T a sink. A neighbour whose shared shortest path avoids T
+   has the same cost in both graphs. If the shared path of neighbour n
+   passes through T, let m be the node it entered T from: m has the same
+   cost in both graphs, m is expandable (it expanded into T), and
+   cost(m) <= cost(n), because move costs are not negative. The
+   candidate cost(x) + MIN(a, pf_moves_left(cost(x))) equals
+   MIN(cost(x) + a, end of the turn of cost(x)) and does not decrease
+   with cost(x), so n never beats the candidate of m and the minimum is
+   unchanged.
+
+   Every node other than T must have the same properties in both
+   searches. They do, except that the PF_MS_CITY test of
+   pf_get_move_scope() reads the scope of whichever neighbour reached
+   the node first, which depends on the expansion order, and does so
+   only when two city tiles are adjacent. While any two cities on the
+   map are adjacent, shared searches are not used.
+
+   The key is (map, owner, omniscience, start tile, move rate, moves
+   left initially, unit type, max_turns), with the exact unit type
+   rather than the equivalence of pf_pos_hash_cmp(): each reverse map's
+   own hash still applies that equivalence and picks the representative
+   unit, so the representative is the one the targeted search would
+   have used. dir_to_here of a (d) position is that of the first
+   minimising neighbour, and may differ from the targeted search's
+   choice among equal costs. */
+
+/* One popped node of a shared search, below the bound. */
+struct pf_shared_node {
+  int tindex;
+  int cost;
+  unsigned dir_to_here : 4;     /* As in pf_normal_node. */
+  bool expands;                 /* Whether the search expanded it. */
+};
+
+/* One shared search. */
+struct pf_shared_entry {
+  /* Key. */
+  const struct civ_map *map;
+  const struct player *owner;
+  bool omniscience;
+  struct tile *start_tile;
+  int move_rate;
+  int moves_left_initially;
+  const struct unit_type *utype;
+  int max_turns;
+
+  /* map_knowledge_generation() of the owner when the search ran. Only
+   * checked when not omniscient: an omniscient search never reads tile
+   * knowledge. */
+  unsigned int knowledge_generation;
+
+  /* The popped nodes below the bound, sorted by tile index. */
+  int nnodes;
+  int cap;
+  struct pf_shared_node *nodes;
+};
+
+/* Shared searches, valid for world generation pf_shared_generation. */
+static struct genhash *pf_shared_cache = nullptr;
+static unsigned int pf_shared_generation = 0;
+
+/* Whether any two cities are adjacent, if known in this generation. */
+static bool pf_shared_adjacency_known = FALSE;
+static bool pf_shared_adjacent_cities = FALSE;
+
+#ifdef PF_REVERSE_DEBUG
+static int pf_reverse_checks = 0;
+static int pf_reverse_mismatches = 0;
+static int pf_reverse_shared_searches = 0;
+#endif /* PF_REVERSE_DEBUG */
+
+/************************************************************************//**
+  Hash function of shared search keys.
+****************************************************************************/
+static genhash_val_t pf_shared_key_val(const void *vkey)
+{
+  const struct pf_shared_entry *e = vkey;
+
+  return (genhash_val_t) (tile_index(e->start_tile)
+                          + ((genhash_val_t) e->move_rate << 16)
+                          + ((genhash_val_t) utype_index(e->utype) << 22)
+                          + ((genhash_val_t) player_index(e->owner) << 27)
+                          + ((genhash_val_t) e->max_turns << 9)
+                          + (e->omniscience ? 1u << 31 : 0));
+}
+
+/************************************************************************//**
+  Comparison function of shared search keys.
+****************************************************************************/
+static bool pf_shared_key_comp(const void *va, const void *vb)
+{
+  const struct pf_shared_entry *a = va, *b = vb;
+
+  return (a->map == b->map
+          && a->owner == b->owner
+          && a->omniscience == b->omniscience
+          && a->start_tile == b->start_tile
+          && a->move_rate == b->move_rate
+          && a->moves_left_initially == b->moves_left_initially
+          && a->utype == b->utype
+          && a->max_turns == b->max_turns);
+}
+
+/************************************************************************//**
+  Free a shared search.
+****************************************************************************/
+static void pf_shared_entry_free(void *ventry)
+{
+  struct pf_shared_entry *e = ventry;
+
+  free(e->nodes);
+  free(e);
+}
+
+/************************************************************************//**
+  Order shared search nodes by tile index, for qsort().
+****************************************************************************/
+static int pf_shared_node_cmp(const void *va, const void *vb)
+{
+  const struct pf_shared_node *a = va, *b = vb;
+
+  return (a->tindex > b->tindex) - (a->tindex < b->tindex);
+}
+
+/************************************************************************//**
+  Drop every shared search if the world has changed since they were run.
+
+  @return Whether shared searches may be used now
+****************************************************************************/
+static bool pf_shared_cache_sync(void)
+{
+  if (pf_shared_cache == nullptr
+      || pf_shared_generation != map_world_generation()) {
+    if (pf_shared_cache != nullptr) {
+      genhash_destroy(pf_shared_cache);
+    }
+    pf_shared_cache = genhash_new_full(pf_shared_key_val,
+                                       pf_shared_key_comp,
+                                       nullptr, nullptr,
+                                       nullptr, pf_shared_entry_free);
+    pf_shared_generation = map_world_generation();
+    pf_shared_adjacency_known = FALSE;
+  }
+
+  if (!pf_shared_adjacency_known) {
+    pf_shared_adjacency_known = TRUE;
+    pf_shared_adjacent_cities = FALSE;
+    players_iterate(pplayer) {
+      city_list_iterate(pplayer->cities, pcity) {
+        adjc_iterate(&(wld.map), city_tile(pcity), ntile) {
+          if (tile_city(ntile) != nullptr) {
+            pf_shared_adjacent_cities = TRUE;
+          }
+        } adjc_iterate_end;
+      } city_list_iterate_end;
+    } players_iterate_end;
+  }
+
+  return !pf_shared_adjacent_cities;
+}
+
+/************************************************************************//**
+  Run the shared search for 'param' and 'max_turns' into 'e', replacing
+  what it held.
+****************************************************************************/
+static void pf_shared_entry_fill(struct pf_shared_entry *e,
+                                 const struct pf_parameter *param,
+                                 int max_turns)
+{
+  struct pf_parameter shared;
+  struct pf_map *pfm;
+  const struct pf_normal_node *lattice;
+  int max_cost;
+
+  e->nnodes = 0;
+  if (!param->omniscience) {
+    e->knowledge_generation = map_knowledge_generation(param->owner);
+  }
+
+  shared = *param;
+  /* pf_reverse_get_action() attacks nowhere. */
+  shared.data = nullptr;
+  max_cost = param->move_rate * (max_turns + 1);
+  pfm = pf_normal_map_new(&shared);
+  lattice = PF_NORMAL_MAP(pfm)->lattice;
+#ifdef PF_REVERSE_DEBUG
+  pf_reverse_shared_searches++;
+#endif /* PF_REVERSE_DEBUG */
+  do {
+    int tindex = tile_index(pfm->tile);
+    const struct pf_normal_node *node = lattice + tindex;
+    struct pf_shared_node *sn;
+
+    if (node->cost >= max_cost) {
+      break;
+    }
+    if (e->nnodes == e->cap) {
+      e->cap *= 2;
+      e->nodes = fc_realloc(e->nodes, e->cap * sizeof(*e->nodes));
+    }
+    sn = e->nodes + e->nnodes++;
+    sn->tindex = tindex;
+    sn->cost = node->cost;
+    sn->dir_to_here = node->dir_to_here;
+    /* The test at the head of pf_normal_map_iterate(). There is no
+     * get_zoc callback, so every node is ZOC_MINE. */
+    sn->expands = (node->behavior != TB_DONT_LEAVE
+                   && node->move_scope != PF_MS_NONE
+                   && (shared.move_rate > 0 || node->cost < 0));
+  } while (pfm->iterate(pfm));
+  pf_map_destroy(pfm);
+
+  qsort(e->nodes, e->nnodes, sizeof(*e->nodes), pf_shared_node_cmp);
+}
+
+/************************************************************************//**
+  Find or run the shared search for 'param' and 'max_turns'. A search
+  that read tile knowledge (not omniscient) is run again if the owner's
+  knowledge has changed since; everything else it read is covered by
+  the world generation (pf_shared_cache_sync()).
+****************************************************************************/
+static const struct pf_shared_entry *
+pf_shared_entry_get(const struct pf_parameter *param, int max_turns)
+{
+  struct pf_shared_entry key, *e;
+
+  key.map = param->map;
+  key.owner = param->owner;
+  key.omniscience = param->omniscience;
+  key.start_tile = param->start_tile;
+  key.move_rate = param->move_rate;
+  key.moves_left_initially = param->moves_left_initially;
+  key.utype = param->utype;
+  key.max_turns = max_turns;
+  if (genhash_lookup(pf_shared_cache, &key, (void **) &e)) {
+    if (!e->omniscience
+        && e->knowledge_generation
+           != map_knowledge_generation(e->owner)) {
+      pf_shared_entry_fill(e, param, max_turns);
+    }
+
+    return e;
+  }
+
+  e = fc_malloc(sizeof(*e));
+  *e = key;
+  e->knowledge_generation = 0;
+  e->cap = 64;
+  e->nodes = fc_malloc(e->cap * sizeof(*e->nodes));
+  pf_shared_entry_fill(e, param, max_turns);
+  genhash_insert(pf_shared_cache, e, e);
+
+  return e;
+}
+
+/************************************************************************//**
+  Return the node of shared search 'e' at 'ptile', or nullptr if the
+  search did not pop it below the bound.
+****************************************************************************/
+static const struct pf_shared_node *
+pf_shared_node_get(const struct pf_shared_entry *e,
+                   const struct tile *ptile)
+{
+  int tindex = tile_index(ptile);
+  int lo = 0, hi = e->nnodes - 1;
+
+  while (lo <= hi) {
+    int mid = (lo + hi) / 2;
+
+    if (e->nodes[mid].tindex == tindex) {
+      return e->nodes + mid;
+    } else if (e->nodes[mid].tindex < tindex) {
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
 
   return nullptr;
+}
+
+/************************************************************************//**
+  Fill 'pos' as pf_normal_map_fill_position() does for a node at 'ptile'
+  of raw cost 'cost'.
+****************************************************************************/
+static void pf_shared_fill_position(const struct pf_parameter *param,
+                                    struct tile *ptile, int cost,
+                                    int dir_to_here,
+                                    struct pf_position *pos)
+{
+  pos->tile = ptile;
+  pos->total_EC = 0;
+  pos->total_MC = (cost - pf_move_rate(param)
+                   + pf_moves_left_initially(param));
+  pos->turn = pf_turns(param, cost);
+  pos->moves_left = pf_moves_left(param, cost);
+  pos->fuel_left = 1;
+  pos->dir_to_here = dir_to_here;
+  pos->dir_to_next_pos = direction8_invalid();
+  if (cost > 0) {
+    pf_finalize_position(param, pos);
+  }
+}
+
+/************************************************************************//**
+  Compute the position of the unit described by 'param' at the target of
+  'pfrm' from the shared search, as the targeted search would (cases (a)
+  to (d) above).
+
+  @param pfrm  Reverse map whose target to reach
+  @param param Parameter of the unit
+  @param pos   Filled with the position when the target is reached
+  @return      Whether the target is reached
+****************************************************************************/
+static bool pf_reverse_map_pos_shared(struct pf_reverse_map *pfrm,
+                                      const struct pf_parameter *param,
+                                      struct pf_position *pos)
+{
+  const struct pf_shared_entry *e = pf_shared_entry_get(param,
+                                                        pfrm->max_turns);
+  struct tile *target = pfrm->target_tile;
+  int max_cost = param->move_rate * (pfrm->max_turns + 1);
+  const struct pf_shared_node *n;
+  int attack_cost;
+  int best = -1;
+  int best_dir = direction8_invalid();
+
+  if (target == param->start_tile
+      || (!param->omniscience
+          && TILE_UNKNOWN == tile_get_known(target, param->owner))) {
+    /* Cases (a) and (b). */
+    n = pf_shared_node_get(e, target);
+    if (n == nullptr) {
+      return FALSE;
+    }
+    pf_shared_fill_position(param, target, n->cost, n->dir_to_here, pos);
+
+    return TRUE;
+  }
+
+  if (!utype_has_flag(param->utype, UTYF_CIVILIAN)
+      && !player_can_invade_tile(param->owner, target)) {
+    /* Case (c). */
+    return FALSE;
+  }
+
+  /* Case (d). */
+  if (utype_action_takes_all_mp(param->utype,
+                                action_by_number(ACTION_ATTACK))
+      || utype_can_do_action(param->utype, ACTION_SUICIDE_ATTACK)) {
+    attack_cost = param->move_rate;
+  } else {
+    attack_cost = SINGLE_MOVE;
+  }
+  adjc_dir_iterate(param->map, target, ntile, dir) {
+    int cost;
+
+    n = pf_shared_node_get(e, ntile);
+    if (n == nullptr || !n->expands) {
+      continue;
+    }
+    cost = n->cost
+           + pf_normal_map_adjust_cost(attack_cost,
+                                       pf_moves_left(param, n->cost));
+    if (best < 0 || cost < best) {
+      best = cost;
+      best_dir = opposite_direction(dir);
+    }
+  } adjc_dir_iterate_end;
+
+  if (best < 0 || best >= max_cost) {
+    return FALSE;
+  }
+  pf_shared_fill_position(param, target, best, best_dir, pos);
+
+  return TRUE;
+}
+
+#ifdef PF_REVERSE_DEBUG
+/************************************************************************//**
+  Compute the position with a search of its own, and log the difference
+  if it disagrees with the position from the shared search.
+****************************************************************************/
+static void pf_reverse_check_position(struct pf_reverse_map *pfrm,
+                                      const struct pf_parameter *param,
+                                      bool found,
+                                      const struct pf_position *pos)
+{
+  struct pf_position opos;
+  bool ofound = pf_reverse_map_pos_targeted(pfrm, param, &opos);
+
+  pf_reverse_checks++;
+  if (ofound != found
+      || (found && (opos.total_MC != pos->total_MC
+                    || opos.turn != pos->turn
+                    || opos.moves_left != pos->moves_left
+                    || opos.total_EC != pos->total_EC
+                    || opos.fuel_left != pos->fuel_left))) {
+    pf_reverse_mismatches++;
+    log_error("pf-reverse-check mismatch start=(%d,%d) target=(%d,%d)"
+              " utype=%s owner=%s omniscient=%d max_turns=%d"
+              " shared=%d/%d/%d/%d targeted=%d/%d/%d/%d",
+              TILE_XY(param->start_tile), TILE_XY(pfrm->target_tile),
+              utype_rule_name(param->utype), player_name(param->owner),
+              param->omniscience ? 1 : 0, pfrm->max_turns,
+              found ? 1 : 0, found ? pos->total_MC : -1,
+              found ? pos->turn : -1, found ? pos->moves_left : -1,
+              ofound ? 1 : 0, ofound ? opos.total_MC : -1,
+              ofound ? opos.turn : -1, ofound ? opos.moves_left : -1);
+  }
+  if (pf_reverse_checks % 100000 == 0) {
+    log_normal("pf-reverse-check checks=%d mismatches=%d"
+               " shared_searches=%d", pf_reverse_checks,
+               pf_reverse_mismatches, pf_reverse_shared_searches);
+  }
+}
+#endif /* PF_REVERSE_DEBUG */
+
+/************************************************************************//**
+  Returns the position of the unit described by 'param' at the target of
+  'pfrm', computing it if needed. Returns nullptr if the target is
+  unreachable.
+****************************************************************************/
+static const struct pf_position *
+pf_reverse_map_pos(struct pf_reverse_map *pfrm,
+                   const struct pf_parameter *param)
+{
+  struct pf_position *pos;
+  struct pf_position found_pos;
+  struct pf_parameter *copy;
+  bool found;
+
+  /* Check if we already processed something similar. */
+  if (pf_pos_hash_lookup(pfrm->hash, param, &pos)) {
+    return pos;
+  }
+
+  if (pfrm->max_turns >= 0 && pf_shared_cache_sync()) {
+    found = pf_reverse_map_pos_shared(pfrm, param, &found_pos);
+#ifdef PF_REVERSE_DEBUG
+    pf_reverse_check_position(pfrm, param, found, &found_pos);
+#endif /* PF_REVERSE_DEBUG */
+  } else {
+    found = pf_reverse_map_pos_targeted(pfrm, param, &found_pos);
+  }
+
+  copy = fc_malloc(sizeof(*copy));
+  *copy = *param;
+  if (found) {
+    pos = fc_malloc(sizeof(*pos));
+    *pos = found_pos;
+  } else {
+    /* Position not found. Let's insert nullptr as position to avoid to
+     * iterate the map again. */
+    pos = nullptr;
+  }
+  pf_pos_hash_insert(pfrm->hash, copy, pos);
+
+  return pos;
 }
 
 /************************************************************************//**
