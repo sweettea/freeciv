@@ -117,10 +117,14 @@ static void print_performance(struct one_perf *counts);
 /* Instrumentation, configured once from the environment:
  * FREECIV_CM_STATS=1 logs per-turn solver work counts;
  * FREECIV_CM_BENCH=N solves every query N extra times under a CPU timer
- * (a microbenchmark on the game's real query mix) and logs the time. */
+ * (a microbenchmark on the game's real query mix) and logs the time;
+ * FREECIV_CM_CHECK=1 runs the reference solver beside every query and
+ * log_error()s any difference in the result. */
 static struct {
   bool init;
   bool stats;
+  bool check;
+  long checks, mismatches; /* cumulative */
   int bench;
   long bench_queries;
   struct timer *bench_timer;
@@ -256,6 +260,10 @@ struct cm_state {
   } choice;
 
   bool *workers_map; /* placement of the workers within the city map */
+
+  /* TRUE: take the reference (original, unoptimised) code path in every
+   * helper that has a faster twin. Used by FREECIV_CM_CHECK. */
+  bool reference;
 };
 
 
@@ -1939,6 +1947,7 @@ static struct cm_state *cm_state_init(struct city *pcity, bool negative_ok)
   } output_type_iterate_end;
 
   state->min_luxury = - FC_INFINITY;
+  state->reference = FALSE;
 
   /* We have no best solution yet, so its value is the worst possible. */
   init_partial_solution(&state->best, numtypes, csize, negative_ok);
@@ -2163,6 +2172,8 @@ static void cm_instr_init(void)
   cm_instr.init = TRUE;
   env = getenv("FREECIV_CM_STATS");
   cm_instr.stats = (env != nullptr && env[0] == '1');
+  env = getenv("FREECIV_CM_CHECK");
+  cm_instr.check = (env != nullptr && env[0] == '1');
   env = getenv("FREECIV_CM_BENCH");
   if (env != nullptr && str_to_int(env, &cm_instr.bench)
       && cm_instr.bench > 0) {
@@ -2187,6 +2198,10 @@ static void cm_instr_turn(void)
                cm_instr.turn, cm_instr.queries, cm_instr.loops,
                cm_instr.heuristics, cm_instr.leaves, cm_instr.aborted,
                cm_instr.repeats, cm_instr.repeat_same);
+  }
+  if (cm_instr.check) {
+    log_normal("CM check T%d: checks %ld mismatches %ld (cumulative)",
+               cm_instr.turn, cm_instr.checks, cm_instr.mismatches);
   }
   if (cm_instr.bench_queries > 0) {
     double secs = timer_read_seconds(cm_instr.bench_timer);
@@ -2331,6 +2346,92 @@ static void cm_instr_record(unsigned long long sig, unsigned long long res)
 }
 
 /************************************************************************//**
+  Compare the reference result with the result of the default path and
+  log_error() every difference. Returns TRUE if they are identical.
+****************************************************************************/
+static bool cm_results_identical(const struct city *pcity,
+                                 const struct cm_result *ref,
+                                 const struct cm_result *res)
+{
+  bool same = TRUE;
+  int n = city_map_tiles(res->city_radius_sq);
+
+#define CM_CHECK_FIELD(fmt, field)                                          \
+  if (ref->field != res->field) {                                          \
+    log_error("CM check: %s (id %d): " #field " ref " fmt " new " fmt,      \
+              city_name_get(pcity), pcity->id, ref->field, res->field);     \
+    same = FALSE;                                                           \
+  }
+
+  CM_CHECK_FIELD("%d", aborted);
+  CM_CHECK_FIELD("%d", found_a_valid);
+  CM_CHECK_FIELD("%d", disorder);
+  CM_CHECK_FIELD("%d", happy);
+  CM_CHECK_FIELD("%d", city_radius_sq);
+  output_type_iterate(o) {
+    CM_CHECK_FIELD("%d", surplus[o]);
+  } output_type_iterate_end;
+  specialist_type_iterate(sp) {
+    CM_CHECK_FIELD("%d", specialists[sp]);
+  } specialist_type_iterate_end;
+#undef CM_CHECK_FIELD
+
+  if (ref->city_radius_sq == res->city_radius_sq
+      && memcmp(ref->worker_positions, res->worker_positions,
+                n * sizeof(*res->worker_positions)) != 0) {
+    log_error("CM check: %s (id %d): worker_positions differ",
+              city_name_get(pcity), pcity->id);
+    same = FALSE;
+  }
+
+  return same;
+}
+
+/************************************************************************//**
+  Run one query, on the reference code path if 'reference' is set.
+****************************************************************************/
+static void cm_run_query(struct city *pcity,
+                         const struct cm_parameter *param,
+                         struct cm_result *result, bool negative_ok,
+                         bool reference)
+{
+  struct cm_state *state = cm_state_init(pcity, negative_ok);
+  const struct civ_map *nmap = &(wld.map);
+  unsigned long long sig = 0;
+
+  state->reference = reference;
+
+  /* Refresh the city. Otherwise the CM can give wrong results or just be
+   * slower than necessary. Note that cities are often passed in in an
+   * unrefreshed state (which should probably be fixed). */
+  city_refresh_from_main_map(nmap, pcity, nullptr);
+
+  if (cm_instr.stats && !reference) {
+    sig = cm_query_signature(state, param, negative_ok);
+  }
+
+  cm_find_best_solution(state, param, result, negative_ok);
+  cm_state_free(state);
+
+  if (cm_instr.stats && !reference) {
+    cm_instr_record(sig, cm_result_signature(result));
+  }
+}
+
+/************************************************************************//**
+  Copy a result, with its own worker_positions array.
+****************************************************************************/
+static void cm_result_dup(struct cm_result *dst, const struct cm_result *src)
+{
+  size_t wsize = city_map_tiles(src->city_radius_sq)
+                 * sizeof(*src->worker_positions);
+
+  *dst = *src;
+  dst->worker_positions = fc_malloc(wsize);
+  memcpy(dst->worker_positions, src->worker_positions, wsize);
+}
+
+/************************************************************************//**
   Wrapper that actually runs the branch & bound, and returns the best
   solution.
 ****************************************************************************/
@@ -2338,61 +2439,65 @@ void cm_query_result(struct city *pcity,
                      const struct cm_parameter *param,
                      struct cm_result *result, bool negative_ok)
 {
-  struct cm_state *state;
-  const struct civ_map *nmap = &(wld.map);
-  unsigned long long sig = 0;
+  long heuristics, leaves, loops, aborted;
 
   cm_instr_init();
-  if (cm_instr.stats || cm_instr.bench > 0) {
+  if (cm_instr.stats || cm_instr.bench > 0 || cm_instr.check) {
     cm_instr_turn();
   }
   if (cm_instr.stats) {
     cm_instr.queries++;
   }
+  heuristics = cm_instr.heuristics;
+  leaves = cm_instr.leaves;
+  loops = cm_instr.loops;
+  aborted = cm_instr.aborted;
 
   if (cm_instr.bench > 0) {
     /* Solve the same query 'bench' times on a scratch result; the real
      * query below runs last, so the city ends up as without the bench. */
-    struct cm_result scratch = *result;
-    size_t wsize = city_map_tiles(result->city_radius_sq)
-                   * sizeof(*result->worker_positions);
-    long heuristics = cm_instr.heuristics, leaves = cm_instr.leaves;
-    long loops = cm_instr.loops, aborted = cm_instr.aborted;
+    struct cm_result scratch;
     int rep;
 
-    scratch.worker_positions = fc_malloc(wsize);
+    cm_result_dup(&scratch, result);
     timer_start(cm_instr.bench_timer);
     for (rep = 0; rep < cm_instr.bench; rep++) {
-      state = cm_state_init(pcity, negative_ok);
-      city_refresh_from_main_map(nmap, pcity, nullptr);
-      cm_find_best_solution(state, param, &scratch, negative_ok);
-      cm_state_free(state);
+      cm_run_query(pcity, param, &scratch, negative_ok, FALSE);
     }
     timer_stop(cm_instr.bench_timer);
     FC_FREE(scratch.worker_positions);
     cm_instr.bench_queries++;
+  }
+
+  if (cm_instr.check) {
+    /* The reference runs on a copy of the caller's result (a query that
+     * finds no placement leaves most fields untouched), and before the
+     * default path, so that the default path runs last and leaves the
+     * city exactly as it would without the check. */
+    struct cm_result ref;
+
+    cm_result_dup(&ref, result);
+    cm_run_query(pcity, param, &ref, negative_ok, TRUE);
+    /* Count the default path's work only. */
     cm_instr.heuristics = heuristics;
     cm_instr.leaves = leaves;
     cm_instr.loops = loops;
     cm_instr.aborted = aborted;
-  }
 
-  state = cm_state_init(pcity, negative_ok);
+    cm_run_query(pcity, param, result, negative_ok, FALSE);
 
-  /* Refresh the city. Otherwise the CM can give wrong results or just be
-   * slower than necessary. Note that cities are often passed in in an
-   * unrefreshed state (which should probably be fixed). */
-  city_refresh_from_main_map(nmap, pcity, nullptr);
-
-  if (cm_instr.stats) {
-    sig = cm_query_signature(state, param, negative_ok);
-  }
-
-  cm_find_best_solution(state, param, result, negative_ok);
-  cm_state_free(state);
-
-  if (cm_instr.stats) {
-    cm_instr_record(sig, cm_result_signature(result));
+    cm_instr.checks++;
+    if (!cm_results_identical(pcity, &ref, result)) {
+      cm_instr.mismatches++;
+    }
+    FC_FREE(ref.worker_positions);
+  } else {
+    /* Count the real query's work only. */
+    cm_instr.heuristics = heuristics;
+    cm_instr.leaves = leaves;
+    cm_instr.loops = loops;
+    cm_instr.aborted = aborted;
+    cm_run_query(pcity, param, result, negative_ok, FALSE);
   }
 }
 
