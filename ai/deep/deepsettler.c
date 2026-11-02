@@ -3887,14 +3887,53 @@ static long deep_worker_mismatches = 0;
 static int deep_worker_check_turn = -1;
 
 /**********************************************************************//**
-  The candidate implementation of the exposure test. Identical to the
-  reference until a cheaper exact form replaces it.
+  The exposure test by geometry instead of by census: visit only the
+  tiles within radius of ptile and the units standing on them.
+
+  Same answer as deep_worker_enemy_near_scan(), because:
+  - The scan's predicate on a unit e is: owner alive, owner at war with
+    pplayer, adv_unit_att_rating(e) > 0, real_map_distance(unit_tile(e),
+    ptile) <= radius. All four are evaluated here on the same unit with
+    the same functions, so the only question is whether the two loops
+    offer the same set of units.
+  - Every unit in a player's list stands on unit_tile(e) and is in that
+    tile's unit list (transported units included), and every unit in a
+    tile's list belongs to some player's list; so the units on the
+    tiles visited here are exactly the units whose tile is one of them.
+  - square_iterate(radius) visits every map tile whose
+    map_vector_to_real_distance() from ptile is <= radius
+    (wld.map.iterate_outwards_indices holds each relative position once,
+    with its real distance, sorted by it), which is every tile a
+    qualifying unit can stand on. The real_map_distance() test is kept
+    anyway, so the two loops apply literally the same predicate.
+  - The predicate has no side effects and the result is an OR, so visit
+    order and early exit do not matter.
+  Cost: (2 radius + 1)^2 tile visits (169 at the default radius 6)
+  instead of every unit of every at-war player plus all 512 player
+  slots, independent of how many units the map holds.
 **************************************************************************/
 static bool deep_worker_enemy_near_fast(const struct player *pplayer,
                                         const struct tile *ptile,
                                         int radius)
 {
-  return deep_worker_enemy_near_scan(pplayer, ptile, radius);
+  if (radius < 0) {
+    return FALSE;
+  }
+
+  square_iterate(&(wld.map), ptile, radius, t) {
+    unit_list_iterate(t->units, e) {
+      struct player *owner = unit_owner(e);
+
+      if (owner->is_alive
+          && pplayers_at_war((struct player *) pplayer, owner)
+          && adv_unit_att_rating(e) > 0
+          && real_map_distance(unit_tile(e), ptile) <= radius) {
+        return TRUE;
+      }
+    } unit_list_iterate_end;
+  } square_iterate_end;
+
+  return FALSE;
 }
 
 /**********************************************************************//**
