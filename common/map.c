@@ -141,9 +141,10 @@ bv_extras get_tile_infrastructure_set(const struct tile *ptile,
 
 /* Bumped whenever something a pathfinder reads may have changed: units
  * on tiles and their transport/orders/owner, terrain, extras and their
- * owner, tile owner, city centres and owners, diplomatic states, plus
- * every AI callback boundary. Tile knowledge has its own per-player
- * counter (map_knowledge_changed()). Caches of pathfinding
+ * owner, tile owner, city centres and owners, diplomatic states, and
+ * turn/phase boundaries. Tile knowledge has its own per-player counter
+ * (map_knowledge_changed()). AI callbacks do not bump: what they change
+ * bumps at its own site, so a cache lives across players' callbacks. Caches of pathfinding
  * results (path_finding.c's shared reverse-map lattices) compare it on
  * every lookup; an extra bump only costs a recomputation. */
 static unsigned int world_generation = 0;

@@ -360,9 +360,6 @@ const char *ai_name(const struct ai_type *ai);
 struct ai_type *ai_type_by_name(const char *search);
 const char *ai_type_name_or_fallback(const char *orig_name);
 
-void ai_callback_enter(void);
-void ai_callback_leave(void);
-
 #ifdef DEBUG_AITIMERS
 void ai_timer_init(void);
 void ai_timer_free(void);
@@ -395,11 +392,9 @@ void ai_timer_player_stop(const struct player *pplayer);
   do {                                                                  \
     struct player *_plr_ = _player; /* _player expanded just once */    \
     if (_plr_ && _plr_->ai && _plr_->ai->funcs._func) {                 \
-      ai_callback_enter();                                              \
       ai_timer_player_start(_plr_);                                     \
       _plr_->ai->funcs._func( __VA_ARGS__ );                            \
       ai_timer_player_stop(_plr_);                                      \
-      ai_callback_leave();                                              \
     }                                                                   \
   } while (FALSE)
 
@@ -407,11 +402,9 @@ void ai_timer_player_stop(const struct player *pplayer);
   do {                                          \
     ai_type_iterate(_ait_) {                    \
       if (_ait_->funcs._func) {                 \
-        ai_callback_enter();                    \
         ai_timer_start(_ait_);                  \
         _ait_->funcs._func( __VA_ARGS__ );      \
         ai_timer_stop(_ait_);                   \
-        ai_callback_leave();                    \
       }                                         \
     } ai_type_iterate_end;                      \
   } while (FALSE)
