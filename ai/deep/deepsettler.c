@@ -15,6 +15,8 @@
 #include <fc_config.h>
 #endif
 
+#include <stdlib.h>
+
 /* utility */
 #include "log.h"
 
@@ -3846,6 +3848,99 @@ void deep_worker_travel_census(struct player *pplayer)
 }
 
 /**********************************************************************//**
+  The worker exposure test as it was first written: is any unit of an
+  alive player at war with pplayer, with a positive attack rating,
+  within radius (real distance) of ptile? Walks every unit of every
+  at-war player, so on a late map it costs O(enemy units) per candidate
+  and the worker auction asks it once per candidate (findings/
+  perf-workers-2026-11-01.md). Kept as the reference the oracle
+  compares against. Pure: reads unit owners, positions, types, veteran
+  levels and hp, the alive flags and diplomatic states, nothing else.
+**************************************************************************/
+static bool deep_worker_enemy_near_scan(const struct player *pplayer,
+                                        const struct tile *ptile,
+                                        int radius)
+{
+  players_iterate_alive(aplayer) {
+    if (!pplayers_at_war((struct player *) pplayer, aplayer)) {
+      continue;
+    }
+    unit_list_iterate(aplayer->units, e) {
+      if (adv_unit_att_rating(e) > 0
+          && real_map_distance(unit_tile(e), ptile) <= radius) {
+        return TRUE;
+      }
+    } unit_list_iterate_end;
+  } players_iterate_alive_end;
+
+  return FALSE;
+}
+
+/* FREECIV_DEEP_WORKER_CHECK=1: compute the reference beside every
+ * lookup and log_error() any difference (the oracle; see
+ * deep_worker_enemy_near()). The log lines say "worker-check", not
+ * "deep-...", so a check-mode game.log still compares byte for byte with
+ * a default one on its "3: deep-" metric lines. */
+static int deep_worker_check_mode = -1;
+static long deep_worker_checks = 0;
+static long deep_worker_mismatches = 0;
+static int deep_worker_check_turn = -1;
+
+/**********************************************************************//**
+  The candidate implementation of the exposure test. Identical to the
+  reference until a cheaper exact form replaces it.
+**************************************************************************/
+static bool deep_worker_enemy_near_fast(const struct player *pplayer,
+                                        const struct tile *ptile,
+                                        int radius)
+{
+  return deep_worker_enemy_near_scan(pplayer, ptile, radius);
+}
+
+/**********************************************************************//**
+  Is an at-war attacker within radius of ptile? The fast form, checked
+  against the reference scan on every call when
+  FREECIV_DEEP_WORKER_CHECK=1 (the reference's answer is returned then,
+  so a check-mode game plays the reference's decisions).
+**************************************************************************/
+static bool deep_worker_enemy_near(const struct player *pplayer,
+                                   const struct tile *ptile, int radius)
+{
+  bool fast, ref;
+
+  if (deep_worker_check_mode < 0) {
+    const char *check = getenv("FREECIV_DEEP_WORKER_CHECK");
+
+    deep_worker_check_mode = (check != NULL && atoi(check) != 0) ? 1 : 0;
+  }
+
+  fast = deep_worker_enemy_near_fast(pplayer, ptile, radius);
+  if (deep_worker_check_mode == 0) {
+    return fast;
+  }
+
+  ref = deep_worker_enemy_near_scan(pplayer, ptile, radius);
+  deep_worker_checks++;
+  if (fast != ref) {
+    deep_worker_mismatches++;
+    log_error("worker-check mismatch turn=%d player=\"%s\""
+              " tile=(%d,%d) radius=%d fast=%d ref=%d",
+              game.info.turn, player_name(pplayer), TILE_XY(ptile),
+              radius, fast, ref);
+  }
+  if (deep_worker_checks % 100000 == 0
+      || game.info.turn != deep_worker_check_turn) {
+    /* Running totals, at least once a turn, so short games report. */
+    deep_worker_check_turn = game.info.turn;
+    log_normal("worker-check turn=%d checks=%ld mismatches=%ld",
+               game.info.turn, deep_worker_checks,
+               deep_worker_mismatches);
+  }
+
+  return ref;
+}
+
+/**********************************************************************//**
   Danger-aware worker task selection (human request 2026-07-30),
   registered on the advisors' inert task-value hook: candidates on
   exposed tiles -- unowned ground, or with an at-war military unit
@@ -3906,25 +4001,9 @@ adv_want deep_worker_task_value(const struct player *pplayer,
                                     old_tile_value, arrival);
   }
 
-  exposed = (tile_owner(ptile) != pplayer);
-  if (!exposed) {
-    players_iterate_alive(aplayer) {
-      if (!pplayers_at_war((struct player *) pplayer, aplayer)) {
-        continue;
-      }
-      unit_list_iterate(aplayer->units, e) {
-        if (adv_unit_att_rating(e) > 0
-            && real_map_distance(unit_tile(e), ptile)
-               <= tune->worker_guard_radius) {
-          exposed = TRUE;
-          break;
-        }
-      } unit_list_iterate_end;
-      if (exposed) {
-        break;
-      }
-    } players_iterate_alive_end;
-  }
+  exposed = (tile_owner(ptile) != pplayer
+             || deep_worker_enemy_near(pplayer, ptile,
+                                       tune->worker_guard_radius));
   if (!exposed) {
     return deep_worker_travel_price(pplayer, value + addon,
                                     old_tile_value, arrival);
