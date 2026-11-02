@@ -86,6 +86,7 @@
 #include "deepai.h"
 #include "deepchain.h"
 #include "deepcombat.h"
+#include "deepdanger.h"
 #include "deepdiplomacy.h"
 #include "deepemploy.h"
 #include "deepexpand.h"
@@ -4374,7 +4375,7 @@ static void deep_fortify_ground(struct ai_type *ait, struct player *pplayer)
 void deep_do_first_activities(struct ai_type *ait, struct player *pplayer)
 {
   TIMING_LOG(AIT_ALL, TIMER_START);
-  dai_assess_danger_player(ait, &(wld.map), pplayer);
+  deep_assess_danger_player(ait, &(wld.map), pplayer);
 
   deep_log_defence(ait, pplayer);
   deep_capture_census(ait, pplayer);
@@ -5468,7 +5469,7 @@ static struct adv_choice *deep_military_choose_build(struct ai_type *ait,
   bool allow_gold_upkeep;
 
   deep_techcensus_mark(ait, pplayer, DEEP_TC_OTHER);
-  urgency = assess_danger(ait, nmap, pcity, ul_cb);
+  urgency = deep_assess_danger(ait, nmap, pcity, ul_cb);
   /* assess_danger() reaches dai_wants_defender_against()
    * (daimilitary.c:901 -> daitech.c:507), the first of the four
    * military tech_want writers this census brackets. */

@@ -348,6 +348,7 @@ else
       'ai/deep/deeprequest.c',
       'ai/deep/deepcm.c',
       'ai/deep/deepcombat.c',
+      'ai/deep/deepdanger.c',
       'ai/deep/deepdefence.c',
       'ai/deep/deepdiplomacy.c',
       'ai/deep/deepeffects.c',
