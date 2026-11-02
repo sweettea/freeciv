@@ -453,3 +453,21 @@ exhausted). Not fixed in place per rule 2's spirit for common/.
     the same radius. Deep prices the defensive diplomat off observed
     diplomat-class presence instead (`deep_diplomat_defence_price()`,
     deepdefence.c, behind `diplo_price_gate`). Found 2026-08-30.
+51. **`cityresult_fill()` early returns skip its own cleanup**
+    (`ai/default/daisettler.c`). The function sets
+    `pplayer->government = adv->goal.govt.gov` and, for a virtual city,
+    `tile_set_owner(result->tile, pplayer, ...)`, and the restore lives
+    only at the end. Three returns skip it: the
+    `result->city_center.tdc == NULL` assert path (leaks the result and
+    the virtual city, leaves the government and the tile owner changed),
+    the "All is worked" real-city return (government left changed), and
+    the two trailing `fc_assert_ret_val` (leak the result). The first two
+    are unreachable in practice: the centre is always in the iteration,
+    and `best_other` takes the first non-centre tile whatever its value.
+    So no live effect; a latent bug on assert paths. Deep's copy
+    (`deep_cityresult_fill()`, deepsite.c) already restored on its early
+    "all worked" returns and now cleans up on the assert paths too. Fix
+    offered upstream from branch `upstream/daisettler-cleanup`
+    (`ai/default: Clean up on every early return from cityresult_fill()`,
+    RM #TBD). Found 2026-11-02 while porting the shared reverse-map
+    searches.
