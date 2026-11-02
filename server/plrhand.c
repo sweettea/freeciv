@@ -971,6 +971,7 @@ void handle_diplomacy_cancel_pact(struct player *pplayer,
   }
 
   /* Do the change */
+  map_world_changed(); /* Pathfinding reads diplomatic states. */
   ds_plrplr2->type = ds_plr2plr->type = new_type;
   ds_plrplr2->turns_left = ds_plr2plr->turns_left = 16;
 
@@ -1909,6 +1910,7 @@ struct player *server_create_player(int player_id, const char *ai_tname,
   if (nullptr == pplayer) {
     return nullptr;
   }
+  map_world_changed(); /* Pathfinding results are keyed by player. */
 
   if (allow_ai_type_fallbacking) {
     pplayer->savegame_ai_type_name = fc_strdup(ai_tname);
@@ -1952,6 +1954,7 @@ void server_remove_player(struct player *pplayer)
 
   /* Save player slot */
   pslot = pplayer->slot;
+  map_world_changed(); /* Pathfinding results are keyed by player. */
 
   log_normal(_("Removing player %s."), player_name(pplayer));
 
