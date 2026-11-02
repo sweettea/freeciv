@@ -1184,6 +1184,7 @@ void map_set_known(struct tile *ptile, struct player *pplayer)
 {
   if (!dbv_isset(&pplayer->tile_known, tile_index(ptile))) {
     map_world_changed(); /* Pathfinding reads tile knowledge. */
+    map_knowledge_changed(pplayer);
   }
   dbv_set(&pplayer->tile_known, tile_index(ptile));
 }
@@ -1195,6 +1196,7 @@ void map_clear_known(struct tile *ptile, struct player *pplayer)
 {
   if (dbv_isset(&pplayer->tile_known, tile_index(ptile))) {
     map_world_changed(); /* Pathfinding reads tile knowledge. */
+    map_knowledge_changed(pplayer);
   }
   dbv_clr(&pplayer->tile_known, tile_index(ptile));
 }
@@ -1240,6 +1242,7 @@ void player_map_init(struct player *pplayer)
   } whole_map_iterate_end;
 
   dbv_init(&pplayer->tile_known, MAP_INDEX_SIZE);
+  map_knowledge_changed(pplayer);
 }
 
 /**********************************************************************//**

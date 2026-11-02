@@ -1174,6 +1174,7 @@ bool api_edit_tile_hide(lua_State *L, Tile *ptile, Player *pplayer)
   }
 
   map_world_changed();
+  map_knowledge_changed(pplayer);
   dbv_clr(&pplayer->tile_known, tile_index(ptile));
 
   send_tile_info(pplayer->connections, ptile, TRUE);

@@ -177,6 +177,29 @@ unsigned int map_world_generation(void)
   return world_generation;
 }
 
+/* Per player slot: bumped whenever the set of tiles that player knows
+ * changes. Pathfinding reads tile knowledge only for parameters that
+ * are not omniscient, so caches of such results compare this as well
+ * as the world generation, and omniscient ones need not. */
+static unsigned int knowledge_generation[MAX_NUM_PLAYER_SLOTS];
+
+/*******************************************************************//**
+  The set of tiles pplayer knows has changed (or may have).
+***********************************************************************/
+void map_knowledge_changed(const struct player *pplayer)
+{
+  knowledge_generation[player_index(pplayer)]++;
+}
+
+/*******************************************************************//**
+  The current knowledge generation of pplayer; see
+  map_knowledge_changed().
+***********************************************************************/
+unsigned int map_knowledge_generation(const struct player *pplayer)
+{
+  return knowledge_generation[player_index(pplayer)];
+}
+
 /*******************************************************************//**
   Returns TRUE if we are at a stage of the game where the map
   has not yet been generated/loaded.
