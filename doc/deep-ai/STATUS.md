@@ -24556,3 +24556,31 @@ share), paired by seed. Proposed by `findings/theory-of-play-2026-10-26.md`
    wall, site thresholds, crowding) on the cities meter at n = 60.
 3. The empty-city defender switch as a placeholder gate (3× army at T50).
 4. Run the panel on every cell; add it to the holdout scripts.
+
+## S-PERF — city danger assessment made cheap, decisions unchanged (2026-11-01)
+
+Branch `epic/perf-turntime`. Findings: `findings/perf-turntime-2026-11-01.md` §5-6.
+
+- [x] `pf_reverse_map` shares one target-free search per key across all
+      targets within a world generation and rebuilds each target's
+      position from it (common/aicore, default on; ai/default, ai/baseline
+      untouched and sped up alike). 4 commits: world generation counter
+      (common, server), shared reconstruction behind env, default on.
+- Identity vs unmodified -O2 pin: 23/23 races identical (contested-classic
+  deep s1-10, contested deep s1-10, mixed_db s1-3, T150) in both default
+  and oracle-check mode; 0 mismatches over >= 10.8M (races), >= 1.4M
+  (Europe T50-60), >= 400k (late T251-256) checked lookups.
+- Speed, paired quiet runs: Europe T50-60 122.2 -> 63.1 s wall
+  (s/turn ~11 -> ~5.6; Danger 5.8 -> 1.0 s/turn); late T251 s/turn
+  39 -> 8.5 (Danger 34 -> 3.2 s/turn). Max RSS +1.4 MB / +0.3 MB.
+- Note: the plan's "mark every city ATTACK in one map" was not identical
+  (conquerors path through cities; attack-step cost != get_MC); the
+  neighbour reconstruction is. `FREECIV_PF_REVERSE_CHECK=1` is the
+  oracle -- run it after any change to pathfinding inputs or the
+  generation bump sites. `FREECIV_PF_REVERSE_SHARED=0` turns it off.
+- Note: benchmark numbers taken before this change stay comparable
+  (decisions are identical); wall times are not.
+- Superseded deep-only version kept on `perf-deepcopy-backup`.
+- Next: reusable scratch lattice for the remaining per-search calloc;
+  Worker want / Workers / fstk buckets; cross-callback sharing only
+  with check-mode evidence.
