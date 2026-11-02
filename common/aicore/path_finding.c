@@ -234,6 +234,7 @@ struct pf_normal_map {
                                * processed yet (NS_NEW), sorted by their
                                * total_CC. */
   struct pf_normal_node *lattice; /* Lattice of nodes. */
+  bool lattice_borrowed; /* Owned by the caller, not freed with the map. */
 };
 
 /* Up-cast macro. */
@@ -848,15 +849,21 @@ static void pf_normal_map_destroy(struct pf_map *pfm)
 {
   struct pf_normal_map *pfnm = PF_NORMAL_MAP(pfm);
 
-  free(pfnm->lattice);
+  if (!pfnm->lattice_borrowed) {
+    free(pfnm->lattice);
+  }
   map_index_pq_destroy(pfnm->queue);
   free(pfnm);
 }
 
 /************************************************************************//**
-  'pf_normal_map' constructor.
+  'pf_normal_map' constructor on 'lattice': MAP_INDEX_SIZE nodes, every
+  byte zero (as fc_calloc() gives). If 'borrowed', the caller keeps
+  ownership and the map's destructor does not free it.
 ****************************************************************************/
-static struct pf_map *pf_normal_map_new(const struct pf_parameter *parameter)
+static struct pf_map *
+pf_normal_map_new_on(const struct pf_parameter *parameter,
+                     struct pf_normal_node *lattice, bool borrowed)
 {
   struct pf_normal_map *pfnm;
   struct pf_map *base_map;
@@ -871,8 +878,8 @@ static struct pf_map *pf_normal_map_new(const struct pf_parameter *parameter)
   base_map->mode = PF_NORMAL;
 #endif /* PF_DEBUG */
 
-  /* Allocate the map. */
-  pfnm->lattice = fc_calloc(MAP_INDEX_SIZE, sizeof(struct pf_normal_node));
+  pfnm->lattice = lattice;
+  pfnm->lattice_borrowed = borrowed;
   pfnm->queue = map_index_pq_new(INITIAL_QUEUE_SIZE);
 
   if (parameter->get_costs == nullptr) {
@@ -934,6 +941,18 @@ static struct pf_map *pf_normal_map_new(const struct pf_parameter *parameter)
   node->status = NS_PROCESSED;
 
   return PF_MAP(pfnm);
+}
+
+/************************************************************************//**
+  'pf_normal_map' constructor.
+****************************************************************************/
+static struct pf_map *pf_normal_map_new(const struct pf_parameter *parameter)
+{
+  /* Allocate the map. */
+  return pf_normal_map_new_on(parameter,
+                              fc_calloc(MAP_INDEX_SIZE,
+                                        sizeof(struct pf_normal_node)),
+                              FALSE);
 }
 
 
@@ -4023,6 +4042,77 @@ static bool pf_shared_cache_sync(void)
   return pf_shared_adjacent_cities == 0;
 }
 
+/* The lattice shared searches run on, instead of a fresh fc_calloc() per
+ * search: all zero between searches, as fc_calloc() would give. A
+ * bounded search touches only a small part of the map, and zeroing the
+ * whole lattice per search was the largest single cost of the turn.
+ * Every node a pf_normal_map writes is first passed to
+ * pf_normal_node_init(): the start node, and neighbours of nodes the
+ * iteration expanded. Every expanded node is a popped node below the
+ * bound (the loop below stops before expanding the first node at or
+ * past it), so zeroing the start node and each recorded node with its
+ * neighbours restores the all-zero lattice exactly. */
+static struct pf_normal_node *pf_shared_scratch = nullptr;
+static int pf_shared_scratch_size = 0;
+static bool pf_shared_scratch_busy = FALSE;
+
+/************************************************************************//**
+  The scratch lattice for a shared search, all zero, or nullptr if it is
+  in use.
+****************************************************************************/
+static struct pf_normal_node *pf_shared_scratch_take(void)
+{
+  if (pf_shared_scratch_busy) {
+    return nullptr;
+  }
+  if (pf_shared_scratch_size != MAP_INDEX_SIZE) {
+    free(pf_shared_scratch);
+    pf_shared_scratch = fc_calloc(MAP_INDEX_SIZE,
+                                  sizeof(*pf_shared_scratch));
+    pf_shared_scratch_size = MAP_INDEX_SIZE;
+  }
+  pf_shared_scratch_busy = TRUE;
+
+  return pf_shared_scratch;
+}
+
+/************************************************************************//**
+  Return the scratch lattice after the search that recorded e's nodes
+  from 'start_tile', zeroing every node it may have touched. In check
+  mode, verify the whole lattice is zero again.
+****************************************************************************/
+static void pf_shared_scratch_give_back(const struct civ_map *nmap,
+                                        const struct tile *start_tile,
+                                        const struct pf_shared_entry *e)
+{
+  int i;
+
+  memset(pf_shared_scratch + tile_index(start_tile), 0,
+         sizeof(*pf_shared_scratch));
+  for (i = 0; i < e->nnodes; i++) {
+    const struct tile *ptile = index_to_tile(nmap, e->nodes[i].tindex);
+
+    memset(pf_shared_scratch + e->nodes[i].tindex, 0,
+           sizeof(*pf_shared_scratch));
+    adjc_iterate(nmap, ptile, ntile) {
+      memset(pf_shared_scratch + tile_index(ntile), 0,
+             sizeof(*pf_shared_scratch));
+    } adjc_iterate_end;
+  }
+
+  if (pf_reverse_mode == PF_REVERSE_CHECK) {
+    static const struct pf_normal_node zero;
+
+    for (i = 0; i < pf_shared_scratch_size; i++) {
+      if (memcmp(pf_shared_scratch + i, &zero, sizeof(zero)) != 0) {
+        log_error("pf-reverse-check scratch node %d not reset", i);
+        memset(pf_shared_scratch + i, 0, sizeof(zero));
+      }
+    }
+  }
+  pf_shared_scratch_busy = FALSE;
+}
+
 /************************************************************************//**
   Run the shared search for 'param' with bound 'max_turns' into 'e',
   replacing whatever it held.
@@ -4033,6 +4123,7 @@ static void pf_shared_entry_fill(struct pf_shared_entry *e,
 {
   struct pf_parameter shared;
   struct pf_map *pfm;
+  struct pf_normal_node *scratch = pf_shared_scratch_take();
   const struct pf_normal_node *lattice;
   int max_cost;
 
@@ -4044,7 +4135,11 @@ static void pf_shared_entry_fill(struct pf_shared_entry *e,
   shared = *param;
   shared.data = nullptr; /* pf_reverse_get_action() attacks nowhere. */
   max_cost = param->move_rate * (max_turns + 1);
-  pfm = pf_normal_map_new(&shared);
+  if (scratch != nullptr) {
+    pfm = pf_normal_map_new_on(&shared, scratch, TRUE);
+  } else {
+    pfm = pf_normal_map_new(&shared);
+  }
   lattice = PF_NORMAL_MAP(pfm)->lattice;
   pf_reverse_shared_searches++;
   do {
@@ -4070,6 +4165,9 @@ static void pf_shared_entry_fill(struct pf_shared_entry *e,
                    && (shared.move_rate > 0 || node->cost < 0));
   } while (pfm->iterate(pfm));
   pf_map_destroy(pfm);
+  if (scratch != nullptr) {
+    pf_shared_scratch_give_back(shared.map, shared.start_tile, e);
+  }
 
   qsort(e->nodes, e->nnodes, sizeof(*e->nodes), pf_shared_node_cmp);
 }
