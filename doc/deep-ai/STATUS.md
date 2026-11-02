@@ -24650,3 +24650,37 @@ Branch `epic/perf3-workers`. Findings: `findings/perf-workers-2026-11-01.md`.
   advisors-rule decision, not a deep change.
 - Next: that extension point (if approved); CM (next epic); a
   per-generation memo for the 3.1% left only with check-mode evidence.
+
+## S-PERF5 — action blocker scan made cheap, decisions unchanged (2026-11-01)
+
+Branch `epic/perf5-advisor-hook`. Findings: `findings/perf-advisors-hook-2026-11-01.md`.
+
+- [x] Profile: the 9.6% "enabler checks" in `worker_evaluate_improvements`
+      were not requirement evaluation (`action_enablers_allow` is 0.2%).
+      They were `action_is_blocked_by()` walking all 143 action ids on
+      every query: 188.5M `action_would_be_blocked_by` calls for 1.35M
+      lookups per late turn. 92-99% of the queried actions (every worker
+      activity) have an empty `blocked_by`.
+- [x] `common: route action_is_blocked_by through an oracle`
+      (`FREECIV_ACTION_BLOCK_CHECK=1`) and `common: walk only the
+      blocking actions in action_is_blocked_by` (set bits of
+      `blocked_by`, same order, same tests; exact by construction).
+- **The advisors hook from the brief was not built.** The cost was a
+  ruleset-constant scan in common/, not repeated enabler checks. An exact
+  memo would have to key on home city and the unit's real tile (at most
+  20-30% hits). No change to server/advisors/, ai/default/ or ai/baseline/.
+- Identity vs .perf-bin/ref (a9be757fed): 27/27 races identical in default
+  mode (contested-classic deep s1-10, contested deep s1-10, mixed_db s1-3,
+  contested-classic baseline s1-3 at T150, long T200 s1). Check mode: 0
+  mismatches over >= 112.0M checks; scorelog 27/27 identical; census
+  26/27, the one difference being a check-mode log line that breaks the
+  logger's "last message repeated" folding. Europe T50-60 (9.8M checks)
+  and late T251-256 (5.7M checks): 0 mismatches, identical in both modes.
+- Speed vs a9be757fed built with the same options: late callgrind
+  123.2G -> 108.7G Ir (-11.8%); Europe T50-60 user CPU -23% (Worker want
+  ~3.7 -> ~2.0 s/turn, Workers ~2.6 -> ~1.4); stock-only T150 game user
+  CPU -14%. RSS flat. Wall-clock pairs ran on a shared, loaded box.
+- Next: CM (perf4). `is_extra_caused_by_action` (33.6M calls, ~1%) could
+  be precomputed in autoworkers.c, but that needs a rule-4 decision. The
+  speculation memo hook is not worth building at 1.8%.
+
