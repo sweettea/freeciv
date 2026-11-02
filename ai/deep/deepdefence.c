@@ -9187,6 +9187,9 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
 
   /* Initialize the infrastructure cache, which is used shortly. */
   initialize_infrastructure_cache(pplayer);
+  /* deep_military_choose_build() below assesses danger per city; one
+   * position table serves the whole loop (deepdanger.c). */
+  deep_danger_sweep_begin(pplayer);
   city_list_iterate(pplayer->cities, pcity) {
     struct ai_city *city_data = def_ai_city_data(pcity, ait);
     struct adv_choice *choice;
@@ -9333,6 +9336,7 @@ static void deep_manage_cities(struct ai_type *ait, struct player *pplayer)
     }
     ADV_CHOICE_ASSERT(city_data->choice);
   } city_list_iterate_end;
+  deep_danger_sweep_end();
   /* Reset auto settler state for the next run. */
   dai_auto_settler_reset(ait, pplayer);
 

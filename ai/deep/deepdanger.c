@@ -88,6 +88,10 @@ static unsigned int deep_assess_danger_tab(struct ai_type *ait,
 
 static int deep_danger_verify_checks = 0;
 static int deep_danger_verify_mismatches = 0;
+/* (city, hostile player) pairs a sweep's table served, and those it
+ * had to hand back to a per-city map; reported in verify mode. */
+static int deep_danger_rows_used = 0;
+static int deep_danger_rows_fallback = 0;
 
 /**********************************************************************//**
   Is the table cross-check on?
@@ -114,10 +118,14 @@ static void deep_danger_verify_report(const struct player *pplayer)
     return;
   }
   log_normal("deep-danger-verify turn=%d defender=\"%s\" checks=%d"
-             " mismatches=%d", game.info.turn, player_name(pplayer),
-             deep_danger_verify_checks, deep_danger_verify_mismatches);
+             " mismatches=%d rows=%d fallback=%d", game.info.turn,
+             player_name(pplayer), deep_danger_verify_checks,
+             deep_danger_verify_mismatches, deep_danger_rows_used,
+             deep_danger_rows_fallback);
   deep_danger_verify_checks = 0;
   deep_danger_verify_mismatches = 0;
+  deep_danger_rows_used = 0;
+  deep_danger_rows_fallback = 0;
 }
 
 /**********************************************************************//**
@@ -451,6 +459,13 @@ static unsigned int deep_assess_danger_tab(struct ai_type *ait,
     src.row = (slot >= 0
                ? deep_danger_table_row(ait, tab, pplayer, aplayer, units)
                : NULL);
+    if (tab != NULL && deep_danger_verify()) {
+      if (src.row != NULL) {
+        deep_danger_rows_used++;
+      } else {
+        deep_danger_rows_fallback++;
+      }
+    }
     src.map = (src.row == NULL || deep_danger_verify()
                ? pf_reverse_map_new_for_city(nmap, pcity, aplayer,
                                              assess_turns, omnimap)
@@ -603,15 +618,72 @@ static unsigned int deep_assess_danger_tab(struct ai_type *ait,
   return urgency;
 }
 
+/* An open per-city sweep (deep_danger_sweep_begin()): the defender,
+ * and its table once the first city has asked for it. */
+static struct {
+  bool open;
+  struct player *defender;
+  bool built;
+  struct deep_danger_table *tab;
+} deep_danger_sweep;
+
 /**********************************************************************//**
-  assess_danger() for one city, outside a tabled sweep.
+  Open a sweep in which deep_assess_danger() will be called for some of
+  pplayer's cities with no unit list getter, nothing that pathfinding
+  sees changing in between. The table is built lazily by the first
+  such call, so a sweep that assesses no city costs nothing. Every row
+  is still re-validated per city (deep_danger_table_row()).
+**************************************************************************/
+void deep_danger_sweep_begin(struct player *pplayer)
+{
+  fc_assert(!deep_danger_sweep.open);
+  deep_danger_sweep.open = TRUE;
+  deep_danger_sweep.defender = pplayer;
+  deep_danger_sweep.built = FALSE;
+  deep_danger_sweep.tab = NULL;
+}
+
+/**********************************************************************//**
+  Close the sweep opened by deep_danger_sweep_begin().
+**************************************************************************/
+void deep_danger_sweep_end(void)
+{
+  if (deep_danger_sweep.built) {
+    deep_danger_verify_report(deep_danger_sweep.defender);
+  }
+  deep_danger_table_destroy(deep_danger_sweep.tab);
+  deep_danger_sweep.open = FALSE;
+  deep_danger_sweep.defender = NULL;
+  deep_danger_sweep.built = FALSE;
+  deep_danger_sweep.tab = NULL;
+}
+
+/**********************************************************************//**
+  assess_danger() for one city; reads the open sweep's table when the
+  city belongs to its defender and no unit list getter is given.
 **************************************************************************/
 unsigned int deep_assess_danger(struct ai_type *ait,
                                 const struct civ_map *nmap,
                                 struct city *pcity,
                                 player_unit_list_getter ul_cb)
 {
-  return deep_assess_danger_tab(ait, nmap, pcity, ul_cb, NULL);
+  const struct deep_danger_table *tab = NULL;
+
+  if (deep_danger_sweep.open && ul_cb == NULL
+      && city_owner(pcity) == deep_danger_sweep.defender
+      && S_S_RUNNING == server_state()) {
+    if (!deep_danger_sweep.built) {
+      TIMING_LOG(AIT_DANGER, TIMER_START);
+      deep_danger_sweep.tab
+        = deep_danger_table_new(ait, nmap, deep_danger_sweep.defender,
+                                NULL);
+      TIMING_LOG(AIT_DANGER, TIMER_STOP);
+      deep_danger_sweep.built = TRUE;
+    }
+    tab = deep_danger_sweep.tab;
+  }
+
+  return deep_assess_danger_tab(ait, nmap, pcity, ul_cb, tab);
 }
 
 /* ===================== Per-sweep hostile position table ================

@@ -29,6 +29,9 @@ void deep_assess_danger_player(struct ai_type *ait,
                                const struct civ_map *nmap,
                                struct player *pplayer);
 
+void deep_danger_sweep_begin(struct player *pplayer);
+void deep_danger_sweep_end(void);
+
 /* Per-sweep table of hostile-unit positions relative to every city of
  * one defender: what deep_assess_danger() reads instead of building a
  * pf_reverse_map per (city, hostile player). See deepdanger.c. */
