@@ -3789,7 +3789,9 @@ static bool pf_reverse_map_pos_targeted(struct pf_reverse_map *pfrm,
    Dijkstra from the same unit is run once per target: cities x units
    bounded searches per sweep. The searches below are run once per
    parameter key with NO target and shared by every pf_reverse_map until
-   the world changes (map_world_generation()); the per-target position
+   the world changes (map_world_generation()) or, for a search that is
+   not omniscient, until its owner's tile knowledge changes
+   (map_knowledge_generation()); the per-target position
    is reconstructed from the shared search.
 
    The shared search uses the reverse parameter with get_action
@@ -3855,8 +3857,12 @@ struct pf_shared_entry {
   int moves_left_initially;
   const struct unit_type *utype;
   int max_turns;
+  /* map_knowledge_generation(owner) when the search ran; only checked
+   * when not omniscient (an omniscient search never reads knowledge). */
+  unsigned int knowledge_generation;
   /* Data, sorted by tindex. */
   int nnodes;
+  int cap;
   struct pf_shared_node *nodes;
 };
 
@@ -3983,33 +3989,22 @@ static bool pf_shared_cache_sync(void)
 }
 
 /************************************************************************//**
-  Find or run the shared search for this parameter and bound.
+  Run the shared search for 'param' with bound 'max_turns' into 'e',
+  replacing whatever it held.
 ****************************************************************************/
-static const struct pf_shared_entry *
-pf_shared_entry_get(const struct pf_parameter *param, int max_turns)
+static void pf_shared_entry_fill(struct pf_shared_entry *e,
+                                 const struct pf_parameter *param,
+                                 int max_turns)
 {
-  struct pf_shared_entry key, *e;
   struct pf_parameter shared;
   struct pf_map *pfm;
   const struct pf_normal_node *lattice;
-  int max_cost, cap = 64;
+  int max_cost;
 
-  key.map = param->map;
-  key.owner = param->owner;
-  key.omniscience = param->omniscience;
-  key.start_tile = param->start_tile;
-  key.move_rate = param->move_rate;
-  key.moves_left_initially = param->moves_left_initially;
-  key.utype = param->utype;
-  key.max_turns = max_turns;
-  if (genhash_lookup(pf_shared_cache, &key, (void **) &e)) {
-    return e;
-  }
-
-  e = fc_malloc(sizeof(*e));
-  *e = key;
   e->nnodes = 0;
-  e->nodes = fc_malloc(cap * sizeof(*e->nodes));
+  if (!param->omniscience) {
+    e->knowledge_generation = map_knowledge_generation(param->owner);
+  }
 
   shared = *param;
   shared.data = nullptr; /* pf_reverse_get_action() attacks nowhere. */
@@ -4025,9 +4020,9 @@ pf_shared_entry_get(const struct pf_parameter *param, int max_turns)
     if (node->cost >= max_cost) {
       break;
     }
-    if (e->nnodes == cap) {
-      cap *= 2;
-      e->nodes = fc_realloc(e->nodes, cap * sizeof(*e->nodes));
+    if (e->nnodes == e->cap) {
+      e->cap *= 2;
+      e->nodes = fc_realloc(e->nodes, e->cap * sizeof(*e->nodes));
     }
     sn = e->nodes + e->nnodes++;
     sn->tindex = tindex;
@@ -4042,6 +4037,42 @@ pf_shared_entry_get(const struct pf_parameter *param, int max_turns)
   pf_map_destroy(pfm);
 
   qsort(e->nodes, e->nnodes, sizeof(*e->nodes), pf_shared_node_cmp);
+}
+
+/************************************************************************//**
+  Find or run the shared search for this parameter and bound. A search
+  that read tile knowledge (not omniscient) is rerun if its owner's
+  knowledge has changed since; everything else it read is covered by
+  the world generation (pf_shared_cache_sync()).
+****************************************************************************/
+static const struct pf_shared_entry *
+pf_shared_entry_get(const struct pf_parameter *param, int max_turns)
+{
+  struct pf_shared_entry key, *e;
+
+  key.map = param->map;
+  key.owner = param->owner;
+  key.omniscience = param->omniscience;
+  key.start_tile = param->start_tile;
+  key.move_rate = param->move_rate;
+  key.moves_left_initially = param->moves_left_initially;
+  key.utype = param->utype;
+  key.max_turns = max_turns;
+  if (genhash_lookup(pf_shared_cache, &key, (void **) &e)) {
+    if (!e->omniscience
+        && e->knowledge_generation
+           != map_knowledge_generation(e->owner)) {
+      pf_shared_entry_fill(e, param, max_turns);
+    }
+    return e;
+  }
+
+  e = fc_malloc(sizeof(*e));
+  *e = key;
+  e->knowledge_generation = 0;
+  e->cap = 64;
+  e->nodes = fc_malloc(e->cap * sizeof(*e->nodes));
+  pf_shared_entry_fill(e, param, max_turns);
   genhash_insert(pf_shared_cache, e, e);
 
   return e;
