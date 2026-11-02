@@ -1176,6 +1176,13 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
   if (result->city_center.tdc == NULL) {
     fc_assert(result->city_center.tdc != NULL);
 
+    pplayer->government = curr_govt;
+    if (virtual_city) {
+      destroy_city_virtual(pcity);
+      tile_set_owner(result->tile, saved_owner, saved_claimer);
+    }
+    cityresult_destroy(result);
+
     return NULL;
   }
 
@@ -1394,7 +1401,12 @@ static struct cityresult *deep_cityresult_fill(struct ai_type *ait,
     tile_set_owner(result->tile, saved_owner, saved_claimer);
   }
 
-  fc_assert_ret_val(result->city_center.tdc->sum >= 0, NULL);
+  if (result->city_center.tdc->sum < 0) {
+    fc_assert(result->city_center.tdc->sum >= 0);
+    cityresult_destroy(result);
+
+    return NULL;
+  }
 
   return result;
 }
