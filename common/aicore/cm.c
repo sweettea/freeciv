@@ -125,6 +125,7 @@ static struct {
   bool stats;
   bool check;
   long checks, mismatches; /* cumulative */
+  long bound_checks, bound_mismatches; /* cumulative */
   int bench;
   long bench_queries;
   struct timer *bench_timer;
@@ -271,6 +272,22 @@ struct cm_state {
    * - player_content_citizens() of the owner. */
   int free_output[O_LAST];
   int content_citizens;
+
+  /* For cm_city_production(): get_city_tithes_bonus(), and per output
+   * type a memo of city_waste(pcity, o, total) keyed by total: open
+   * addressing, 'cap' a power of two (or 0), kept at most half full.
+   * Keyed rather than indexed because totals are unbounded: with
+   * negative_ok the partial solutions start at -FC_INFINITY and the
+   * bonus multiplication wraps. */
+  int tithes;
+  struct cm_waste_memo {
+    struct cm_waste_entry {
+      bool used;
+      int total;
+      int waste;
+    } *slots;
+    int cap, used;
+  } waste_memo[O_LAST];
 };
 
 
@@ -323,6 +340,7 @@ static double estimate_fitness(const struct cm_state *state,
 			       const int production[]);
 static bool choice_is_promising(struct cm_state *state, int newchoice,
                                 bool negative_ok);
+static void cm_city_production(struct cm_state *state);
 
 /************************************************************************//**
   Initialize the CM data at the start of each game.  Note the citymap
@@ -1627,7 +1645,7 @@ static int specialists_in_solution(const struct cm_state *state,
 
   This function computes the max-stats produced by a partial solution.
 ****************************************************************************/
-static void compute_max_stats_heuristic(const struct cm_state *state,
+static void compute_max_stats_heuristic(struct cm_state *state,
                                         const struct partial_solution *soln,
                                         int production[],
                                         int check_choice, bool negative_ok)
@@ -1700,7 +1718,27 @@ static void compute_max_stats_heuristic(const struct cm_state *state,
     } output_type_iterate_end;
   }
 
-  set_city_production(pcity);
+  if (state->reference) {
+    set_city_production(pcity);
+  } else {
+    cm_city_production(state);
+    if (cm_instr.check) {
+      /* Also compare every bound against the real set_city_production()
+       * (it writes the same fields with the same values when exact). */
+      int prod[O_LAST], waste[O_LAST];
+
+      memcpy(prod, pcity->prod, sizeof(prod));
+      memcpy(waste, pcity->waste, sizeof(waste));
+      set_city_production(pcity);
+      cm_instr.bound_checks++;
+      if (memcmp(prod, pcity->prod, sizeof(prod)) != 0
+          || memcmp(waste, pcity->waste, sizeof(waste)) != 0) {
+        cm_instr.bound_mismatches++;
+        log_error("CM check: %s (id %d): bound production differs",
+                  city_name_get(pcity), pcity->id);
+      }
+    }
+  }
   memcpy(production, pcity->prod, sizeof(pcity->prod));
 }
 
@@ -1968,6 +2006,7 @@ static struct cm_state *cm_state_init(struct city *pcity, bool negative_ok)
 
   state->min_luxury = - FC_INFINITY;
   state->reference = FALSE;
+  memset(state->waste_memo, 0, sizeof(state->waste_memo));
 
   /* We have no best solution yet, so its value is the worst possible. */
   init_partial_solution(&state->best, numtypes, csize, negative_ok);
@@ -2037,6 +2076,153 @@ static int min_food_surplus_for_fastest_growth(struct cm_state *state)
 }
 
 /************************************************************************//**
+  Slot of 'total' in a waste memo: its entry, or the empty slot where it
+  belongs. The memo must have capacity.
+****************************************************************************/
+static struct cm_waste_entry *waste_memo_slot(struct cm_waste_memo *memo,
+                                              int total)
+{
+  unsigned int i = ((unsigned int) total * 2654435761U) & (memo->cap - 1);
+
+  while (memo->slots[i].used && memo->slots[i].total != total) {
+    i = (i + 1) & (memo->cap - 1);
+  }
+
+  return &memo->slots[i];
+}
+
+/************************************************************************//**
+  city_waste(pcity, otype, total, nullptr), memoised per search.
+
+  Exact: within a search city_waste() is a pure function of (otype,
+  total). It reads the city's size, effects whose requirements see
+  (owner, city, output type) and read no field the search writes (see
+  init_search_invariants()), the nearest gov center (other cities) and
+  settings; it writes nothing.
+****************************************************************************/
+static int cm_city_waste(struct cm_state *state, Output_type_id otype,
+                         int total)
+{
+  struct cm_waste_memo *memo = &state->waste_memo[otype];
+  struct cm_waste_entry *slot;
+  int waste;
+
+  if (memo->cap > 0) {
+    slot = waste_memo_slot(memo, total);
+    if (slot->used) {
+      return slot->waste;
+    }
+  }
+
+  waste = city_waste(state->pcity, otype, total, nullptr);
+
+  if (2 * (memo->used + 1) > memo->cap) {
+    /* Grow (doubling; the starting capacity only affects speed) and
+     * rehash. */
+    struct cm_waste_entry *old = memo->slots;
+    int oldcap = memo->cap, i;
+
+    memo->cap = (oldcap > 0 ? 2 * oldcap : 16);
+    memo->slots = fc_calloc(memo->cap, sizeof(*memo->slots));
+    for (i = 0; i < oldcap; i++) {
+      if (old[i].used) {
+        *waste_memo_slot(memo, old[i].total) = old[i];
+      }
+    }
+    free(old);
+  }
+
+  slot = waste_memo_slot(memo, total);
+  slot->used = TRUE;
+  slot->total = total;
+  slot->waste = waste;
+  memo->used++;
+
+  return waste;
+}
+
+/************************************************************************//**
+  set_city_production(pcity) with city_waste() memoised and the tithes
+  looked up once per search. Mirrors common/city.c line for line,
+  including every write (prod[], waste[], trade-route values); a copy
+  because set_city_production() is in city.c and the per-search memo
+  needs the solver's state. FREECIV_CM_CHECK compares against the
+  reference path, which calls the real one.
+  The rest of what it reads is constant within a search too: bonus[],
+  abs_bonus[] and usage[] are left as the initial full refresh set them
+  (refreshes with a workers_map skip set_city_bonuses()/city_support()),
+  and the owner's rates and partner cities are untouched.
+****************************************************************************/
+static void cm_city_production(struct cm_state *state)
+{
+  struct city *pcity = state->pcity;
+  int trade;
+
+  output_type_iterate(o) {
+    pcity->prod[o] = pcity->citizen_base[o];
+  } output_type_iterate_end;
+
+  trade_routes_iterate(pcity, proute) {
+    struct city *tcity = game_city_by_number(proute->partner);
+    bool can_trade;
+
+    if (!is_server()
+        && (tcity == nullptr
+            || city_owner(tcity)->slot == nullptr)) {
+      continue;
+    }
+
+    fc_assert_action(tcity != nullptr, continue);
+
+    can_trade = can_cities_trade(pcity, tcity);
+
+    if (!can_trade) {
+      enum trade_route_type type = cities_trade_route_type(pcity, tcity);
+      struct trade_route_settings *settings = trade_route_settings_by_type(type);
+
+      if (settings->cancelling == TRI_ACTIVE) {
+        can_trade = TRUE;
+      }
+    }
+
+    if (can_trade) {
+      int value;
+
+      value =
+        trade_base_between_cities(pcity, game_city_by_number(proute->partner));
+      proute->value = trade_from_route(pcity, proute, value);
+      pcity->prod[O_TRADE] += proute->value
+        * (100 + get_city_bonus(pcity, EFT_TRADE_ROUTE_PCT)) / 100;
+    } else {
+      proute->value = 0;
+    }
+  } trade_routes_iterate_end;
+  pcity->prod[O_GOLD] += state->tithes;
+
+  output_type_iterate(o) {
+    int prod = pcity->prod[o] * pcity->bonus[o] / 100 + pcity->abs_bonus[o];
+
+    prod = MAX(prod, 0);
+    pcity->waste[o] = cm_city_waste(state, o, prod);
+  } output_type_iterate_end;
+
+  trade = pcity->prod[O_TRADE] * pcity->bonus[O_TRADE] / 100
+    + pcity->abs_bonus[O_TRADE];
+  trade = MAX(trade, 0);
+  add_tax_income(city_owner(pcity),
+                 trade - pcity->waste[O_TRADE] - pcity->usage[O_TRADE],
+                 pcity->prod);
+
+  output_type_iterate(o) {
+    int prod = pcity->prod[o] * pcity->bonus[o] / 100 + pcity->abs_bonus[o];
+
+    prod = MAX(prod, 0);
+    pcity->prod[o] = prod;
+    pcity->prod[o] -= pcity->waste[o];
+  } output_type_iterate_end;
+}
+
+/************************************************************************//**
   Compute the per-search invariants the bound and the leaf evaluation
   read on the default path.
 
@@ -2074,6 +2260,14 @@ static void init_search_invariants(struct cm_state *state)
   } output_type_iterate_end;
 
   state->content_citizens = player_content_citizens(city_owner(pcity));
+  state->tithes = get_city_tithes_bonus(pcity);
+  output_type_iterate(o) {
+    if (state->waste_memo[o].cap > 0) {
+      memset(state->waste_memo[o].slots, 0,
+             state->waste_memo[o].cap * sizeof(*state->waste_memo[o].slots));
+    }
+    state->waste_memo[o].used = 0;
+  } output_type_iterate_end;
 }
 
 /************************************************************************//**
@@ -2142,6 +2336,9 @@ static void cm_state_free(struct cm_state *state)
   destroy_partial_solution(&state->best);
   destroy_partial_solution(&state->current);
 
+  output_type_iterate(o) {
+    free(state->waste_memo[o].slots);
+  } output_type_iterate_end;
   FC_FREE(state->choice.stack);
   FC_FREE(state->workers_map);
   FC_FREE(state);
@@ -2264,8 +2461,10 @@ static void cm_instr_turn(void)
                cm_instr.repeats, cm_instr.repeat_same);
   }
   if (cm_instr.check) {
-    log_normal("CM check T%d: checks %ld mismatches %ld (cumulative)",
-               cm_instr.turn, cm_instr.checks, cm_instr.mismatches);
+    log_normal("CM check T%d: checks %ld mismatches %ld bound_checks %ld "
+               "bound_mismatches %ld (cumulative)",
+               cm_instr.turn, cm_instr.checks, cm_instr.mismatches,
+               cm_instr.bound_checks, cm_instr.bound_mismatches);
   }
   if (cm_instr.bench_queries > 0) {
     double secs = timer_read_seconds(cm_instr.bench_timer);
