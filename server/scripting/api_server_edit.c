@@ -1175,6 +1175,7 @@ bool api_edit_tile_hide(lua_State *L, Tile *ptile, Player *pplayer)
     } trade_partners_iterate_end;
   }
 
+  map_knowledge_changed(pplayer);
   dbv_clr(&pplayer->tile_known, tile_index(ptile));
 
   send_tile_info(pplayer->connections, ptile, TRUE);

@@ -251,6 +251,7 @@ void kill_player(struct player *pplayer)
       map_claim_ownership(ptile, nullptr, nullptr, FALSE);
     }
     if (extra_owner(ptile) == pplayer) {
+      map_world_changed();
       ptile->extras_owner = nullptr;
     }
   } whole_map_iterate_end;
@@ -838,6 +839,7 @@ static void maybe_claim_base(struct tile *ptile, struct player *new_owner,
       map_claim_base(ptile, pextra, new_owner, old_owner);
     } extra_type_by_cause_iterate_end;
 
+    map_world_changed();
     ptile->extras_owner = new_owner;
   }
 }
@@ -969,6 +971,8 @@ void handle_diplomacy_cancel_pact(struct player *pplayer,
   }
 
   /* Do the change */
+  /* Pathfinding reads diplomatic states. */
+  map_world_changed();
   ds_plrplr2->type = ds_plr2plr->type = new_type;
   ds_plrplr2->turns_left = ds_plr2plr->turns_left = 16;
 
@@ -1907,6 +1911,8 @@ struct player *server_create_player(int player_id, const char *ai_tname,
   if (nullptr == pplayer) {
     return nullptr;
   }
+  /* Pathfinding results are keyed by player. */
+  map_world_changed();
 
   if (allow_ai_type_fallbacking) {
     pplayer->savegame_ai_type_name = fc_strdup(ai_tname);
@@ -1950,6 +1956,8 @@ void server_remove_player(struct player *pplayer)
 
   /* Save player slot */
   pslot = pplayer->slot;
+  /* Pathfinding results are keyed by player. */
+  map_world_changed();
 
   log_normal(_("Removing player %s."), player_name(pplayer));
 

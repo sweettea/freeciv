@@ -72,6 +72,9 @@ void tile_set_owner(struct tile *ptile, struct player *pplayer,
   if (BORDERS_DISABLED != game.info.borders
       /* City tiles are always owned by the city owner. */
       || (tile_city(ptile) != nullptr || ptile->owner != nullptr)) {
+    if (ptile->owner != pplayer) {
+      map_world_tile_changed(ptile);
+    }
     ptile->owner = pplayer;
     ptile->claimer = claimer;
   }
@@ -106,6 +109,15 @@ struct city *tile_worked(const struct tile *ptile)
 ****************************************************************************/
 void tile_set_worked(struct tile *ptile, struct city *pcity)
 {
+  struct city *new_center = (pcity != nullptr
+                             && is_city_center(pcity, ptile)
+                             ? pcity : nullptr);
+
+  if (tile_city(ptile) != new_center) {
+    /* A city center appears or goes. Which city works a tile is not
+     * read by pathfinding. */
+    map_world_tile_changed(ptile);
+  }
   ptile->worked = pcity;
 }
 
@@ -150,6 +162,7 @@ void tile_set_terrain(struct tile *ptile, struct terrain *pterrain)
                 tile_city(ptile)->id);
 #endif /* 0 */
 
+  map_world_tile_changed(ptile);
   ptile->terrain = pterrain;
   if (ptile->resource != nullptr) {
     if (pterrain != nullptr
@@ -956,6 +969,7 @@ bool tile_has_cause_extra(const struct tile *ptile, enum extra_cause cause)
 void tile_add_extra(struct tile *ptile, const struct extra_type *pextra)
 {
   if (pextra != nullptr) {
+    map_world_tile_changed(ptile);
     BV_SET(ptile->extras, extra_index(pextra));
   }
 }
@@ -966,6 +980,7 @@ void tile_add_extra(struct tile *ptile, const struct extra_type *pextra)
 void tile_remove_extra(struct tile *ptile, const struct extra_type *pextra)
 {
   if (pextra != nullptr) {
+    map_world_tile_changed(ptile);
     BV_CLR(ptile->extras, extra_index(pextra));
     if (ptile->resource == pextra) {
       ptile->resource = nullptr;

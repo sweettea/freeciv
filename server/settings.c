@@ -5657,6 +5657,9 @@ static void settings_list_free(void)
 ****************************************************************************/
 void setting_changed(struct setting *pset)
 {
+  /* Settings (borders, restrictinfra, citymindist, ...) are read by
+   * pathfinding. */
+  map_world_changed();
   pset->setdef = SETDEF_CHANGED;
 }
 
