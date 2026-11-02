@@ -220,3 +220,208 @@ no copy, and speeds up stock and baseline alike.
   mode is the instrument for that.
 - `dai_hunter`/bodyguard reverse maps (daiunit.c:3137) already benefit;
   not measured separately.
+
+## 7. Shared searches outlive AI callbacks (epic perf-xcallback, landed)
+
+### What a shared search reads
+
+A target-free reverse search (reverse parameter: `normal_move`,
+`pf_get_move_scope`, `pf_reverse_get_action`, no get_TB / get_EC /
+get_zoc / is_action_possible / is_pos_dangerous) reads:
+
+- terrain, extras, rivers (`map_move_cost`, `is_native_*`,
+  `is_safe_ocean`, city channel);
+- tile owner and diplstate (`player_can_invade_tile`, `restrict_infra`,
+  `pplayers_allied` in the move scope);
+- city existence and owner (`pf_get_move_scope` city clause);
+- units on a tile only as candidate transports (scope-NONE branch,
+  `pf_transport_check`): owner, type, `unit_has_orders`, transport
+  depth and carriers;
+- settings (borders, restrictinfra, citymindist);
+- and, only when not omniscient, the owner's tile knowledge, and only
+  as UNKNOWN vs known (`unknown_move_cost`; `node_known_type` reaches
+  no other callback).
+
+It does not read the position or orders of any unit that cannot
+transport and is not transported, nor anything an AI writes to its own
+data. The searched unit's own tile, move rate, type and owner are in
+the key.
+
+### Invalidation classification
+
+PHYSICAL = `map_world_changed()` (flushes every shared search);
+UNIT = `map_world_unit_changed(punit)` (physical iff
+`transport_capacity > 0` or transported); KNOWLEDGE =
+`map_knowledge_changed(pplayer)` (reruns that owner's non-omniscient
+searches on next use).
+
+| site | was | now | why |
+|---|---|---|---|
+| `tile_set_owner` (on change) | phys | phys | invade / restrictinfra |
+| `tile_set_worked` (centre appears/goes) | phys | phys | city scope |
+| `tile_set_terrain`, `tile_add/remove_extra` | phys | phys | move cost, nativity |
+| `unit_transport_load/unload` | phys | phys | transport depth, scope |
+| `free_unit_orders` | phys | UNIT | orders read on transports only |
+| `game_remove_unit` | phys | UNIT | units read as transports only |
+| `place_unit`, `unit_move_by_data` | phys | UNIT | same |
+| `handle_unit_orders`, rally-point orders | phys | UNIT | same |
+| `transform_unit` | phys | phys | rare; type change may make a transport |
+| in-place unit owner change (unithand) | phys | phys | rare; transport owner |
+| `transfer_city` | phys | phys | city owner |
+| `set_diplstate_type`, armistice/cease-fire countdown | phys | phys | diplstate |
+| `handle_diplomacy_cancel_pact` | **none** | phys | direct diplstate write, was covered only by the callback bump |
+| extras-owner writes (maphand x3, plrhand x2) | phys | phys | kept (cheap, rare) |
+| `server_create_player`, `server_remove_player` | **none** | phys | keys hold player pointers |
+| `setting_changed` (console set) | **none** | phys | settings read by pathfinding |
+| begin/end turn, begin/end phase | phys | phys | kept |
+| `map_set_known`/`map_clear_known` (on change) | phys | KNOWLEDGE | knowledge only |
+| Lua `edit.tile_hide` | phys | KNOWLEDGE | same |
+| `player_map_init` | none | KNOWLEDGE | slot reuse |
+| savegame `dbv_clr_all(tile_known)` | none | none | load time; phase-boundary bumps follow |
+| `ai_callback_enter/leave` (outermost) | phys | **dropped** | every change inside a callback bumps at its own site; oracle-proven below |
+| `tile_set_owner` undoing the previous bump | phys | **generation restored** | `cityresult_fill()` set/restore; see below |
+
+### Undone owner changes (found by a bump probe)
+
+With the callback bumps gone, a probe build (return address of every
+bump, logged) on the late save still showed ~40 flushes per turn, each
+preceded by ~1300 `tile_set_owner()` bumps from `cityresult_fill()`
+(ai/default/daisettler.c:233 and :390) and `deep_cityresult_fill()`:
+site evaluation sets the candidate tile's owner to the evaluating
+player and restores it, on the real tile, around every site outside
+its borders. `map_world_tile_owner_changed()` recognises a change
+that exactly undoes the previous bump (same tile, back to the old
+owner, no other bump in between) and returns the generation to its
+pre-change value; bumps always issue a fresh value, so a returned-to
+value is never reissued for a different world.
+
+### Scratch lattice: built, verified, dropped
+
+Shared searches ran on one static all-zero lattice, resetting the start
+node and each recorded node with its neighbours (check mode scanned the
+whole lattice after every reset: 0 unreset nodes over the full race
+set). Exact, but not faster: late T251-256 user CPU 47.15 / 47.23 s
+with it vs 46.27 / 46.41 s without (two sequential pairs, load ~1.5).
+The calloc it replaces was 2.1% of the late turn at ~7,000
+searches/turn; at a quarter of the searches the per-node reset costs
+more than what is left. Reverted (commit 0b1d238).
+
+### Identity (acceptance)
+
+References: `.perf-bin/o2` (unmodified -O2, pre-sharing) and
+`.perf-bin/default` (section 6). Race set as section 6 (contested-classic
+deep s1-10, contested deep s1-10, contested mixed_db s1-3, T150), scorelog
+`data` + `3: deep-` census compared byte for byte.
+
+| build | set | mode | result |
+|---|---|---|---|
+| xcb (callbacks dropped, knowledge split, unit classification) | 23 races | check | 23/23 identical to both refs; 0 mismatches / >= 10.8M checks |
+| xcb | 3 x longhaul T200 (deep 1, deep 2, mixed_db 3) | check | 0 mismatches / >= 8.3M, 8.7M, 4.8M checks |
+| scratch (+ scratch lattice) | 23 races | check, default | 23/23 + 23/23 identical; 0 mismatches, 0 unreset nodes |
+| scratch | Europe T50->60 / late T251->256 | check | 1.4M / 500k checks, 0 mismatches; identical |
+| undo (+ owner undo) | 23 races | check, default | 23/23 + 23/23 identical; 0 mismatches |
+| undo | 3 x longhaul T200 | check | 0 mismatches / >= 8.4M, 8.7M, 4.8M checks; scorelog + census identical to the xcb runs |
+| undo | Europe T50->60 / late T251->256 | check | 1.4M / 500k checks, 0 mismatches; Europe scorelog + census identical to both refs; late census identical on the refs' common span (9,439 lines) and to scratch over the full 14,604 |
+| **final** (undo minus scratch, HEAD) | 23 races | check, default | 23/23 + 23/23 identical to both refs; 0 mismatches / >= 10.8M checks |
+| final | Europe T50->60 / late T251->256 | check | 1.4M / 500k checks, 0 mismatches; identical as above |
+| final | late T251->256 (timing runs) | default | census identical to the default pin over the full 14,604 lines (3 runs) |
+
+Nothing could not be made identical.
+
+### Shared searches (FREECIV_PF_REVERSE_STATS; lookups identical in all builds)
+
+| | section 6 | final |
+|---|---|---|
+| Europe T51-59, searches/turn | 14.9k-21.5k (mean ~17.5k) | 2.4k-4.8k (mean ~3.3k) |
+| Late T252-255, searches/turn | 6.8k-8.0k (mean ~7.3k) | 1.2k-2.5k (mean ~1.8k) |
+| Race set, searches at 10.8M checks | 2.50M | 0.75M (xcb alone: 1.16M) |
+
+Lookups per turn: Europe ~130k-153k, late ~100k-107k.
+
+### Speed (sequential pairs, same saves, /usr/bin/time -v)
+
+Two sessions. A: 19:29, load ~1.5, `.perf-bin/default` vs `undo`
+(final + the scratch lattice, which measured +1.8%). B: 20:22, load
+~2.5 and the box ~45% slower overall (other work on the machine), the
+default pin vs the final HEAD pin, back to back. Compare within a
+session only.
+
+| | A: default | A: undo | B: default | B: final |
+|---|---|---|---|---|
+| Late T251->256 user CPU | 51.9 s | 39.2 s (-24%) | 75.6 s | 55.9 s (-26%) |
+| Late s/turn | 7.2-8.8 | 5.1-6.6 | 10.3-12.8 | 7.3-9.4 |
+| Late AI / turn (mean of blocks) | 6.91 | 4.78 | 10.02 | 6.79 |
+| - Danger | 2.89 | 0.76 | 4.18 | 1.02 |
+| - Military want | 3.06 | 1.33 | 4.44 | 1.89 |
+| Late max RSS | 189.1 MB | 189.2 MB | 188.7 MB | 188.6 MB |
+| Europe T50->60 user CPU | 60.5 s | 53.8 s (-11%) | 88.3 s | 76.9 s (-13%) |
+| Europe s/turn | 5.0-6.1 | 4.4-5.3 | 7.1-9.1 | 6.4-7.5 |
+| Europe AI / turn | 3.90 | 3.28 | 5.68 | 4.69 |
+| - Danger | 0.85 | 0.23 | 1.23 | 0.33 |
+| - Military want | 1.57 | 1.09 | 2.30 | 1.55 |
+| Europe max RSS | 169.2 MB | 170.1 MB | 169.4 MB | 169.7 MB |
+
+Danger is now ~0.25 of what section 6 left (late) and Military want
+less than half; what remains of the late turn is mostly the worker
+chain below. Session A also ran `.perf-bin/o2` on Europe: 105.8 s,
+Danger 4.95 s/turn.
+
+### The late callgrind (before this epic)
+
+`scratchpad perf/late-cg/callgrind.out`: one T251 turn of the late
+Europe save on `.perf-bin/default` (the section-6 code, before this
+epic), load included, 194.2 G Ir.
+
+Inclusive (top 15 below `main`/`srv_main`):
+
+| % | function |
+|---|---|
+| 34.5 | `dpai_do_last_activities` / `deep_do_last_activities` |
+| 30.9 | `worker_evaluate_improvements` (server/advisors/autoworkers.c) |
+| 29.2 | `pf_normal_map_iterate` (all pf users) |
+| 25.7 | `assess_danger` (ai/default/daimilitary.c) |
+| 25.0 | `pf_reverse_map_unit_position` |
+| 24.9 | `pf_reverse_map_pos` |
+| 22.0 | `cai_do_last_activities` / `dai_do_last_activities` |
+| 21.0 | `contemplate_terrain_improvements` (ai/default/daicity.c) |
+| 18.3 | `deep_worker_task_value` (ai/deep/deepsettler.c, inside `consider_worker_action`) |
+| 18.1 | `military_advisor_choose_build` |
+| 11.7 | `deep_military_choose_build` |
+| 11.2 | `auto_workers_player` |
+| 8.8 | `cm_query_result` |
+| 2.8 | `pf_normal_map_new` (2.1 from `pf_reverse_map_pos`, i.e. shared-search lattices; 14,326 searches) |
+
+Self (top 15):
+
+| % | function |
+|---|---|
+| 6.43 | `pf_normal_map_iterate` |
+| 4.65 | `tile_move_cost_ptrs` |
+| 4.60 | `player_slot_next` (1.85 from `deep_worker_task_value`, 1.60 from `remove_player_from_maps`, 0.71 `real_sanity_check`) |
+| 4.19 | `action_would_be_blocked_by` |
+| 4.16 | `map_pos_to_tile` |
+| 4.05 | `is_native_to_class` |
+| 3.98 | `map_distance_vector` |
+| 2.99 | `memset` (2.97 via `fc_real_calloc`, of which 2.75 `pf_normal_map_new`) |
+| 2.18 | specpq inside `pf_normal_map_iterate` |
+| 1.98 | `base_get_attack_power` |
+| 1.95 | `deep_worker_task_value` |
+| 1.73 | `are_reqs_active` |
+| 1.51 | `action_is_blocked_by` |
+| 1.47 | `msort_with_tmp` (libc qsort) |
+| 1.44 | `tri_req_present` |
+
+So the shared-search lattice calloc was ~2.1% of the late turn before
+this epic; with searches cut ~4x by cross-callback survival the scratch
+lattice did not pay (above).
+
+**Next epic's target: the worker-improvement evaluation chain.**
+`contemplate_terrain_improvements` (ai/default/daicity.c, per city in
+the manage-cities pass, 21.0%) -> `worker_evaluate_improvements`
+(autoworkers.c, 30.9% total with `auto_workers_player` 11.2%) ->
+`deep_worker_task_value` (18.3% inclusive, with a `players_iterate`
+in its hot loop: 1.85% self in `player_slot_next`, 189M calls), with
+`cm_query_result` (8.8%) under it. Also `remove_player_from_maps`
+(1.6% of the turn in `player_slot_next` alone: a `players_iterate`
+per tile, run when a player -- here barbarians, repeatedly -- is
+removed).

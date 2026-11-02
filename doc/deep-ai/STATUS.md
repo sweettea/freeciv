@@ -24584,3 +24584,37 @@ Branch `epic/perf-turntime`. Findings: `findings/perf-turntime-2026-11-01.md` §
 - Next: reusable scratch lattice for the remaining per-search calloc;
   Worker want / Workers / fstk buckets; cross-callback sharing only
   with check-mode evidence.
+
+## S-PERF2 — shared reverse-map searches survive across AI callbacks (2026-11-01)
+
+Branch `epic/perf-turntime`. Findings: `findings/perf-turntime-2026-11-01.md` §7.
+
+- [x] Invalidation split so shared searches outlive callbacks (7 commits
+      kept + 1 dropped): gap bumps (cancelled pact, player create/remove,
+      console settings); per-player knowledge generation (non-omniscient
+      searches only); unit bumps only for transport-capable or
+      transported units; AI-callback bumps removed; tile-owner change
+      that undoes the previous bump restores the generation
+      (`cityresult_fill()` set/restore was flushing ~40x/turn);
+      `FREECIV_PF_REVERSE_STATS=1` per-turn counts. Classification table
+      of every bump site in §7.
+- Identity: final HEAD 23/23 races identical to both `.perf-bin/o2` and
+  `.perf-bin/default`, default and oracle mode, 0 mismatches over
+  >= 10.8M checks; Europe T50-60 (1.4M checks) and late T251-256 (500k)
+  0 mismatches, identical; 3 longhaul T200 games in oracle mode,
+  0 mismatches over >= 21.9M checks.
+- Shared searches/turn: Europe ~17.5k -> ~3.3k; late ~7.3k -> ~1.8k.
+- Speed, `.perf-bin/default` vs this series, sequential pairs: late
+  T251-256 user CPU -24% (51.9 -> 39.2 s, quiet box, pre-drop build) and
+  -26% (75.6 -> 55.9 s, final HEAD, busier box); Danger 2.89 -> 0.76
+  s/turn, Military want 3.06 -> 1.33; Europe T50-60 -11% / -13%, Danger
+  0.85 -> 0.23. Max RSS unchanged (189 MB late, 170 MB Europe).
+- Dropped: reusable scratch lattice for shared searches (exact, 0 unreset
+  nodes in check mode, but 1.8% slower than calloc at the new search
+  count).
+- Next epic (from the late callgrind): the worker-improvement evaluation
+  chain -- `contemplate_terrain_improvements` (21.0%) ->
+  `worker_evaluate_improvements` (30.9% with `auto_workers_player`) ->
+  `deep_worker_task_value` (18.3%, a `players_iterate` in its hot loop),
+  `cm_query_result` 8.8% under it; also `remove_player_from_maps` (1.6%
+  in `player_slot_next`, barbarians removed repeatedly).
