@@ -23,6 +23,7 @@
 #include <fc_config.h>
 #endif
 
+#include <stdlib.h>
 #include <string.h>
 
 /* utility */
@@ -64,12 +65,104 @@
 
 #include "deepdanger.h"
 
+/* Where deep_assess_danger_unit() reads a hostile unit's position from:
+ * a row of the per-sweep table when one is valid for this (city,
+ * hostile player), stock's per-city pf_reverse_map otherwise. With
+ * FREECIV_DEEP_DANGER_VERIFY set, both are kept and every table answer
+ * is checked against the map (a test aid; outputs still come from the
+ * table). */
+struct deep_danger_src {
+  const struct deep_danger_table *tab;
+  const struct deep_danger_row *row;
+  int slot;
+  int idx;
+  struct pf_reverse_map *map;
+  const struct city *pcity;
+};
+
+static unsigned int deep_assess_danger_tab(struct ai_type *ait,
+                                           const struct civ_map *nmap,
+                                           struct city *pcity,
+                                           player_unit_list_getter ul_cb,
+                                           const struct deep_danger_table *tab);
+
+static int deep_danger_verify_checks = 0;
+static int deep_danger_verify_mismatches = 0;
+
+/**********************************************************************//**
+  Is the table cross-check on?
+**************************************************************************/
+static bool deep_danger_verify(void)
+{
+  static int verify = -1;
+
+  if (verify < 0) {
+    const char *env = getenv("FREECIV_DEEP_DANGER_VERIFY");
+
+    verify = (env != NULL && env[0] != '\0' && env[0] != '0') ? 1 : 0;
+  }
+
+  return verify > 0;
+}
+
+/**********************************************************************//**
+  Log and reset the cross-check counters after a sweep.
+**************************************************************************/
+static void deep_danger_verify_report(const struct player *pplayer)
+{
+  if (!deep_danger_verify()) {
+    return;
+  }
+  log_normal("deep-danger-verify turn=%d defender=\"%s\" checks=%d"
+             " mismatches=%d", game.info.turn, player_name(pplayer),
+             deep_danger_verify_checks, deep_danger_verify_mismatches);
+  deep_danger_verify_checks = 0;
+  deep_danger_verify_mismatches = 0;
+}
+
+/**********************************************************************//**
+  pf_reverse_map_unit_position(), from the table when the source has a
+  row. Only pos->turn is filled on the table path; it is the only field
+  deep_assess_danger_unit() reads.
+**************************************************************************/
+static bool deep_danger_position(struct deep_danger_src *src,
+                                 const struct unit *punit, bool ferry,
+                                 struct pf_position *pos)
+{
+  bool found;
+
+  if (src->row == NULL) {
+    return pf_reverse_map_unit_position(src->map, punit, pos);
+  }
+
+  found = deep_danger_row_turn(src->tab, src->row, src->idx, ferry,
+                               src->slot, &pos->turn);
+  if (src->map != NULL) {
+    struct pf_position spos;
+    bool sfound = pf_reverse_map_unit_position(src->map, punit, &spos);
+
+    deep_danger_verify_checks++;
+    if (sfound != found || (found && spos.turn != pos->turn)) {
+      deep_danger_verify_mismatches++;
+      log_error("deep-danger-verify mismatch turn=%d defender=\"%s\""
+                " city=%d unit=%d type=\"%s\" ferry=%d table=%d/%d"
+                " stock=%d/%d", game.info.turn,
+                player_name(city_owner(src->pcity)), src->pcity->id,
+                punit->id, utype_rule_name(unit_type_get(punit)),
+                ferry ? 1 : 0, found ? 1 : 0, found ? pos->turn : -1,
+                sfound ? 1 : 0, sfound ? spos.turn : -1);
+    }
+  }
+
+  return found;
+}
+
 /**********************************************************************//**
   How dangerous and far a unit is for a city?
 **************************************************************************/
 static unsigned int deep_assess_danger_unit(const struct civ_map *nmap,
                                             const struct city *pcity,
-                                            struct pf_reverse_map *pcity_map,
+                                            struct deep_danger_src *src,
                                             const struct unit *punit,
                                             int *move_time)
 {
@@ -91,7 +184,7 @@ static unsigned int deep_assess_danger_unit(const struct civ_map *nmap,
                   / punittype->paratroopers_range);
   }
 
-  if (pf_reverse_map_unit_position(pcity_map, punit, &pos)
+  if (deep_danger_position(src, punit, FALSE, &pos)
       && (PF_IMPOSSIBLE_MC == *move_time
           || *move_time > pos.turn)) {
     *move_time = pos.turn;
@@ -99,7 +192,7 @@ static unsigned int deep_assess_danger_unit(const struct civ_map *nmap,
 
   if (unit_transported(punit)
       && (ferry = unit_transport_get(punit))
-      && pf_reverse_map_unit_position(pcity_map, ferry, &pos)) {
+      && deep_danger_position(src, ferry, TRUE, &pos)) {
     if ((PF_IMPOSSIBLE_MC == *move_time
          || *move_time > pos.turn)) {
       *move_time = pos.turn;
@@ -180,9 +273,16 @@ void deep_assess_danger_player(struct ai_type *ait,
 {
   /* Do nothing if game is not running */
   if (S_S_RUNNING == server_state()) {
+    struct deep_danger_table *tab;
+
+    TIMING_LOG(AIT_DANGER, TIMER_START);
+    tab = deep_danger_table_new(ait, nmap, pplayer, NULL);
+    TIMING_LOG(AIT_DANGER, TIMER_STOP);
     city_list_iterate(pplayer->cities, pcity) {
-      (void) deep_assess_danger(ait, nmap, pcity, NULL);
+      (void) deep_assess_danger_tab(ait, nmap, pcity, NULL, tab);
     } city_list_iterate_end;
+    deep_danger_table_destroy(tab);
+    deep_danger_verify_report(pplayer);
   }
 }
 
@@ -204,10 +304,11 @@ void deep_assess_danger_player(struct ai_type *ait,
   afraid of a boat laden with enemies if it stands on the coast (i.e.
   is directly reachable by this boat).
 **************************************************************************/
-unsigned int deep_assess_danger(struct ai_type *ait,
-                                const struct civ_map *nmap,
-                                struct city *pcity,
-                                player_unit_list_getter ul_cb)
+static unsigned int deep_assess_danger_tab(struct ai_type *ait,
+                                           const struct civ_map *nmap,
+                                           struct city *pcity,
+                                           player_unit_list_getter ul_cb,
+                                           const struct deep_danger_table *tab)
 {
   struct player *pplayer = city_owner(pcity);
   struct tile *ptile = city_tile(pcity);
@@ -230,6 +331,7 @@ unsigned int deep_assess_danger(struct ai_type *ait,
   int city_def_against[U_LAST];
   int assess_turns;
   bool omnimap;
+  int slot;
 
   TIMING_LOG(AIT_DANGER, TIMER_START);
 
@@ -321,9 +423,11 @@ unsigned int deep_assess_danger(struct ai_type *ait,
 
   omnimap = !has_handicap(pplayer, H_MAP);
 
+  slot = (tab != NULL ? deep_danger_table_slot(tab, pcity) : -1);
+
   /* Check. */
   players_iterate(aplayer) {
-    struct pf_reverse_map *pcity_map;
+    struct deep_danger_src src;
     struct unit_list *units;
 
     if (!adv_is_player_dangerous(pplayer, aplayer)) {
@@ -332,14 +436,25 @@ unsigned int deep_assess_danger(struct ai_type *ait,
     /* Note that we still consider the units of players we are not (yet)
      * at war with. */
 
-    pcity_map = pf_reverse_map_new_for_city(nmap, pcity, aplayer, assess_turns,
-                                            omnimap);
-
     if (ul_cb != NULL) {
       units = ul_cb(aplayer);
     } else {
       units = aplayer->units;
     }
+
+    /* Stock builds a pf_reverse_map here; deep reads the sweep's table
+     * when it still describes this city and these units exactly. */
+    src.tab = tab;
+    src.slot = slot;
+    src.idx = -1;
+    src.pcity = pcity;
+    src.row = (slot >= 0
+               ? deep_danger_table_row(ait, tab, pplayer, aplayer, units)
+               : NULL);
+    src.map = (src.row == NULL || deep_danger_verify()
+               ? pf_reverse_map_new_for_city(nmap, pcity, aplayer,
+                                             assess_turns, omnimap)
+               : NULL);
     unit_list_iterate(units, punit) {
       int move_time;
       unsigned int vulnerability;
@@ -367,9 +482,10 @@ unsigned int deep_assess_danger(struct ai_type *ait,
         /* Harmless unit. */
         continue;
       }
+      src.idx++;
 
       /* Defender unspecific vulnerability and potential move time */
-      vulnerability = deep_assess_danger_unit(nmap, pcity, pcity_map,
+      vulnerability = deep_assess_danger_unit(nmap, pcity, &src,
                                               punit, &move_time);
 
       if (PF_IMPOSSIBLE_MC == move_time) {
@@ -437,7 +553,9 @@ unsigned int deep_assess_danger(struct ai_type *ait,
       total_danger += vulnerability;
     } unit_list_iterate_end;
 
-    pf_reverse_map_destroy(pcity_map);
+    if (src.map != NULL) {
+      pf_reverse_map_destroy(src.map);
+    }
 
   } players_iterate_end;
 
@@ -483,6 +601,17 @@ unsigned int deep_assess_danger(struct ai_type *ait,
   TIMING_LOG(AIT_DANGER, TIMER_STOP);
 
   return urgency;
+}
+
+/**********************************************************************//**
+  assess_danger() for one city, outside a tabled sweep.
+**************************************************************************/
+unsigned int deep_assess_danger(struct ai_type *ait,
+                                const struct civ_map *nmap,
+                                struct city *pcity,
+                                player_unit_list_getter ul_cb)
+{
+  return deep_assess_danger_tab(ait, nmap, pcity, ul_cb, NULL);
 }
 
 /* ===================== Per-sweep hostile position table ================
