@@ -24684,3 +24684,45 @@ Branch `epic/perf5-advisor-hook`. Findings: `findings/perf-advisors-hook-2026-11
   be precomputed in autoworkers.c, but that needs a rule-4 decision. The
   speculation memo hook is not worth building at 1.8%.
 
+## S-PERF4 — city governor (CM) solver made cheap, results unchanged (2026-11-01)
+
+Branch `epic/perf4-cm`. Findings: `findings/perf-cm-2026-11-01.md`.
+common/aicore/cm.c is shared by the server (AI cities, taxes, government
+evaluation) and the client's citizen governor, which re-solves a city on
+every city-info packet: the per-query saving reaches human players too.
+
+- [x] Profile: 77% of the solver was the B&B bound, mostly re-deriving
+      per-search constants (free centre tile's output by a radius scan x 6
+      outputs per bound; `city_waste()` effect lookups and
+      `nearest_gov_center()` inside `set_city_production()`); leaf
+      evaluation only 13%. Steady late turns ~300-400 queries, 75-160
+      loops/query; the government-evaluation (load) turn 2,249.
+- [x] 4 code commits: `FREECIV_CM_STATS` / `FREECIV_CM_BENCH`
+      instruments; `FREECIV_CM_CHECK` oracle (reference path kept intact,
+      result compared per query, and every bound compared against the real
+      `set_city_production()`); per-search invariants hoisted out of the
+      bound; per-search `city_waste()` memo (keyed by total) inside a
+      line-for-line copy of `set_city_production()`.
+- Identity vs `.perf-bin/ref`: 24/24 races identical (contested-classic
+  deep s1-10, contested deep s1-10, mixed_db s1-3 at T150, long T200 s1)
+  in check and default mode; 375,420 result checks + 11,309,422 bound
+  checks, 0 mismatches; Europe T50-60 and late T251-256 identical in both
+  modes (0 mismatches). Per-turn loops/bounds/leaves equal to the
+  unmodified solver (same search, same tie-breaks, same aborts).
+- Speed: solver instructions on the late load turn 14.28G -> 4.35G
+  (-70%, callgrind, deterministic); microbenchmark ~3x less CPU per query
+  (Europe ~640 -> ~200 us); in games Citizen arrange + Taxes 2.2-3x lower
+  (late load turn arrange 2.4 -> 0.8 s). Whole-turn wall time did not
+  separate from box noise (load 8-11; CM is a few % of a steady turn).
+  Max RSS unchanged (189 MB late, 170 MB Europe).
+- Note: a first, indexed waste memo blew RSS to 289 MB (negative_ok
+  totals wrap); fixed before the commit was final. Run
+  `FREECIV_CM_CHECK=1` after any change to city.c's production/waste
+  code: `cm_city_production()` mirrors `set_city_production()`.
+- Not done (exactness or scope): tighter bounds (would move the
+  CM_MAX_LOOP abort point and min_luxury learning); cross-query memo
+  (4-19% repeats); lattice from the city tile cache and a waste function
+  taking precomputed levels (both need common/city.c changes).
+- Next: leaf refresh (43% of what is left) and per-query initial refresh
+  + lattice (31%) are city.c work; government evaluation re-solves every
+  city per candidate government (ai/default + advisors, unchanged).
