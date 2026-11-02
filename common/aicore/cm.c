@@ -114,6 +114,30 @@ static struct {
 static void print_performance(struct one_perf *counts);
 #endif /* GATHER_TIME_STATS */
 
+/* Instrumentation, configured once from the environment:
+ * FREECIV_CM_STATS=1 logs per-turn solver work counts;
+ * FREECIV_CM_BENCH=N solves every query N extra times under a CPU timer
+ * (a microbenchmark on the game's real query mix) and logs the time. */
+static struct {
+  bool init;
+  bool stats;
+  int bench;
+  long bench_queries;
+  struct timer *bench_timer;
+  int turn;
+  long queries, loops, heuristics, leaves, aborted;
+  long repeats;      /* input signature already seen this turn */
+  long repeat_same;  /* ... and the same result returned */
+} cm_instr;
+
+/* Per-turn table of query signatures (open addressing, 0 = empty). */
+#define CM_SIG_TABLE_SIZE (1 << 16)
+static struct cm_sig_entry {
+  unsigned long long sig;
+  unsigned long long res;
+} cm_sig_table[CM_SIG_TABLE_SIZE];
+static int cm_sig_used;
+
 /* Fitness of a solution.  */
 struct cm_fitness {
   int weighted; /* weighted sum */
@@ -1594,6 +1618,8 @@ static void compute_max_stats_heuristic(const struct cm_state *state,
   struct partial_solution solnplus; /* Will be soln, plus some tiles */
   const struct civ_map *nmap = &(wld.map);
 
+  cm_instr.heuristics++;
+
   /* Production is whatever the solution produces, plus the
      most possible of each kind of production the idle workers could
      produce */
@@ -1827,6 +1853,8 @@ static bool bb_next(struct cm_state *state, bool negative_ok)
   /* if no idle workers, then look at our solution. */
   if (state->current.idle == 0) {
     struct cm_fitness value = evaluate_solution(state, &state->current);
+
+    cm_instr.leaves++;
 
     print_partial_solution(LOG_REACHED_LEAF, &state->current, state);
     if (fitness_better(value, state->best_value)) {
@@ -2109,12 +2137,197 @@ static void cm_find_best_solution(struct cm_state *state,
   }
 #endif /* CM_LOOP_NO_LIMIT */
 
+  cm_instr.loops += loop_count;
+  if (result->aborted) {
+    cm_instr.aborted++;
+  }
+
   /* convert to the caller's format */
   convert_solution_to_result(state, &state->best, result);
 
   memcpy(state->pcity, &backup, sizeof(backup));
 
   end_search(state);
+}
+
+/************************************************************************//**
+  Read the instrumentation switches from the environment, once.
+****************************************************************************/
+static void cm_instr_init(void)
+{
+  const char *env;
+
+  if (cm_instr.init) {
+    return;
+  }
+  cm_instr.init = TRUE;
+  env = getenv("FREECIV_CM_STATS");
+  cm_instr.stats = (env != nullptr && env[0] == '1');
+  env = getenv("FREECIV_CM_BENCH");
+  if (env != nullptr && str_to_int(env, &cm_instr.bench)
+      && cm_instr.bench > 0) {
+    cm_instr.bench_timer = timer_new(TIMER_CPU, TIMER_ACTIVE, "cm.bench");
+  } else {
+    cm_instr.bench = 0;
+  }
+  cm_instr.turn = -1;
+}
+
+/************************************************************************//**
+  Log and reset the per-turn counters when the turn changes.
+****************************************************************************/
+static void cm_instr_turn(void)
+{
+  if (game.info.turn == cm_instr.turn) {
+    return;
+  }
+  if (cm_instr.queries > 0) {
+    log_normal("CM stats T%d: queries %ld loops %ld heuristics %ld "
+               "leaves %ld aborted %ld repeats %ld repeat_same %ld",
+               cm_instr.turn, cm_instr.queries, cm_instr.loops,
+               cm_instr.heuristics, cm_instr.leaves, cm_instr.aborted,
+               cm_instr.repeats, cm_instr.repeat_same);
+  }
+  if (cm_instr.bench_queries > 0) {
+    double secs = timer_read_seconds(cm_instr.bench_timer);
+
+    log_normal("CM bench T%d: %ld queries x %d reps: %.3f s CPU, "
+               "%.2f us/query", cm_instr.turn, cm_instr.bench_queries,
+               cm_instr.bench, secs,
+               secs * 1e6 / (cm_instr.bench_queries * cm_instr.bench));
+  }
+  if (cm_instr.bench > 0) {
+    timer_clear(cm_instr.bench_timer);
+  }
+  cm_instr.bench_queries = 0;
+  cm_instr.turn = game.info.turn;
+  cm_instr.queries = cm_instr.loops = cm_instr.heuristics = 0;
+  cm_instr.leaves = cm_instr.aborted = 0;
+  cm_instr.repeats = cm_instr.repeat_same = 0;
+  memset(cm_sig_table, 0, sizeof(cm_sig_table));
+  cm_sig_used = 0;
+}
+
+/************************************************************************//**
+  FNV-1a over a block of memory.
+****************************************************************************/
+static unsigned long long cm_hash(unsigned long long h, const void *data,
+                                  size_t len)
+{
+  const unsigned char *p = data;
+  size_t i;
+
+  for (i = 0; i < len; i++) {
+    h ^= p[i];
+    h *= 1099511628211ULL;
+  }
+
+  return h;
+}
+
+#define CM_HASH_VAL(h, v) do {                                              \
+  int _hv = (int) (v);                                                      \
+                                                                            \
+  (h) = cm_hash((h), &_hv, sizeof(_hv));                                    \
+} while (FALSE)
+
+/************************************************************************//**
+  Approximate signature of a query's inputs (statistics only, never used
+  to answer a query): the parameter, the city's aggregates after the
+  refresh, the owner's rates and every lattice node with its tiles.
+****************************************************************************/
+static unsigned long long cm_query_signature(const struct cm_state *state,
+                                             const struct cm_parameter *param,
+                                             bool negative_ok)
+{
+  const struct city *pcity = state->pcity;
+  const struct player *pplayer = city_owner(pcity);
+  unsigned long long h = 14695981039346656037ULL;
+
+  CM_HASH_VAL(h, pcity->id);
+  CM_HASH_VAL(h, city_size_get(pcity));
+  CM_HASH_VAL(h, city_map_radius_sq_get(pcity));
+  CM_HASH_VAL(h, negative_ok);
+  CM_HASH_VAL(h, pcity->food_stock);
+  CM_HASH_VAL(h, pcity->was_happy);
+  CM_HASH_VAL(h, government_number(government_of_player(pplayer)));
+  CM_HASH_VAL(h, pplayer->economic.science);
+  CM_HASH_VAL(h, pplayer->economic.luxury);
+  CM_HASH_VAL(h, pplayer->economic.tax);
+  output_type_iterate(o) {
+    CM_HASH_VAL(h, param->minimal_surplus[o]);
+    CM_HASH_VAL(h, param->factor[o]);
+    CM_HASH_VAL(h, pcity->bonus[o]);
+    CM_HASH_VAL(h, pcity->abs_bonus[o]);
+    CM_HASH_VAL(h, pcity->usage[o]);
+  } output_type_iterate_end;
+  CM_HASH_VAL(h, param->max_growth);
+  CM_HASH_VAL(h, param->require_happy);
+  CM_HASH_VAL(h, param->allow_disorder);
+  CM_HASH_VAL(h, param->allow_specialists);
+  CM_HASH_VAL(h, param->happy_factor);
+  tile_type_vector_iterate(&state->lattice, ptype) {
+    output_type_iterate(o) {
+      CM_HASH_VAL(h, ptype->production[o]);
+    } output_type_iterate_end;
+    CM_HASH_VAL(h, ptype->is_specialist);
+    CM_HASH_VAL(h, ptype->spec);
+    CM_HASH_VAL(h, tile_vector_size(&ptype->tiles));
+    TYPED_VECTOR_ITERATE(struct cm_tile, &ptype->tiles, ptile) {
+      CM_HASH_VAL(h, ptile->index);
+    } VECTOR_ITERATE_END;
+  } tile_type_vector_iterate_end;
+
+  return h | 1;
+}
+
+/************************************************************************//**
+  Hash of a query's result.
+****************************************************************************/
+static unsigned long long cm_result_signature(const struct cm_result *result)
+{
+  unsigned long long h = 14695981039346656037ULL;
+
+  CM_HASH_VAL(h, result->aborted);
+  CM_HASH_VAL(h, result->found_a_valid);
+  CM_HASH_VAL(h, result->disorder);
+  CM_HASH_VAL(h, result->happy);
+  output_type_iterate(o) {
+    CM_HASH_VAL(h, result->surplus[o]);
+  } output_type_iterate_end;
+  specialist_type_iterate(sp) {
+    CM_HASH_VAL(h, result->specialists[sp]);
+  } specialist_type_iterate_end;
+  h = cm_hash(h, result->worker_positions,
+              sizeof(*result->worker_positions)
+              * city_map_tiles(result->city_radius_sq));
+
+  return h;
+}
+
+/************************************************************************//**
+  Count a query whose signature was already seen this turn.
+****************************************************************************/
+static void cm_instr_record(unsigned long long sig, unsigned long long res)
+{
+  unsigned int i = (unsigned int) (sig ^ (sig >> 32)) % CM_SIG_TABLE_SIZE;
+
+  while (cm_sig_table[i].sig != 0) {
+    if (cm_sig_table[i].sig == sig) {
+      cm_instr.repeats++;
+      if (cm_sig_table[i].res == res) {
+        cm_instr.repeat_same++;
+      }
+      cm_sig_table[i].res = res;
+      return;
+    }
+    i = (i + 1) % CM_SIG_TABLE_SIZE;
+  }
+  if (cm_sig_used < CM_SIG_TABLE_SIZE / 2) {
+    cm_sig_table[i].sig = sig;
+    cm_sig_table[i].res = res;
+    cm_sig_used++;
+  }
 }
 
 /************************************************************************//**
@@ -2125,16 +2338,62 @@ void cm_query_result(struct city *pcity,
                      const struct cm_parameter *param,
                      struct cm_result *result, bool negative_ok)
 {
-  struct cm_state *state = cm_state_init(pcity, negative_ok);
+  struct cm_state *state;
   const struct civ_map *nmap = &(wld.map);
+  unsigned long long sig = 0;
+
+  cm_instr_init();
+  if (cm_instr.stats || cm_instr.bench > 0) {
+    cm_instr_turn();
+  }
+  if (cm_instr.stats) {
+    cm_instr.queries++;
+  }
+
+  if (cm_instr.bench > 0) {
+    /* Solve the same query 'bench' times on a scratch result; the real
+     * query below runs last, so the city ends up as without the bench. */
+    struct cm_result scratch = *result;
+    size_t wsize = city_map_tiles(result->city_radius_sq)
+                   * sizeof(*result->worker_positions);
+    long heuristics = cm_instr.heuristics, leaves = cm_instr.leaves;
+    long loops = cm_instr.loops, aborted = cm_instr.aborted;
+    int rep;
+
+    scratch.worker_positions = fc_malloc(wsize);
+    timer_start(cm_instr.bench_timer);
+    for (rep = 0; rep < cm_instr.bench; rep++) {
+      state = cm_state_init(pcity, negative_ok);
+      city_refresh_from_main_map(nmap, pcity, nullptr);
+      cm_find_best_solution(state, param, &scratch, negative_ok);
+      cm_state_free(state);
+    }
+    timer_stop(cm_instr.bench_timer);
+    FC_FREE(scratch.worker_positions);
+    cm_instr.bench_queries++;
+    cm_instr.heuristics = heuristics;
+    cm_instr.leaves = leaves;
+    cm_instr.loops = loops;
+    cm_instr.aborted = aborted;
+  }
+
+  state = cm_state_init(pcity, negative_ok);
 
   /* Refresh the city. Otherwise the CM can give wrong results or just be
    * slower than necessary. Note that cities are often passed in in an
    * unrefreshed state (which should probably be fixed). */
   city_refresh_from_main_map(nmap, pcity, nullptr);
 
+  if (cm_instr.stats) {
+    sig = cm_query_signature(state, param, negative_ok);
+  }
+
   cm_find_best_solution(state, param, result, negative_ok);
   cm_state_free(state);
+
+  if (cm_instr.stats) {
+    cm_instr_record(sig, cm_result_signature(result));
+  }
 }
 
 /************************************************************************//**
