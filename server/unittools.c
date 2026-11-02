@@ -1741,7 +1741,7 @@ bool place_unit(struct unit *punit, struct player *pplayer,
                     FALSE);
 
   unit_list_prepend(pplayer->units, punit);
-  map_world_changed();
+  map_world_unit_changed(punit);
   unit_list_prepend(ptile->units, punit);
   unit_make_contact(punit, ptile, nullptr);
   if (pcity && !unit_has_type_flag(punit, UTYF_NOHOME)) {
@@ -3999,7 +3999,7 @@ static void unit_move_by_data(struct unit_move_data *pdata,
   /* Remove unit from the source tile. */
   fc_assert(unit_tile(punit) == psrctile);
 
-  map_world_changed();
+  map_world_unit_changed(punit);
 #ifndef FREECIV_NDEBUG
   bool success =
 #endif

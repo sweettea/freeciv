@@ -6935,7 +6935,7 @@ void handle_unit_orders(struct player *pplayer,
     return;
   }
 
-  map_world_changed();
+  map_world_unit_changed(punit);
   punit->has_orders = TRUE;
   punit->orders.length = length;
   punit->orders.index = 0;

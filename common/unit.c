@@ -1821,6 +1821,25 @@ void unit_virtual_destroy(struct unit *punit)
 }
 
 /**********************************************************************//**
+  punit's tile, orders or presence is about to change. Pathfinding
+  (pf_get_move_scope(), pf_transport_check()) reads the units on a tile
+  only as possible transports: their owner, type, orders, transport
+  depth and the transports carrying them. The positions and orders of
+  every other unit are read by no pathfinder that has no get_zoc /
+  get_TB / is_action_possible callback, and those that have one never
+  cache their results. So bump the world generation only for a unit
+  that can transport (utype transport_capacity > 0, the test
+  can_unit_type_transport() starts with) or that is itself transported.
+**************************************************************************/
+void map_world_unit_changed(const struct unit *punit)
+{
+  if (unit_type_get(punit)->transport_capacity > 0
+      || unit_transport_get(punit) != nullptr) {
+    map_world_changed();
+  }
+}
+
+/**********************************************************************//**
   Free and reset the unit's goto route (punit->pgr).  Only used by the
   server.
 **************************************************************************/
@@ -1829,7 +1848,7 @@ void free_unit_orders(struct unit *punit)
   if (punit->has_orders) {
     /* unit_has_orders() decides whether a pathfinder may disembark
      * from this unit as a transport. */
-    map_world_changed();
+    map_world_unit_changed(punit);
     punit->goto_tile = nullptr;
     free(punit->orders.list);
     punit->orders.list = nullptr;

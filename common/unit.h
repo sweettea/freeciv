@@ -520,6 +520,7 @@ struct unit *unit_virtual_create(struct player *pplayer, struct city *pcity,
 void unit_virtual_destroy(struct unit *punit);
 bool unit_is_virtual(const struct unit *punit);
 void free_unit_orders(struct unit *punit);
+void map_world_unit_changed(const struct unit *punit);
 
 int get_transporter_occupancy(const struct unit *ptrans)
   fc__attribute((nonnull(1)));
