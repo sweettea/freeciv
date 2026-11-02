@@ -162,6 +162,7 @@ void game_remove_unit(struct world *gworld, struct unit *punit)
               punit->homecity);
   }
 
+  map_world_changed();
   unit_list_remove(unit_tile(punit)->units, punit);
 
   owner = unit_owner(punit);

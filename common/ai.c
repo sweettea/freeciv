@@ -24,6 +24,7 @@
 #include "timing.h"
 
 /* common */
+#include "map.h"
 #include "player.h"
 
 #include "ai.h"
@@ -31,6 +32,34 @@
 static struct ai_type ai_types[FREECIV_AI_MOD_LAST];
 
 static int ai_type_count = 0;
+
+/* Depth of AI callbacks in progress: callbacks reached from inside one
+ * (consider_plr_dangerous from adv_is_player_dangerous, ...) nest. */
+static int ai_callback_depth = 0;
+
+/**********************************************************************//**
+  Entering an AI callback. The outermost entry and exit bump the world
+  generation so that no cache of pathfinding results
+  (map_world_generation()) outlives a top-level callback; nested query
+  callbacks do not, or a cache could not live through one sweep. World
+  changes made inside any callback bump at their own sites.
+**************************************************************************/
+void ai_callback_enter(void)
+{
+  if (ai_callback_depth++ == 0) {
+    map_world_changed();
+  }
+}
+
+/**********************************************************************//**
+  Leaving an AI callback; see ai_callback_enter().
+**************************************************************************/
+void ai_callback_leave(void)
+{
+  if (--ai_callback_depth == 0) {
+    map_world_changed();
+  }
+}
 
 #ifdef DEBUG_AITIMERS
 struct ai_timer {

@@ -1827,6 +1827,9 @@ void unit_virtual_destroy(struct unit *punit)
 void free_unit_orders(struct unit *punit)
 {
   if (punit->has_orders) {
+    /* unit_has_orders() decides whether a pathfinder may disembark
+     * from this unit as a transport. */
+    map_world_changed();
     punit->goto_tile = nullptr;
     free(punit->orders.list);
     punit->orders.list = nullptr;
@@ -2464,6 +2467,7 @@ bool unit_transport_load(struct unit *pcargo, struct unit *ptrans, bool force)
   fc_assert_ret_val(!unit_list_search(ptrans->transporting, pcargo), FALSE);
 
   if (force || can_unit_load(pcargo, ptrans)) {
+    map_world_changed();
     pcargo->transporter = ptrans;
     unit_list_append(ptrans->transporting, pcargo);
 
@@ -2501,6 +2505,7 @@ bool unit_transport_unload(struct unit *pcargo)
   }
 
   /* For the server (also safe for the client). */
+  map_world_changed();
   pcargo->transporter = nullptr;
 
   return TRUE;

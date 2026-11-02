@@ -139,6 +139,44 @@ bv_extras get_tile_infrastructure_set(const struct tile *ptile,
   return pspresent;
 }
 
+/* Bumped whenever something a pathfinder reads may have changed: units
+ * on tiles and their transport/orders/owner, terrain, extras and their
+ * owner, tile owner, city centres and owners, diplomatic states, tile
+ * knowledge, plus every AI callback boundary. Caches of pathfinding
+ * results (path_finding.c's shared reverse-map lattices) compare it on
+ * every lookup; an extra bump only costs a recomputation. */
+static unsigned int world_generation = 0;
+
+/*******************************************************************//**
+  Something pathfinding may read has changed (or may have).
+***********************************************************************/
+void map_world_changed(void)
+{
+  world_generation++;
+}
+
+/*******************************************************************//**
+  As map_world_changed(), but only when ptile is a real map tile: the
+  mutation of a virtual tile (tile_virtual_new()) changes nothing any
+  pathfinder reads.
+***********************************************************************/
+void map_world_tile_changed(const struct tile *ptile)
+{
+  if (wld.map.tiles != nullptr
+      && ptile >= wld.map.tiles
+      && ptile < wld.map.tiles + MAP_INDEX_SIZE) {
+    world_generation++;
+  }
+}
+
+/*******************************************************************//**
+  The current world generation; see map_world_changed().
+***********************************************************************/
+unsigned int map_world_generation(void)
+{
+  return world_generation;
+}
+
 /*******************************************************************//**
   Returns TRUE if we are at a stage of the game where the map
   has not yet been generated/loaded.
