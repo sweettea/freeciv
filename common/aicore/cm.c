@@ -264,6 +264,13 @@ struct cm_state {
   /* TRUE: take the reference (original, unoptimised) code path in every
    * helper that has a faster twin. Used by FREECIV_CM_CHECK. */
   bool reference;
+
+  /* Per-search invariants of the bound, set in begin_search() after the
+   * city refresh (default path only):
+   * - output of the free (always worked) tiles, i.e. the city centre;
+   * - player_content_citizens() of the owner. */
+  int free_output[O_LAST];
+  int content_citizens;
 };
 
 
@@ -842,7 +849,9 @@ static struct cm_fitness evaluate_solution(struct cm_state *state,
        additional luxuries, but we don't try to consider that here; this
        just means we might explore some solutions unnecessarily.) */
     int specialists_amount = city_specialists(pcity);
-    int max_content = player_content_citizens(city_owner(pcity));
+    int max_content = state->reference
+                      ? player_content_citizens(city_owner(pcity))
+                      : state->content_citizens;
 
     state->min_luxury = surplus[O_LUXURY]
       + game.info.happy_cost * MAX(specialists_amount - max_content, 0)
@@ -1668,19 +1677,28 @@ static void compute_max_stats_heuristic(const struct cm_state *state,
    * We add free production, and have the city.c code do the rest */
 
   struct city *pcity = state->pcity;
-  struct tile *pcenter = city_tile(pcity);
-  bool is_celebrating = base_city_celebrating(pcity);
 
-  output_type_iterate(stat_index) {
-    int base = production[stat_index];
+  if (state->reference) {
+    struct tile *pcenter = city_tile(pcity);
+    bool is_celebrating = base_city_celebrating(pcity);
 
-    city_tile_iterate(nmap, city_map_radius_sq_get(pcity), pcenter, ptile) {
-      if (is_free_worked(pcity, ptile)) {
-        base += city_tile_output(pcity, ptile, is_celebrating, stat_index);
-      }
-    } city_tile_iterate_end;
-    pcity->citizen_base[stat_index] = base;
-  } output_type_iterate_end;
+    output_type_iterate(stat_index) {
+      int base = production[stat_index];
+
+      city_tile_iterate(nmap, city_map_radius_sq_get(pcity), pcenter, ptile) {
+        if (is_free_worked(pcity, ptile)) {
+          base += city_tile_output(pcity, ptile, is_celebrating, stat_index);
+        }
+      } city_tile_iterate_end;
+      pcity->citizen_base[stat_index] = base;
+    } output_type_iterate_end;
+  } else {
+    /* Same sum, computed once per search: see init_search_invariants(). */
+    output_type_iterate(stat_index) {
+      pcity->citizen_base[stat_index] = production[stat_index]
+                                        + state->free_output[stat_index];
+    } output_type_iterate_end;
+  }
 
   set_city_production(pcity);
   memcpy(production, pcity->prod, sizeof(pcity->prod));
@@ -1731,7 +1749,9 @@ static bool choice_is_promising(struct cm_state *state, int newchoice,
      influence happiness other than by direct production of luxury. */
   {
     int specialists_amount = specialists_in_solution(state, &state->current);
-    int max_content = player_content_citizens(city_owner(state->pcity));
+    int max_content = state->reference
+                      ? player_content_citizens(city_owner(state->pcity))
+                      : state->content_citizens;
     int specialists_suppress_unhappy
       = MAX(specialists_amount + state->current.idle - max_content, 0);
     int max_luxury = production[O_LUXURY]
@@ -2017,6 +2037,46 @@ static int min_food_surplus_for_fastest_growth(struct cm_state *state)
 }
 
 /************************************************************************//**
+  Compute the per-search invariants the bound and the leaf evaluation
+  read on the default path.
+
+  The free tiles' output is what compute_max_stats_heuristic()'s
+  reference path re-derives on every call by scanning the whole city
+  radius for each output type. It is constant within a search:
+  city_tile_output() reads the tile (terrain, extras, resource, roads),
+  base_city_celebrating() (size, was_happy) and effects whose requirement
+  context is (owner, city, tile). The only city fields written during a
+  search are those city_refresh_from_main_map() and set_city_production()
+  recompute (specialists, citizen_base, prod, waste, surplus, usage,
+  bonus, citizen moods, unit upkeep, trade-route values), and no
+  requirement type reads any of them (city-range requirements read
+  buildings, size, culture/history, anarchy and rapture counters,
+  original owner, acquisition, founding turn, famine, counters, goods
+  received and the city's tiles). player_content_citizens() reads only
+  player-range effects and game settings.
+****************************************************************************/
+static void init_search_invariants(struct cm_state *state)
+{
+  struct city *pcity = state->pcity;
+  struct tile *pcenter = city_tile(pcity);
+  bool is_celebrating = base_city_celebrating(pcity);
+  const struct civ_map *nmap = &(wld.map);
+
+  output_type_iterate(stat_index) {
+    int base = 0;
+
+    city_tile_iterate(nmap, city_map_radius_sq_get(pcity), pcenter, ptile) {
+      if (is_free_worked(pcity, ptile)) {
+        base += city_tile_output(pcity, ptile, is_celebrating, stat_index);
+      }
+    } city_tile_iterate_end;
+    state->free_output[stat_index] = base;
+  } output_type_iterate_end;
+
+  state->content_citizens = player_content_citizens(city_owner(pcity));
+}
+
+/************************************************************************//**
   Set the parameter for the state.  This is the first step in actually
   solving anything.
 ****************************************************************************/
@@ -2028,6 +2088,10 @@ static void begin_search(struct cm_state *state,
   timer_start(performance.current->wall_timer);
   performance.current->query_count++;
 #endif /* GATHER_TIME_STATS */
+
+  if (!state->reference) {
+    init_search_invariants(state);
+  }
 
   /* copy the parameter and sort the main lattice by it */
   cm_copy_parameter(&state->parameter, parameter);
