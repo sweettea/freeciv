@@ -484,3 +484,582 @@ unsigned int deep_assess_danger(struct ai_type *ait,
 
   return urgency;
 }
+
+/* ===================== Per-sweep hostile position table ================
+
+   Stock asks a fresh pf_reverse_map per (city, hostile player) where
+   each hostile unit stands relative to that ONE city: cities x units
+   bounded Dijkstras per sweep. The table below answers the same
+   question for every city of the defender from one Dijkstra per
+   distinct pathfinding key, and must give the bit-identical pos.turn.
+
+   What the per-city map computes (path_finding.c pf_reverse_map_pos):
+   a forward normal map from the unit's tile, parameter from
+   pft_fill_reverse_parameter() (owner = the HOSTILE player,
+   moves_left_initially = move_rate, fuel 1, no ZOC/TB/EC callbacks),
+   whose get_action returns PF_ACTION_ATTACK at the target tile only,
+   iterated until the target is popped or the popped cost reaches
+   move_rate * (max_turns + 1).
+
+   Here: the same parameter with get_action ATTACKing nowhere (data =
+   NULL), iterated to the same bound, recording the cost d(N) of every
+   popped tile that is one of the defender's city tiles or adjacent to
+   one. The per-city answer for city tile A is then
+
+   - A unknown to the hostile player (not omniscient): the per-city
+     map never asks get_action there, so its graph IS this graph and
+     the answer is d(A);
+   - A the start tile: cost 0;
+   - a non-civilian that may not invade A: unreachable (TB_IGNORE
+     comes before get_action);
+   - otherwise the ATTACK node is a sink entered from any expandable
+     neighbour N at d(N) + MIN(a, moves_left(d(N))), with a = move_rate
+     for all-MP/suicide attackers and SINGLE_MOVE otherwise, so the
+     answer is the minimum of that over N.
+
+   The minimum may use d(N) from THIS graph, where A is an ordinary
+   (perhaps passable) node, although the per-city graph makes A a
+   sink: if the shortest path to N runs through A, the neighbour N'
+   it entered A from has the same distance in both graphs, is
+   expandable, and d(N') <= d(N); the step cost is non-decreasing in
+   d. So the minimum is unchanged.
+
+   Every node other than A must have the same properties in both
+   graphs. They do, except that pf_get_move_scope()'s PF_MS_CITY test
+   reads the scope of whichever neighbour initialised the node first,
+   which is expansion-order dependent -- and only matters when two
+   city tiles are adjacent. The table refuses to build when any two
+   cities on the map are adjacent, and the sweep then uses stock's
+   per-city maps.
+
+   Keys: the per-city map caches by pf_pos_hash_cmp() (start tile,
+   move rate, same utype -- or same class, same significant flags and,
+   when not omniscient, same unknown_move_cost), and the first unit
+   queried with a key is the one whose utype that Dijkstra uses. The
+   query order (each non-harmless unit, then its ferry) does not depend
+   on the city, so the representative is the same for every city and
+   the table reproduces it. */
+
+#define DEEP_DANGER_UNREACHED (-1)
+#define DEEP_DANGER_UNTRACKED (-2)
+
+struct deep_danger_key {
+  struct tile *start_tile;
+  int move_rate;
+  const struct unit_type *utype;
+};
+
+/* One stock query (a unit or its ferry), with what its pf parameter
+ * was built from, so a stale table is detected rather than trusted. */
+struct deep_danger_query {
+  int unit_id;
+  int tindex;
+  int move_rate;
+  const struct unit_type *utype;
+  int key;
+};
+
+struct deep_danger_entry {
+  struct deep_danger_query self;
+  bool has_ferry;
+  struct deep_danger_query ferry;
+};
+
+struct deep_danger_row {
+  bool present;
+  int nentries;
+  struct deep_danger_entry *entries;
+  int nkeys;
+  /* turn[key * ncities + slot]; DEEP_DANGER_UNREACHED when stock's
+   * pf_reverse_map_unit_position() would return FALSE. */
+  int *turn;
+};
+
+struct deep_danger_table {
+  const struct player *defender;
+  int assess_turns;
+  bool omnimap;
+  int ncities;
+  int *city_ids;
+  struct tile **city_tiles;
+  struct deep_danger_row rows[MAX_NUM_PLAYER_SLOTS];
+};
+
+/**********************************************************************//**
+  pf_pos_hash_cmp() (path_finding.c), on the fields the reverse map
+  varies.
+**************************************************************************/
+static bool deep_danger_key_eq(const struct deep_danger_key *a,
+                               const struct deep_danger_key *b,
+                               bool omniscient)
+{
+  static const enum unit_type_flag_id flags[] = {
+    UTYF_IGTER, UTYF_CIVILIAN, UTYF_COAST_STRICT
+  };
+  size_t i;
+
+  if (a->start_tile != b->start_tile || a->move_rate != b->move_rate) {
+    return FALSE;
+  }
+  if (a->utype == b->utype) {
+    return TRUE;
+  }
+  if (utype_class(a->utype) != utype_class(b->utype)) {
+    return FALSE;
+  }
+  if (!omniscient
+      && a->utype->unknown_move_cost != b->utype->unknown_move_cost) {
+    return FALSE;
+  }
+  for (i = 0; i < ARRAY_SIZE(flags); i++) {
+    if (utype_has_flag(a->utype, flags[i])
+        != utype_has_flag(b->utype, flags[i])) {
+      return FALSE;
+    }
+  }
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Fill a query from a unit, as pf_reverse_map_unit_pos() fills its
+  parameter.
+**************************************************************************/
+static void deep_danger_query_fill(struct deep_danger_query *q,
+                                   const struct unit *punit)
+{
+  q->unit_id = punit->id;
+  q->tindex = tile_index(unit_tile(punit));
+  q->move_rate = unit_move_rate(punit);
+  q->utype = unit_type_get(punit);
+  q->key = -1;
+}
+
+/**********************************************************************//**
+  Does the query still describe punit?
+**************************************************************************/
+static bool deep_danger_query_matches(const struct deep_danger_query *q,
+                                      const struct unit *punit)
+{
+  return (q->unit_id == punit->id
+          && q->tindex == tile_index(unit_tile(punit))
+          && q->move_rate == unit_move_rate(punit)
+          && q->utype == unit_type_get(punit));
+}
+
+/**********************************************************************//**
+  Find or append the key for a query; keys are numbered in first-query
+  order, which is stock's representative order.
+**************************************************************************/
+static int deep_danger_key_of(struct deep_danger_key **keys, int *nkeys,
+                              int *cap, const struct deep_danger_query *q,
+                              bool omniscient)
+{
+  struct deep_danger_key k = {
+    .start_tile = index_to_tile(&(wld.map), q->tindex),
+    .move_rate = q->move_rate,
+    .utype = q->utype
+  };
+  int i;
+
+  for (i = 0; i < *nkeys; i++) {
+    if (deep_danger_key_eq(&(*keys)[i], &k, omniscient)) {
+      return i;
+    }
+  }
+  if (*nkeys == *cap) {
+    *cap = MAX(16, *cap * 2);
+    *keys = fc_realloc(*keys, *cap * sizeof(**keys));
+  }
+  (*keys)[*nkeys] = k;
+
+  return (*nkeys)++;
+}
+
+/**********************************************************************//**
+  Is node N, popped at cost d, one the per-city map would expand from?
+  (pf_normal_node_init() + the head of pf_normal_map_iterate(); no
+  get_TB/get_zoc callbacks, get_action NONE away from the target.)
+  N is never a city tile here (no two cities adjacent), so the scope
+  does not depend on the neighbour that initialised it.
+**************************************************************************/
+static bool deep_danger_expands(const struct pf_parameter *param,
+                                struct tile *ptile, int d)
+{
+  enum pf_move_scope scope;
+  bool can_disembark = FALSE;
+
+  if (param->move_rate <= 0 && d >= 0) {
+    return FALSE;
+  }
+  if (!param->omniscience
+      && TILE_UNKNOWN == tile_get_known(ptile, param->owner)) {
+    return TRUE; /* PF_MS_NATIVE, TB_NORMAL */
+  }
+  scope = param->get_move_scope(ptile, &can_disembark, PF_MS_NONE, param);
+  if (PF_MS_NONE == scope) {
+    return FALSE;
+  }
+  if (PF_MS_TRANSPORT == scope && !can_disembark) {
+    return FALSE; /* TB_DONT_LEAVE */
+  }
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  pf_turns() for the reverse parameter (fuel 1).
+**************************************************************************/
+static int deep_danger_turns(const struct pf_parameter *param, int cost)
+{
+  if (cost <= 0) {
+    return 0;
+  } else if (param->move_rate <= 0) {
+    return FC_INFINITY;
+  } else {
+    return cost / param->move_rate;
+  }
+}
+
+/**********************************************************************//**
+  Run one key's Dijkstra and fill its turn[] row for every city slot.
+  dist[] is map-sized: DEEP_DANGER_UNTRACKED everywhere except the
+  tracked tiles (city tiles and their neighbours), which this resets.
+**************************************************************************/
+static void deep_danger_run_key(const struct civ_map *nmap,
+                                const struct deep_danger_table *tab,
+                                const struct player *aplayer,
+                                const struct deep_danger_key *k,
+                                int *dist, const int *tracked, int ntracked,
+                                int *turn_out)
+{
+  struct pf_parameter param;
+  struct pf_map *pfm;
+  int max_cost, attack_cost, slot, i;
+
+  for (i = 0; i < ntracked; i++) {
+    dist[tracked[i]] = DEEP_DANGER_UNREACHED;
+  }
+
+  pft_fill_reverse_parameter(nmap, &param, NULL);
+  param.owner = aplayer;
+  param.omniscience = tab->omnimap;
+  param.map = nmap;
+  param.start_tile = k->start_tile;
+  param.move_rate = k->move_rate;
+  param.moves_left_initially = param.move_rate;
+  param.utype = k->utype;
+
+  max_cost = param.move_rate * (tab->assess_turns + 1);
+  pfm = pf_map_new(&param);
+  do {
+    struct tile *ptile = pf_map_iter(pfm);
+    int cost = pf_map_iter_move_cost(pfm);
+    int tindex = tile_index(ptile);
+
+    if (cost >= max_cost) {
+      break;
+    }
+    if (DEEP_DANGER_UNTRACKED != dist[tindex]) {
+      dist[tindex] = cost;
+    }
+  } while (pf_map_iterate(pfm));
+  pf_map_destroy(pfm);
+
+  if (utype_action_takes_all_mp(param.utype,
+                                action_by_number(ACTION_ATTACK))
+      || utype_can_do_action(param.utype, ACTION_SUICIDE_ATTACK)) {
+    attack_cost = param.move_rate;
+  } else {
+    attack_cost = SINGLE_MOVE;
+  }
+
+  for (slot = 0; slot < tab->ncities; slot++) {
+    struct tile *ctile = tab->city_tiles[slot];
+    int best = -1;
+
+    if (ctile == param.start_tile) {
+      best = 0;
+    } else if (!param.omniscience
+               && TILE_UNKNOWN == tile_get_known(ctile, aplayer)) {
+      best = dist[tile_index(ctile)];
+    } else if (!utype_has_flag(param.utype, UTYF_CIVILIAN)
+               && !player_can_invade_tile(aplayer, ctile)) {
+      best = -1;
+    } else {
+      adjc_iterate(nmap, ctile, ntile) {
+        int d = dist[tile_index(ntile)];
+        int ml, c;
+
+        if (DEEP_DANGER_UNREACHED == d) {
+          continue;
+        }
+        if (!deep_danger_expands(&param, ntile, d)) {
+          continue;
+        }
+        /* pf_moves_left(), fuel 1 */
+        if (d <= 0) {
+          ml = param.move_rate - d;
+        } else if (param.move_rate <= 0) {
+          ml = 0;
+        } else {
+          ml = param.move_rate - (d % param.move_rate);
+        }
+        c = d + MIN(attack_cost, ml);
+        if (best < 0 || c < best) {
+          best = c;
+        }
+      } adjc_iterate_end;
+    }
+
+    turn_out[slot] = (best >= 0 && best < max_cost
+                      ? deep_danger_turns(&param, best)
+                      : DEEP_DANGER_UNREACHED);
+  }
+}
+
+/**********************************************************************//**
+  Are any two cities on the map adjacent? Then pf node scopes depend on
+  expansion order and the table is not provably exact.
+**************************************************************************/
+static bool deep_danger_cities_adjacent(const struct civ_map *nmap)
+{
+  players_iterate(pplayer) {
+    city_list_iterate(pplayer->cities, pcity) {
+      adjc_iterate(nmap, city_tile(pcity), ntile) {
+        if (tile_city(ntile) != NULL) {
+          return TRUE;
+        }
+      } adjc_iterate_end;
+    } city_list_iterate_end;
+  } players_iterate_end;
+
+  return FALSE;
+}
+
+/**********************************************************************//**
+  The defending player's assess_turns, as deep_assess_danger() computes
+  it.
+**************************************************************************/
+static int deep_danger_assess_turns(const struct player *pplayer)
+{
+  if (player_is_cpuhog(pplayer)) {
+    return 6;
+  }
+  return has_handicap(pplayer, H_ASSESS_DANGER_LIMITED) ? 2 : 3;
+}
+
+/**********************************************************************//**
+  Build the table for a sweep over pplayer's cities with the given unit
+  list getter. Returns NULL when the table cannot be exact (adjacent
+  cities) or there is nothing to sweep; callers then use stock's maps.
+**************************************************************************/
+struct deep_danger_table *deep_danger_table_new(struct ai_type *ait,
+                                                const struct civ_map *nmap,
+                                                struct player *pplayer,
+                                                player_unit_list_getter ul_cb)
+{
+  struct deep_danger_table *tab;
+  int *dist, *tracked;
+  int ntracked = 0, slot;
+
+  if (city_list_size(pplayer->cities) <= 0
+      || deep_danger_cities_adjacent(nmap)) {
+    return NULL;
+  }
+
+  tab = fc_calloc(1, sizeof(*tab));
+  tab->defender = pplayer;
+  tab->assess_turns = deep_danger_assess_turns(pplayer);
+  tab->omnimap = !has_handicap(pplayer, H_MAP);
+  tab->ncities = city_list_size(pplayer->cities);
+  tab->city_ids = fc_malloc(tab->ncities * sizeof(*tab->city_ids));
+  tab->city_tiles = fc_malloc(tab->ncities * sizeof(*tab->city_tiles));
+
+  dist = fc_malloc(MAP_INDEX_SIZE * sizeof(*dist));
+  for (slot = 0; slot < MAP_INDEX_SIZE; slot++) {
+    dist[slot] = DEEP_DANGER_UNTRACKED;
+  }
+  tracked = fc_malloc(tab->ncities * 9 * sizeof(*tracked));
+
+  slot = 0;
+  city_list_iterate(pplayer->cities, pcity) {
+    struct tile *ctile = city_tile(pcity);
+
+    tab->city_ids[slot] = pcity->id;
+    tab->city_tiles[slot] = ctile;
+    slot++;
+    if (DEEP_DANGER_UNTRACKED == dist[tile_index(ctile)]) {
+      dist[tile_index(ctile)] = DEEP_DANGER_UNREACHED;
+      tracked[ntracked++] = tile_index(ctile);
+    }
+    adjc_iterate(nmap, ctile, ntile) {
+      if (DEEP_DANGER_UNTRACKED == dist[tile_index(ntile)]) {
+        dist[tile_index(ntile)] = DEEP_DANGER_UNREACHED;
+        tracked[ntracked++] = tile_index(ntile);
+      }
+    } adjc_iterate_end;
+  } city_list_iterate_end;
+
+  players_iterate(aplayer) {
+    struct deep_danger_row *row = &tab->rows[player_index(aplayer)];
+    struct unit_list *units;
+    struct deep_danger_key *keys = NULL;
+    int nkeys = 0, cap = 0, k;
+
+    if (!adv_is_player_dangerous(pplayer, aplayer)) {
+      continue;
+    }
+    units = (ul_cb != NULL ? ul_cb(aplayer) : aplayer->units);
+
+    row->present = TRUE;
+    row->entries = fc_malloc(MAX(1, unit_list_size(units))
+                             * sizeof(*row->entries));
+    unit_list_iterate(units, punit) {
+      const struct unit_type *utype = unit_type_get(punit);
+      struct unit_type_ai *utai = utype_ai_data(utype, ait);
+      struct deep_danger_entry *e;
+      const struct unit *ferry;
+
+      if (!utai->carries_occupiers
+          && !utype_acts_hostile(utype)) {
+        continue; /* Harmless: stock never queries its map for it. */
+      }
+      e = &row->entries[row->nentries++];
+      deep_danger_query_fill(&e->self, punit);
+      e->self.key = deep_danger_key_of(&keys, &nkeys, &cap, &e->self,
+                                       tab->omnimap);
+      e->has_ferry = (unit_transported(punit)
+                      && (ferry = unit_transport_get(punit)) != NULL);
+      if (e->has_ferry) {
+        deep_danger_query_fill(&e->ferry, ferry);
+        e->ferry.key = deep_danger_key_of(&keys, &nkeys, &cap, &e->ferry,
+                                          tab->omnimap);
+      }
+    } unit_list_iterate_end;
+
+    row->nkeys = nkeys;
+    row->turn = fc_malloc(MAX(1, nkeys * tab->ncities)
+                          * sizeof(*row->turn));
+    for (k = 0; k < nkeys; k++) {
+      deep_danger_run_key(nmap, tab, aplayer, &keys[k], dist,
+                          tracked, ntracked,
+                          row->turn + k * tab->ncities);
+    }
+    free(keys);
+  } players_iterate_end;
+
+  free(dist);
+  free(tracked);
+
+  return tab;
+}
+
+/**********************************************************************//**
+  Free a table.
+**************************************************************************/
+void deep_danger_table_destroy(struct deep_danger_table *tab)
+{
+  int i;
+
+  if (tab == NULL) {
+    return;
+  }
+  for (i = 0; i < MAX_NUM_PLAYER_SLOTS; i++) {
+    free(tab->rows[i].entries);
+    free(tab->rows[i].turn);
+  }
+  free(tab->city_ids);
+  free(tab->city_tiles);
+  free(tab);
+}
+
+/**********************************************************************//**
+  The table's slot for pcity, or -1 when the city is not in it (or has
+  moved, which cannot happen, but is checked rather than assumed).
+**************************************************************************/
+int deep_danger_table_slot(const struct deep_danger_table *tab,
+                           const struct city *pcity)
+{
+  int slot;
+
+  for (slot = 0; slot < tab->ncities; slot++) {
+    if (tab->city_ids[slot] == pcity->id) {
+      return (tab->city_tiles[slot] == city_tile(pcity) ? slot : -1);
+    }
+  }
+
+  return -1;
+}
+
+/**********************************************************************//**
+  The row for aplayer when it still describes `units` exactly (same
+  non-harmless units in the same order, same tiles, move rates, types
+  and ferries) and the sweep parameters still hold; NULL otherwise,
+  and the caller falls back to stock's per-city map for that player.
+**************************************************************************/
+const struct deep_danger_row *
+deep_danger_table_row(struct ai_type *ait,
+                      const struct deep_danger_table *tab,
+                      const struct player *pplayer,
+                      const struct player *aplayer,
+                      struct unit_list *units)
+{
+  const struct deep_danger_row *row = &tab->rows[player_index(aplayer)];
+  int i = 0;
+
+  if (tab->defender != pplayer
+      || tab->assess_turns != deep_danger_assess_turns(pplayer)
+      || tab->omnimap != !has_handicap(pplayer, H_MAP)
+      || !row->present) {
+    return NULL;
+  }
+  unit_list_iterate(units, punit) {
+    const struct unit_type *utype = unit_type_get(punit);
+    struct unit_type_ai *utai = utype_ai_data(utype, ait);
+    const struct deep_danger_entry *e;
+    const struct unit *ferry;
+    bool has_ferry;
+
+    if (!utai->carries_occupiers
+        && !utype_acts_hostile(utype)) {
+      continue;
+    }
+    if (i >= row->nentries) {
+      return NULL;
+    }
+    e = &row->entries[i++];
+    if (!deep_danger_query_matches(&e->self, punit)) {
+      return NULL;
+    }
+    has_ferry = (unit_transported(punit)
+                 && (ferry = unit_transport_get(punit)) != NULL);
+    if (has_ferry != e->has_ferry
+        || (has_ferry && !deep_danger_query_matches(&e->ferry, ferry))) {
+      return NULL;
+    }
+  } unit_list_iterate_end;
+
+  return (i == row->nentries ? row : NULL);
+}
+
+/**********************************************************************//**
+  Stock's pf_reverse_map_unit_position(...).turn for the idx-th
+  non-harmless unit of a row (or its ferry) at a city slot; FALSE when
+  stock would find no position.
+**************************************************************************/
+bool deep_danger_row_turn(const struct deep_danger_table *tab,
+                          const struct deep_danger_row *row,
+                          int idx, bool ferry, int slot, int *turn)
+{
+  const struct deep_danger_entry *e = &row->entries[idx];
+  int key = (ferry ? e->ferry.key : e->self.key);
+  int t = row->turn[key * tab->ncities + slot];
+
+  if (DEEP_DANGER_UNREACHED == t) {
+    return FALSE;
+  }
+  *turn = t;
+
+  return TRUE;
+}
