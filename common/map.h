@@ -807,6 +807,9 @@ enum direction8 opposite_direction(enum direction8 dir);
 
 void map_world_changed(void);
 void map_world_tile_changed(const struct tile *ptile);
+void map_world_tile_owner_changed(const struct tile *ptile,
+                                  const struct player *old_owner,
+                                  const struct player *new_owner);
 unsigned int map_world_generation(void);
 void map_knowledge_changed(const struct player *pplayer);
 unsigned int map_knowledge_generation(const struct player *pplayer);

@@ -148,13 +148,25 @@ bv_extras get_tile_infrastructure_set(const struct tile *ptile,
  * results (path_finding.c's shared reverse-map lattices) compare it on
  * every lookup; an extra bump only costs a recomputation. */
 static unsigned int world_generation = 0;
+/* The last generation issued. Bumps always issue a new value, so a
+ * value world_generation returns to (map_world_tile_owner_changed())
+ * is never issued again for a different world. */
+static unsigned int world_generation_issued = 0;
+
+/* The last tile ownership change, while it is the last bump. */
+static struct {
+  const struct tile *ptile;
+  const struct player *old_owner;
+  unsigned int before; /* world_generation before the change */
+  unsigned int after;  /* world_generation the change issued */
+} world_owner_undo = { nullptr, nullptr, 0, 0 };
 
 /*******************************************************************//**
   Something pathfinding may read has changed (or may have).
 ***********************************************************************/
 void map_world_changed(void)
 {
-  world_generation++;
+  world_generation = ++world_generation_issued;
 }
 
 /*******************************************************************//**
@@ -167,8 +179,44 @@ void map_world_tile_changed(const struct tile *ptile)
   if (wld.map.tiles != nullptr
       && ptile >= wld.map.tiles
       && ptile < wld.map.tiles + MAP_INDEX_SIZE) {
-    world_generation++;
+    map_world_changed();
   }
+}
+
+/*******************************************************************//**
+  ptile's owner is changing from old_owner to new_owner. A change that
+  exactly undoes the previous bump -- same tile, back to the owner it
+  had, nothing else bumped since -- returns the world to the state it
+  had before that bump, so the world generation returns to that
+  state's value and caches made then stay valid. cityresult_fill() and
+  its ai/deep copy set a candidate city site's owner and restore it
+  around each site evaluation; without this, every evaluation outside
+  the player's borders flushed every shared reverse-map search twice.
+  Pathfinding reads the owner, not the claimer.
+***********************************************************************/
+void map_world_tile_owner_changed(const struct tile *ptile,
+                                  const struct player *old_owner,
+                                  const struct player *new_owner)
+{
+  if (wld.map.tiles == nullptr
+      || ptile < wld.map.tiles
+      || ptile >= wld.map.tiles + MAP_INDEX_SIZE) {
+    return; /* Virtual tile. */
+  }
+
+  if (world_owner_undo.ptile == ptile
+      && world_owner_undo.old_owner == new_owner
+      && world_generation == world_owner_undo.after) {
+    world_generation = world_owner_undo.before;
+    world_owner_undo.ptile = nullptr;
+    return;
+  }
+
+  world_owner_undo.ptile = ptile;
+  world_owner_undo.old_owner = old_owner;
+  world_owner_undo.before = world_generation;
+  map_world_changed();
+  world_owner_undo.after = world_generation;
 }
 
 /*******************************************************************//**
