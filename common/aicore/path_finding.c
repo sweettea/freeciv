@@ -3880,6 +3880,41 @@ static int pf_reverse_checks = 0;
 static int pf_reverse_mismatches = 0;
 static int pf_reverse_shared_searches = 0;
 
+/* FREECIV_PF_REVERSE_STATS: per-turn counts, -1 until read. */
+static int pf_reverse_stats = -1;
+static int pf_reverse_stats_turn = -1;
+static int pf_reverse_stats_lookups = 0;
+static int pf_reverse_stats_searches_base = 0;
+
+/************************************************************************//**
+  Count one reverse-map lookup that its pf_reverse_map had not answered
+  before. With FREECIV_PF_REVERSE_STATS set, the first lookup of a turn
+  logs the previous turn's lookups and shared searches.
+****************************************************************************/
+static void pf_reverse_stats_count(void)
+{
+  if (pf_reverse_stats < 0) {
+    const char *env = getenv("FREECIV_PF_REVERSE_STATS");
+
+    pf_reverse_stats = (env != nullptr && env[0] != '\0' && env[0] != '0');
+  }
+  if (!pf_reverse_stats) {
+    return;
+  }
+  if (game.info.turn != pf_reverse_stats_turn) {
+    if (pf_reverse_stats_turn >= 0) {
+      log_normal("pf-reverse-stats turn=%d lookups=%d shared_searches=%d",
+                 pf_reverse_stats_turn, pf_reverse_stats_lookups,
+                 pf_reverse_shared_searches
+                 - pf_reverse_stats_searches_base);
+    }
+    pf_reverse_stats_turn = game.info.turn;
+    pf_reverse_stats_lookups = 0;
+    pf_reverse_stats_searches_base = pf_reverse_shared_searches;
+  }
+  pf_reverse_stats_lookups++;
+}
+
 /************************************************************************//**
   Hash of a shared entry key.
 ****************************************************************************/
@@ -4205,6 +4240,7 @@ pf_reverse_map_pos(struct pf_reverse_map *pfrm,
   if (pf_pos_hash_lookup(pfrm->hash, param, &pos)) {
     return pos;
   }
+  pf_reverse_stats_count();
 
   if (mode != PF_REVERSE_TARGETED && pfrm->max_turns >= 0
       && pf_shared_cache_sync()) {
