@@ -2357,6 +2357,12 @@ action_is_blocked_by_scan(const struct civ_map *nmap,
 
 /**********************************************************************//**
   The form of action_is_blocked_by() that is used when the oracle is off.
+
+  Visits only the ids set in act->blocked_by, in ascending order. The
+  scan's other ids all fail its action_would_be_blocked_by() test, so
+  this offers the same blockers to the same tests in the same order and
+  returns the same action. Most actions (every worker activity among
+  them) have an empty blocked_by and cost one pass over its bytes.
 **************************************************************************/
 static struct action *
 action_is_blocked_by_fast(const struct civ_map *nmap,
@@ -2366,8 +2372,40 @@ action_is_blocked_by_fast(const struct civ_map *nmap,
                           const struct city *target_city,
                           const struct unit *target_unit)
 {
-  return action_is_blocked_by_scan(nmap, act, actor_unit,
-                                   target_tile, target_city, target_unit);
+  size_t byte;
+
+  for (byte = 0; byte < sizeof(act->blocked_by.vec); byte++) {
+    unsigned char bits = act->blocked_by.vec[byte];
+    int bit;
+
+    for (bit = 0; bits != 0 && bit < 8; bit++) {
+      action_id blocker_id = byte * 8 + bit;
+      struct action *blocker;
+
+      if (!(bits & (1u << bit))) {
+        continue;
+      }
+      bits &= ~(1u << bit);
+      if (blocker_id >= NUM_ACTIONS) {
+        break;
+      }
+
+      blocker = action_by_number(blocker_id);
+      if (blocker == nullptr
+          || action_get_actor_kind(blocker) != AAK_UNIT) {
+        /* Currently, only unit's actions may block each other */
+        continue;
+      }
+
+      if (blocker_is_enabled(nmap, blocker, actor_unit,
+                             target_tile, target_city, target_unit)) {
+        return blocker;
+      }
+    }
+  }
+
+  /* Not blocked. */
+  return nullptr;
 }
 
 /* FREECIV_ACTION_BLOCK_CHECK=1: compute both forms of every
