@@ -57,12 +57,17 @@ SERVER=$(readlink -f "$SERVER")
 # XSIZE/YSIZE required unless TILESPERPLAYER sizes the map instead;
 # SKILL, RULESET, TIMEOUT_S, HUTS, GENERATOR, SPECIALS,
 # EXTRA_SERV (verbatim server commands) optional.
-SKILL=hard RULESET= TIMEOUT_S=1800 HUTS= GENERATOR= SPECIALS= TILESPERPLAYER= EXTRA_SERV=
+SKILL=hard RULESET= TIMEOUT_S=1800 HUTS= GENERATOR= SPECIALS= TILESPERPLAYER= EXTRA_SERV= SCENARIO=
 . "$(readlink -f "$CONFIG")"
 for v in PLAYERS ENDTURN; do
   [ -n "${!v:-}" ] || { echo "config missing $v" >&2; exit 1; }
 done
-if [ -z "$TILESPERPLAYER" ]; then
+if [ -n "$SCENARIO" ]; then
+  # A scenario fixes the map: the server loads it with --file and the
+  # map settings below are skipped (the seed still varies the game).
+  SCENARIO=$(readlink -f "$SCENARIO")
+  [ -r "$SCENARIO" ] || { echo "config SCENARIO not readable: $SCENARIO" >&2; exit 1; }
+elif [ -z "$TILESPERPLAYER" ]; then
   for v in XSIZE YSIZE; do
     [ -n "${!v:-}" ] || { echo "config missing $v" >&2; exit 1; }
   done
@@ -75,7 +80,9 @@ OUT=$(readlink -f "$OUT")
   [ -n "$RULESET" ] && echo "rulesetdir $RULESET"
   echo "set minplayers 0"
   echo "set timeout -1"
-  if [ -n "$TILESPERPLAYER" ]; then
+  if [ -n "$SCENARIO" ]; then
+    : # map comes from the scenario file
+  elif [ -n "$TILESPERPLAYER" ]; then
     # Scale the map with the player count, like the ruleset default,
     # but at the configured land-per-player density.
     echo "set mapsize PLAYER"
@@ -126,7 +133,7 @@ OUT=$(readlink -f "$OUT")
   echo "set scoreloglevel ALL"
   echo "set scorefile scorelog.txt"
   echo "set gameseed $SEED"
-  echo "set mapseed $SEED"
+  [ -z "$SCENARIO" ] && echo "set mapseed $SEED"
   echo "start"
 } > "$OUT/commands.serv"
 
@@ -202,6 +209,7 @@ if [ -n "${ARENA:-}" ]; then
 fi
 if ! (cd "$OUT" \
       && timeout "$TIMEOUT_S" "$SERVER" -A none -e -p "$PORT" \
+           ${SCENARIO:+--file "$SCENARIO"} \
            --read commands.serv --saves saves > game.log 2>&1); then
   echo "FAILED: config=$CONFIG seed=$SEED arm=$ARM (see $OUT/game.log)" >&2
   exit 1

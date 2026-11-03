@@ -24,6 +24,9 @@
 #                   compiled-defaults cells always run too.
 #   --classic       add the classic generalisation cell (theory-of-play
 #                   section H): contested-classic.conf, self-play, n=20.
+#   --europe        add the legibility venue: europe-150.conf (the Europe
+#                   scenario, 14 nations, classic, T150), self-play and
+#                   mixed 7/7, n=20. Games are ~EUROPE_SECS_PER_GAME long.
 #
 # ============================== WHAT IT MEASURES ==============================
 #
@@ -118,13 +121,17 @@ usage() { sed -n '2,/^set -uo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 1; }
 [ $# -ge 1 ] || usage
 case $1 in -*) usage;; esac
 SERVER=$1; shift
-OUT= VECTOR= CLASSIC=0 DRY=0 YES=0 REPORT_ONLY=0
+OUT= VECTOR= CLASSIC=0 EUROPE=0 DRY=0 YES=0 REPORT_ONLY=0
 JOBS=6          # brief, 2026-10-28: JOBS default 6 (the user plays on this box)
 NICE=10         # CLAUDE.md / every driver since stacked-lever.sh: nice 10
 PORT0=7600      # brief: port block 7600+; the campaign took 7800/8000+,
                 # the stacked cell 7900 (stacked-lever.sh), nogates 7700
 PORTMAX=7639    # so at most 40 slots before touching 7640+ (kept free)
 SECS_PER_GAME=192  # corpus median s/game (screen-campaign.sh budget).
+EUROPE_SECS_PER_GAME=1900  # europe-150: 14 nations to T150 on the
+                # 2026-11-02 pin: the T1-20 smoke game took 169 s beside 10 other
+                # jobs (8.5 s/turn); later turns are slower, so ~32 min a game is
+                # the budget until a full cell measures it (configs/europe-150.conf).
                 # Cross-check 2026-10-28 from DONE - commands.serv mtimes:
                 # stacked war/off deep 172, econ/off deep 217, screen mixed
                 # contested 185, s4 baseline war 160 / econ 200.
@@ -134,6 +141,7 @@ while [ $# -gt 0 ]; do
     --jobs)        JOBS=$2; shift 2;;
     --with-vector) VECTOR=$2; shift 2;;
     --classic)     CLASSIC=1; shift;;
+    --europe)      EUROPE=1; shift;;
     --dry-run)     DRY=1; shift;;
     --yes)         YES=1; shift;;
     --report)      REPORT_ONLY=1; shift;;
@@ -166,6 +174,7 @@ CACHE_ROOT=$ROOT/benchmark/results/scoreboard/baseline-cache
 # ------------------------------------------------------------------ seeds
 SEEDS=$(seq 121 160)          # holdout 121-160; 101-120 burned (header)
 CLASSIC_SEEDS=$(seq 121 140)  # n=20, theory-of-play section H
+EUROPE_SEEDS=$(seq 121 140)   # n=20: the games are 5-10x longer
 PROBE_SEEDS="121 122 123"     # 3 identity seeds, as stacked-lever.sh's proof
 for s in $SEEDS; do
   awk -v s="$s" '$1==s {f=1} END {exit !f}' benchmark/seeds/holdout.txt \
@@ -184,15 +193,24 @@ if [ -n "$VECTOR" ]; then
 fi
 VENUES="contested lategame-80"
 [ "$CLASSIC" = 1 ] && VENUES="$VENUES contested-classic"
+[ "$EUROPE" = 1 ] && VENUES="$VENUES europe-150"
 
 cfg_of() {
   case $1 in
     contested)         echo "$here/configs/contested.conf";;
     lategame-80)       echo "$here/configs/lategame-80.conf";;
     contested-classic) echo "$here/configs/contested-classic.conf";;
+    europe-150)        echo "$here/configs/europe-150.conf";;
   esac
 }
-seeds_of() { [ "$1" = contested-classic ] && echo $CLASSIC_SEEDS || echo $SEEDS; }
+seeds_of() {
+  case $1 in
+    contested-classic) echo $CLASSIC_SEEDS;;
+    europe-150)        echo $EUROPE_SEEDS;;
+    *)                 echo $SEEDS;;
+  esac
+}
+secs_of() { [ "$1" = europe-150 ] && echo $EUROPE_SECS_PER_GAME || echo $SECS_PER_GAME; }
 has_mixed() { [ "$1" != contested-classic ]; }   # classic: self-play only
 tune_of() { [ "$1" = defaults ] && echo "" || echo "$VECTOR"; }
 for v in $VENUES; do [ -r "$(cfg_of "$v")" ] || die "missing $(cfg_of "$v")"; done
@@ -221,22 +239,23 @@ cache_state() { # venue -> "certified GEN" | "probe GEN" | "none"
 }
 
 # ------------------------------------------------------------------ budget
-count_games() { # -> "total todo"
-  local total=0 todo=0 l v s a
+count_games() { # -> "total todo todo_secs"
+  local total=0 todo=0 secs=0 l v s a
   for l in $LABELS; do for v in $VENUES; do
     for s in $(seeds_of "$v"); do
       for a in deep $(has_mixed "$v" && echo mixed_db mixed_bd); do
         total=$((total + 1))
-        [ -f "$(game_dir "$l" "$v" "$a" "$s")/DONE" ] || todo=$((todo + 1))
+        [ -f "$(game_dir "$l" "$v" "$a" "$s")/DONE" ] \
+          || { todo=$((todo + 1)); secs=$((secs + $(secs_of "$v"))); }
       done
     done
   done; done
-  echo "$total $todo"
+  echo "$total $todo $secs"
 }
-hours() { awk -v g="$1" -v s="$SECS_PER_GAME" -v j="$JOBS" 'BEGIN {printf "%.1f", g*s/j/3600}'; }
+hours() { awk -v s="$1" -v j="$JOBS" 'BEGIN {printf "%.1f", s/j/3600}'; }
 
 print_budget() {
-  local v st n bmin=0 bmax=0 nonbase total todo
+  local v st n bmin=0 bmax=0 smin=0 smax=0 nsecs nonbase total todo
   echo "=== PIN ==="
   echo "  server        $SERVER"
   echo "    sha256      $SSHA"
@@ -264,18 +283,20 @@ print_budget() {
     case $st in
       certified) printf '  %-18s certified for this pin  -> 0 games (hardlinked)\n' "$v";;
       probe)     printf '  %-18s cache exists, pin not certified -> 3 probe games, +%d if the probe differs\n' "$v" $((n - 3))
-                 bmin=$((bmin + 3)); bmax=$((bmax + n));;
+                 bmin=$((bmin + 3)); bmax=$((bmax + n))
+                 smin=$((smin + 3 * $(secs_of "$v"))); smax=$((smax + n * $(secs_of "$v")));;
       none)      printf '  %-18s no cache -> %d games (then cached)\n' "$v" "$n"
-                 bmin=$((bmin + n)); bmax=$((bmax + n));;
+                 bmin=$((bmin + n)); bmax=$((bmax + n))
+                 smin=$((smin + n * $(secs_of "$v"))); smax=$((smax + n * $(secs_of "$v")));;
     esac
   done
-  set -- $(count_games); total=$1; nonbase=$2
+  set -- $(count_games); total=$1; nonbase=$2; nsecs=$3
   echo
   echo "=== BUDGET ==="
   echo "  deep-bearing games  $total ($nonbase not yet DONE)"
   echo "  baseline games      $bmin..$bmax"
   echo "  TO BUY              $((nonbase + bmin))..$((nonbase + bmax)) games"
-  echo "  wall clock          $(hours $((nonbase + bmin)))..$(hours $((nonbase + bmax))) h at ${SECS_PER_GAME}s/game, --jobs $JOBS"
+  echo "  wall clock          $(hours $((nsecs + smin)))..$(hours $((nsecs + smax))) h at ${SECS_PER_GAME}s/game (europe-150 ${EUROPE_SECS_PER_GAME}s), --jobs $JOBS"
   echo
   echo "=== EXPECTED SEs at n=40 (per seat, paired by seed) ==="
   # panel-2026-10-27.md section 1 and 4: score delta se 2.61 (contested
