@@ -931,9 +931,13 @@ static void dpai_city_lost(struct player *pplayer, struct city *pcity)
   any game, whoever owned it, and the reader joins it to the preceding
   deep-city lost= line on the id.
 
-  No scope is set: nothing here reads a tunable, the owner may not be a
-  deep player at all, and the hook has no player argument to scope by.
-  Logging only, as with city_got/city_lost.
+  No scope is set: nothing here reads a tunable, and the hook has no
+  player argument to scope by. Logging only, as with city_got/city_lost.
+
+  Only deep-owned cities are logged: the lost= line this joins to is
+  written by the owner's AI, so a razing of a non-deep city has nothing
+  to join and only pollutes games deep is not seated in (the scoreboard
+  guard counts deep- lines in baseline-only games as a seating error).
 **************************************************************************/
 static void dpai_city_destroyed(struct city *pcity)
 {
@@ -942,6 +946,9 @@ static void dpai_city_destroyed(struct city *pcity)
   if (server_state() != S_S_RUNNING) {
     return;   /* Game-end teardown frees every city through
                * remove_city(); that is not a razing. */
+  }
+  if (powner == NULL || powner->ai != deep_ai_get_self()) {
+    return;   /* Not a deep city: no lost= line to join. */
   }
   log_base(deep_metric_log_level(),
            "deep-city turn=%d player=\"%s\" razed=%d size=%d founded=%d"
