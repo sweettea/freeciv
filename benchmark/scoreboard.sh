@@ -463,7 +463,9 @@ one_start() { # seed port -> $STARTS/seed-N.sav.zst (baseline europe-150 to T150
     echo "FAILED europe-start seed $seed $(date -Is)" >> "$OUT/failures.log"
     return
   fi
-  if ! zstdcat "$final" | grep -q '^turn=151$'; then   # the end of T150
+  # grep -c, not -q: under pipefail a grep that exits early kills zstdcat
+  # with SIGPIPE and the pipeline reports 141 (it did, 2026-11-04).
+  if [ "$(zstdcat "$final" | grep -c '^turn=151$')" != 1 ]; then   # the end of T150
     echo "$d: start save is not the end of T150" >> "$OUT/STOP"; return
   fi
   cp "$final" "$STARTS/seed-$seed.sav.zst.tmp" && mv "$STARTS/seed-$seed.sav.zst.tmp" "$STARTS/seed-$seed.sav.zst"
