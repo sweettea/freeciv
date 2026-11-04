@@ -384,7 +384,10 @@ KEEP='^[01]: |deep-tuning file=|cannot load tuning file'
 guard() { # dir label arm -> writes guard.txt; appends to STOP on failure
   local d=$1 label=$2 arm=$3 tune log=$1/game.log nd nt nv=0 nf why=
   tune=$(tune_of "$label")
-  nd=$(grep -ac 'deep-[a-z]' "$log")
+  # deep-stance-load is the save-load hook reading back every player's
+  # stance (one line per player, all defaults for non-deep players): a
+  # resumed baseline game logs it too. Not a seating signal.
+  nd=$(grep -a 'deep-[a-z]' "$log" | grep -vc 'deep-stance-load')
   nt=$(grep -ac 'deep-tuning file=' "$log")
   nf=$(grep -ac 'cannot load tuning file' "$log")
   [ -n "$tune" ] && nv=$(grep -acF "deep-tuning file=\"$tune\"" "$log")
