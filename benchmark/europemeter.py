@@ -268,6 +268,8 @@ def main():
     for label, kind, arm, seed, path in games(run, a.venue, labels):
         rows = nations(read_save(path))
         n_games += 1
+        for r in rows:
+            groups[(label, kind, arm, r["ai_type"])].append(r)
         start = run / "europe-starts" / ("seed-%d.sav.zst" % seed)
         drows = []                  # this game's rows minus the T150 start
         if start.exists():
