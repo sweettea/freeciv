@@ -10,6 +10,13 @@
 # inis (benchmark/arena.py writes it); DEEP_QUIET demotes deep's metric
 # lines; KEEP_SAVES keeps every Nth autosave.
 #
+# A config may name START=<save path, @SEED@ substituted>: the game is
+# then RESUMED from that save instead of generated. Every player block's
+# ai_type is rewritten to the arm's module (mixed_XY: odd seats X, even
+# Y, by player index + 1) before the server loads it, so one T150 save
+# is the common start of every arm for that seed; the map settings,
+# aifill/create and the seeds are skipped (the save carries them).
+#
 # Parallel invocations must use distinct --port values: every server
 # binds a TCP port and simultaneous binds to the same one fail.
 #
@@ -57,12 +64,17 @@ SERVER=$(readlink -f "$SERVER")
 # XSIZE/YSIZE required unless TILESPERPLAYER sizes the map instead;
 # SKILL, RULESET, TIMEOUT_S, HUTS, GENERATOR, SPECIALS,
 # EXTRA_SERV (verbatim server commands) optional.
-SKILL=hard RULESET= TIMEOUT_S=1800 HUTS= GENERATOR= SPECIALS= TILESPERPLAYER= EXTRA_SERV= SCENARIO=
+SKILL=hard RULESET= TIMEOUT_S=1800 HUTS= GENERATOR= SPECIALS= TILESPERPLAYER= EXTRA_SERV= SCENARIO= START=
 . "$(readlink -f "$CONFIG")"
 for v in PLAYERS ENDTURN; do
   [ -n "${!v:-}" ] || { echo "config missing $v" >&2; exit 1; }
 done
-if [ -n "$SCENARIO" ]; then
+if [ -n "$START" ]; then
+  START=${START//@SEED@/$SEED}
+  START=$(readlink -f "$START")
+  [ -r "$START" ] || { echo "config START not readable: $START" >&2; exit 1; }
+  [ -n "$SCENARIO" ] && { echo "config sets both START and SCENARIO" >&2; exit 1; }
+elif [ -n "$SCENARIO" ]; then
   # A scenario fixes the map: the server loads it with --file and the
   # map settings below are skipped (the seed still varies the game).
   SCENARIO=$(readlink -f "$SCENARIO")
@@ -76,11 +88,60 @@ fi
 mkdir -p "$OUT/saves"
 OUT=$(readlink -f "$OUT")
 
+if [ -n "$START" ]; then
+  # Re-seat the start save for this arm: rewrite each player block's
+  # ai_type. Every player must already be AI-controlled ("ai" flag).
+  python3 -I - "$START" "$OUT/start.sav" "$ARM" <<'PYEOF' || exit 1
+import sys, subprocess, re
+src, dst, arm = sys.argv[1:4]
+mods = {'d': 'deep', 'b': 'baseline', 'c': 'classic'}
+if arm.startswith('mixed_') and len(arm) == 8:
+    odd, even = mods[arm[6]], mods[arm[7]]
+else:
+    odd = even = arm
+text = subprocess.run(['zstdcat', src], check=True, capture_output=True).stdout.decode('utf-8', 'surrogateescape') if src.endswith('.zst') else open(src, encoding='utf-8', errors='surrogateescape').read()
+lines = text.split('\n')
+# Pass 1: which player blocks are barbarians (ai.barb_type != "None")?
+# Those keep their AI type: they are the server's, not a seat.
+barb, idx = set(), None
+for line in lines:
+    m = re.match(r'^\[player(\d+)\]$', line)
+    if m:
+        idx = int(m.group(1))
+    elif re.match(r'^\[', line):
+        idx = None
+    if idx is not None and line.startswith('ai.barb_type=') and line != 'ai.barb_type="None"':
+        barb.add(idx)
+# Pass 2: re-seat every other player by index parity (seat = index + 1).
+out, idx, n, seated = [], None, 0, []
+for line in lines:
+    m = re.match(r'^\[player(\d+)\]$', line)
+    if m:
+        idx = int(m.group(1))
+    elif re.match(r'^\[', line):
+        idx = None
+    if idx is not None and idx not in barb and line.startswith('ai_type='):
+        seat = idx + 1
+        mod = odd if seat % 2 == 1 else even
+        line = 'ai_type="%s"' % mod
+        seated.append(mod); n += 1
+    if idx is not None and idx not in barb and line.startswith('flags=') and '"ai"' not in line:
+        sys.exit('START save player%d is not AI-controlled (flags=%s)' % (idx, line))
+    out.append(line)
+if n == 0:
+    sys.exit('START save has no ai_type lines')
+open(dst, 'w', encoding='utf-8', errors='surrogateescape').write('\n'.join(out))
+print('start: %s -> %d seats re-seated (%d barbarian players kept): %s' % (src, n, len(barb), ','.join(seated)))
+PYEOF
+fi
+
 {
-  [ -n "$RULESET" ] && echo "rulesetdir $RULESET"
+  [ -n "$RULESET" ] && [ -z "$START" ] && echo "rulesetdir $RULESET"
   echo "set minplayers 0"
   echo "set timeout -1"
-  if [ -n "$SCENARIO" ]; then
+  if [ -n "$START" ]; then
+    : # map, players and rules come from the start save
+  elif [ -n "$SCENARIO" ]; then
     : # map comes from the scenario file
   elif [ -n "$TILESPERPLAYER" ]; then
     # Scale the map with the player count, like the ruleset default,
@@ -92,11 +153,11 @@ OUT=$(readlink -f "$OUT")
     echo "set xsize $XSIZE"
     echo "set ysize $YSIZE"
   fi
-  [ -n "$HUTS" ] && echo "set huts $HUTS"
-  [ -n "$GENERATOR" ] && echo "set generator $GENERATOR"
-  [ -n "$SPECIALS" ] && echo "set specials $SPECIALS"
+  [ -n "$HUTS" ] && [ -z "$START" ] && echo "set huts $HUTS"
+  [ -n "$GENERATOR" ] && [ -z "$START" ] && echo "set generator $GENERATOR"
+  [ -n "$SPECIALS" ] && [ -z "$START" ] && echo "set specials $SPECIALS"
   [ -n "$EXTRA_SERV" ] && printf '%s\n' "$EXTRA_SERV"
-  echo "set aifill $PLAYERS"
+  [ -z "$START" ] && echo "set aifill $PLAYERS"
   # Ordinary arms put every player on that AI module. The mixed arms
   # seat two modules in the SAME game (head-to-head): mixed_XY puts
   # module X on odd seats and Y on even, where each letter is the first
@@ -113,6 +174,7 @@ OUT=$(readlink -f "$OUT")
     esac
   }
   for i in $(seq 1 "$PLAYERS"); do
+    [ -n "$START" ] && break   # seats were re-seated in the save
     case "$ARM" in
       mixed_??)
         letters=${ARM#mixed_}
@@ -132,8 +194,10 @@ OUT=$(readlink -f "$OUT")
   echo "set scorelog enabled"
   echo "set scoreloglevel ALL"
   echo "set scorefile scorelog.txt"
-  echo "set gameseed $SEED"
-  [ -z "$SCENARIO" ] && echo "set mapseed $SEED"
+  if [ -z "$START" ]; then   # a resumed game keeps the save's RNG state:
+    echo "set gameseed $SEED" # its seed is the start save's own history
+    [ -z "$SCENARIO" ] && echo "set mapseed $SEED"
+  fi
   echo "start"
 } > "$OUT/commands.serv"
 
@@ -180,6 +244,9 @@ OUT=$(readlink -f "$OUT")
   else
     echo "arena=none sha256=none"
   fi
+  if [ -n "$START" ]; then
+    echo "start=$START sha256=$(sha256sum "$START" | cut -d' ' -f1)"
+  fi
   echo "runner=$(readlink -f "$0") sha256=$(sha256sum "$0" | cut -d' ' -f1)"
   echo "arm=$ARM seed=$SEED"
 } > "$OUT/provenance.txt"
@@ -209,7 +276,7 @@ if [ -n "${ARENA:-}" ]; then
 fi
 if ! (cd "$OUT" \
       && timeout "$TIMEOUT_S" "$SERVER" -A none -e -p "$PORT" \
-           ${SCENARIO:+--file "$SCENARIO"} \
+           ${SCENARIO:+--file "$SCENARIO"} ${START:+--file "$OUT/start.sav"} \
            --read commands.serv --saves saves > game.log 2>&1); then
   echo "FAILED: config=$CONFIG seed=$SEED arm=$ARM (see $OUT/game.log)" >&2
   exit 1
@@ -223,12 +290,17 @@ if ! ls "$OUT"/saves/*-final.sav* >/dev/null 2>&1; then
   exit 1
 fi
 
-initial=$(ls "$OUT"/saves/freeciv-T0001-*-auto.sav* 2>/dev/null | head -1)
-if [ -z "$initial" ]; then
-  echo "FAILED: no turn-1 autosave for map hash: $OUT" >&2
-  exit 1
+if [ -n "$START" ]; then
+  initial=$OUT/start.sav   # a resumed game: the start save IS the map
+  hash=$(grep -E '^t[0-9]+=' "$initial" | sha256sum | cut -d' ' -f1)
+else
+  initial=$(ls "$OUT"/saves/freeciv-T0001-*-auto.sav* 2>/dev/null | head -1)
+  if [ -z "$initial" ]; then
+    echo "FAILED: no turn-1 autosave for map hash: $OUT" >&2
+    exit 1
+  fi
+  hash=$(zstdcat "$initial" | grep -E '^t[0-9]+=' | sha256sum | cut -d' ' -f1)
 fi
-hash=$(zstdcat "$initial" | grep -E '^t[0-9]+=' | sha256sum | cut -d' ' -f1)
 if [ "$hash" = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ]; then
   echo "FAILED: turn-1 save has no terrain rows: $initial" >&2
   exit 1

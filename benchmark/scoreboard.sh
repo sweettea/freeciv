@@ -24,9 +24,13 @@
 #                   compiled-defaults cells always run too.
 #   --classic       add the classic generalisation cell (theory-of-play
 #                   section H): contested-classic.conf, self-play, n=20.
-#   --europe        add the legibility venue: europe-150.conf (the Europe
-#                   scenario, 14 nations, classic, T150), self-play and
-#                   mixed 7/7, n=20. Games are ~EUROPE_SECS_PER_GAME long.
+#   --europe        add the legibility venue europe-late: the Europe
+#                   scenario, 14 nations, classic, RESUMED at T150 and
+#                   played to T250, self-play and mixed 7/7, n=20. The
+#                   T150 starts are baseline self-play on europe-150.conf
+#                   (one per seed, <out>/europe-starts/seed-N.sav.zst),
+#                   generated first and kept; every arm of a seed resumes
+#                   the same save re-seated (run-game.sh START).
 #
 # ============================== WHAT IT MEASURES ==============================
 #
@@ -128,10 +132,12 @@ PORT0=7600      # brief: port block 7600+; the campaign took 7800/8000+,
                 # the stacked cell 7900 (stacked-lever.sh), nogates 7700
 PORTMAX=7639    # so at most 40 slots before touching 7640+ (kept free)
 SECS_PER_GAME=192  # corpus median s/game (screen-campaign.sh budget).
-EUROPE_SECS_PER_GAME=1900  # europe-150: 14 nations to T150 on the
-                # 2026-11-02 pin: the T1-20 smoke game took 169 s beside 10 other
+EUROPE_START_SECS=1900  # europe-150 start generation (T1-150, 14 nations) on
+                # the 2026-11-02 pin: the T1-20 smoke took 169 s beside 10 other
                 # jobs (8.5 s/turn); later turns are slower, so ~32 min a game is
-                # the budget until a full cell measures it (configs/europe-150.conf).
+                # the budget until the first starts stage measures it.
+EUROPE_SECS_PER_GAME=1900  # europe-late (T150-250): unmeasured; the same
+                # figure until the first cell measures it.
                 # Cross-check 2026-10-28 from DONE - commands.serv mtimes:
                 # stacked war/off deep 172, econ/off deep 217, screen mixed
                 # contested 185, s4 baseline war 160 / econ 200.
@@ -175,6 +181,7 @@ CACHE_ROOT=$ROOT/benchmark/results/scoreboard/baseline-cache
 SEEDS=$(seq 121 160)          # holdout 121-160; 101-120 burned (header)
 CLASSIC_SEEDS=$(seq 121 140)  # n=20, theory-of-play section H
 EUROPE_SEEDS=$(seq 121 140)   # n=20: the games are 5-10x longer
+STARTS=$OUT/europe-starts     # T150 starts for europe-late, one per seed
 PROBE_SEEDS="121 122 123"     # 3 identity seeds, as stacked-lever.sh's proof
 for s in $SEEDS; do
   awk -v s="$s" '$1==s {f=1} END {exit !f}' benchmark/seeds/holdout.txt \
@@ -193,24 +200,27 @@ if [ -n "$VECTOR" ]; then
 fi
 VENUES="contested lategame-80"
 [ "$CLASSIC" = 1 ] && VENUES="$VENUES contested-classic"
-[ "$EUROPE" = 1 ] && VENUES="$VENUES europe-150"
+[ "$EUROPE" = 1 ] && VENUES="$VENUES europe-late"
+export EUROPE_STARTS=$STARTS   # configs/europe-late.conf resolves START from it
 
 cfg_of() {
   case $1 in
     contested)         echo "$here/configs/contested.conf";;
     lategame-80)       echo "$here/configs/lategame-80.conf";;
     contested-classic) echo "$here/configs/contested-classic.conf";;
-    europe-150)        echo "$here/configs/europe-150.conf";;
+    europe-150)        echo "$here/configs/europe-150.conf";;   # starts only
+    europe-late)       echo "$here/configs/europe-late.conf";;
   esac
 }
 seeds_of() {
   case $1 in
     contested-classic) echo $CLASSIC_SEEDS;;
-    europe-150)        echo $EUROPE_SEEDS;;
+    europe-late)       echo $EUROPE_SEEDS;;
     *)                 echo $SEEDS;;
   esac
 }
-secs_of() { [ "$1" = europe-150 ] && echo $EUROPE_SECS_PER_GAME || echo $SECS_PER_GAME; }
+secs_of() { [ "$1" = europe-late ] && echo $EUROPE_SECS_PER_GAME || echo $SECS_PER_GAME; }
+starts_todo() { local s n=0; for s in $EUROPE_SEEDS; do [ -f "$STARTS/seed-$s.sav.zst" ] || n=$((n + 1)); done; echo $n; }
 has_mixed() { [ "$1" != contested-classic ]; }   # classic: self-play only
 tune_of() { [ "$1" = defaults ] && echo "" || echo "$VECTOR"; }
 for v in $VENUES; do [ -r "$(cfg_of "$v")" ] || die "missing $(cfg_of "$v")"; done
@@ -291,12 +301,17 @@ print_budget() {
     esac
   done
   set -- $(count_games); total=$1; nonbase=$2; nsecs=$3
+  if [ "$EUROPE" = 1 ]; then
+    n=$(starts_todo)
+    echo "  europe-starts      $n of $(echo $EUROPE_SEEDS | wc -w) T150 starts to generate (baseline, europe-150.conf)"
+    smin=$((smin + n * EUROPE_START_SECS)); smax=$((smax + n * EUROPE_START_SECS))
+  fi
   echo
   echo "=== BUDGET ==="
   echo "  deep-bearing games  $total ($nonbase not yet DONE)"
   echo "  baseline games      $bmin..$bmax"
   echo "  TO BUY              $((nonbase + bmin))..$((nonbase + bmax)) games"
-  echo "  wall clock          $(hours $((nsecs + smin)))..$(hours $((nsecs + smax))) h at ${SECS_PER_GAME}s/game (europe-150 ${EUROPE_SECS_PER_GAME}s), --jobs $JOBS"
+  echo "  wall clock          $(hours $((nsecs + smin)))..$(hours $((nsecs + smax))) h at ${SECS_PER_GAME}s/game (europe-late ${EUROPE_SECS_PER_GAME}s, each start ${EUROPE_START_SECS}s), --jobs $JOBS"
   echo
   echo "=== EXPECTED SEs at n=40 (per seat, paired by seed) ==="
   # panel-2026-10-27.md section 1 and 4: score delta se 2.61 (contested
@@ -371,7 +386,12 @@ guard() { # dir label arm -> writes guard.txt; appends to STOP on failure
   nt=$(grep -ac 'deep-tuning file=' "$log")
   nf=$(grep -ac 'cannot load tuning file' "$log")
   [ -n "$tune" ] && nv=$(grep -acF "deep-tuning file=\"$tune\"" "$log")
-  local mods; mods=$(awk '/^create P/ {printf "%s%s", sep, $3; sep=","}' "$d/commands.serv")
+  local mods
+  if [ -f "$d/start.sav" ]; then   # resumed game: the seats are in the save
+    mods=$(grep '^ai_type=' "$d/start.sav" | tr -d '"' | cut -d= -f2 | paste -sd,)
+  else
+    mods=$(awk '/^create P/ {printf "%s%s", sep, $3; sep=","}' "$d/commands.serv")
+  fi
   local p1=${mods%%,*} rest=${mods#*,}; local p2=${rest%%,*}
   case $arm in
     deep)     echo ",$mods," | grep -qv ',baseline,' && [ "$p1" = deep ] || why="$why seats=$mods";;
@@ -419,21 +439,43 @@ one() { # label venue arm seed port
   mv "$d/game.log.new" "$d/game.log"
   zstd -q --rm -f "$d/game.log"
   rm -rf "$d/saves"
+  rm -f "$d/start.sav"   # maphash.txt + provenance.txt record it
   touch "$d/.filtered"
+}
+
+one_start() { # seed port -> $STARTS/seed-N.sav.zst (baseline europe-150 to T150)
+  local seed=$1 port=$2 d=$STARTS/seed-$1 final
+  rm -rf "$d"; mkdir -p "$d"
+  env -u TUNING -u ARENA -u FREECIV_DEEP_TUNING -u FREECIV_DEEP_ARENA \
+      -u DEEP_QUIET -u KEEP_SAVES \
+    nice -n "$NICE" "$here/run-game.sh" --config "$(cfg_of europe-150)" \
+      --seed "$seed" --arm baseline --out "$d" --server "$SERVER" \
+      --port "$port" > "$d/runner.log" 2>&1
+  final=$(ls "$d"/saves/*-final.sav* 2>/dev/null | head -1)
+  if [ ! -f "$d/DONE" ] || [ -z "$final" ]; then
+    echo "FAILED europe-start seed $seed $(date -Is)" >> "$OUT/failures.log"
+    return
+  fi
+  if ! zstdcat "$final" | grep -q '^turn=151$'; then   # the end of T150
+    echo "$d: start save is not the end of T150" >> "$OUT/STOP"; return
+  fi
+  cp "$final" "$STARTS/seed-$seed.sav.zst.tmp" && mv "$STARTS/seed-$seed.sav.zst.tmp" "$STARTS/seed-$seed.sav.zst"
+  grep -aE "$KEEP" "$d/game.log" > "$d/game.log.new"; mv "$d/game.log.new" "$d/game.log"
+  zstd -q --rm -f "$d/game.log"; rm -rf "$d/saves"
 }
 
 # One port per job SLOT, held until that slot's game exits, so no two
 # live servers can ever share a port (a modulo rotation can collide
 # when one long game outlives a run of short ones).
 declare -a SLOTPID
-launch() { # label venue arm seed
-  local k p
+launch_fn() { # fn args... : run "fn args... port" in a free job slot
+  local fn=$1 k p; shift
   while :; do
     [ -s "$OUT/STOP" ] && return 1
     for ((k = 0; k < JOBS; k++)); do
       p=${SLOTPID[k]:-}
       if [ -z "$p" ] || ! jobs -rp | grep -qx "$p"; then
-        one "$@" $((PORT0 + k)) &
+        "$fn" "$@" $((PORT0 + k)) &
         SLOTPID[k]=$!
         return 0
       fi
@@ -441,6 +483,7 @@ launch() { # label venue arm seed
     wait -n 2>/dev/null || true
   done
 }
+launch() { launch_fn one "$@"; }   # label venue arm seed
 drain() { local p; for p in "${SLOTPID[@]}"; do wait "$p" 2>/dev/null; done; SLOTPID=(); }
 
 identical() { # a b : scorelogs equal with the per-run `id` line excluded
@@ -491,6 +534,18 @@ for v in $VENUES; do
     BSTATE[$v]=certified
   fi
 done
+
+# ---- phase 1b: the europe-late starts, T150 baseline self-play per seed
+if [ "$EUROPE" = 1 ]; then
+  mkdir -p "$STARTS"
+  for s in $EUROPE_SEEDS; do
+    [ -f "$STARTS/seed-$s.sav.zst" ] || launch_fn one_start "$s" || break
+  done
+  drain
+  [ -s "$OUT/STOP" ] && die "STOP: $(cat "$OUT/STOP")"
+  [ "$(starts_todo)" = 0 ] || die "europe-starts incomplete: $(starts_todo) missing (see $OUT/failures.log)"
+  echo "=== europe-starts complete: $(ls "$STARTS"/seed-*.sav.zst | wc -l) T150 saves ==="
+fi
 
 # ---- phase 2: everything else, seed-major so an interrupted run holds
 # complete seeds (every cell of a seed) rather than one complete cell.

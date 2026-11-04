@@ -70,7 +70,8 @@ COLS = ["score", "cities", "unitsbuilt", "techs", "pop", "mean_city_size",
         "unitslost", "unitskilled"]
 # Panel turns per venue: the brief's T50/T100; lategame-80 ends at T80
 # (lategame-80.conf ENDTURN=80), so its second cut is the end.
-PANEL_AT = {"lategame-80": [50, 80]}
+PANEL_AT = {"lategame-80": [50, 80],
+            "europe-late": [200, 250]}   # resumed at T150, ends T250
 PANEL_DEFAULT = [50, 100]
 SEAT = re.compile(r"P(\d+)")
 
