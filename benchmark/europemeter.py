@@ -175,6 +175,7 @@ def nations(text):
             "foreign": foreign,
             "dists": dists,
             "caravans": caravans,
+            "dens": len((mine & road) - centres) / len(mine) if mine else 0.0,
         })
     return out
 
@@ -186,8 +187,7 @@ def summarise(rows):
     """Mean per nation of each metric, plus route-length pooled stats."""
     if not rows:
         return None
-    s = {k: mean(r[k] for r in rows) for k in METRICS}
-    s["dens"] = (sum(r["road"] for r in rows) / max(1, sum(r["land"] for r in rows)))
+    s = {k: mean(r[k] for r in rows) for k in METRICS + ["dens"]}
     pooled = [d for r in rows for d in r["dists"]]
     s["dist"] = mean(pooled) if pooled else 0.0
     s["dmax"] = max(pooled) if pooled else 0
@@ -269,6 +269,7 @@ def main():
         rows = nations(read_save(path))
         n_games += 1
         start = run / "europe-starts" / ("seed-%d.sav.zst" % seed)
+        drows = []                  # this game's rows minus the T150 start
         if start.exists():
             if seed not in starts:
                 starts[seed] = {r["player"]: r for r in nations(read_save(start))}
@@ -277,19 +278,23 @@ def main():
                 if s0 is None:
                     continue
                 d = dict(r)
-                for m in METRICS:
+                for m in METRICS + ["dens"]:
                     d[m] = r[m] - s0[m]
                 d["dists"] = r["dists"]     # lengths are not differenced
+                drows.append(d)
                 deltas[(label, kind, arm, r["ai_type"])].append(d)
-        for r in rows:
-            groups[(label, kind, arm, r["ai_type"])].append(r)
         if kind == "mixed":
-            d = [r for r in rows if r["ai_type"] == "deep"]
-            b = [r for r in rows if r["ai_type"] == "baseline"]
-            if d and b:
-                for m in METRICS + ["dens", "dist"]:
-                    sd, sb = summarise(d), summarise(b)
+            # Pair on the change from T150 when the start is known: the
+            # deep and baseline seats are different nations, and the
+            # start sets their size.
+            use = drows or rows
+            sd = summarise([r for r in use if r["ai_type"] == "deep"])
+            sb = summarise([r for r in use if r["ai_type"] == "baseline"])
+            if sd and sb:
+                for m in METRICS + ["dens"]:
                     paired[(label, m)][(arm, seed)] = sd[m] - sb[m]
+                if sd["routes"] > 0 and sb["routes"] > 0:
+                    paired[(label, "dist")][(arm, seed)] = sd["dist"] - sb["dist"]
     if not n_games:
         sys.exit("no finished %s games with final.sav.zst under %s" % (a.venue, run))
     print("europemeter: %s venue %s, %d games, FAR=%d tiles" % (run, a.venue, n_games, FAR))
@@ -301,7 +306,8 @@ def main():
         for key in sorted(deltas):
             print(" ", fmt_summary("/".join(key), summarise(deltas[key])))
     if paired:
-        print("\nMIXED GAMES, deep seats minus baseline seats in the same game (mean +- SE over games)")
+        print("\nMIXED GAMES, deep seats minus baseline seats in the same game (mean +- SE over games;"
+              "\n  change from T150 when the start save is present; dist only where both sides have routes)")
         for label in labels:
             cells = [(m, paired[(label, m)]) for m in METRICS + ["dens", "dist"]
                      if paired.get((label, m))]
