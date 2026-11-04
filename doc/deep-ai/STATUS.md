@@ -24818,3 +24818,18 @@ in the whole game (Italian–Spanish, 58 tiles), 0 caravans. So at T150
 the stock AI has built roads but essentially no trade network; the
 question the venue asks is what each module does with the next 100
 turns. Upstream #2439/#2440: no activity since filing (checked 07:30).
+
+Second relaunch 08:33, after two harness defects surfaced on the first
+start round: (1) the T150 check piped zstdcat into `grep -q` under
+pipefail, so every valid start reported "not the end of T150" (SIGPIPE,
+rc 141) and the driver STOPped (f1e39b6a23: `grep -c`); (2) the
+systemd user timer `deep-tune-compact.timer` sweeps all of
+benchmark/results every 20 min (compress game.log, delete saves/ of
+DONE dirs) and deleted the seed-122 and seed-125 start saves at
+08:16:33 before they could be staged; it is also the cause of the
+H-ECON seed-148 game.log that vanished between the guard's greps on
+11-03 (listed above as unknown). The compactor now prunes scoreboard/
+(9531e1a214). Nine first-round starts were staged by hand from their
+kept saves; 11 remain to generate. A start costs about 60 min of wall
+time at 10 jobs (T150 of 14 nations on Europe), not the 1900 s
+placeholder.
