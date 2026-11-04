@@ -24844,3 +24844,18 @@ the box is an i7-1365U (2 P-cores + 8 E-cores, 12 threads, 12 MB L3,
 clock-throttled under this load), so a turn that costs ~20 s alone on
 a P-core costs 3-6x that with ten games up. Throughput still wants all
 cores busy; wall time per late game is ~100 min, the cell ~13 h.
+
+Third relaunch 14:05 (driver-europe-1104c.log). The first baseline
+self-play Europe game tripped the seating guard with 19 deep- lines:
+all `deep-stance-load`, the module's save-load hook reading back every
+player's stance (defaults for non-deep players), one line per player.
+No effect on baseline play. Fixed at source for the next pin
+(95d234d661, deep players only); for this pin the guard excludes that
+line (82a81f27db), and the three affected guard.txt files (seeds
+121-123 baseline) were re-verdicted OK with a note= field. Late games
+measured: baseline self-play ~95 min, mixed ~115 min, deep self-play
+~140 min at 10 jobs; the whole cell lands about 05:00 on 11-05. First
+meter reading (1 mixed + 1 baseline game, change T150→T250 per nation):
+baseline seats +117 road/+69 rail tiles, deep seats +43/+64; deep seats
+−19 land, −2.6 cities, and 7.5 caravans alive vs 0.4; trade routes
+essentially zero for everyone (≤ 0.1 per nation). Direction only.
