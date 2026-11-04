@@ -24726,3 +24726,73 @@ every city-info packet: the per-query saving reaches human players too.
 - Next: leaf refresh (43% of what is left) and per-query initial refresh
   + lattice (31%) are city.c work; government evaluation re-solves every
   city per candidate government (ai/default + advisors, unchanged).
+
+## S-SCOREBOARD — the standing scoreboard's first run: four vectors on fresh seeds (2026-11-02/03)
+
+First run of `benchmark/scoreboard.sh` (design: `findings/scoreboard-design-2026-10-28.md`),
+on seeds 121–160 nobody had tuned on, pin `.scoreboard-bin` = perf epics 1–5
+(a072ba61f0 + the razed-city census fix 9db7dd79c3; identity ed04f89a54e5).
+1,400 games: compiled defaults, `stacked-on.ini` (the five S-STACKED gates = the
+pre-registered control for informed-v1), `informed-v1.ini`, and its two halves
+`informed-v1-hdef.ini` / `informed-v1-hecon.ini` (2f0a56f402). Report:
+`benchmark/results/scoreboard/run-ed04f89a54e5/SCOREBOARD.md`.
+
+**Deep minus baseline, self-play, per seat (n = 40; classic n = 20):**
+
+| vector | contested score | cities | lategame-80 score | cities | classic score | cities |
+|---|---:|---:|---:|---:|---:|---:|
+| defaults (gates off) | −3.8 ± 1.8 | −0.43 | −8.7 ± 1.6 | −0.85 | −3.3 ± 1.7 | −1.16 |
+| stacked-on (control) | −3.8 ± 1.7 | −0.30 | −5.6 ± 1.4 | −0.40 | −7.6 ± 1.7 | −1.42 |
+| **H-DEF** | **+1.1 ± 1.9** | −0.20 | **−1.8 ± 1.7** | **−0.02** | −9.6 ± 1.6 | −1.59 |
+| H-ECON | −4.5 ± 1.8 | −0.42 | −5.1 ± 1.7 | −0.34 | −13.3 ± 1.8 | −2.01 |
+| informed-v1 (both) | −3.1 ± 1.6 | −0.26 | −2.7 ± 1.9 | −0.01 | −12.1 ± 2.1 | −1.98 |
+
+Paired vector − defaults, score: stacked-on 0.0 ± 1.3 / +3.1 ± 1.1 / −4.3 ± 1.7;
+H-DEF +4.9 ± 1.7 / +6.9 ± 1.3 / −6.3 ± 1.6; H-ECON −0.7 ± 1.8 / +3.6 ± 1.2 /
+−10.0 ± 1.8; informed-v1 +0.7 ± 1.4 / +6.0 ± 1.7 / −8.8 ± 1.9 (contested /
+lategame-80 / classic).
+
+**Head-to-head (mixed 4/4 and 3/3, P(deep seat outranks baseline seat)):** a
+coin flip in every cell and every vector: 0.477–0.525 on contested, 0.473–0.515
+on lategame-80. Every improvement so far is societal, none is zero-sum.
+
+**Readings.**
+- **informed-v1's pre-registered claim is falsified on contested:** cities
+  +0.04 vs the control (bar: ≥ +0.10; claim +0.25…+0.70). Score +0.7 ± 1.4.
+- **The defence half carries everything.** H-DEF alone: contested +4.9, cities
+  gap −0.30 → −0.20, units lost −1.7 more than the control; lategame-80 +3.8,
+  the cities gap closed (−0.40 → −0.02). H-DEF beats the full vector on
+  contested by ~4 points: the economy half was costing something.
+- **The economy half is null on civ2civ3 and harmful on classic:** −0.7 / +0.5
+  vs the control on contested / lategame-80; −5.6 on classic (cities −2.01).
+  Gold at T100 is −243…−249 under every vector: `upkeep_gold_weight` does not
+  touch the treasury deficit. Deep still never banks gold (0–4% in the 150–500
+  band vs baseline's 55%).
+- **Classic is hurt by the gate stack itself** (−4.3 ± 1.7 over defaults, its
+  first classic measurement ever) and further by every knob set. The stack was
+  only ever measured on civ2civ3.
+- **Units/city at T50 is still 2–2.5× baseline under H-DEF** (+0.40 contested),
+  so the defence knobs moved the outcome without closing that deficit; the
+  next rung is `scale_defender` 0.15 (memo §C) or `garrison_floor_turn = 120`.
+
+**Pipeline notes.** The pin-identity guard caught a real leak before game 1:
+the razed-city census (CALL_FUNC_EACH_AI) logged `deep-city razed=` in
+baseline-only games (fixed 9db7dd79c3, deep owners only, scorelog identical).
+Twenty H-DEF games and the H-DEF driver's report phase were lost to an in-place
+rewrite of `run-game.sh`/`scoreboard.sh` while they were executing (bash reads
+scripts incrementally); both were re-run from the DONE markers. One H-ECON game
+(lategame-80 deep seed 148) lost its game.log between two guard greps, cause
+unknown; set aside under `results/scoreboard/aside/` and replayed. The box
+slept twice (20:05–08:50, 09:30–20:50); harness-tracked jobs resumed intact.
+Speed: ~95 s per contested game at 10 jobs vs 186–213 s in August (−O2 + the
+perf epics).
+
+### Next, in order
+1. H-DEF's three knobs are the live candidate; add the next rung
+   (`scale_defender` 0.15, `garrison_floor_turn = 120`) as scoreboard vectors.
+2. Classic: audit the five gates one at a time on contested-classic before any
+   knob; the stack's classic harm is the largest single number on the board.
+3. The treasury: no vector moved gold; the gold band deficit needs its own
+   mechanism (price list → a banking target), not a weight.
+4. Europe late venue (`--europe`, T150→T250 on baseline-played starts): in
+   progress, see below.
