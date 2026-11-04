@@ -101,6 +101,8 @@
 # zstd'd, and saves/ is deleted, AS EACH GAME FINISHES: /home was 96%
 # full (6.3G free) on 2026-10-28, and a raw deep contested game.log is
 # hundreds of MB (stacked-lever.sh header).
+# The europe-late venue keeps its final save as final.sav.zst: that is
+# what its meter reads.
 #
 # ============================== LAYOUT =======================================
 #
@@ -438,6 +440,11 @@ one() { # label venue arm seed port
   grep -aE "$KEEP" "$d/game.log" > "$d/game.log.new"
   mv "$d/game.log.new" "$d/game.log"
   zstd -q --rm -f "$d/game.log"
+  if [ "$venue" = europe-late ]; then
+    # The legibility meter (europemeter.py) reads roads, trade routes
+    # and caravans out of the T250 save; ~0.2 MB zstd'd per game.
+    mv "$(ls "$d"/saves/*-final.sav* | head -1)" "$d/final.sav.zst"
+  fi
   rm -rf "$d/saves"
   rm -f "$d/start.sav"   # maphash.txt + provenance.txt record it
   touch "$d/.filtered"
