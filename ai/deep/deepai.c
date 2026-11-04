@@ -415,12 +415,16 @@ static void dpai_player_load(struct player *pplayer,
   /* Read back out loud: this hook runs before the next phase
    * re-resolves the axes, so it is the only place the round trip is
    * observable. Keyed on plrno, not the name -- this fires inside
-   * sg_load_player_main and the player is not fully built yet. */
-  log_base(deep_metric_log_level(),
-           "deep-stance-load plr=%d econ=%.3f mil=%.3f cult=%.3f"
-           " expand=%.3f",
-           plrno, plr_data->stance.econ, plr_data->stance.mil,
-           plr_data->stance.cult, plr_data->stance.expand);
+   * sg_load_player_main and the player is not fully built yet. Deep
+   * players only: the hook runs for every player, and a baseline game
+   * resumed from a save must log no deep- line (scoreboard guard). */
+  if (pplayer->ai == deep_ai_get_self()) {
+    log_base(deep_metric_log_level(),
+             "deep-stance-load plr=%d econ=%.3f mil=%.3f cult=%.3f"
+             " expand=%.3f",
+             plrno, plr_data->stance.econ, plr_data->stance.mil,
+             plr_data->stance.cult, plr_data->stance.expand);
+  }
 
   plr_data->last_strike_city
     = secfile_lookup_int_default(file, 0,
