@@ -24833,3 +24833,14 @@ H-ECON seed-148 game.log that vanished between the guard's greps on
 kept saves; 11 remain to generate. A start costs about 60 min of wall
 time at 10 jobs (T150 of 14 nations on Europe), not the 1900 s
 placeholder.
+
+Speed, same workload, same loaded box (11:45, ten cell games running):
+the seed-121 T150 start resumed for four turns with 16 baseline seats,
+CPU time from /usr/bin/time: pre-perf pin `.europe-bin-o0` (28 Oct,
+-O0, no perf epics) 1205 s; current pin `.scoreboard-bin` (-O2, epics
+1-5) 154 s; 7.8x. The cell's own games hold a full thread each and
+cost 60-120 CPU s per turn at T160 (quantised by a 4-minute sample):
+the box is an i7-1365U (2 P-cores + 8 E-cores, 12 threads, 12 MB L3,
+clock-throttled under this load), so a turn that costs ~20 s alone on
+a P-core costs 3-6x that with ten games up. Throughput still wants all
+cores busy; wall time per late game is ~100 min, the cell ~13 h.
