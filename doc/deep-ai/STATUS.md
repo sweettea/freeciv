@@ -24796,3 +24796,25 @@ perf epics).
    mechanism (price list → a banking target), not a weight.
 4. Europe late venue (`--europe`, T150→T250 on baseline-played starts): in
    progress, see below.
+
+**Europe late venue** (2026-11-04, in flight). Driver relaunched 07:14
+after one stop: the scoreboard deletes `saves/` as each game finishes,
+so the venue would have left nothing for its meter; `one()` now keeps
+the `europe-late` final save as `final.sav.zst` (d12a23bd50), and the
+first start round (about 15 min of wall time) was replayed. Cell:
+19 T150 starts to generate (seed 121 was staged by the smoke), then 20
+deep self-play + 40 mixed + 20 baseline self-play games T150→T250 at
+10 jobs; budget placeholders 1900 s per start and per game, to be
+replaced by measured values. Meter: `benchmark/europemeter.py RUN_DIR`
+(6f294ffd69 + follow-up) reads each final save and reports per nation,
+grouped by arm and ai_type: owned land, road and rail tiles outside
+city centres, cities, trade routes that exist (length, far ≥ 12 tiles,
+foreign), caravans alive; the same table as the change from the per-seed
+T150 start (both arms inherit it); and the paired deep−baseline reading
+inside mixed games on those changes. It reports; the training seeds
+adjudicate. Reference, the seed-121 T150 start (16 baseline nations):
+88 road and 0.6 rail tiles per nation outside centres, 1 trade route
+in the whole game (Italian–Spanish, 58 tiles), 0 caravans. So at T150
+the stock AI has built roads but essentially no trade network; the
+question the venue asks is what each module does with the next 100
+turns. Upstream #2439/#2440: no activity since filing (checked 07:30).
