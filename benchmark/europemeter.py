@@ -127,8 +127,13 @@ def owned_land(text):
     return owned
 
 
-def nations(text):
-    """Per-nation dict rows for every non-barbarian AI player."""
+def nations(text, partner=None):
+    """Per-nation dict rows for every non-barbarian AI player.
+
+    With `partner` (a player index), each row also counts the nation's
+    route endpoints whose other city belongs to that player
+    (to_partner), their mean length (partner_dist), and the partner's
+    diplomatic state towards it; the partner's own row is dropped."""
     road = extra_tiles(text, "Road")
     rail = extra_tiles(text, "Railroad")
     land = owned_land(text)
@@ -146,7 +151,7 @@ def nations(text):
     out = []
     for plr, sec in players.items():
         crow = _table(sec, "c")
-        dists, foreign = [], 0
+        dists, foreign, pdists = [], 0, []
         for row in crow:
             x, y = int(row["x"]), int(row["y"])
             for col, val in row.items():
@@ -155,8 +160,11 @@ def nations(text):
                 p = cities.get(int(val))
                 if p is None:
                     continue    # partner city gone or not a nation's
-                dists.append(max(abs(p[1] - x), abs(p[2] - y)))
+                d = max(abs(p[1] - x), abs(p[2] - y))
+                dists.append(d)
                 foreign += p[0] != plr
+                if partner is not None and p[0] == partner:
+                    pdists.append(d)
         mine = land.get(plr, set())
         centres = {(int(r["x"]), int(r["y"])) for r in crow}
         caravans = sum(1 for u in _table(sec, "u") if u["type_by_name"] in CARAVANS)
@@ -176,7 +184,13 @@ def nations(text):
             "dists": dists,
             "caravans": caravans,
             "dens": len((mine & road) - centres) / len(mine) if mine else 0.0,
+            "to_partner": len(pdists),
+            "partner_dist": mean(pdists) if pdists else 0.0,
+            "partner_state": (_table(sec, "diplstate")[partner].get("current")
+                              if partner is not None and partner < len(_table(sec, "diplstate")) else ""),
         })
+    if partner is not None:
+        out = [r for r in out if r["player"] != partner]
     return out
 
 
@@ -193,15 +207,23 @@ def summarise(rows):
     s["dmax"] = max(pooled) if pooled else 0
     s["n"] = len(rows)
     s["dead"] = sum(not r["alive"] for r in rows)
+    s["to_partner"] = mean(r.get("to_partner", 0) for r in rows)
+    pd = [r["partner_dist"] for r in rows if r.get("to_partner")]
+    s["partner_dist"] = mean(pd) if pd else 0.0
+    s["allied"] = sum(r.get("partner_state") == "Alliance" for r in rows)
     return s
 
 
-def fmt_summary(key, s):
-    return ("%-44s n=%3d dead=%2d land %6.1f road %6.1f rail %5.1f dens %.3f "
+def fmt_summary(key, s, partner=False):
+    line = ("%-44s n=%3d dead=%2d land %6.1f road %6.1f rail %5.1f dens %.3f "
             "cities %5.1f routes %5.2f far %4.2f foreign %4.2f dist %5.1f/%-3d caravans %4.2f"
             % (key, s["n"], s["dead"], s["land"], s["road"], s["rail"], s["dens"],
                s["cities"], s["routes"], s["far"], s["foreign"], s["dist"], s["dmax"],
                s["caravans"]))
+    if partner:
+        line += "  to_partner %4.2f (dist %4.1f) allied %d/%d" % (
+            s["to_partner"], s["partner_dist"], s["allied"], s["n"])
+    return line
 
 
 def print_save(path):
@@ -250,6 +272,11 @@ def main():
     ap.add_argument("--label", action="append",
                     help="label dirs to read (default: every dir with the venue)")
     ap.add_argument("--save", nargs="+", help="print per-nation rows of these saves")
+    ap.add_argument("--start", help="one start save for every seed (europe-ally) "
+                    "instead of europe-starts/seed-N.sav.zst")
+    ap.add_argument("--partner", type=int,
+                    help="player index of the standing partner (europe-ally: 12): "
+                    "also report each arm's routes to it and roads inside its borders")
     a = ap.parse_args()
     if a.save:
         for p in a.save:
@@ -266,23 +293,28 @@ def main():
     paired = defaultdict(dict)      # (label, metric) -> {(arm, seed): deep - baseline}
     n_games = 0
     for label, kind, arm, seed, path in games(run, a.venue, labels):
-        rows = nations(read_save(path))
+        rows = nations(read_save(path), a.partner)
         n_games += 1
         for r in rows:
             groups[(label, kind, arm, r["ai_type"])].append(r)
-        start = run / "europe-starts" / ("seed-%d.sav.zst" % seed)
+        start = Path(a.start) if a.start else run / "europe-starts" / ("seed-%d.sav.zst" % seed)
+        if a.start:
+            seed_key = "start"
+        else:
+            seed_key = seed
         drows = []                  # this game's rows minus the T150 start
         if start.exists():
-            if seed not in starts:
-                starts[seed] = {r["player"]: r for r in nations(read_save(start))}
+            if seed_key not in starts:
+                starts[seed_key] = {r["player"]: r for r in nations(read_save(start), a.partner)}
             for r in rows:
-                s0 = starts[seed].get(r["player"])
+                s0 = starts[seed_key].get(r["player"])
                 if s0 is None:
                     continue
                 d = dict(r)
-                for m in METRICS + ["dens"]:
+                for m in METRICS + ["dens", "to_partner"]:
                     d[m] = r[m] - s0[m]
                 d["dists"] = r["dists"]     # lengths are not differenced
+                d["partner_dist"] = r["partner_dist"]
                 drows.append(d)
                 deltas[(label, kind, arm, r["ai_type"])].append(d)
         if kind == "mixed":
@@ -293,7 +325,7 @@ def main():
             sd = summarise([r for r in use if r["ai_type"] == "deep"])
             sb = summarise([r for r in use if r["ai_type"] == "baseline"])
             if sd and sb:
-                for m in METRICS + ["dens"]:
+                for m in METRICS + ["dens"] + (["to_partner"] if a.partner is not None else []):
                     paired[(label, m)][(arm, seed)] = sd[m] - sb[m]
                 if sd["routes"] > 0 and sb["routes"] > 0:
                     paired[(label, "dist")][(arm, seed)] = sd["dist"] - sb["dist"]
@@ -302,16 +334,16 @@ def main():
     print("europemeter: %s venue %s, %d games, FAR=%d tiles" % (run, a.venue, n_games, FAR))
     print("\nPER NATION (mean over nations; dist = mean/max route length in tiles)")
     for key in sorted(groups):
-        print(" ", fmt_summary("/".join(key), summarise(groups[key])))
+        print(" ", fmt_summary("/".join(key), summarise(groups[key]), a.partner is not None))
     if deltas:
-        print("\nCHANGE FROM THE T150 START (same columns; dist is the T250 value)")
+        print("\nCHANGE FROM THE START SAVE (same columns; dist is the final value)")
         for key in sorted(deltas):
-            print(" ", fmt_summary("/".join(key), summarise(deltas[key])))
+            print(" ", fmt_summary("/".join(key), summarise(deltas[key]), a.partner is not None))
     if paired:
         print("\nMIXED GAMES, deep seats minus baseline seats in the same game (mean +- SE over games;"
               "\n  change from T150 when the start save is present; dist only where both sides have routes)")
         for label in labels:
-            cells = [(m, paired[(label, m)]) for m in METRICS + ["dens", "dist"]
+            cells = [(m, paired[(label, m)]) for m in METRICS + ["dens", "dist", "to_partner"]
                      if paired.get((label, m))]
             if not cells:
                 continue
