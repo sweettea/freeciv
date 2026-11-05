@@ -24951,6 +24951,7 @@ beside the user's interactive Europe game; europe-late.conf now allows
 fifth, mixed_db seed 128, is a SEGFAULT at T224 in the stock AI
 (`bl_dai_unit_attack`, upstream-bugs.md #52: stale bodyguard pointer
 after an attack that captured a deep capital and started a civil war).
-The game is deterministic from its start, so it will fail again; the
-venue reports with that pair missing until the pin changes. Deep calls
+The game is deterministic from its start, so the rerun should fail the
+same way (a replay from its T223 autosave did not: AI guard state is not
+saved); the venue reports with that pair missing until the pin changes. Deep calls
 the same function from deepops.c and carries the same exposure.

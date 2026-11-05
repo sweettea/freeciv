@@ -495,4 +495,10 @@ exhausted). Not fixed in place per rule 2's spirit for common/.
     calls `dai_unit_attack()` itself (deepops.c) and is exposed to the
     same crash; its own operation code must re-fetch likewise or carry
     a corrected copy (rule 3, stated when done). Fix offered upstream
-    from branch `upstream/daitools-attack-bodyguard`. Found 2026-11-05.
+    from branch `upstream/daitools-attack-bodyguard` (93f40a034a,
+    builds on upstream main). Reproduction note: replaying the game's
+    own T223 autosave on the crashing binary does NOT reproduce it (ran
+    to T228 cleanly, no civil war): the stock AI's guard assignments are
+    not in the save, so the loaded game diverges. The replay from the
+    T150 start save is deterministic and is what the scoreboard's rerun
+    will show. Found 2026-11-05.
