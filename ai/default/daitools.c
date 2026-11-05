@@ -820,6 +820,7 @@ bool dai_unit_attack(struct ai_type *ait, struct unit *punit,
   struct unit *ptrans;
   struct unit *bodyguard = aiguard_guard_of(ait, punit);
   int sanity = punit->id;
+  int guard_id = (bodyguard != nullptr) ? bodyguard->id : 0;
   bool alive;
   struct city *tcity;
   const struct civ_map *nmap = &(wld.map);
@@ -1075,6 +1076,12 @@ bool dai_unit_attack(struct ai_type *ait, struct unit *punit,
                    0, "", ACTION_UNIT_MOVE3);
   }
   alive = (game_unit_by_number(sanity) != nullptr);
+  /* The action can remove the bodyguard too: a civil war earlier in the
+   * turn hands units to the rebel in place, the guard link survives the
+   * change of owner, and this attack can then kill the guard, now an
+   * enemy. Look it up again rather than trusting the pointer read
+   * before the action. */
+  bodyguard = (guard_id > 0) ? game_unit_by_number(guard_id) : nullptr;
 
   if (alive && same_pos(ptile, unit_tile(punit))
       && bodyguard != nullptr
