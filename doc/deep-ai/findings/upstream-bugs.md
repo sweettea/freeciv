@@ -471,3 +471,28 @@ exhausted). Not fixed in place per rule 2's spirit for common/.
     (`ai/default: Clean up on every early return from cityresult_fill()`,
     RM #TBD). Found 2026-11-02 while porting the shared reverse-map
     searches.
+52. **`dai_unit_attack()` dereferences a stale bodyguard pointer after
+    the attack** (`ai/default/daitools.c:1081`, identical on upstream
+    main 4fd223356b). The function reads `bodyguard =
+    aiguard_guard_of(ait, punit)` before `unit_do_action()`, checks only
+    that the ATTACKER survived (`game_unit_by_number(sanity)`), and then
+    reads `def_ai_unit_data(bodyguard, ait)->charge`. Anything the
+    action does to the bodyguard in between is a use after free.
+    Observed once in ~1,500 benchmark games: scoreboard europe-late,
+    seed 128, mixed_db, T224 (2026-11-04 19:45, core 67008): a baseline
+    (stock) Cavalry rampage captured a deep player's capital, the
+    capital's loss started a civil war (`Player 'Ona' now has AI skill
+    level 'Hard'` is the last log line), and the server segfaulted in
+    `bl_dai_unit_attack` via `adv_unit_execute_path` <-
+    `bl_dai_military_rampage` <- `dai_military_attack`. The bodyguard
+    pointer was 0x413092e0 with the attacker alive; the civil war's
+    transfers (`transfer_city_units`, `resolve_unit_stacks` between the
+    new player and everyone it is not allied with) are what can wipe a
+    unit standing beside the attacker. The game is deterministic from
+    its start save, so the rerun fails at the same turn. Fix: keep the
+    bodyguard's id and re-fetch it with `game_unit_by_number()` after
+    the action, as the function already does for the attacker. Deep
+    calls `dai_unit_attack()` itself (deepops.c) and is exposed to the
+    same crash; its own operation code must re-fetch likewise or carry
+    a corrected copy (rule 3, stated when done). Fix offered upstream
+    from branch `upstream/daitools-attack-bodyguard`. Found 2026-11-05.
