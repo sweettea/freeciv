@@ -65,7 +65,9 @@ SERVER=$(readlink -f "$SERVER")
 # SKILL, RULESET, TIMEOUT_S, HUTS, GENERATOR, SPECIALS,
 # EXTRA_SERV (verbatim server commands) optional.
 SKILL=hard RULESET= TIMEOUT_S=1800 HUTS= GENERATOR= SPECIALS= TILESPERPLAYER= EXTRA_SERV= SCENARIO= START=
+FIXED_SEATS= RESEED=
 . "$(readlink -f "$CONFIG")"
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)   # a config may clobber it
 for v in PLAYERS ENDTURN; do
   [ -n "${!v:-}" ] || { echo "config missing $v" >&2; exit 1; }
 done
@@ -91,9 +93,15 @@ OUT=$(readlink -f "$OUT")
 if [ -n "$START" ]; then
   # Re-seat the start save for this arm: rewrite each player block's
   # ai_type. Every player must already be AI-controlled ("ai" flag).
-  python3 -I - "$START" "$OUT/start.sav" "$ARM" <<'PYEOF' || exit 1
+  # FIXED_SEATS="12=baseline 3=deep" pins player indices to a module
+  # in every arm (a standing partner); RESEED=1 replaces the save's
+  # [random] section with the state `set gameseed $SEED` would give
+  # (benchmark/fcrand.py), so one start save varies by seed.
+  python3 -I - "$START" "$OUT/start.sav" "$ARM" "$FIXED_SEATS" \
+    "${RESEED:+$SEED}" "$here" <<'PYEOF' || exit 1
 import sys, subprocess, re
-src, dst, arm = sys.argv[1:4]
+src, dst, arm, fixed_arg, reseed, here = sys.argv[1:7]
+fixed = {int(k): v for k, v in (f.split('=') for f in fixed_arg.split())}
 mods = {'d': 'deep', 'b': 'baseline', 'c': 'classic'}
 if arm.startswith('mixed_') and len(arm) == 8:
     odd, even = mods[arm[6]], mods[arm[7]]
@@ -122,16 +130,29 @@ for line in lines:
         idx = None
     if idx is not None and idx not in barb and line.startswith('ai_type='):
         seat = idx + 1
-        mod = odd if seat % 2 == 1 else even
+        mod = fixed.get(idx, odd if seat % 2 == 1 else even)
         line = 'ai_type="%s"' % mod
-        seated.append(mod); n += 1
+        seated.append(mod + ('*' if idx in fixed else '')); n += 1
     if idx is not None and idx not in barb and line.startswith('flags=') and '"ai"' not in line:
         sys.exit('START save player%d is not AI-controlled (flags=%s)' % (idx, line))
     out.append(line)
 if n == 0:
     sys.exit('START save has no ai_type lines')
-open(dst, 'w', encoding='utf-8', errors='surrogateescape').write('\n'.join(out))
-print('start: %s -> %d seats re-seated (%d barbarian players kept): %s' % (src, n, len(barb), ','.join(seated)))
+missing = [k for k in fixed if k not in {int(m.group(1)) for m in re.finditer(r'^\[player(\d+)\]$', text, re.M)}]
+if missing:
+    sys.exit('FIXED_SEATS names players not in the save: %s' % missing)
+text = '\n'.join(out)
+if reseed:
+    sys.path.insert(0, here)
+    import fcrand
+    m = re.search(r'^\[random\]\n.*?(?=^\[)', text, re.M | re.S)
+    if not m:
+        sys.exit('RESEED: START save has no [random] section')
+    text = text[:m.start()] + fcrand.random_section(int(reseed)) + text[m.end():]
+open(dst, 'w', encoding='utf-8', errors='surrogateescape').write(text)
+print('start: %s -> %d seats re-seated (%d barbarian players kept%s%s): %s' % (
+    src, n, len(barb), '; fixed ' + fixed_arg if fixed else '',
+    '; RNG reseeded to %s' % reseed if reseed else '', ','.join(seated)))
 PYEOF
 fi
 
@@ -245,7 +266,7 @@ fi
     echo "arena=none sha256=none"
   fi
   if [ -n "$START" ]; then
-    echo "start=$START sha256=$(sha256sum "$START" | cut -d' ' -f1)"
+    echo "start=$START sha256=$(sha256sum "$START" | cut -d' ' -f1)${FIXED_SEATS:+ fixed_seats=$FIXED_SEATS}${RESEED:+ reseed=$SEED}"
   fi
   echo "runner=$(readlink -f "$0") sha256=$(sha256sum "$0" | cut -d' ' -f1)"
   echo "arm=$ARM seed=$SEED"
