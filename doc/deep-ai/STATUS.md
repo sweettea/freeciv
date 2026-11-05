@@ -24875,3 +24875,23 @@ tiles inside a city radius we lost recently or hold a live retake plan
 for, and arguably every tile a barbarian owns through one of our former
 cities. Fix belongs to the next ai/deep epic; the knob
 pillage_denial_gain=0.0 is the off switch meanwhile.
+
+The user's reading of the same event, and the better fix: the Musketeers
+should have RETAKEN the city. It stood next to it with attack 3 against
+whatever single wounded barbarian had just walked in, and nothing asked
+its odds. Why nothing did: the kill pass's attacker pool (deepdefence.c,
+the loop above the deep-kill log line) drops every unit tasked
+AIUNIT_DEFEND_HOME, so a garrison unit is never a candidate however
+good its odds; the op layer's anchor chose a Spanish city as target
+with Marseille only as alt (deep-anchor target=447 alt=644), so no
+retake operation formed, and the deep-kill p0=1.0 line was the BUILD
+want in a city 7-9 tiles away, not a plan in motion; the sortie pass
+found no blades. So the design item is a RETAKE check at city-loss
+time: for a city we lost this turn (or hold a plan for), every own unit
+with attack > 0 within reach, garrison-tasked or not, is priced by
+unit_win_chance against the occupiers and attacks when the take odds
+clear the bar or the expected value (city worth, 576 here, against the
+unit) is positive; it runs before the pillage pass and before the
+garrison floor re-pins the unit. The barbarian that captures a city is
+usually one damaged unit, which is exactly the case the exclusion
+throws away.
