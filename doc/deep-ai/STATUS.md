@@ -24859,3 +24859,19 @@ meter reading (1 mixed + 1 baseline game, change T150→T250 per nation):
 baseline seats +117 road/+69 rail tiles, deep seats +43/+64; deep seats
 −19 land, −2.6 cities, and 7.5 caravans alive vs 0.4; trade routes
 essentially zero for everyone (≤ 0.1 per nation). Direction only.
+
+**Defect seen in play (2026-11-04, Europe WILD game, T117): pillage as
+yield denial burns our own lost city's tiles.** Marseille (Deep_Gallia,
+size 7) fell to barbarians; the garrison died with it; the kill pass
+planned the retake correctly (Knights from a city 7-9 tiles away, p=1.0,
+eta 2, deep-kill target=644 barb=1). The same turn
+deep_pillage_sorties() (deepdefence.c, S-GROUND item 2) found a French
+Musketeers standing next to the city on a tile that had just become
+barbarian-owned, valued the French-built road there by the yield it
+denies, and pillaged it (deep-pillage standing=2 started=1). The unit
+was disbanded the next turn (it was Marseille's). The pass has no notion
+of whose tile it is pillaging beyond "owner at war": it should skip
+tiles inside a city radius we lost recently or hold a live retake plan
+for, and arguably every tile a barbarian owns through one of our former
+cities. Fix belongs to the next ai/deep epic; the knob
+pillage_denial_gain=0.0 is the off switch meanwhile.
