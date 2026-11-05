@@ -24895,3 +24895,34 @@ unit) is positive; it runs before the pillage pass and before the
 garrison floor re-pins the unit. The barbarian that captures a city is
 usually one damaged unit, which is exactly the case the exclusion
 throws away.
+
+**Design item from the Europe WILD game (2026-11-04, T131): a new city
+is a beachhead, and the expansion machinery cannot see that.** Most
+deep nations stopped founding after T60 with large empty regions between
+them (Italy/Spain/France, Denmark/France/Germany). The logs give the
+mechanism: (a) the expansion gate (deep-expgate) refuses a settler in
+any city whose survival against the forecast wave is < 0.90, which at
+T131 closed 9/20 Italian, 5/15 German and 2/6 French cities while the
+unpressed nations (Spain 43/43 open, Ukraine 26/26, Greece 14/14,
+Russia) kept founding; (b) in open cities the first-defender want
+(1100, the ai/default clamp) or an emergency want (France 11,665 and
+16,445) outbids founder bids of 500-1000; (c) a settler's 2-food upkeep
+against +1 surpluses zeroes the bid outright (fed=0, Denmark 4/10). The
+user's reading: a city founded toward the enemy is itself a defensive
+or offensive position, and a nation with a sound defensive posture
+should expand into the contested space BEFORE it attacks. Nothing in
+the site evaluator prices that: site_defence_weight is 0 (measured on
+isolated-150, where there is no enemy to face), the frontier transit
+gate only prices the walk, the stance expand gate scales settler want
+by econ/mil, so a military-leaning seat suppresses expansion exactly
+when a forward base would serve it, and the expgate reads the SOURCE
+city's survival rather than the SITE's. Shape of the fix for a later
+epic: (1) price a candidate site's strategic value: distance it removes
+to enemy targets (the op layer already stages from cities), enemy sites
+it denies, and the cover it gets from our own garrisons; (2) found with
+an escort when the site is contested, as one joint bid (settler +
+defender) against the defence wants, instead of a settler alone that
+loses the auction to the first defender; (3) the expansion gate should
+ask whether the SITE can be held, not whether the source city is
+currently under threat. Observed, not measured; the Europe venues are
+where it would be read.
