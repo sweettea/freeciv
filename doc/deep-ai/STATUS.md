@@ -24926,3 +24926,18 @@ loses the auction to the first defender; (3) the expansion gate should
 ask whether the SITE can be held, not whether the source city is
 currently under threat. Observed, not measured; the Europe venues are
 where it would be read.
+Addendum (user, same evening): the beachhead need not be a city. Roads
+and railroads across the gap, fortresses, airbases, or several of them
+in a chain, are the same investment: they cut the ETA from our staging
+cities to the enemy's, and ETA is already the quantity the take-odds
+model and the wave model run on. Today deep builds fortresses as
+DEFENCE inside its borders (T120 of the WILD game: 121 fortresses, 40
+Turkish, 29 Danish, 17 German) and roads as economy or as ally
+corridors (W12); no deep nation has an airbase and only Germany and
+France have rails. The same strategic-value term that prices a forward
+city (distance removed to targets x their worth x the odds gain) prices
+a road segment, a rail segment, a fortress at its end or an airbase in
+the same currency, so "found a city there", "road to there and fort
+it" and "do nothing" become one comparison. The worker machinery
+(trunks, corridors, deep-fort) already walks and builds; what is
+missing is the price.
