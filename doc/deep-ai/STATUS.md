@@ -24941,3 +24941,16 @@ the same currency, so "found a city there", "road to there and fort
 it" and "do nothing" become one comparison. The worker machinery
 (trunks, corridors, deep-fort) already walks and builds; what is
 missing is the price.
+
+**Europe cell, night of 11-04/05.** 40/80 at 08:58 on 11-05 (the box
+slept ~23:30-08:30). Five games FAILED on the evening of 11-04: four hit
+the 3 h timeout (deep self-play seeds 129, 130, 131 at T249/244/233 and
+mixed_db 131 at T241) because the cell ran in the idle scheduling class
+beside the user's interactive Europe game; europe-late.conf now allows
+6 h (a4e068e1ba) and the driver reruns them on its next launch. The
+fifth, mixed_db seed 128, is a SEGFAULT at T224 in the stock AI
+(`bl_dai_unit_attack`, upstream-bugs.md #52: stale bodyguard pointer
+after an attack that captured a deep capital and started a civil war).
+The game is deterministic from its start, so it will fail again; the
+venue reports with that pair missing until the pin changes. Deep calls
+the same function from deepops.c and carries the same exposure.
