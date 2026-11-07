@@ -25021,25 +25021,26 @@ should be where a city can be held, not whether the source is nervous.
 
 Pin ed04f89a54e5 (perf epics 1-5 + 9db7dd79c3), compiled defaults, seeds
 121-140, T150→T250 on per-seed baseline-played starts of the Europe
-scenario (civ2civ3, 14 nations + splinters). 75 of 80 games at report
-time: 4 timeouts rerunning, 1 stock-AI crash (upstream-bugs #52) that
-reruns deterministically into the same crash, so mixed seeds 128 and 131
-are unpaired. SCOREBOARD.md section "defaults / europe-late".
+scenario (civ2civ3, 14 nations + splinters). Final: 79 of 80 games
+(the four timeouts rerun clean on 11-07 at 6 h; mixed_db seed 128 is the
+stock-AI crash of upstream-bugs #52, deterministic from its start, so
+seed 128 is unpaired). SCOREBOARD.md section "defaults / europe-late",
+regenerated 2026-11-07 15:38.
 
-**Head-to-head (mixed, 18 seeds × 2 mirrors): deep loses.** AUC 0.410 ±
-0.011 (z −8.1), the first venue off 0.5; per-seat final score 578 vs 686
-(−108 ± 10, ratio 0.84); win share 1/3; 0 of 18 seeds with AUC > 0.5.
+**Head-to-head (mixed, 19 seeds × 2 mirrors): deep loses.** AUC 0.410 ±
+0.011 (z −8.6), the first venue off 0.5; per-seat final score 575 vs 683
+(−108 ± 10, ratio 0.84); win share 0.34; 0 of 19 seeds with AUC > 0.5.
 
-**Self-play (17 paired seeds): deep loses.** Score −48 ± 7 (ratio 0.93,
-1/17 seeds higher); at T250 −50 ± 12. Cities +1.5 (ns), settlers +4.3,
-land +3%, but techs −2.3, pop −12, mean city size −0.44 (5.7 vs 6.2),
-culture −892, and GOLD 78 vs 738 (−661 ± 63; in band 12% vs 33%): the
+**Self-play (20 paired seeds): deep loses.** Score −47 ± 6 (ratio 0.93,
+1/20 seeds higher); at T250 −48 ± 12. Cities +1.3 (ns), settlers +4.6,
+land +3% (ns), but techs −2.3, pop −12, mean city size −0.47 (5.8 vs 6.3),
+culture −848, and GOLD 77 vs 738 (−661 ± 63; in band 12% vs 33%): the
 treasury gap from the 32x32 venues is six times larger here. Deep fights
-far less: units lost −35, units killed −37 (0/17 seeds higher on either).
+far less: units lost −35, units killed −37 (0/20 seeds higher on either).
 
-**Meter (europemeter.py, 38 mixed games, change T150→T250 per nation,
-deep − baseline seats in the same game):** land −84 ± 21 tiles, roads
-−41 ± 7, cities −5.2 ± 1.3, rail ±0, trade routes +0.06 ± 0.06, caravans
+**Meter (europemeter.py, 39 mixed games, change T150→T250 per nation,
+deep − baseline seats in the same game):** land −87 ± 20 tiles, roads
+−42 ± 7, cities −5.4 ± 1.3, rail ±0, trade routes +0.06 ± 0.06, caravans
 +0.24 ± 0.22. Self-play: deep +47 land vs baseline +27, roads +35 vs +61,
 rail +56 vs +44, routes 0.32 vs 0.06 per nation (deep's are 30 tiles
 long), caravans 0.99 vs 0.12. Routes are near zero for everyone because
