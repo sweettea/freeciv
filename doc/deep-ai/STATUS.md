@@ -25004,3 +25004,15 @@ already in the tree. Also: the WILD Dania seat set barb_reinforce_rate
 "assume barbarian targets reinforce at this rate", so that seat prices
 every barbarian city as defended. Comment corrected in the seat file;
 the value stands for this game (tuning does not reload).
+Addendum (user, T221): a mildly threatened nation stops expanding
+entirely. Turkey at T220: 13 cities, sites available (5 at distance 2,
+4 at 3, 2 at 4), 11 of 13 cities closed by the expansion gate at mean
+forecast survival 0.32, founder want 24-34 in the two open ones against
+a military want of 18,551; two cities founded in 60 turns. Italy: 11 of
+16 closed, founder 1,993 vs military 25,794. Spain: all 34 open, founder
+843 vs military 77,448. Russia: 135 of 141 open, founder 58,934, and it
+is the one that grows. Carthage is a stock seat (ai/default's own
+settler logic, which stops mid-game on its own) and is outside our
+remit. The gate reads "a wave may come" as "found nothing anywhere",
+which is the beachhead item's point from the other side: the question
+should be where a city can be held, not whether the source is nervous.
