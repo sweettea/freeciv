@@ -25016,3 +25016,51 @@ settler logic, which stops mid-game on its own) and is outside our
 remit. The gate reads "a wave may come" as "found nothing anywhere",
 which is the beachhead item's point from the other side: the question
 should be where a city can be held, not whether the source is nervous.
+
+### S-EUROPE — the Europe late venue's first result (2026-11-07)
+
+Pin ed04f89a54e5 (perf epics 1-5 + 9db7dd79c3), compiled defaults, seeds
+121-140, T150→T250 on per-seed baseline-played starts of the Europe
+scenario (civ2civ3, 14 nations + splinters). 75 of 80 games at report
+time: 4 timeouts rerunning, 1 stock-AI crash (upstream-bugs #52) that
+reruns deterministically into the same crash, so mixed seeds 128 and 131
+are unpaired. SCOREBOARD.md section "defaults / europe-late".
+
+**Head-to-head (mixed, 18 seeds × 2 mirrors): deep loses.** AUC 0.410 ±
+0.011 (z −8.1), the first venue off 0.5; per-seat final score 578 vs 686
+(−108 ± 10, ratio 0.84); win share 1/3; 0 of 18 seeds with AUC > 0.5.
+
+**Self-play (17 paired seeds): deep loses.** Score −48 ± 7 (ratio 0.93,
+1/17 seeds higher); at T250 −50 ± 12. Cities +1.5 (ns), settlers +4.3,
+land +3%, but techs −2.3, pop −12, mean city size −0.44 (5.7 vs 6.2),
+culture −892, and GOLD 78 vs 738 (−661 ± 63; in band 12% vs 33%): the
+treasury gap from the 32x32 venues is six times larger here. Deep fights
+far less: units lost −35, units killed −37 (0/17 seeds higher on either).
+
+**Meter (europemeter.py, 38 mixed games, change T150→T250 per nation,
+deep − baseline seats in the same game):** land −84 ± 21 tiles, roads
+−41 ± 7, cities −5.2 ± 1.3, rail ±0, trade routes +0.06 ± 0.06, caravans
++0.24 ± 0.22. Self-play: deep +47 land vs baseline +27, roads +35 vs +61,
+rail +56 vs +44, routes 0.32 vs 0.06 per nation (deep's are 30 tiles
+long), caravans 0.99 vs 0.12. Routes are near zero for everyone because
+civ2civ3 pays nothing for domestic or enemy routes and the AIs only
+trade with allies (every route endpoint in the saves is between allies);
+the "long-distance trade network" does not exist in either module, and
+the user's own Europe games show it is partner size, not distance, that
+makes deep trade (STATUS entries above).
+
+**Reading.** The 32x32 venues said coin flip head-to-head and −3 to −9
+self-play; Europe late says deep is clearly worse at the long game
+against the stock AI on a big map: it founds more and smaller cities,
+holds its army back (half the kills), starves its treasury, and loses
+territory to the baseline seats beside it. This is consistent with what
+the WILD play game showed turn by turn: the expansion gate freezing
+under mild pressure, gate 5 zeroing the offensive build for land-rich
+seats, operations refused at the 0.70 bar with empty pools, 26 of 28
+barbarian cities left empty, and the H-DEF defence trio emptying
+garrisons. The legibility venue has done its job: the next work is the
+pricing workstream (opportunity in the stance read, EV instead of
+probability bars, the retake / empty-city pass, founding as position),
+not another knob pass. Costs measured: 72 min per T150 start, 141/165/177
+min per baseline/mixed/deep game at 10 idle-class jobs; the cell took
+three days of wall time because the box sleeps when the user is away.
