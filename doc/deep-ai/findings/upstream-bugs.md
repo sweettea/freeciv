@@ -500,5 +500,6 @@ exhausted). Not fixed in place per rule 2's spirit for common/.
     own T223 autosave on the crashing binary does NOT reproduce it (ran
     to T228 cleanly, no civil war): the stock AI's guard assignments are
     not in the save, so the loaded game diverges. The replay from the
-    T150 start save is deterministic and is what the scoreboard's rerun
-    will show. Found 2026-11-05.
+    T150 start save IS deterministic: the scoreboard's rerun of the same
+    game (launched 2026-11-07 13:40) segfaulted again at T224 with the
+    last autosave at T223, exactly as the first run. Found 2026-11-05.
