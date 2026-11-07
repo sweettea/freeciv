@@ -24980,3 +24980,27 @@ opportunity signal beside threat, and operation formation should be an
 expected-value comparison (P(take) x worth - expected loss) rather than
 a fixed probability bar; the beachhead item above is the same change
 seen from the settler's side.
+
+**Barbarian-held cities are free and nobody takes them** (user, Europe
+WILD T221): the T220 save holds 28 barbarian cities, 26 with NO garrison
+at all, Marseille among them 100 turns after it fell, plus most of the
+former Greek heartland. The passes do see them: deep-kill priced
+barbarian targets 148 times for Greece, 120 for Spain, 105 for Turkey in
+30 turns, and the op layer's most-evaluated targets are barbarian ids;
+barb_reinforce_rate already defaults to 0 (barbarians measured 47/52
+empty in August), so the odds model does not imagine a garrison. What
+kills it is the same pair as above: the pool is empty (mean 0.5-1.8
+attackers; take odds 0.27-0.48 only because there is nothing to send)
+because gate 5 zeroes the offensive build for econ-leaning seats, and
+the targets are 12-40 tiles from the city doing the pricing. Design
+item: an EMPTY enemy city within reach of any military land unit is a
+walk-in, not an operation -- a direct capture pass (odds 1.0 by
+construction, worth = the city) that runs before the op layer and
+ignores the stance gate, with barbarian-held former-own cities first;
+the barbarians' known habit (capture, strip, leave) is exactly the
+"known capability" the user names, and the census that measured it is
+already in the tree. Also: the WILD Dania seat set barb_reinforce_rate
+= 1.0 under the belief it meant "reinforce our captures"; it means
+"assume barbarian targets reinforce at this rate", so that seat prices
+every barbarian city as defended. Comment corrected in the seat file;
+the value stands for this game (tuning does not reload).
