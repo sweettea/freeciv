@@ -24955,3 +24955,28 @@ The game is deterministic from its start, so the rerun should fail the
 same way (a replay from its T223 autosave did not: AI guard state is not
 saved); the venue reports with that pair missing until the pin changes. Deep calls
 the same function from deepops.c and carries the same exposure.
+
+**Europe WILD, T221 (2026-11-07): nobody but Russia is aggressive late,
+and the logs say why.** Russia (141 cities, 183 units, +52 cities and 87
+kills in 30 turns) and stock Poland dominate; Spain, Italy and Carthage
+have the size to fight and do not. In the last 30 turns every other deep
+seat had 27-31 operation evaluations REFUSED with mean take odds
+0.00-0.03 against a bar of 0.70 (0.87-0.96 for overseas targets) and an
+attacker pool of 0.3-3.2 units; Greece, Turkey and Germany formed a few
+(4-7) and aborted as many. Two mechanisms, both ours: (1) gate 5 scales
+the offensive BUILD want by (mil/econ)^assault_gain, and the position
+term that seeds a free stance raises mil only through threat and war
+share (m_pos = threat + warfrac - 1) and raises econ through free land,
+so a nation that is winning, unthreatened and land-rich sits at the
+economic corner (Russia econ 1.26 / mil 0.27, assault_gate 2 of 1000;
+Ukraine 0.50 / 0.10; Greece 0.80 / 0.10) and never buys attackers; with
+no attackers the pool is empty, the take odds are 0 and (2) the
+operation layer's probability bar (take odds >= 0.70) refuses forever.
+There is no OPPORTUNITY term anywhere: a weak neighbour, a richer target
+than our own cities, a 3:1 strength ratio -- none of it moves the
+military axis or the op bar. Design consequence for the pricing
+workstream: the stance position read needs a relative-strength /
+opportunity signal beside threat, and operation formation should be an
+expected-value comparison (P(take) x worth - expected loss) rather than
+a fixed probability bar; the beachhead item above is the same change
+seen from the settler's side.
