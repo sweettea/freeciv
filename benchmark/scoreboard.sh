@@ -134,11 +134,11 @@ PORT0=7600      # brief: port block 7600+; the campaign took 7800/8000+,
                 # the stacked cell 7900 (stacked-lever.sh), nogates 7700
 PORTMAX=7639    # so at most 40 slots before touching 7640+ (kept free)
 SECS_PER_GAME=192  # corpus median s/game (screen-campaign.sh budget).
-EUROPE_START_SECS=1900  # europe-150 start generation (T1-150, 14 nations) on
+EUROPE_START_SECS=4300  # measured 2026-11-04 (19 starts, T1-150, 14 nations, 10 jobs, idle class): median 72 min, min 59
                 # the 2026-11-02 pin: the T1-20 smoke took 169 s beside 10 other
                 # jobs (8.5 s/turn); later turns are slower, so ~32 min a game is
                 # the budget until the first starts stage measures it.
-EUROPE_SECS_PER_GAME=1900  # europe-late (T150-250): unmeasured; the same
+EUROPE_SECS_PER_GAME=9000  # measured 2026-11-04..07 (63 games, 10 jobs, idle class): medians baseline 141 min, mixed 165, deep 177; minima 76/97/124
                 # figure until the first cell measures it.
                 # Cross-check 2026-10-28 from DONE - commands.serv mtimes:
                 # stacked war/off deep 172, econ/off deep 217, screen mixed
