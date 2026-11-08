@@ -1771,11 +1771,26 @@ static void adjust_ai_unit_choice(struct city *pcity,
                                   struct adv_choice *choice)
 {
   Impr_type_id id;
+  bool has_defender = FALSE;
 
   /* Sanity */
   if (!is_unit_choice_type(choice->type)
       || utype_has_flag(choice->value.utype, UTYF_CIVILIAN)
       || city_production_unit_veteran_level(pcity, choice->value.utype)) {
+    return;
+  }
+
+  /* A veterancy building helps nothing if there is nobody to garrison
+   * the city; the first defender comes first. */
+  unit_list_iterate(city_tile(pcity)->units, punit) {
+    if (unit_owner(punit) == city_owner(pcity)
+        && !unit_has_type_flag(punit, UTYF_CIVILIAN)
+        && unit_type_get(punit)->defense_strength > 0) {
+      has_defender = TRUE;
+      break;
+    }
+  } unit_list_iterate_end;
+  if (!has_defender) {
     return;
   }
 
