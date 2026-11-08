@@ -68,6 +68,9 @@
 
 #include "daimilitary.h"
 
+static bool unit_is_diplomat_threat_to(const struct unit *punit,
+                                       const struct city *pcity);
+
 /* Size 1 city gets destroyed when conquered. It's still a good thing
  * stop enemy from having it. */
 #define CITY_CONQUEST_WORTH(_city_, _data_) \
@@ -902,7 +905,7 @@ static unsigned int assess_danger(struct ai_type *ait,
       (void) dai_wants_defender_against(ait, nmap, pplayer, pcity, utype,
                                         vulnerability / MAX(move_time, 1));
 
-      if (utype_acts_hostile(unit_type_get(punit)) && 2 >= move_time) {
+      if (2 >= move_time && unit_is_diplomat_threat_to(punit, pcity)) {
         city_data->diplomat_threat = TRUE;
       }
 
@@ -2071,4 +2074,65 @@ struct adv_choice *military_advisor_choose_build(struct ai_type *ait,
   }
 
   return choice;
+}
+
+/**********************************************************************//**
+  Could this unit, once beside the city, perform a hostile diplomat
+  action against it under the current ruleset, governments and
+  buildings? The actor and target requirements of the enablers answer
+  that. Range and movement are left out on purpose: this is asked of a
+  unit that is still up to two moves away. Attacks, conquest and
+  bombardment are hostile too, but they have a military answer, not a
+  defensive Diplomat.
+**************************************************************************/
+static bool unit_is_diplomat_threat_to(const struct unit *punit,
+                                       const struct city *pcity)
+{
+  /* The diplomat actions a city defends against. */
+  static const enum action_result results[] = {
+    ACTRES_SPY_INCITE_CITY,
+    ACTRES_SPY_POISON,
+    ACTRES_SPY_SPREAD_PLAGUE,
+    ACTRES_SPY_SABOTAGE_CITY,
+    ACTRES_SPY_TARGETED_SABOTAGE_CITY,
+    ACTRES_SPY_SABOTAGE_CITY_PRODUCTION,
+    ACTRES_SPY_STEAL_TECH,
+    ACTRES_SPY_TARGETED_STEAL_TECH,
+    ACTRES_SPY_STEAL_GOLD,
+    ACTRES_SPY_NUKE,
+    ACTRES_LAST
+  };
+  const struct unit_type *ut = unit_type_get(punit);
+  /* No tile: the unit acts from a tile beside the city, not from where
+   * it stands now. */
+  const struct req_context actor_ctx = {
+    .player = unit_owner(punit),
+    .unit = punit,
+    .unittype = ut,
+  };
+  const struct req_context target_ctx = {
+    .player = city_owner(pcity),
+    .city = pcity,
+    .tile = city_tile(pcity),
+  };
+  int i;
+
+  for (i = 0; results[i] != ACTRES_LAST; i++) {
+    action_list_iterate(action_list_by_result(results[i]), paction) {
+      if (!utype_can_do_action(ut, paction->id)) {
+        continue;
+      }
+      action_enabler_list_iterate(action_enablers_for_action(paction->id),
+                                  enabler) {
+        if (are_reqs_active(&actor_ctx, &target_ctx, &enabler->actor_reqs,
+                            RPT_POSSIBLE)
+            && are_reqs_active(&target_ctx, &actor_ctx,
+                               &enabler->target_reqs, RPT_POSSIBLE)) {
+          return TRUE;
+        }
+      } action_enabler_list_iterate_end;
+    } action_list_iterate_end;
+  }
+
+  return FALSE;
 }
