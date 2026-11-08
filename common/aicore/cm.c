@@ -238,6 +238,21 @@ struct cm_state {
    * owner. */
   int free_output[O_LAST];
   int content_citizens;
+
+  /* For cm_city_production(): get_city_tithes_bonus(), constant within a
+   * search, and per output type a memo of city_waste() keyed by the
+   * total. Open addressing; 'cap' is a power of two (or 0) and the memo is
+   * kept at most half full. Keyed rather than indexed, because with
+   * negative_ok the totals have no useful bound. */
+  int tithes;
+  struct cm_waste_memo {
+    struct cm_waste_entry {
+      bool used;
+      int total;
+      int waste;
+    } *slots;
+    int cap, used;
+  } waste_memo[O_LAST];
 };
 
 
@@ -1583,6 +1598,149 @@ static int specialists_in_solution(const struct cm_state *state,
 }
 
 /************************************************************************//**
+  Return the slot of 'total' in a waste memo: its entry, or the empty slot
+  where it belongs. The memo must have a nonzero capacity.
+****************************************************************************/
+static struct cm_waste_entry *waste_memo_slot(struct cm_waste_memo *memo,
+                                              int total)
+{
+  unsigned int i = ((unsigned int) total * 2654435761U) & (memo->cap - 1);
+
+  while (memo->slots[i].used && memo->slots[i].total != total) {
+    i = (i + 1) & (memo->cap - 1);
+  }
+
+  return &memo->slots[i];
+}
+
+/************************************************************************//**
+  Return city_waste(pcity, otype, total, nullptr), memoised per search.
+
+  Within a search city_waste() depends only on otype and total: it reads
+  the city size, effects whose requirements read none of the fields the
+  search writes (see init_search_invariants()), the nearest gov center
+  and game settings.
+****************************************************************************/
+static int cm_city_waste(struct cm_state *state, Output_type_id otype,
+                         int total)
+{
+  struct cm_waste_memo *memo = &state->waste_memo[otype];
+  struct cm_waste_entry *slot;
+  int waste;
+
+  if (memo->cap > 0) {
+    slot = waste_memo_slot(memo, total);
+    if (slot->used) {
+      return slot->waste;
+    }
+  }
+
+  waste = city_waste(state->pcity, otype, total, nullptr);
+
+  if (2 * (memo->used + 1) > memo->cap) {
+    struct cm_waste_entry *old = memo->slots;
+    int oldcap = memo->cap;
+    int i;
+
+    memo->cap = (oldcap > 0 ? 2 * oldcap : 16);
+    memo->slots = fc_calloc(memo->cap, sizeof(*memo->slots));
+    for (i = 0; i < oldcap; i++) {
+      if (old[i].used) {
+        *waste_memo_slot(memo, old[i].total) = old[i];
+      }
+    }
+    free(old);
+  }
+
+  slot = waste_memo_slot(memo, total);
+  slot->used = TRUE;
+  slot->total = total;
+  slot->waste = waste;
+  memo->used++;
+
+  return waste;
+}
+
+/************************************************************************//**
+  Do what set_city_production() does, with city_waste() memoised and the
+  tithes read once per search. It reads and writes the same fields
+  (prod[], waste[], trade route values) in the same order.
+
+  The rest of what it reads does not change during a search either:
+  bonus[], abs_bonus[] and usage[] stay as the full refresh before the
+  search set them (refreshes with a workers_map do not recompute them),
+  and the owner's rates and the partner cities are not touched.
+****************************************************************************/
+static void cm_city_production(struct cm_state *state)
+{
+  struct city *pcity = state->pcity;
+  int trade;
+
+  output_type_iterate(o) {
+    pcity->prod[o] = pcity->citizen_base[o];
+  } output_type_iterate_end;
+
+  trade_routes_iterate(pcity, proute) {
+    struct city *tcity = game_city_by_number(proute->partner);
+    bool can_trade;
+
+    if (!is_server()
+        && (tcity == nullptr
+            || city_owner(tcity)->slot == nullptr)) {
+      continue;
+    }
+
+    fc_assert_action(tcity != nullptr, continue);
+
+    can_trade = can_cities_trade(pcity, tcity);
+
+    if (!can_trade) {
+      enum trade_route_type type = cities_trade_route_type(pcity, tcity);
+      struct trade_route_settings *settings
+        = trade_route_settings_by_type(type);
+
+      if (settings->cancelling == TRI_ACTIVE) {
+        can_trade = TRUE;
+      }
+    }
+
+    if (can_trade) {
+      int value;
+
+      value = trade_base_between_cities(pcity, tcity);
+      proute->value = trade_from_route(pcity, proute, value);
+      pcity->prod[O_TRADE] += proute->value
+        * (100 + get_city_bonus(pcity, EFT_TRADE_ROUTE_PCT)) / 100;
+    } else {
+      proute->value = 0;
+    }
+  } trade_routes_iterate_end;
+  pcity->prod[O_GOLD] += state->tithes;
+
+  output_type_iterate(o) {
+    int prod = pcity->prod[o] * pcity->bonus[o] / 100 + pcity->abs_bonus[o];
+
+    prod = MAX(prod, 0);
+    pcity->waste[o] = cm_city_waste(state, o, prod);
+  } output_type_iterate_end;
+
+  trade = pcity->prod[O_TRADE] * pcity->bonus[O_TRADE] / 100
+    + pcity->abs_bonus[O_TRADE];
+  trade = MAX(trade, 0);
+  add_tax_income(city_owner(pcity),
+                 trade - pcity->waste[O_TRADE] - pcity->usage[O_TRADE],
+                 pcity->prod);
+
+  output_type_iterate(o) {
+    int prod = pcity->prod[o] * pcity->bonus[o] / 100 + pcity->abs_bonus[o];
+
+    prod = MAX(prod, 0);
+    pcity->prod[o] = prod;
+    pcity->prod[o] -= pcity->waste[o];
+  } output_type_iterate_end;
+}
+
+/************************************************************************//**
   The heuristic:
   A partial solution cannot produce more food than the amount of food it
   currently generates plus then placing all its workers on the best food
@@ -1592,7 +1750,7 @@ static int specialists_in_solution(const struct cm_state *state,
 
   This function computes the max-stats produced by a partial solution.
 ****************************************************************************/
-static void compute_max_stats_heuristic(const struct cm_state *state,
+static void compute_max_stats_heuristic(struct cm_state *state,
                                         const struct partial_solution *soln,
                                         int production[],
                                         int check_choice, bool negative_ok)
@@ -1645,7 +1803,7 @@ static void compute_max_stats_heuristic(const struct cm_state *state,
                                       + state->free_output[stat_index];
   } output_type_iterate_end;
 
-  set_city_production(pcity);
+  cm_city_production(state);
   memcpy(production, pcity->prod, sizeof(pcity->prod));
 }
 
@@ -1908,6 +2066,7 @@ static struct cm_state *cm_state_init(struct city *pcity, bool negative_ok)
   } output_type_iterate_end;
 
   state->min_luxury = - FC_INFINITY;
+  memset(state->waste_memo, 0, sizeof(state->waste_memo));
 
   /* We have no best solution yet, so its value is the worst possible. */
   init_partial_solution(&state->best, numtypes, csize, negative_ok);
@@ -2008,6 +2167,7 @@ static void init_search_invariants(struct cm_state *state)
   } output_type_iterate_end;
 
   state->content_citizens = player_content_citizens(city_owner(pcity));
+  state->tithes = get_city_tithes_bonus(pcity);
 }
 
 /************************************************************************//**
@@ -2074,6 +2234,9 @@ static void cm_state_free(struct cm_state *state)
   destroy_partial_solution(&state->best);
   destroy_partial_solution(&state->current);
 
+  output_type_iterate(o) {
+    free(state->waste_memo[o].slots);
+  } output_type_iterate_end;
   FC_FREE(state->choice.stack);
   FC_FREE(state->workers_map);
   FC_FREE(state);
