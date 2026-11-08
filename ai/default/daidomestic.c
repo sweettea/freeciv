@@ -280,7 +280,10 @@ static void dai_choose_trade_route(struct ai_type *ait, struct city *pcity,
   /* FIXME: This check should consider more about relative
    * income from different trade route types. This works just
    * with more typical ruleset setups. */
-  if (prefer_different_cont && !dest_city_nat_different_cont) {
+  if ((prefer_different_cont && !dest_city_nat_different_cont)
+      || (!dest_city_found
+          && (trade_route_type_trade_pct(TRT_IN) > 0
+              || trade_route_type_trade_pct(TRT_IN_IC) > 0))) {
     if (trade_route_type_trade_pct(TRT_IN_IC) >
         trade_route_type_trade_pct(TRT_IN)) {
       prefer_different_cont = TRUE;
