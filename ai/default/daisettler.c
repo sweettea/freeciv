@@ -629,7 +629,8 @@ static adv_want result_defense_bonus(struct player *pplayer,
 
   defense_bonus += (defense_bonus * extra_bonus) / 100;
 
-  return 100 / (result->total + 1) * (100 / defense_bonus * DEFENSE_EMPHASIS);
+  /* defense_bonus is 10 at no bonus, 20 at +100%. */
+  return result->total * DEFENSE_EMPHASIS * (defense_bonus - 10) / 1000.0;
 }
 
 /*************************************************************************//**
