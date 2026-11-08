@@ -88,6 +88,14 @@
 #define CM_DEBUG
 #endif
 
+/* Define to solve every query also on a reference code path, which
+ * computes the free tiles' output and the content base on every use and
+ * bounds with set_city_production(), and to check every bound against
+ * set_city_production(). Differences are logged as "cm-check mismatch".
+ * This more than doubles the solver's work, so it is not part of
+ * CM_DEBUG. */
+/* #define CM_CHECK_REFERENCE */
+
 /* Whether to print every query, or just at cm_free ; matters only
    if GATHER_TIME_STATS is on */
 #define PRINT_TIME_STATS_EVERY_QUERY
@@ -113,6 +121,12 @@ static struct {
 
 static void print_performance(struct one_perf *counts);
 #endif /* GATHER_TIME_STATS */
+
+#ifdef CM_CHECK_REFERENCE
+static int cm_check_results = 0;
+static long cm_check_bounds = 0;
+static int cm_check_mismatches = 0;
+#endif /* CM_CHECK_REFERENCE */
 
 /* Fitness of a solution.  */
 struct cm_fitness {
@@ -253,6 +267,11 @@ struct cm_state {
     } *slots;
     int cap, used;
   } waste_memo[O_LAST];
+
+#ifdef CM_CHECK_REFERENCE
+  /* Take the reference code path */
+  bool reference;
+#endif
 };
 
 
@@ -358,6 +377,11 @@ void cm_free(void)
   timer_destroy(performance.opt.wall_timer);
   memset(&performance, 0, sizeof(performance));
 #endif /* GATHER_TIME_STATS */
+
+#ifdef CM_CHECK_REFERENCE
+  log_normal("cm-check results=%d bounds=%ld mismatches=%d",
+             cm_check_results, cm_check_bounds, cm_check_mismatches);
+#endif
 }
 
 /************************************************************************//**
@@ -832,6 +856,12 @@ static struct cm_fitness evaluate_solution(struct cm_state *state,
        just means we might explore some solutions unnecessarily.) */
     int specialists_amount = city_specialists(pcity);
     int max_content = state->content_citizens;
+
+#ifdef CM_CHECK_REFERENCE
+    if (state->reference) {
+      max_content = player_content_citizens(city_owner(pcity));
+    }
+#endif
 
     state->min_luxury = surplus[O_LUXURY]
       + game.info.happy_cost * MAX(specialists_amount - max_content, 0)
@@ -1740,6 +1770,64 @@ static void cm_city_production(struct cm_state *state)
   } output_type_iterate_end;
 }
 
+#ifdef CM_CHECK_REFERENCE
+/************************************************************************//**
+  Set citizen_base[] from 'production' and the free tiles, both computed
+  here, and call set_city_production().
+****************************************************************************/
+static void reference_city_production(struct cm_state *state,
+                                      const int production[])
+{
+  struct city *pcity = state->pcity;
+  struct tile *pcenter = city_tile(pcity);
+  bool is_celebrating = base_city_celebrating(pcity);
+  const struct civ_map *nmap = &(wld.map);
+
+  output_type_iterate(stat_index) {
+    int base = production[stat_index];
+
+    city_tile_iterate(nmap, city_map_radius_sq_get(pcity), pcenter, ptile) {
+      if (is_free_worked(pcity, ptile)) {
+        base += city_tile_output(pcity, ptile, is_celebrating, stat_index);
+      }
+    } city_tile_iterate_end;
+    pcity->citizen_base[stat_index] = base;
+  } output_type_iterate_end;
+
+  set_city_production(pcity);
+}
+
+/************************************************************************//**
+  Compute the bound the city holds again with
+  reference_city_production(), log any difference, and leave the city as
+  it was.
+****************************************************************************/
+static void check_bound(struct cm_state *state, const int production[])
+{
+  struct city *pcity = state->pcity;
+  int citizen_base[O_LAST], prod[O_LAST], waste[O_LAST];
+
+  memcpy(citizen_base, pcity->citizen_base, sizeof(citizen_base));
+  memcpy(prod, pcity->prod, sizeof(prod));
+  memcpy(waste, pcity->waste, sizeof(waste));
+
+  reference_city_production(state, production);
+
+  cm_check_bounds++;
+  if (memcmp(citizen_base, pcity->citizen_base, sizeof(citizen_base)) != 0
+      || memcmp(prod, pcity->prod, sizeof(prod)) != 0
+      || memcmp(waste, pcity->waste, sizeof(waste)) != 0) {
+    cm_check_mismatches++;
+    log_error("cm-check mismatch: bound of %s (%d)",
+              city_name_get(pcity), pcity->id);
+  }
+
+  memcpy(pcity->citizen_base, citizen_base, sizeof(citizen_base));
+  memcpy(pcity->prod, prod, sizeof(prod));
+  memcpy(pcity->waste, waste, sizeof(waste));
+}
+#endif /* CM_CHECK_REFERENCE */
+
 /************************************************************************//**
   The heuristic:
   A partial solution cannot produce more food than the amount of food it
@@ -1798,12 +1886,23 @@ static void compute_max_stats_heuristic(struct cm_state *state,
 
   struct city *pcity = state->pcity;
 
+#ifdef CM_CHECK_REFERENCE
+  if (state->reference) {
+    reference_city_production(state, production);
+    memcpy(production, pcity->prod, sizeof(pcity->prod));
+    return;
+  }
+#endif /* CM_CHECK_REFERENCE */
+
   output_type_iterate(stat_index) {
     pcity->citizen_base[stat_index] = production[stat_index]
                                       + state->free_output[stat_index];
   } output_type_iterate_end;
 
   cm_city_production(state);
+#ifdef CM_CHECK_REFERENCE
+  check_bound(state, production);
+#endif
   memcpy(production, pcity->prod, sizeof(pcity->prod));
 }
 
@@ -1853,10 +1952,19 @@ static bool choice_is_promising(struct cm_state *state, int newchoice,
   {
     int specialists_amount = specialists_in_solution(state, &state->current);
     int max_content = state->content_citizens;
-    int specialists_suppress_unhappy
+    int specialists_suppress_unhappy;
+    int max_luxury;
+
+#ifdef CM_CHECK_REFERENCE
+    if (state->reference) {
+      max_content = player_content_citizens(city_owner(state->pcity));
+    }
+#endif
+
+    specialists_suppress_unhappy
       = MAX(specialists_amount + state->current.idle - max_content, 0);
-    int max_luxury = production[O_LUXURY]
-          + game.info.happy_cost * specialists_suppress_unhappy;
+    max_luxury = production[O_LUXURY]
+      + game.info.happy_cost * specialists_suppress_unhappy;
 
     if (max_luxury < state->min_luxury ) {
       log_base(LOG_PRUNE_BRANCH, "--- pruning: disorder (%d + %d*%d < %d)",
@@ -2067,6 +2175,9 @@ static struct cm_state *cm_state_init(struct city *pcity, bool negative_ok)
 
   state->min_luxury = - FC_INFINITY;
   memset(state->waste_memo, 0, sizeof(state->waste_memo));
+#ifdef CM_CHECK_REFERENCE
+  state->reference = FALSE;
+#endif
 
   /* We have no best solution yet, so its value is the worst possible. */
   init_partial_solution(&state->best, numtypes, csize, negative_ok);
@@ -2313,6 +2424,58 @@ static void cm_find_best_solution(struct cm_state *state,
   end_search(state);
 }
 
+#ifdef CM_CHECK_REFERENCE
+/************************************************************************//**
+  Log every difference between the result of the reference path and the
+  result of the solver.
+****************************************************************************/
+static void check_result(const struct city *pcity,
+                         const struct cm_result *ref,
+                         const struct cm_result *res)
+{
+  bool same = TRUE;
+
+#define CHECK_FIELD(field)                                                  \
+  if (ref->field != res->field) {                                           \
+    log_error("cm-check mismatch: %s (%d): " #field " reference %d"        \
+              " solver %d", city_name_get(pcity), pcity->id,                \
+              (int) ref->field, (int) res->field);                          \
+    same = FALSE;                                                           \
+  }
+
+  CHECK_FIELD(aborted);
+  CHECK_FIELD(found_a_valid);
+  CHECK_FIELD(disorder);
+  CHECK_FIELD(happy);
+  CHECK_FIELD(city_radius_sq);
+  output_type_iterate(o) {
+    CHECK_FIELD(surplus[o]);
+  } output_type_iterate_end;
+  specialist_type_iterate(sp) {
+    CHECK_FIELD(specialists[sp]);
+  } specialist_type_iterate_end;
+#undef CHECK_FIELD
+
+  if (ref->city_radius_sq == res->city_radius_sq
+      && memcmp(ref->worker_positions, res->worker_positions,
+                city_map_tiles(res->city_radius_sq)
+                * sizeof(*res->worker_positions)) != 0) {
+    log_error("cm-check mismatch: %s (%d): worker_positions",
+              city_name_get(pcity), pcity->id);
+    same = FALSE;
+  }
+
+  cm_check_results++;
+  if (!same) {
+    cm_check_mismatches++;
+  }
+  if (cm_check_results % 1000 == 0) {
+    log_normal("cm-check results=%d bounds=%ld mismatches=%d",
+               cm_check_results, cm_check_bounds, cm_check_mismatches);
+  }
+}
+#endif /* CM_CHECK_REFERENCE */
+
 /************************************************************************//**
   Wrapper that actually runs the branch & bound, and returns the best
   solution.
@@ -2321,8 +2484,26 @@ void cm_query_result(struct city *pcity,
                      const struct cm_parameter *param,
                      struct cm_result *result, bool negative_ok)
 {
-  struct cm_state *state = cm_state_init(pcity, negative_ok);
+  struct cm_state *state;
   const struct civ_map *nmap = &(wld.map);
+#ifdef CM_CHECK_REFERENCE
+  struct cm_result ref = *result;
+  size_t wsize = city_map_tiles(result->city_radius_sq)
+                 * sizeof(*result->worker_positions);
+
+  /* Solve on the reference path first, into a copy of the result (a query
+   * without a valid solution leaves most of it as it was), so that the
+   * solver runs last and leaves the city as it does without the check. */
+  ref.worker_positions = fc_malloc(wsize);
+  memcpy(ref.worker_positions, result->worker_positions, wsize);
+  state = cm_state_init(pcity, negative_ok);
+  state->reference = TRUE;
+  city_refresh_from_main_map(nmap, pcity, nullptr);
+  cm_find_best_solution(state, param, &ref, negative_ok);
+  cm_state_free(state);
+#endif /* CM_CHECK_REFERENCE */
+
+  state = cm_state_init(pcity, negative_ok);
 
   /* Refresh the city. Otherwise the CM can give wrong results or just be
    * slower than necessary. Note that cities are often passed in in an
@@ -2331,6 +2512,11 @@ void cm_query_result(struct city *pcity,
 
   cm_find_best_solution(state, param, result, negative_ok);
   cm_state_free(state);
+
+#ifdef CM_CHECK_REFERENCE
+  check_result(pcity, &ref, result);
+  free(ref.worker_positions);
+#endif
 }
 
 /************************************************************************//**
