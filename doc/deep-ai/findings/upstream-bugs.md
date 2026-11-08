@@ -452,7 +452,14 @@ exhausted). Not fixed in place per rule 2's spirit for common/.
     28.6% (contested) / 21.2% (lategame) had an enemy diplomat within
     the same radius. Deep prices the defensive diplomat off observed
     diplomat-class presence instead (`deep_diplomat_defence_price()`,
-    deepdefence.c, behind `diplo_price_gate`). Found 2026-08-30.
+    deepdefence.c, behind `diplo_price_gate`). Found 2026-08-30. Fix
+    offered upstream 2026-11-07 from branch
+    `upstream/daimilitary-diplomat-threat` (92b27f2c95 on main
+    761bdd5a2f): the threat is raised only when the unit's type can
+    perform a hostile diplomat action against a city AND some enabler
+    of it has actor and target requirements met for this unit and this
+    city (range left out, the unit is two moves away), so ruleset,
+    government and buildings all count (the user's refinement).
 51. **`cityresult_fill()` early returns skip its own cleanup**
     (`ai/default/daisettler.c`). The function sets
     `pplayer->government = adv->goal.govt.gov` and, for a virtual city,
