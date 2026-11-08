@@ -175,3 +175,12 @@ object above it. It belongs after epics 4 and 5 and before 6; it is the
 first thing in this workstream that is a mechanism rather than a price,
 and the Europe game with a 205-city Russia is its test position
 (play-1107-1548/saves/freeciv-T0355-Y01929-interrupted.sav.zst).
+
+Parked (user, 2026-11-07), a server rule rather than AI: civil war splits
+are untidy because `civil_war()` (server/plrhand.c) takes each non-capital
+city with a coin flip (`fc_rand(2)`) until half are gone, then picks the
+rebel capital at random, one rebel only. Tidier splits (contiguous
+regions, far-from-capital first, one rebel per N cities for huge empires)
+would be a server setting beside `civilwarsize` and an upstream feature,
+not deep work; it would also raise the decapitation prize above. Out of
+scope for W37; noted so it is not lost.
