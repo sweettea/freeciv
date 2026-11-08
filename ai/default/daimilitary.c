@@ -902,7 +902,11 @@ static unsigned int assess_danger(struct ai_type *ait,
       (void) dai_wants_defender_against(ait, nmap, pplayer, pcity, utype,
                                         vulnerability / MAX(move_time, 1));
 
-      if (utype_acts_hostile(unit_type_get(punit)) && 2 >= move_time) {
+      /* "Enemy diplomat or spy is near the city" (daicity.h): the same
+       * test dai_choose_diplomat_defensive() and count_diplomats_on_tile()
+       * use for the unit they answer it with. utype_acts_hostile() is
+       * true of every attacker, pillager and bombarder as well. */
+      if (unit_has_type_flag(punit, UTYF_DIPLOMAT) && 2 >= move_time) {
         city_data->diplomat_threat = TRUE;
       }
 
