@@ -98,3 +98,37 @@ score/worth. Build `benchmark/replay.py` around that in epic 1 or 2 and
 use it on every formula before the paired benchmark. The saved positions
 from the Europe game (`play-1104-2100/saves/`, `play-1107-*/saves/`) are
 the first corpus.
+
+## Taste: the knobs that are supposed to survive (user, 2026-11-07)
+
+The cull removes exchange-rate guesses. It must NOT remove preferences:
+a personality is a statement about what a nation wants, and the pricing
+machinery is how it gets it. So the registry keeps a fourth kind,
+**taste**, and taste enters the arithmetic in one place only: as a weight
+on the VALUE of a class of outcome, never on a probability or a cost.
+That is what keeps the EV honest while nations differ. Tastes are set per
+seat (arena files), seeded from nation traits by default (the stance
+layer's existing trait path), and are not optimised for "best": they
+define the objective, the benchmark's default profile is just one of them.
+The ten the user asked for, and where each plugs in:
+
+| taste | what it weights | today's nearest knob |
+|---|---|---|
+| `taste_nuke` | the reputation and retaliation cost charged against a nuclear strike's EV (0 = never, 1 = priced like any attack) | none (stock never nukes AI-to-AI well) |
+| `taste_peace` | the worth of conquest and the cost of a war declaration; a pacifist discounts captured cities and prices broken treaties high | `peace_seek_gain`, `conquest_culture_gain` |
+| `taste_shape` | the crowding price: largepox vs smallpox city spacing | the stance `expand` axis, `stance_pox_gain`, `density_*` |
+| `taste_sneak` | the value of covert outcomes (spy, incite, sabotage, surprise war) relative to open force; the penalty for reputation loss | `spy_*`, `diplo_*` |
+| `taste_mil` | the econ/mil split: aggression vs polishing own cities | the stance `econ`/`mil` axes |
+| `taste_purity` | willingness to pay for aesthetics: raze captured cities, refuse foreign-culture cities, keep borders tidy, at a known score cost | none |
+| `taste_far` | the distance discount on everything priced over a path: targets, trade partners, sites; a low value is a long-distance mind | `caravan_discount`, `site_wait_discount`, `trade_route_risk_gain` |
+| `taste_frontier` | settle-far-away-ness when near sites are gone or contested: the value of a remote colony relative to a near one | `founder_*`, `lift_*` |
+| `taste_sea` | naval vs overland: the weight on sea paths, hulls, coastal sites and naval targets | `boat_*`, `lift_*`, `site_naval_gate` |
+| `taste_ocean` | fill-in-the-ocean-ness: the value of ocean tiles, island and one-tile sites, Harbours and offshore platforms | `site_naval_*`, `boat_water_gate` |
+
+Rules for a taste: it is a float in [0, 2] with 1.0 = the benchmark
+default (identity), it multiplies a VALUE term, it has one line in the
+registry marked `taste`, and the optimiser never moves it. Three of them
+already exist as the stance axes (`taste_mil` = econ/mil, `taste_shape` =
+expand, culture = cult); epic 7 renames them into this scheme rather than
+retiring them. The arena manifest and the Europe seat files are where a
+player's tastes live; `deep-stance` logs them today and `deep-taste` will.
