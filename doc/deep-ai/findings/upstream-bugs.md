@@ -453,9 +453,12 @@ exhausted). Not fixed in place per rule 2's spirit for common/.
     the same radius. Deep prices the defensive diplomat off observed
     diplomat-class presence instead (`deep_diplomat_defence_price()`,
     deepdefence.c, behind `diplo_price_gate`). Found 2026-08-30. Fix
-    offered upstream 2026-11-07 from branch
-    `upstream/daimilitary-diplomat-threat` (92b27f2c95 on main
-    761bdd5a2f): the threat is raised only when the unit's type can
+    offered upstream 2026-11-07 as RM #2452 (the user's words) with two
+    patches: the minimal UTYF_DIPLOMAT test (branch
+    `upstream/daimilitary-diplomat-threat`) and, as the "more sweeping"
+    alternative, the enabler test (branch
+    `upstream/daimilitary-diplomat-threat-enablers`, "Set
+    diplomat_threat only if action possible"): the threat is raised only when the unit's type can
     perform a hostile diplomat action against a city AND some enabler
     of it has actor and target requirements met for this unit and this
     city (range left out, the unit is two moves away), so ruleset,
@@ -476,8 +479,8 @@ exhausted). Not fixed in place per rule 2's spirit for common/.
     "all worked" returns and now cleans up on the assert paths too. Fix
     offered upstream from branch `upstream/daisettler-cleanup`
     (`ai/default: Clean up on every early return from cityresult_fill()`,
-    RM #TBD). Found 2026-11-02 while porting the shared reverse-map
-    searches.
+    RM #2441, In Review with the maintainer since 2026-11-02). Found
+    2026-11-02 while porting the shared reverse-map searches.
 52. **`dai_unit_attack()` dereferences a stale bodyguard pointer after
     the attack** (`ai/default/daitools.c:1081`, identical on upstream
     main 4fd223356b). The function reads `bodyguard =
@@ -502,8 +505,8 @@ exhausted). Not fixed in place per rule 2's spirit for common/.
     calls `dai_unit_attack()` itself (deepops.c) and is exposed to the
     same crash; its own operation code must re-fetch likewise or carry
     a corrected copy (rule 3, stated when done). Fix offered upstream
-    from branch `upstream/daitools-attack-bodyguard` (93f40a034a,
-    builds on upstream main). Reproduction note: replaying the game's
+    as RM #2451 (filed 2026-11-07 in the user's words) from branch
+    `upstream/daitools-attack-bodyguard`, rebased on main 761bdd5a2f. Reproduction note: replaying the game's
     own T223 autosave on the crashing binary does NOT reproduce it (ran
     to T228 cleanly, no civil war): the stock AI's guard assignments are
     not in the save, so the loaded game diverges. The replay from the
