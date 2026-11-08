@@ -132,3 +132,46 @@ already exist as the stance axes (`taste_mil` = econ/mil, `taste_shape` =
 expand, culture = cult); epic 7 renames them into this scheme rather than
 retiring them. The arena manifest and the Europe seat files are where a
 player's tastes live; `deep-stance` logs them today and `deep-taste` will.
+
+## Decapitation: the offensive mirror of the capital stake (user, 2026-11-07)
+
+Desired, occasionally, against a runaway like the Russia of the Europe
+game (205 cities): a massive landing to win a beachhead as close to the
+enemy capital as the coast allows, then a long-range leapfrog toward the
+capital (paratroopers, bombers and fighters, airports and airbases to
+pull reinforcements forward, nukes where taste allows) to take it and
+set off the civil war that splits the empire. Nothing in either AI does
+this, and in this workstream it is not a special case: it is what the
+pricing produces when three things exist.
+
+1. **The prize is priced.** Deep already prices the civil-war exposure
+   of its OWN capital (`deep_capital_stake_mult`, deepdefence.c: the
+   server's `civil_war_triggered` conditions, `EFT_CIVIL_WAR_CHANCE` by
+   government, the split of MAX(j/2, 1) of the j eligible cities, each
+   at `ai_city.worth`). The mirror is the worth of an ENEMY capital to
+   the attacker: its own worth plus P(civil war) × Σ worth of the cities
+   that would defect, counted as the enemy's loss and as a weak new
+   player we are not at war with. Against a 200-city empire that term is
+   two orders of magnitude above any other target on the map, which is
+   what makes a campaign worth a hundred units. Epic 4 (operations as
+   investments) owns it.
+2. **Position is priced.** A beachhead city or fort near the capital
+   removes ETA to the prize; an airport there removes it for everything
+   that can fly or drop; each is a forward-infrastructure purchase in the
+   same currency (epic 5). A campaign is then a chain of such purchases,
+   each justified by the prize at the end of the chain, not a scripted
+   plan.
+3. **Reach is priced.** Paratroopers, bombers, fighters, carriers and
+   nukes differ from land units only in the ETA they achieve and the
+   losses they take, so the take-odds and loss models must read them
+   (W32 air doctrine has the movement half). Nukes carry `taste_nuke` on
+   their reputation cost.
+
+What is new in form, not in price: a **campaign** that persists across
+turns, owns the chain (landing → airport → leapfrog → capital), re-prices
+each step as the front moves and aborts when the prize stops paying.
+The operation layer (W33) has the per-target object; the campaign is the
+object above it. It belongs after epics 4 and 5 and before 6; it is the
+first thing in this workstream that is a mechanism rather than a price,
+and the Europe game with a 205-city Russia is its test position
+(play-1107-1548/saves/freeciv-T0355-Y01929-interrupted.sav.zst).
