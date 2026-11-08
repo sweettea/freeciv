@@ -969,12 +969,14 @@ void dai_manage_cities(struct ai_type *ait, struct player *pplayer)
 
   city_list_iterate(pplayer->cities, pcity) {
     dai_city_choose_build(ait, pplayer, pcity);
-
-    /* Initialize for next turn */
-    def_ai_city_data(pcity, ait)->choice.want = -1;
   } city_list_iterate_end;
 
   dai_spend_gold(ait, pplayer);
+
+  /* Initialize for next turn */
+  city_list_iterate(pplayer->cities, pcity) {
+    def_ai_city_data(pcity, ait)->choice.want = -1;
+  } city_list_iterate_end;
 }
 
 /**********************************************************************//**
