@@ -513,3 +513,15 @@ exhausted). Not fixed in place per rule 2's spirit for common/.
     T150 start save IS deterministic: the scoreboard's rerun of the same
     game (launched 2026-11-07 13:40) segfaulted again at T224 with the
     last autosave at T223, exactly as the first run. Found 2026-11-05.
+
+Filed upstream 2026-11-07, in the user's words, patches on the fork under
+`upstream/*` and in `.worktrees/upstream-pf/attach/`: #2453 autoworkers
+never plant or cultivate (#28 here), #2454 city site scoring values hills
+less than grassland (#1), #2455 civ2civ3 never considers international
+trade routes (#38), #2456 emergency-buy loop dead since 2017 (the
+dai_spend_gold entry), #2457 buys barracks before defenders (the
+adjust_ai_unit_choice entry), #2458 revolen 1 divides by zero (#48),
+#2459 null goods dereference in actres_possible() (#34). Also #2460
+(Feature): unit testing via Criterion, with a headless fixture as the
+first patchset. Earlier: #2441 (#51), #2451 (#52), #2452 (#50), #2439 and
+#2440 (the reverse-map perf series).
