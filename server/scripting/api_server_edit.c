@@ -1388,6 +1388,7 @@ void api_edit_player_give_bulbs(lua_State *L, Player *pplayer, int amount,
 bool api_edit_create_trade_route(lua_State *L, City *from, City *to)
 {
   struct player *pplayer, *partner_player;
+  struct goods_type *pgood;
 
   LUASCRIPT_CHECK_STATE(L, FALSE);
   LUASCRIPT_CHECK_ARG_NIL(L, from, 2, City, FALSE);
@@ -1398,7 +1399,13 @@ bool api_edit_create_trade_route(lua_State *L, City *from, City *to)
     return FALSE;
   }
 
-  create_trade_route(from, to, goods_from_city_to_unit(from, nullptr));
+  pgood = goods_from_city_to_unit(from, nullptr);
+  if (pgood == nullptr) {
+    /* The city can provide no goods under the ruleset's requirements. */
+    return FALSE;
+  }
+
+  create_trade_route(from, to, pgood);
 
   /* Refresh the cities. */
   city_refresh(from);
