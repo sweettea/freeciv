@@ -105,6 +105,30 @@ Test(autoworkers, road_bonus_is_rotation_invariant)
   cr_expect_eq(bad, 0, "%d of %d turned sets differ", bad, 3 << 12);
 }
 
+/* road_move_bonus() for Road on (10, 10), which has terrain
+ * `terrain`, with Road on its NW neighbour only (a connectivity bonus
+ * of 1). */
+static adv_want road_move_bonus_on(const char *terrain)
+{
+  struct extra_type *road = extra_type_by_rule_name("Road");
+
+  cr_assert_not_null(road);
+  fx_set_terrain(10, 10, terrain);
+  tile_add_extra(fx_tile(9, 9), road);
+  cr_assert_eq((int) adv_workers_road_bonus(&(wld.map), fx_tile(10, 10),
+                                            extra_road_get(road)), 1);
+
+  return road_move_bonus(&(wld.map), fx_tile(10, 10), road);
+}
+
+/* Classic Road (1/3 move) saves 2/3 of a move on Grassland and 5/3 on
+ * Hills; the bonus counts the saving in thirds, plus one. */
+Test(autoworkers, road_move_bonus_classic)
+{
+  cr_expect_eq((int) road_move_bonus_on("Grassland"), 3);
+  cr_expect_eq((int) road_move_bonus_on("Hills"), 6);
+}
+
 /* A worker request for a Road on (x, y) at `pcity`, as a client sends
  * one. */
 static void request_road(struct city *pcity, int x, int y)
