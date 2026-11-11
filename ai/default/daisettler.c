@@ -285,9 +285,13 @@ static struct cityresult *cityresult_fill(struct ai_type *ait,
   struct adv_data *adv = adv_data_get(pplayer, nullptr);
   struct cityresult *result;
   const struct civ_map *nmap = &(wld.map);
+  int trade_priority;
 
   fc_assert_ret_val(adv != nullptr, nullptr);
   fc_assert_ret_val(center != nullptr, nullptr);
+
+  /* Trade that is not wanted as science still becomes gold. */
+  trade_priority = MAX(adv->science_priority, adv->gold_priority);
 
   pplayer->government = adv->goal.govt.gov;
 
@@ -338,7 +342,7 @@ static struct cityresult *cityresult_fill(struct ai_type *ait,
         ptdc->trade = city_tile_output(pcity, ptile, FALSE, O_TRADE);
         /* Weighted sum */
         ptdc->sum = ptdc->food * adv->food_priority
-                    + ptdc->trade * adv->science_priority
+                    + ptdc->trade * trade_priority
                     + ptdc->shield * adv->shield_priority;
         /* Balance perfection */
         ptdc->sum *= PERFECTION / 2;
@@ -440,7 +444,7 @@ static struct cityresult *cityresult_fill(struct ai_type *ait,
     if (game.info.fulltradesize == 1) {
       int trade = result->city_center.tdc->trade
                   + result->best_other.tdc->trade;
-      result->corruption = adv->science_priority
+      result->corruption = trade_priority
                            * city_waste(pcity, O_TRADE, trade, nullptr);
     } else {
       result->corruption = 0;
@@ -449,7 +453,7 @@ static struct cityresult *cityresult_fill(struct ai_type *ait,
     /* Deduct difference in corruption and waste for real cities. Note that it
      * is possible (with notradesize) that we _gain_ value here. */
     city_size_add(pcity, 1);
-    result->corruption = adv->science_priority
+    result->corruption = trade_priority
       * (city_waste(pcity, O_TRADE, result->best_other.tdc->trade, nullptr)
          - pcity->waste[O_TRADE]);
     result->waste = adv->shield_priority
