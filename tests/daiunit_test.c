@@ -32,6 +32,7 @@
 
 /* ai/default */
 #include "daiunit.c"
+#include "daicity.h"
 
 #include "fixture.h"
 
@@ -69,4 +70,57 @@ Test(daiunit, rampage_takes_free_city)
   cr_expect_eq(unit_tile(punit), fx_tile(9, 5),
                "Warriors still at (%d, %d)", TILE_XY(unit_tile(punit)));
   cr_expect_null(tile_city(fx_tile(9, 5)), "enemy city still stands");
+}
+
+/* A player is not hostile to itself; a player at war, or one never
+ * met, still is. */
+Test(daiunit, not_hostile_to_self)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *us = fx_ai_player(nullptr);
+  struct player *enemy = fx_ai_player(nullptr);
+  struct player *stranger = fx_ai_player(nullptr);
+
+  fx_war(us, enemy);
+  fx_phase_begin();
+
+  cr_expect(!POTENTIALLY_HOSTILE_PLAYER(ait, us, us));
+  cr_expect(POTENTIALLY_HOSTILE_PLAYER(ait, us, enemy));
+  cr_expect(POTENTIALLY_HOSTILE_PLAYER(ait, us, stranger));
+}
+
+/* A Legion being considered for building in a city held by one
+ * Phalanx targets the enemy's distant, well-defended city, not the city
+ * it is built in. dai_build_adv_init() sets each city's worth, as
+ * building_advisor() does every turn. */
+Test(daiunit, virtual_attacker_targets_enemy)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *us = fx_ai_player(nullptr);
+  struct player *enemy = fx_ai_player(nullptr);
+  struct city *home, *target;
+  struct unit *legion;
+  struct tile *dest = nullptr;
+  adv_want want;
+
+  fx_war(us, enemy);
+  home = fx_city(us, 3, 5, "Home");
+  fx_unit(us, "Phalanx", 3, 5, 0);
+  target = fx_city(enemy, 16, 15, "Target");
+  fx_unit(enemy, "Musketeers", 16, 15, 0);
+  fx_unit(enemy, "Musketeers", 16, 15, 0);
+  fx_show_all(us);
+  fx_show_all(enemy);
+  fx_phase_begin();
+  dai_build_adv_init(ait, us);
+  dai_build_adv_init(ait, enemy);
+
+  legion = unit_virtual_create(us, home, fx_utype("Legion"), 0);
+  want = find_something_to_kill(ait, us, legion, &dest, nullptr, nullptr,
+                                nullptr, nullptr, nullptr);
+  cr_assert_not_null(dest);
+  cr_expect_neq(tile_city(dest), home,
+                "targets its own city, want " ADV_WANT_PRINTF, want);
+  cr_expect_eq(dest, city_tile(target), "target (%d, %d)", TILE_XY(dest));
+  unit_virtual_destroy(legion);
 }

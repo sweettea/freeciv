@@ -69,9 +69,12 @@ struct unit_type_ai
  (ptype->attack_strength * ptype->hp * ptype->firepower)
 #define IS_ATTACKER(ptype) \
   (ptype->attack_strength > ptype->transport_capacity)
+/* A player's diplstate with itself is DS_NO_CONTACT, so test for self
+ * before NEVER_MET(). */
 #define POTENTIALLY_HOSTILE_PLAYER(ait, pplayer, aplayer)               \
-  (WAR(pplayer, aplayer) || NEVER_MET(pplayer, aplayer)                 \
-   || dai_diplomacy_get(ait, pplayer, aplayer)->countdown >= 0)
+  ((pplayer) != (aplayer)                                               \
+   && (WAR(pplayer, aplayer) || NEVER_MET(pplayer, aplayer)             \
+       || dai_diplomacy_get(ait, pplayer, aplayer)->countdown >= 0))
 #define UNITTYPE_COSTS(ut)                                              \
   (ut->pop_cost * 3 + ut->happy_cost                                    \
    + ut->upkeep[O_SHIELD] + ut->upkeep[O_FOOD] + ut->upkeep[O_GOLD])
