@@ -19,6 +19,7 @@
 #endif
 
 #include <criterion/criterion.h>
+#include <criterion/parameterized.h>
 
 /* common */
 #include "ai.h"
@@ -192,4 +193,63 @@ Test(daisettler, site_next_to_founder_target)
   if (cr != nullptr) {
     cityresult_destroy(cr);
   }
+}
+
+struct ruleset_name {
+  char name[32];
+};
+
+ParameterizedTestParameters(daisettler_rs, search_horizon)
+{
+  /* Not granularity: its Settlers have 50 moves a turn, so they search
+   * 150 turns out, the whole map. */
+  static struct ruleset_name params[] = {
+    { "classic" }, { "civ2civ3" }, { "sandbox" }, { "goldkeep" },
+  };
+
+  return cr_make_param_array(struct ruleset_name, params,
+                             sizeof(params) / sizeof(params[0]));
+}
+
+/* A one-move settler on open grassland, where a tile is a turn, finds
+ * a good enough site at once and stops rating sites at the first one
+ * past three turns out, whatever the ruleset's move fragments. The
+ * farthest site rated is the farthest tile in the settler's tile cache
+ * less the city radius. */
+ParameterizedTest(struct ruleset_name *p, daisettler_rs, search_horizon,
+                  .fini = fx_fini)
+{
+  struct ai_type *ait;
+  struct player *pplayer;
+  struct unit *punit;
+  struct cityresult *cr;
+  int radius = 0, farthest = 0;
+
+  fx_init(p->name);
+  ait = ai_type_by_name(default_ai_type_name());
+  pplayer = fx_ai_player(nullptr);
+  punit = fx_unit(pplayer, "Settlers", 0, 0, 0);
+  cr_assert_eq(unit_move_rate(punit),
+               fx_terrain("Grassland")->movement_cost * SINGLE_MOVE,
+               "%s Settlers do not move one Grassland tile a turn",
+               p->name);
+  while ((radius + 1) * (radius + 1) <= game.info.init_city_radius_sq) {
+    radius++;
+  }
+  fx_show_all(pplayer);
+  fx_phase_begin();
+  citymap_turn_init(pplayer);
+
+  cr = find_best_city_placement(ait, punit, FALSE, FALSE);
+  cr_assert_not_null(cr);
+  cr_assert_gt(cr->result, RESULT_IS_ENOUGH);
+  cityresult_destroy(cr);
+
+  whole_map_iterate(&(wld.map), ptile) {
+    if (tdc_plr_get(ait, pplayer, tile_index(ptile)) != nullptr) {
+      farthest = MAX(farthest, real_map_distance(ptile, unit_tile(punit)));
+    }
+  } whole_map_iterate_end;
+  cr_expect_eq(farthest - radius, 4, "%s rated sites out to %d turns",
+               p->name, farthest - radius);
 }

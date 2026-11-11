@@ -115,6 +115,12 @@
  * This is % of defense % to increase want by. */
 #define DEFENSE_EMPHASIS 20
 
+/* Once a good enough site is found, the site search goes on this many
+ * turns out for each move per turn the searching unit has: three turns
+ * for a one-move settler. Counted in turns, so the horizon is the same
+ * whatever move_fragments a ruleset has. */
+#define SEARCH_TURNS_PER_MOVE 3
+
 struct tile_data_cache {
   short food;   /* Food output of the tile */
   short trade;  /* Trade output of the tile */
@@ -882,7 +888,7 @@ static struct cityresult *settler_map_iterate(struct ai_type *ait,
      * we don't block the establishment of a better city just one
      * further step away. */
     if (best && best->result > RESULT_IS_ENOUGH
-        && turns > parameter->move_rate /* sic -- yeah what an explanation! */
+        && turns > parameter->move_rate * SEARCH_TURNS_PER_MOVE / SINGLE_MOVE
         && best_turn < turns /*+ game.info.min_dist_bw_cities*/) {
       break;
     }
