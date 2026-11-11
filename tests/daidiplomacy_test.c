@@ -140,3 +140,22 @@ Test(daidiplomacy, ceasefire_offered_past_an_idle_ally)
   cr_expect(proposed(a, enemy, CLAUSE_CEASEFIRE),
             "no cease-fire offered to the enemy");
 }
+
+/* An AI that plans no war offers peace to its only, well-liked,
+ * cease-fire partner when the cease-fire is about to run out. */
+Test(daidiplomacy, peace_offered_to_least_loved_when_no_war_planned)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *a = fx_ai_player(nullptr);
+  struct player *b = fx_player();
+
+  old_contact(a, b, DS_CEASEFIRE);
+  player_diplstate_get(a, b)->turns_left = 3;
+  player_diplstate_get(b, a)->turns_left = 3;
+  fx_phase_begin();
+  a->ai_common.love[player_index(b)] = MAX_AI_LOVE * 6 / 10;
+
+  dai_diplomacy_actions(ait, a);
+  cr_assert_eq(dai_diplomacy_get(ait, a, b)->countdown, -1);
+  cr_expect(proposed(a, b, CLAUSE_PEACE), "no peace offered");
+}

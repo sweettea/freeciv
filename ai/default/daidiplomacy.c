@@ -1727,6 +1727,9 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
     }
     DIPLO_LOG(ait, LOG_DEBUG, pplayer, target, "plans war for spoils");
     war_countdown(ait, pplayer, target, 4 + map_size_checked(), war_reason);
+  } else {
+    /* The least loved player is no target unless we plan war on them. */
+    target = nullptr;
   }
 
   /*** Declare war - against enemies of allies ***/
