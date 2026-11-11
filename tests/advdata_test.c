@@ -133,3 +133,36 @@ Test(advdata_sandbox, tech_parasite_pct_max)
 
   cr_expect(!adv_wants_science(pplayer), "science wanted");
 }
+
+/* An enemy Bomber on land beside an ocean is not a naval threat to
+ * that ocean. */
+Test(advdata, bomber_does_not_threaten_ocean)
+{
+  struct player *us = fx_ai_player(nullptr);
+  struct player *them = fx_ai_player(nullptr);
+  struct adv_data *adv;
+
+  fx_set_terrain(6, 5, "Ocean");
+  fx_war(us, them);
+  fx_unit(them, "Bomber", 5, 5, 0);
+  fx_phase_begin();
+
+  adv = adv_data_get(us, nullptr);
+  cr_expect(!adv->oceans[-tile_continent(fx_tile(6, 5))].threat,
+            "the ocean beside the Bomber is threatened");
+}
+
+/* An enemy Nuclear raises the nuclear threat. */
+Test(advdata, nuclear_unit_is_a_nuclear_threat)
+{
+  struct player *us = fx_ai_player(nullptr);
+  struct player *them = fx_ai_player(nullptr);
+
+  fx_war(us, them);
+  fx_unit(them, "Nuclear", 5, 5, 0);
+  fx_phase_begin();
+
+  cr_expect_gt(adv_data_get(us, nullptr)->threats.nuclear, 0,
+               "threats.nuclear = %d",
+               adv_data_get(us, nullptr)->threats.nuclear);
+}

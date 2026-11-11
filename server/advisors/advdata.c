@@ -360,8 +360,11 @@ bool adv_data_phase_init(struct player *pplayer, bool is_new_phase)
         }
 
         /* The idea is that while our enemies don't have any offensive
-         * seaborne units, we don't have to worry. Go on the offensive! */
-        if (unit_type_get(punit)->attack_strength > 1) {
+         * seaborne units, we don't have to worry. Go on the offensive!
+         * Classes that can also move on land (air units, missiles) do
+         * not need the sea to reach us. */
+        if (pclass->adv.land_move == MOVE_NONE
+            && unit_type_get(punit)->attack_strength > 1) {
           if (is_ocean_tile(unit_tile(punit))) {
             Continent_id continent = tile_continent(unit_tile(punit));
 
@@ -376,7 +379,6 @@ bool adv_data_phase_init(struct player *pplayer, bool is_new_phase)
             } adjc_iterate_end;
           }
         }
-        continue;
       }
 
       /* If our enemy builds missiles, worry about missile defense. */
