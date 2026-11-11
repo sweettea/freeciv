@@ -64,3 +64,24 @@ Test(advdata, player_created_in_game_gets_impr_calc)
                ADV_IMPR_CALCULATE_FULL, "impr_calc %d",
                pplayer->server.adv->impr_calc[improvement_index(harbour)]);
 }
+
+/* An enemy that has died is no threat, so being allied with it does
+ * not make a player dangerous. A is at war with B, B is allied with C,
+ * and B dies. */
+Test(advdata, dead_enemy_has_no_dangerous_allies)
+{
+  struct player *a = fx_ai_player(nullptr);
+  struct player *b = fx_ai_player(nullptr);
+  struct player *c = fx_ai_player(nullptr);
+
+  fx_war(a, b);
+  fx_diplstate(b, c, DS_ALLIANCE);
+  fx_diplstate(a, c, DS_PEACE);
+  a->ai_common.love[player_index(c)] = MAX_AI_LOVE;
+  b->is_alive = FALSE;
+  fx_phase_begin();
+
+  cr_expect(!adv_dipl_get(a, c)->allied_with_enemy,
+            "C counts as allied with A's enemy");
+  cr_expect(!adv_is_player_dangerous(a, c), "C is dangerous to A");
+}

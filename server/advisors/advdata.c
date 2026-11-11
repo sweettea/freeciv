@@ -474,12 +474,12 @@ bool adv_data_phase_init(struct player *pplayer, bool is_new_phase)
     struct adv_dipl *dip = adv_dipl_get(pplayer, aplayer);
 
     dip->allied_with_enemy = FALSE;
-    players_iterate(check_pl) {
+    players_iterate_alive(check_pl) {
       if (pplayers_allied(aplayer, check_pl)
           && player_diplstate_get(pplayer, check_pl)->type == DS_WAR) {
         dip->allied_with_enemy = TRUE;
       }
-    } players_iterate_end;
+    } players_iterate_alive_end;
   } players_iterate_end;
 
   adv->dipl.spacerace_leader = player_leading_spacerace();
