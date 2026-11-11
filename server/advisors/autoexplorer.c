@@ -95,9 +95,12 @@ static bool player_may_explore(const struct tile *ptile,
     return FALSE;
   }
 
-  /* Can't visit tiles with non-allied units. */
-  if (is_non_allied_unit_tile(ptile, pplayer,
-                              utype_has_flag(punittype, UTYF_FLAGLESS))) {
+  /* Can't visit tiles with non-allied units. A human's explorer goes
+   * by the units its owner can see; AI explorers keep the full view
+   * the rest of the AI has. */
+  if ((is_ai(pplayer) || map_is_known_and_seen(ptile, pplayer, V_MAIN))
+      && is_non_allied_unit_tile(ptile, pplayer,
+                                 utype_has_flag(punittype, UTYF_FLAGLESS))) {
     return FALSE;
   }
 

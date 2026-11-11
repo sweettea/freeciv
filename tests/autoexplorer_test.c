@@ -69,3 +69,48 @@ Test(autoexplorer, ai_explorer_wants_known_hut)
   desirable = explorer_desirable(hut, pplayer, explorer);
   cr_expect_gt(desirable, 0, "known hut desirable %d", desirable);
 }
+
+/* Where an Explorer of `pplayer` at (2, 5) with moves for one step goes
+ * on its way to (8, 5). A Grassland corridor runs along y = 5 with
+ * Ocean either side for x = 3..7, and a longer land route along
+ * y = 3. Another player's Warriors, never seen by `pplayer`, blocks
+ * the corridor at (5, 5). */
+static struct tile *explorer_step_past_unseen_unit(struct player *pplayer)
+{
+  struct player *other = fx_ai_player(nullptr);
+  struct unit *explorer;
+  int x;
+
+  for (x = 3; x <= 7; x++) {
+    fx_set_terrain(x, 4, "Ocean");
+    fx_set_terrain(x, 6, "Ocean");
+  }
+  explorer = fx_unit(pplayer, "Explorer", 2, 5, 0);
+  fx_unit(other, "Warriors", 5, 5, 0);
+  fx_show_all(pplayer);
+  cr_assert(!map_is_known_and_seen(fx_tile(5, 5), pplayer, V_MAIN));
+  explorer->moves_left = terrain_control.igter_cost;
+
+  cr_assert(explorer_goto(explorer, fx_tile(8, 5)));
+
+  return unit_tile(explorer);
+}
+
+/* A human's explorer cannot route round a unit its owner has not seen:
+ * it takes the corridor. */
+Test(autoexplorer, human_explorer_ignores_unseen_units)
+{
+  struct tile *step = explorer_step_past_unseen_unit(fx_player());
+
+  cr_expect(same_pos(step, fx_tile(3, 5)),
+            "the human's Explorer stepped to (%d, %d)", TILE_XY(step));
+}
+
+/* An AI explorer still routes round it. */
+Test(autoexplorer, ai_explorer_avoids_unseen_units)
+{
+  struct tile *step = explorer_step_past_unseen_unit(fx_ai_player(nullptr));
+
+  cr_expect(same_pos(step, fx_tile(2, 4)),
+            "the AI's Explorer stepped to (%d, %d)", TILE_XY(step));
+}
