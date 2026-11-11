@@ -15,7 +15,6 @@
 #include <fc_config.h>
 #endif
 
-#include <stdint.h>
 #include <string.h>
 
 /* utility */
@@ -687,7 +686,7 @@ static void dai_reevaluate_building(struct city *pcity, adv_want *value,
   *value = MAX(*value, 100 + urgency); /* default */
 
   if (urgency > 0 && danger > defense * 2) {
-    *value += 100;
+    *value = MAX(*value, 200 + urgency);
   } else if (defense != 0 && danger > defense) {
     *value = MAX(danger * 100 / defense, *value);
   }
@@ -1142,7 +1141,7 @@ bool dai_process_defender_want(struct ai_type *ait, const struct civ_map *nmap,
                      && build_cost <= best_unit_cost))
                 && (best_unit_type == nullptr
                     /* In case all units are more expensive than limit_cost */
-                    || limit_cost <= pcity->shield_stock + 40))) {
+                    || build_cost <= limit_cost))) {
           best = desire;
           best_unit_type = punittype;
           best_unit_cost = build_cost;
@@ -1802,7 +1801,7 @@ static void adjust_ai_unit_choice(struct city *pcity,
     choice->value.building = improvement_by_number(id);
     choice->want = choice->want * (0.5 + (ai_trait_get_value(TRAIT_BUILDER,
                                                              city_owner(pcity))
-                                          / TRAIT_DEFAULT_VALUE / 2));
+                                          / (double) TRAIT_DEFAULT_VALUE / 2));
     choice->type = CT_BUILDING;
     adv_choice_set_use(choice, "veterancy building");
   }
@@ -1853,41 +1852,56 @@ struct adv_choice *military_advisor_choose_build(struct ai_type *ait,
     } normal_specialist_type_iterate_end;
   }
 
-  if (martial_need
-      && unit_list_size(pcity->tile->units) < get_city_bonus(pcity, EFT_MARTIAL_LAW_MAX)) {
-    martial_value = dai_content_effect_value(pplayer, pcity,
-                                             get_city_bonus(pcity, EFT_MARTIAL_LAW_BY_UNIT),
-                                             1, FEELING_FINAL);
+  if (martial_need) {
+    int martial_units = 0;
+
+    /* Count the units city_refresh() would take for martial law */
+    unit_list_iterate(ptile->units, punit) {
+      if (is_martial_law_unit(punit) && unit_owner(punit) == pplayer) {
+        martial_units++;
+      }
+    } unit_list_iterate_end;
+
+    if (martial_units < get_city_bonus(pcity, EFT_MARTIAL_LAW_MAX)) {
+      martial_value = dai_content_effect_value(pplayer, pcity,
+                                               get_city_bonus(pcity, EFT_MARTIAL_LAW_BY_UNIT),
+                                               1, FEELING_FINAL);
+    }
   }
 
   /* Otherwise no need to defend yet */
   if (city_data->danger != 0 || martial_value > 0) {
     struct impr_type *pimprove;
-    int num_defenders = unit_list_size(ptile->units);
+    int num_defenders = 0;
     int wall_id, danger;
     bool build_walls = TRUE;
     bool def_unit_selected = FALSE;
-    /* The square of a 32-bit sum needs 64 bits. */
-    uint64_t qdanger = (uint64_t) city_data->danger * city_data->danger;
 
-    if (qdanger == 0) {
+    unit_list_iterate(ptile->units, punit) {
+      if (!is_special_unit(punit)) {
+        num_defenders++;
+      }
+    } unit_list_iterate_end;
+
+    if (city_data->danger <= 0) {
       /* We only need these defenders because of Martial Law value */
       danger = 0;
       build_walls = FALSE; /* Walls don't provide Martial Law */
     } else {
       /* First determine the danger. It is measured in percents of our
-       * defensive strength, capped at 200 + urgency */
-      if (qdanger >= our_def) {
+       * defensive strength, capped at 200 + urgency. city_data->danger
+       * and our_def are both quadratic in unit ratings. */
+      if (city_data->danger >= our_def) {
         if (urgency == 0) {
           /* Don't waste money */
           danger = 100;
         } else if (our_def == 0) {
           danger = 200 + urgency;
         } else {
-          danger = MIN(200, (int) (100 * qdanger / our_def)) + urgency;
+          danger = MIN(200, 100 * city_data->danger / our_def) + urgency;
         }
       } else {
-        danger = (int) (100 * qdanger / our_def);
+        danger = 100 * city_data->danger / our_def;
       }
 
       if (pcity->surplus[O_SHIELD] <= 0 && our_def != 0) {
@@ -1931,27 +1945,26 @@ struct adv_choice *military_advisor_choose_build(struct ai_type *ait,
               || (city_data->grave_danger == 0
                   && pplayer->economic.gold
                      > impr_buy_gold_cost(pcity, pimprove, pcity->shield_stock)))
-          && ai_fuzzy(pplayer, TRUE)) {
-        if (pcity->server.adv->building_want[wall_id] > 0) {
+          && ai_fuzzy(pplayer, TRUE)
+          && pcity->server.adv->building_want[wall_id] > 0) {
+        /* building_want is hacked by assess_danger() */
+        adv_want wall_want = pcity->server.adv->building_want[wall_id];
+
+        wall_want = wall_want * (0.5 + (ai_trait_get_value(TRAIT_BUILDER, pplayer)
+                                        / (double) TRAIT_DEFAULT_VALUE / 2));
+        if (urgency == 0 && wall_want > DAI_WANT_BELOW_MIL_EMERGENCY) {
+          wall_want = DAI_WANT_BELOW_MIL_EMERGENCY;
+        }
+        if (wall_want > choice->want) {
           /* NB: great wall is under domestic */
           choice->value.building = pimprove;
-          /* building_want is hacked by assess_danger() */
-          choice->want = pcity->server.adv->building_want[wall_id];
-          choice->want = choice->want * (0.5 + (ai_trait_get_value(TRAIT_BUILDER, pplayer)
-                                                / TRAIT_DEFAULT_VALUE / 2));
-          if (urgency == 0 && choice->want > DAI_WANT_BELOW_MIL_EMERGENCY) {
-            choice->want = DAI_WANT_BELOW_MIL_EMERGENCY;
-          }
+          choice->want = wall_want;
           choice->type = CT_BUILDING;
           adv_choice_set_use(choice, "defense building");
           CITY_LOG(LOG_DEBUG, pcity,
                    "m_a_c_d wants defense building with " ADV_WANT_PRINTF,
                    choice->want);
-        } else {
-          build_walls = FALSE;
         }
-      } else {
-        build_walls = FALSE;
       }
     }
 
@@ -1986,7 +1999,7 @@ struct adv_choice *military_advisor_choose_build(struct ai_type *ait,
             adv_choice_set_use(&uchoice, "police");
           }
 
-          if (!build_walls || uchoice.want > choice->want) {
+          if (uchoice.want > choice->want) {
             adv_choice_copy(choice, &uchoice);
           }
           adv_deinit_choice(&uchoice);
