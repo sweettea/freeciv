@@ -111,9 +111,9 @@ void fx_government(struct player *pplayer, const char *rule_name);
 void fx_show_all(struct player *pplayer);
 
 /* A virtual city of size 1 owned by `owner` on (x, y): registered in
- * the index and the owner's city list, its centre tile worked and
- * owned, its citizens of the owner's nationality, given its advisor
- * data, and refreshed. */
+ * the index and the owner's city list, building what create_city()
+ * would start it on, its centre tile worked and owned, its citizens of
+ * the owner's nationality, given its advisor data, and refreshed. */
 struct city *fx_city(struct player *owner, int x, int y, const char *name);
 
 /* A virtual unit of type `utype` (rule name) at (x, y) with full hp

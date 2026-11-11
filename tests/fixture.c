@@ -454,6 +454,7 @@ struct city *fx_city(struct player *owner, int x, int y, const char *name)
   idex_register_city(&wld, pcity);
   city_list_prepend(owner->cities, pcity);
   tile_set_owner(ptile, owner, ptile);
+  city_choose_build_default(&(wld.map), pcity);
   tile_set_worked(ptile, pcity);
   citizens_init(pcity);
   if (game.info.citizen_nationality) {
