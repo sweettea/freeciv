@@ -75,3 +75,36 @@ Test(daicity, temple_make_content_in_content_city)
                "Temple want " ADV_WANT_PRINTF " with Mysticism, "
                ADV_WANT_PRINTF " without", with, without);
 }
+
+TestSuite(daicity_civ2civ3, .init = fx_init_civ2civ3, .fini = fx_fini);
+
+/* civ2civ3's Great Library gives its city +4 science on the centre tile
+ * and every Library city +50% science, at World range. Its base want
+ * in a Library city counts those, as for any other building. */
+Test(daicity_civ2civ3, great_library_base_want)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *pplayer = fx_ai_player(nullptr);
+  struct city *pcity = fx_city(pplayer, 5, 5, "Capital");
+  struct impr_type *library = improvement_by_rule_name("Library");
+  struct impr_type *great_library
+    = improvement_by_rule_name("Great Library");
+  struct adv_data *adv;
+  adv_want want;
+
+  fx_government(pplayer, "Despotism");
+  fx_tech(pplayer, "Literacy");
+  city_add_improvement(pcity, library);
+  city_refresh(pcity);
+  fx_phase_begin();
+  adv = adv_data_get(pplayer, nullptr);
+
+  cr_assert(can_city_build_improvement_now(pcity, great_library,
+                                           RPT_CERTAIN));
+  cr_assert_eq(adv->impr_range[improvement_index(great_library)],
+               REQ_RANGE_WORLD);
+  def_ai_city_data(pcity, ait)->worth
+    = dai_city_want(pplayer, pcity, adv, nullptr);
+  want = base_want(ait, pplayer, pcity, great_library);
+  cr_expect_gt(want, 0, "Great Library base want " ADV_WANT_PRINTF, want);
+}

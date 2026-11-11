@@ -88,7 +88,8 @@
 #define city_range_iterate(city_here, list, range, city)                \
 {                                                                       \
   city_list_iterate(list, city) {                                       \
-    if (range == REQ_RANGE_PLAYER                                       \
+    if (range == REQ_RANGE_WORLD                                        \
+        || range == REQ_RANGE_PLAYER                                    \
         || range == REQ_RANGE_TEAM                                      \
         || range == REQ_RANGE_ALLIANCE                                  \
         || (range == REQ_RANGE_TRADE_ROUTE                              \
