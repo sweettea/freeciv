@@ -310,3 +310,116 @@ Test(daiunit, caravan_boat_wait_cleared_by_boarding)
   cr_expect(!dai_is_unit_tired_waiting_boat(ait, caravan),
             "tired 6 turns after boarding");
 }
+
+/* The sea trip a virtual 'attacker' at Home (7, 5) plans against Target
+ * (13, 5), an enemy city across the sea at x = 8..11 held by Warriors.
+ * 'techs' (nullptr-terminated) are known to us. */
+struct sea_trip {
+  struct tile *dest;
+  struct tile *target;
+  const struct unit_type *boattype;
+  bool ferry_map;
+};
+
+static struct sea_trip plan_sea_trip(const char *attacker,
+                                     const char *const techs[])
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *us = fx_ai_player(nullptr);
+  struct player *enemy = fx_ai_player(nullptr);
+  struct city *home, *target;
+  struct unit *punit, *ferryboat;
+  struct pf_map *ferry_map;
+  struct sea_trip trip;
+  int x, y, i;
+
+  for (x = 8; x <= 11; x++) {
+    for (y = 0; y < FX_MAP_YSIZE; y++) {
+      fx_set_terrain(x, y, "Ocean");
+    }
+  }
+  for (i = 0; techs[i] != nullptr; i++) {
+    fx_tech(us, techs[i]);
+  }
+  fx_war(us, enemy);
+  home = fx_city(us, 7, 5, "Home");
+  fx_unit(us, "Warriors", 7, 5, 0);
+  target = fx_city(enemy, 13, 5, "Target");
+  fx_unit(enemy, "Warriors", 13, 5, 0);
+  fx_show_all(us);
+  fx_show_all(enemy);
+  fx_phase_begin();
+  dai_build_adv_init(ait, us);
+  dai_build_adv_init(ait, enemy);
+
+  punit = unit_virtual_create(us, home, fx_utype(attacker), 0);
+  (void) find_something_to_kill(ait, us, punit, &trip.dest, nullptr,
+                                &ferry_map, &ferryboat, &trip.boattype,
+                                nullptr);
+  trip.ferry_map = (ferry_map != nullptr);
+  if (ferry_map != nullptr) {
+    pf_map_destroy(ferry_map);
+  }
+  trip.target = city_tile(target);
+  unit_virtual_destroy(punit);
+
+  return trip;
+}
+
+/* Classic's Chariot is class Land, which a Trireme carries: it plans
+ * the trip on a Trireme. */
+Test(daiunit, chariot_sails_on_trireme)
+{
+  const char *const techs[] = { "Map Making", "The Wheel", nullptr };
+  struct sea_trip trip = plan_sea_trip("Chariot", techs);
+
+  cr_expect_eq(trip.dest, trip.target, "target (%d, %d)",
+               TILE_XY(trip.dest));
+  cr_expect_eq(trip.boattype, fx_utype("Trireme"), "boat %s",
+               trip.boattype != nullptr
+               ? utype_rule_name(trip.boattype) : "none");
+  cr_expect(trip.ferry_map);
+}
+
+/* civ2civ3's Chariot is class Big Land. Trireme is the only ferry it
+ * can build and cannot carry it, so it plans no sea trip at all. */
+Test(daiunit_civ2civ3, big_land_plans_no_trip_on_trireme)
+{
+  const char *const techs[] = { "Map Making", "The Wheel", nullptr };
+  struct sea_trip trip = plan_sea_trip("Chariot", techs);
+
+  cr_expect_null(trip.boattype, "boat %s",
+                 trip.boattype != nullptr
+                 ? utype_rule_name(trip.boattype) : "none");
+  cr_expect(!trip.ferry_map);
+  cr_expect_neq(trip.dest, trip.target, "plans to sail to the target");
+}
+
+/* With Navigation the Galleon, which carries Big Land, is the boat. */
+Test(daiunit_civ2civ3, big_land_sails_on_galleon)
+{
+  const char *const techs[] = { "Map Making", "The Wheel", "Navigation",
+                                nullptr };
+  struct sea_trip trip = plan_sea_trip("Chariot", techs);
+
+  cr_expect_eq(trip.dest, trip.target, "target (%d, %d)",
+               TILE_XY(trip.dest));
+  cr_expect_eq(trip.boattype, fx_utype("Galleon"), "boat %s",
+               trip.boattype != nullptr
+               ? utype_rule_name(trip.boattype) : "none");
+  cr_expect(trip.ferry_map);
+}
+
+/* A Legion is class Land: it still plans the trip on a Trireme. */
+Test(daiunit_civ2civ3, land_sails_on_trireme)
+{
+  const char *const techs[] = { "Map Making", "Iron Working", nullptr };
+  struct sea_trip trip = plan_sea_trip("Legion", techs);
+
+  cr_expect_eq(trip.dest, trip.target, "target (%d, %d)",
+               TILE_XY(trip.dest));
+  cr_expect_eq(trip.boattype, fx_utype("Trireme"), "boat %s",
+               trip.boattype != nullptr
+               ? utype_rule_name(trip.boattype) : "none");
+  cr_expect(trip.ferry_map);
+}

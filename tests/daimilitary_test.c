@@ -426,3 +426,104 @@ Test(daimilitary_civ2civ3, danger_above_defense)
 
   cr_expect_gt(want, 200, "want " ADV_WANT_PRINTF, want);
 }
+
+/* What kill_something_with() chooses to build at Home (7, 5) for a
+ * virtual 'attacker' when the only enemy city, Target (13, 5) held by
+ * Warriors, is across the sea at x = 8..11. 'techs' (nullptr-terminated)
+ * are known to us. The caller frees the choice. */
+static struct adv_choice *attack_overseas(const char *attacker,
+                                          const char *const techs[])
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *us = fx_ai_player(nullptr);
+  struct player *enemy = fx_ai_player(nullptr);
+  struct city *home;
+  struct unit *punit;
+  struct adv_choice *choice;
+  int x, y, i;
+
+  for (x = 8; x <= 11; x++) {
+    for (y = 0; y < FX_MAP_YSIZE; y++) {
+      fx_set_terrain(x, y, "Ocean");
+    }
+  }
+  for (i = 0; techs[i] != nullptr; i++) {
+    fx_tech(us, techs[i]);
+  }
+  fx_war(us, enemy);
+  home = fx_city(us, 7, 5, "Home");
+  fx_unit(us, "Warriors", 7, 5, 0);
+  fx_city(enemy, 13, 5, "Target");
+  fx_unit(enemy, "Warriors", 13, 5, 0);
+  fx_show_all(us);
+  fx_show_all(enemy);
+  fx_phase_begin();
+  dai_build_adv_init(ait, us);
+  dai_build_adv_init(ait, enemy);
+
+  punit = unit_virtual_create(us, home, fx_utype(attacker), 0);
+  choice = kill_something_with(ait, &(wld.map), us, home, punit,
+                               adv_new_choice());
+  unit_virtual_destroy(punit);
+
+  return choice;
+}
+
+/* Whether 'choice' builds a ferry that cannot carry 'cargo'. */
+static bool builds_useless_ferry(const struct adv_choice *choice,
+                                 const char *cargo)
+{
+  return (choice->type == CT_ATTACKER
+          && utype_has_role(choice->value.utype, L_FERRYBOAT)
+          && !can_unit_type_transport(choice->value.utype,
+                                      utype_class(fx_utype(cargo))));
+}
+
+/* civ2civ3's Chariot is class Big Land, which a Trireme cannot carry.
+ * The city must not build a Trireme for it. */
+Test(daimilitary_civ2civ3, no_trireme_for_big_land)
+{
+  const char *const techs[] = { "Map Making", "The Wheel", nullptr };
+  struct adv_choice *choice = attack_overseas("Chariot", techs);
+
+  cr_expect(!builds_useless_ferry(choice, "Chariot"),
+            "builds a %s, want " ADV_WANT_PRINTF,
+            utype_rule_name(choice->value.utype), choice->want);
+  adv_free_choice(choice);
+}
+
+/* The player can build a Galleon, which carries Big Land, so the trip
+ * is planned on one. Here a Galleon also needs a Harbour in the city,
+ * which Home lacks; the best boat Home can build is a Trireme. It must
+ * not build that for a Chariot. */
+Test(daimilitary_civ2civ3, no_trireme_when_galleon_needs_harbour)
+{
+  const char *const techs[] = { "Map Making", "The Wheel", "Navigation",
+                                "Seafaring", nullptr };
+  struct unit_type *galleon = unit_type_by_rule_name("Galleon");
+  struct adv_choice *choice;
+
+  requirement_vector_append(&galleon->build_reqs,
+                            req_from_str("Building", "City", FALSE, TRUE,
+                                         FALSE, "Harbour"));
+  choice = attack_overseas("Chariot", techs);
+
+  cr_expect(!builds_useless_ferry(choice, "Chariot"),
+            "builds a %s, want " ADV_WANT_PRINTF,
+            utype_rule_name(choice->value.utype), choice->want);
+  adv_free_choice(choice);
+}
+
+/* A Legion is class Land: the city still builds it a Trireme. */
+Test(daimilitary_civ2civ3, trireme_for_land)
+{
+  const char *const techs[] = { "Map Making", "Iron Working", nullptr };
+  struct adv_choice *choice = attack_overseas("Legion", techs);
+
+  cr_expect_eq(choice->type, CT_ATTACKER);
+  cr_expect_eq(choice->value.utype, fx_utype("Trireme"), "builds %s",
+               choice->type == CT_ATTACKER
+               ? utype_rule_name(choice->value.utype) : "no unit");
+  cr_expect(choice->need_boat);
+  adv_free_choice(choice);
+}

@@ -1689,24 +1689,37 @@ static struct adv_choice *kill_something_with(struct ai_type *ait,
              best_choice->want);
 
     if (ferry_map != nullptr && !ferryboat) { /* Need a new ferry */
+      enum choice_type attacker_type = choice->type;
+      universals_u attacker = choice->value;
+      adv_want attacker_want = choice->want;
+
       /* We might need a new boat even if there are boats free,
        * if they are blockaded or in inland seas. */
       fc_assert_ret_val(unit_class_get(myunit)->adv.sea_move != MOVE_FULL, choice);
       if (dai_choose_role_unit(ait, pplayer, pcity, choice, CT_ATTACKER,
-                               L_FERRYBOAT, choice->want, TRUE)
-          && dai_is_ferry_type(choice->value.utype, ait)) {
+                               L_FERRYBOAT, choice->want, TRUE)) {
+        if (!can_unit_type_transport(choice->value.utype,
+                                     unit_class_get(myunit))) {
+          /* The trip was planned on a boat this city cannot build, and
+           * the best one it can build would never be boarded. Keep the
+           * attacker. */
+          choice->type = attacker_type;
+          choice->value = attacker;
+          choice->want = attacker_want;
+        } else if (dai_is_ferry_type(choice->value.utype, ait)) {
 #ifdef FREECIV_DEBUG
-        struct ai_plr *ai = dai_plr_data_get(ait, pplayer, nullptr);
+          struct ai_plr *ai = dai_plr_data_get(ait, pplayer, nullptr);
 
-        log_debug("kill_something_with() %s has chosen attacker ferry, "
-                  "%s, want=" ADV_WANT_PRINTF ", %d of %d free",
-                  city_name_get(pcity),
-                  utype_rule_name(choice->value.utype),
-                  choice->want,
-                  ai->stats.available_boats, ai->stats.boats);
+          log_debug("kill_something_with() %s has chosen attacker ferry, "
+                    "%s, want=" ADV_WANT_PRINTF ", %d of %d free",
+                    city_name_get(pcity),
+                    utype_rule_name(choice->value.utype),
+                    choice->want,
+                    ai->stats.available_boats, ai->stats.boats);
 #endif /* FREECIV_DEBUG */
 
-        adv_choice_set_use(choice, "attacker ferry");
+          adv_choice_set_use(choice, "attacker ferry");
+        }
       } /* else can not build ferries yet */
     }
   }
