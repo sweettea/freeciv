@@ -1,7 +1,8 @@
 project('freeciv', ['c'],
         meson_version: '>= 0.63.0',
         version : run_command('fc_version', check : true).stdout(),
-        default_options: ['warning_level=1'])
+        default_options: ['warning_level=1',
+                         'boxfort:tests=false', 'boxfort:samples=false'])
 
 if get_option('audio') == 'sdl2' and get_option('clients').contains('sdl3')
   error('''sdl3-client and sdl2 audio cannot be enabled simultaneously.
@@ -1746,6 +1747,18 @@ server_lib = static_library('fc_server',
   )
 
 endif
+
+# The Criterion unit test suite. With tests=auto it is built when
+# Criterion is found on the system or its subproject configures; with
+# tests=disabled the build is unchanged. The subproject is built static
+# and without its own tests and samples, so `meson test` runs only
+# freeciv's.
+criterion_dep = dependency('criterion',
+                           fallback: ['criterion', 'criterion'],
+                           required: get_option('tests'),
+                           default_options: ['tests=false',
+                                             'samples=false',
+                                             'default_library=static'])
 
 if server_type != 'disabled'
   executable(server_binary_name,

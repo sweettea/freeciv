@@ -130,3 +130,8 @@ option('fcdb',
        choices: ['sqlite3','mariadb','odbc'],
        value: ['sqlite3'],
        description: 'fcdb (player authentication) backends to build')
+
+option('tests',
+       type: 'feature',
+       value: 'auto',
+       description: 'Build the Criterion unit test suite (falls back to the Criterion subproject)')
