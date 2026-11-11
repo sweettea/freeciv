@@ -103,8 +103,9 @@ adv_want dai_content_effect_value(const struct player *pplayer,
       if (get_player_bonus(pplayer, EFT_EMPIRE_SIZE_BASE) > 0) {
         int step_bonus = get_player_bonus(pplayer, EFT_EMPIRE_SIZE_STEP);
 
-        factor += city_list_size(pplayer->cities)
-          / MAX(step_bonus, 1);
+        if (step_bonus > 0) {
+          factor += city_list_size(pplayer->cities) / step_bonus;
+        }
       }
       factor += 2;
     }

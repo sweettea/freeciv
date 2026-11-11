@@ -20,13 +20,18 @@
 
 #include <criterion/criterion.h>
 
+/* utility */
+#include "support.h"
+
 /* common */
+#include "city.h"
 #include "effects.h"
 #include "improvement.h"
 #include "player.h"
 #include "research.h"
 
 /* server */
+#include "cityturn.h"
 #include "plrhand.h"
 
 /* server/advisors */
@@ -112,4 +117,44 @@ Test(daieffects, move_bonus_without_ships)
   cr_expect_gt(v_magellan, v_lighthouse,
                "Magellan's valued at " ADV_WANT_PRINTF ", Lighthouse at "
                ADV_WANT_PRINTF, v_magellan, v_lighthouse);
+}
+
+/* The value of Make_Content 1 in the first of `ncities` cities, placed
+ * along map row `y`, of a new player under `gov`, rated as for an
+ * effect reaching 2 cities. */
+static adv_want content_value(const char *gov, int ncities, int y)
+{
+  struct player *pplayer = fx_ai_player(nullptr);
+  struct city *first = nullptr;
+  int i;
+
+  fx_government(pplayer, gov);
+  for (i = 0; i < ncities; i++) {
+    char name[16];
+
+    fc_snprintf(name, sizeof(name), "City %d", i);
+    first = fx_city(pplayer, i, y, name);
+  }
+  city_refresh_for_player(pplayer);
+
+  return dai_content_effect_value(pplayer, first, 1, 2, FEELING_EFFECT);
+}
+
+/* Classic's Communism has Empire_Size_Base 12 and no Empire_Size_Step:
+ * past 12 cities one citizen more is unhappy, however many more cities
+ * there are. So 20 cities need no more contentment than 14. */
+Test(daieffects, content_value_without_empire_size_step)
+{
+  adv_want v14, v20;
+  struct player *probe = fx_ai_player(nullptr);
+
+  fx_government(probe, "Communism");
+  cr_assert_eq(get_player_bonus(probe, EFT_EMPIRE_SIZE_BASE), 12);
+  cr_assert_eq(get_player_bonus(probe, EFT_EMPIRE_SIZE_STEP), 0);
+
+  v14 = content_value("Communism", 14, 5);
+  v20 = content_value("Communism", 20, 10);
+  cr_expect_eq(v20, v14,
+               "Make_Content valued at " ADV_WANT_PRINTF " with 20 cities, "
+               ADV_WANT_PRINTF " with 14", v20, v14);
 }
