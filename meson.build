@@ -1783,6 +1783,7 @@ if server_type != 'disabled'
       'tests/combat_test.c',
       'tests/advdata_test.c',
       'tests/advruleset_test.c',
+      'tests/autoexplorer_test.c',
       include_directories: [server_inc, include_directories('ai/default')],
       sources: [verhdr],
       c_args: ['-DFX_DATA_DIR="@0@"'.format(

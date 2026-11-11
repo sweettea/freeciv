@@ -67,7 +67,7 @@ static int likely_native(struct tile *ptile,
    * nearby tiles. */
   adjc_dir_iterate(&(wld.map), ptile, ptile1, dir) {
     if (map_is_known(ptile1, pplayer)) {
-      if (is_native_tile_to_class(pclass, ptile)) {
+      if (is_native_tile_to_class(pclass, ptile1)) {
         native++;
       } else {
         foreign++;
