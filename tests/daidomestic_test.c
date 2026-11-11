@@ -35,6 +35,35 @@
 
 TestSuite(daidomestic, .init = fx_init_classic, .fini = fx_fini);
 
+/* With nothing but one building wanted, a player of default builder
+ * trait is advised to build it at the building's own want. */
+Test(daidomestic, builder_trait_default_keeps_want)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *pplayer = fx_ai_player(nullptr);
+  struct city *pcity = fx_city(pplayer, 5, 5, "Capital");
+  struct impr_type *barracks = improvement_by_rule_name("Barracks");
+  struct ai_city *city_data;
+  struct adv_choice *choice;
+
+  fx_phase_begin();
+  pplayer->ai_common.traits[TRAIT_BUILDER].val = TRAIT_DEFAULT_VALUE;
+  pplayer->ai_common.traits[TRAIT_BUILDER].mod = 0;
+  city_data = def_ai_city_data(pcity, ait);
+  city_data->worker_want = 0;
+  city_data->founder_want = 0;
+  improvement_iterate(pimprove) {
+    pcity->server.adv->building_want[improvement_index(pimprove)] = 0;
+  } improvement_iterate_end;
+  pcity->server.adv->building_want[improvement_index(barracks)] = 100;
+
+  choice = domestic_advisor_choose_build(ait, pplayer, pcity);
+  cr_assert_eq(choice->type, CT_BUILDING);
+  cr_assert_eq(choice->value.building, barracks);
+  cr_expect_eq(choice->want, 100, "want " ADV_WANT_PRINTF, choice->want);
+  adv_free_choice(choice);
+}
+
 /* The want for a trade route unit in a city with no route and no
  * caravan of its own. */
 static adv_want trade_route_want(struct ai_type *ait, struct city *pcity)
