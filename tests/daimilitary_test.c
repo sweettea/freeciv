@@ -132,3 +132,28 @@ Test(daimilitary, walls_want_at_default_trait)
                      pcity->server.adv->building_want[improvement_index(walls)]);
   adv_free_choice(choice);
 }
+
+/* With no shields in stock, dai_process_defender_want() keeps a
+ * defender within shield_stock + 40 when one exists: Musketeers (30)
+ * over Alpine Troops (50). */
+Test(daimilitary, defender_within_cost_limit)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *us = fx_ai_player(nullptr);
+  struct city *pcity;
+  struct adv_choice choice;
+
+  fx_tech(us, "Gunpowder");
+  fx_tech(us, "Tactics");
+  pcity = fx_city(us, 5, 5, "Home");
+  fx_phase_begin();
+  pcity->shield_stock = 0;
+
+  adv_init_choice(&choice);
+  cr_assert(dai_process_defender_want(ait, &(wld.map), us, pcity, 100,
+                                      &choice, 0));
+  cr_expect_leq(utype_build_shield_cost(pcity, nullptr, choice.value.utype),
+                40, "chose %s", utype_rule_name(choice.value.utype));
+  cr_expect_str_eq(utype_rule_name(choice.value.utype), "Musketeers");
+  adv_deinit_choice(&choice);
+}

@@ -1138,7 +1138,7 @@ bool dai_process_defender_want(struct ai_type *ait, const struct civ_map *nmap,
                      && build_cost <= best_unit_cost))
                 && (best_unit_type == nullptr
                     /* In case all units are more expensive than limit_cost */
-                    || limit_cost <= pcity->shield_stock + 40))) {
+                    || build_cost <= limit_cost))) {
           best = desire;
           best_unit_type = punittype;
           best_unit_cost = build_cost;
