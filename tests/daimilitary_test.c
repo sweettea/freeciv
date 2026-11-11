@@ -70,7 +70,8 @@ static void default_builder(struct player *pplayer)
 }
 
 /* At the default builder trait, adjust_ai_unit_choice() swaps a
- * defender for Barracks at the defender's full want. */
+ * defender for Barracks at the defender's full want. The city holds a
+ * defender already: an empty one keeps the unit choice. */
 Test(daimilitary, veterancy_building_want_at_default_trait)
 {
   struct player *us = fx_ai_player(nullptr);
@@ -78,6 +79,7 @@ Test(daimilitary, veterancy_building_want_at_default_trait)
   struct adv_choice choice;
 
   default_builder(us);
+  fx_unit(us, "Phalanx", 5, 5, 0);
   fx_phase_begin();
 
   adv_init_choice(&choice);
