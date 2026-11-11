@@ -1763,7 +1763,7 @@ static void adjust_improvement_wants_by_effects(struct ai_type *ait,
     n_needed_techs = tech_vector_size(&needed_techs);
     if ((active || n_needed_techs) && !impossible_to_get) {
       adv_want v1 = dai_effect_value(pplayer, ai, pcity, capital,
-                                     turns, peffect, range, nplayers);
+                                     turns, peffect, cities[range], nplayers);
       /* v1 could be negative (the effect could be undesirable),
        * although it is usually positive.
        * For example, in the default ruleset, Communism decreases the
