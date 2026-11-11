@@ -83,15 +83,11 @@ void adv_units_ruleset_init(void)
     ptype->adv.igwall = TRUE;
 
     effect_list_iterate(get_effects(EFT_DEFEND_BONUS), peffect) {
-      if (peffect->value > 0) {
-        requirement_vector_iterate(&peffect->reqs, preq) {
-          if (!is_req_active(&context, nullptr, preq, RPT_POSSIBLE)) {
-            ptype->adv.igwall = FALSE;
-            break;
-          }
-        } requirement_vector_iterate_end;
-      }
-      if (!ptype->adv.igwall) {
+      if (peffect->value > 0
+          && are_reqs_active(&context, nullptr, &peffect->reqs,
+                             RPT_POSSIBLE)) {
+        /* Some defence bonus may apply against this type. */
+        ptype->adv.igwall = FALSE;
         break;
       }
     } effect_list_iterate_end;

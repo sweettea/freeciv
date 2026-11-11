@@ -67,7 +67,7 @@ static int likely_native(struct tile *ptile,
    * nearby tiles. */
   adjc_dir_iterate(&(wld.map), ptile, ptile1, dir) {
     if (map_is_known(ptile1, pplayer)) {
-      if (is_native_tile_to_class(pclass, ptile)) {
+      if (is_native_tile_to_class(pclass, ptile1)) {
         native++;
       } else {
         foreign++;
@@ -95,9 +95,12 @@ static bool player_may_explore(const struct tile *ptile,
     return FALSE;
   }
 
-  /* Can't visit tiles with non-allied units. */
-  if (is_non_allied_unit_tile(ptile, pplayer,
-                              utype_has_flag(punittype, UTYF_FLAGLESS))) {
+  /* Can't visit tiles with non-allied units. A human's explorer goes
+   * by the units its owner can see; AI explorers keep the full view
+   * the rest of the AI has. */
+  if ((is_ai(pplayer) || map_is_known_and_seen(ptile, pplayer, V_MAIN))
+      && is_non_allied_unit_tile(ptile, pplayer,
+                                 utype_has_flag(punittype, UTYF_FLAGLESS))) {
     return FALSE;
   }
 
@@ -140,7 +143,11 @@ static bool explorer_goto(struct unit *punit, struct tile *ptile)
   pft_fill_unit_parameter(&parameter, nmap, punit);
   parameter.omniscience = !has_handicap(pplayer, H_MAP);
   parameter.get_TB = explorer_tb;
-  adv_avoid_risks(&parameter, &risk_cost, punit, NORMAL_STACKING_FEARFULNESS);
+  if (is_ai(pplayer)) {
+    /* The risk cost reads every unit on the map, seen or not. */
+    adv_avoid_risks(&parameter, &risk_cost, punit,
+                    NORMAL_STACKING_FEARFULNESS);
+  }
 
   /* Show the destination in the client */
   punit->goto_tile = ptile;
@@ -254,8 +261,7 @@ static int explorer_desirable(struct tile *ptile, struct player *pplayer,
     desirable = 0;
   }
 
-  if ((!is_ai(pplayer) || !has_handicap(pplayer, H_HUTS))
-      && map_is_known(ptile, pplayer)
+  if (map_is_known(ptile, pplayer)
       && unit_can_enter_hut(punit, ptile)) {
     /* We want to explore huts whenever we can,
      * even if doing so will not uncover any tiles. */
@@ -287,13 +293,14 @@ enum unit_move_result manage_auto_explorer(struct unit *punit)
   /* The maximum distance we are willing to search. It decreases depending
    * on the want of already discovered targets. It is defined as the distance
    * at which a tile with BEST_POSSIBLE_SCORE would have to be found in
-   * order to be better than the current most_desirable tile. */
-  int max_dist = FC_INFINITY;
+   * order to be better than the current most_desirable tile. In moves,
+   * like all distances here. */
+  double max_dist = FC_INFINITY;
 
   /* Coordinates of most desirable tile. Initialized to make
-   * compiler happy. Also MC to the best tile. */
+   * compiler happy. Also distance to the best tile. */
   struct tile *best_tile = nullptr;
-  int best_MC = FC_INFINITY;
+  double best_dist = FC_INFINITY;
 
   /* Path-finding stuff */
   struct pf_map *pfm;
@@ -325,6 +332,9 @@ enum unit_move_result manage_auto_explorer(struct unit *punit)
   pf_map_move_costs_iterate(pfm, ptile, move_cost, FALSE) {
     int desirable;
     double log_desirable;
+    /* In moves, not move fragments, so the discount below does not
+     * depend on how finely the ruleset splits a move. */
+    double dist = (double) move_cost / SINGLE_MOVE;
 
     /* Our callback should insure this. */
     fc_assert_action(map_is_known(ptile, pplayer), continue);
@@ -342,17 +352,16 @@ enum unit_move_result manage_auto_explorer(struct unit *punit)
     /* Ok, the way we calculate goodness is taking the base tile
      * desirability amortized by the time it takes to get there:
      *
-     *     goodness = desirability * DIST_FACTOR^total_MC
+     *     goodness = desirability * DIST_FACTOR^dist
      *
-     * TODO: JDS notes that we should really make our exponential
-     *       term dimensionless by dividing by move_rate.
+     * where dist is total_MC in moves (total_MC / SINGLE_MOVE).
      *
      * We want to truncate our search, so we calculate a maximum distance
      * that we would move to find the tile with the most possible desirability
      * (BEST_POSSIBLE_SCORE) that gives us the same goodness as the current
      * tile position we're looking at. Therefore we have:
      *
-     *   desirability * DIST_FACTOR^total_MC =
+     *   desirability * DIST_FACTOR^dist =
      *               BEST_POSSIBLE_SCORE * DIST_FACTOR^(max distance)      (1)
      *
      * and then solve for max_dist. We only want to change max_dist when
@@ -360,20 +369,19 @@ enum unit_move_result manage_auto_explorer(struct unit *punit)
      * the conditional below. It looks cryptic, but all it is is testing which
      * of two goodnesses is bigger after taking the natural log of both sides.
      */
-    if (log_desirable + move_cost * logDF
-        > log_most_desirable + best_MC * logDF) {
+    if (log_desirable + dist * logDF
+        > log_most_desirable + best_dist * logDF) {
 
       log_most_desirable = log_desirable;
       best_tile = ptile;
-      best_MC = move_cost;
+      best_dist = dist;
 
-      /* Take the natural log and solve equation (1) above. We round
-       * max_dist down (is this correct?). */
-      max_dist = best_MC + (log_most_desirable - logBPS)/logDF;
+      /* Take the natural log and solve equation (1) above. */
+      max_dist = best_dist + (log_most_desirable - logBPS)/logDF;
     }
 
     /* Let's not go further than this */
-    if (move_cost > max_dist) {
+    if (dist > max_dist) {
       break;
     }
   } pf_map_move_costs_iterate_end;

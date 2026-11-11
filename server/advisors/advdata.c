@@ -43,6 +43,7 @@
 #include "maphand.h"
 #include "plrhand.h"
 #include "srv_log.h"
+#include "srv_main.h"
 #include "unittools.h"
 
 /* server/advisors */
@@ -143,19 +144,27 @@ static void adv_data_city_impr_calc(struct player *pplayer,
   Check if the player still takes advantage of EFT_TECH_PARASITE.
   Research is useless if there are still techs which may be given to the
   player for free.
+
+  The test is the one do_tech_parasite_effects() makes when it grants a
+  tech: enough other research teams know it.
 **************************************************************************/
 static bool player_has_really_useful_tech_parasite(struct player* pplayer)
 {
-  struct research *presearch, *aresearch;
-  int players_needed = get_player_bonus(pplayer, EFT_TECH_PARASITE);
+  struct research *presearch;
+  int mod_abs = get_player_bonus(pplayer, EFT_TECH_PARASITE);
+  int mod = (research_count()
+             * get_player_bonus(pplayer, EFT_TECH_PARASITE_PCT_MAX)) / 100;
 
-  if (players_needed == 0) {
+  if (mod <= 0 && mod_abs <= 0) {
     return FALSE;
+  }
+  if (mod <= 0 || (mod_abs > 0 && mod_abs <= mod)) {
+    mod = mod_abs;
   }
 
   presearch = research_get(pplayer);
   advance_index_iterate(A_FIRST, tech) {
-    int players_having;
+    int teams_knowing;
 
     if (!research_invention_gettable(presearch, tech,
                                      game.info.tech_parasite_allow_holes)
@@ -163,22 +172,16 @@ static bool player_has_really_useful_tech_parasite(struct player* pplayer)
       continue;
     }
 
-    players_having = 0;
+    teams_knowing = 0;
 
-    players_iterate_alive(aplayer) {
-      if (aplayer == pplayer) {
-        continue;
-      }
-
-      aresearch = research_get(aplayer);
-      if (TECH_KNOWN == research_invention_state(aresearch, tech)
-          || aresearch->researching == tech) {
-        players_having++;
-        if (players_having >= players_needed) {
+    researches_iterate(aresearch) {
+      if (TECH_KNOWN == research_invention_state(aresearch, tech)) {
+        teams_knowing++;
+        if (teams_knowing >= mod) {
           return TRUE;
         }
       }
-    } players_iterate_alive_end;
+    } researches_iterate_end;
   } advance_index_iterate_end;
 
   return FALSE;
@@ -237,7 +240,7 @@ static void count_my_units(struct player *pplayer)
     if (utype_can_do_action(punit->utype, ACTION_AIRLIFT)) {
       adv->stats.units.airliftable++;
     }
-    if (can_upgrade_unittype(pplayer, unit_type_get(punit)) >= 0) {
+    if (can_upgrade_unittype(pplayer, unit_type_get(punit)) != nullptr) {
       adv->stats.units.upgradeable++;
     }
   } unit_list_iterate_end;
@@ -357,8 +360,11 @@ bool adv_data_phase_init(struct player *pplayer, bool is_new_phase)
         }
 
         /* The idea is that while our enemies don't have any offensive
-         * seaborne units, we don't have to worry. Go on the offensive! */
-        if (unit_type_get(punit)->attack_strength > 1) {
+         * seaborne units, we don't have to worry. Go on the offensive!
+         * Classes that can also move on land (air units, missiles) do
+         * not need the sea to reach us. */
+        if (pclass->adv.land_move == MOVE_NONE
+            && unit_type_get(punit)->attack_strength > 1) {
           if (is_ocean_tile(unit_tile(punit))) {
             Continent_id continent = tile_continent(unit_tile(punit));
 
@@ -373,7 +379,6 @@ bool adv_data_phase_init(struct player *pplayer, bool is_new_phase)
             } adjc_iterate_end;
           }
         }
-        continue;
       }
 
       /* If our enemy builds missiles, worry about missile defense. */
@@ -473,12 +478,12 @@ bool adv_data_phase_init(struct player *pplayer, bool is_new_phase)
     struct adv_dipl *dip = adv_dipl_get(pplayer, aplayer);
 
     dip->allied_with_enemy = FALSE;
-    players_iterate(check_pl) {
+    players_iterate_alive(check_pl) {
       if (pplayers_allied(aplayer, check_pl)
           && player_diplstate_get(pplayer, check_pl)->type == DS_WAR) {
         dip->allied_with_enemy = TRUE;
       }
-    } players_iterate_end;
+    } players_iterate_alive_end;
   } players_iterate_end;
 
   adv->dipl.spacerace_leader = player_leading_spacerace();
@@ -732,6 +737,12 @@ void adv_data_init(struct player *pplayer)
   } players_iterate_end;
 
   adv_data_default(pplayer);
+
+  if (game_was_started()) {
+    /* A player made mid-game (civil war, /create) misses the analysis
+     * the game start runs for everybody. */
+    adv_data_analyze_rulesets(pplayer);
+  }
 }
 
 /**********************************************************************//**
@@ -1008,6 +1019,7 @@ void adv_best_government(struct player *pplayer)
 
   if (adv->govt_reeval == 0) {
     const struct research *presearch = research_get(pplayer);
+    const struct player_economic real_rates = pplayer->economic;
 
     governments_iterate(gov) {
       adv_want val = 0;
@@ -1030,8 +1042,11 @@ void adv_best_government(struct player *pplayer)
 
         pplayer->government = gov;
         /* Ideally we should change tax rates here, but since
-         * this is a rather big CPU operation, we'd rather not. */
-        check_player_max_rates(pplayer);
+         * this is a rather big CPU operation, we'd rather not.
+         * Each trial starts from the real rates, so the order the
+         * governments are tried in does not matter. */
+        pplayer->economic = real_rates;
+        player_limit_to_max_rates(pplayer);
         city_list_iterate(pplayer->cities, acity) {
           auto_arrange_workers(acity);
         } city_list_iterate_end;
@@ -1066,6 +1081,7 @@ void adv_best_government(struct player *pplayer)
     } governments_iterate_end;
     /* Now reset our gov to it's real state. */
     pplayer->government = current_gov;
+    pplayer->economic = real_rates;
     city_list_iterate(pplayer->cities, acity) {
       auto_arrange_workers(acity);
     } city_list_iterate_end;
