@@ -48,3 +48,19 @@ Test(advdata, upgradeable_counts_obsolete_units_only)
                "upgradeable = %d",
                adv_data_get(pplayer, nullptr)->stats.units.upgradeable);
 }
+
+/* A player created once the game is running (a civil war's rebels, a
+ * /create) gets the same building analysis as those there at the
+ * start: Harbour adds food per tile, so it is fully calculated. */
+Test(advdata, player_created_in_game_gets_impr_calc)
+{
+  const struct impr_type *harbour = improvement_by_rule_name("Harbour");
+  struct player *pplayer;
+
+  set_server_state(S_S_RUNNING);
+  pplayer = fx_ai_player(nullptr);
+
+  cr_expect_eq(pplayer->server.adv->impr_calc[improvement_index(harbour)],
+               ADV_IMPR_CALCULATE_FULL, "impr_calc %d",
+               pplayer->server.adv->impr_calc[improvement_index(harbour)]);
+}

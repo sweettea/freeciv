@@ -43,6 +43,7 @@
 #include "maphand.h"
 #include "plrhand.h"
 #include "srv_log.h"
+#include "srv_main.h"
 #include "unittools.h"
 
 /* server/advisors */
@@ -732,6 +733,12 @@ void adv_data_init(struct player *pplayer)
   } players_iterate_end;
 
   adv_data_default(pplayer);
+
+  if (game_was_started()) {
+    /* A player made mid-game (civil war, /create) misses the analysis
+     * the game start runs for everybody. */
+    adv_data_analyze_rulesets(pplayer);
+  }
 }
 
 /**********************************************************************//**
