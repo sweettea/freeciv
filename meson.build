@@ -1784,6 +1784,7 @@ if server_type != 'disabled'
       'tests/advdata_test.c',
       'tests/advruleset_test.c',
       'tests/autoexplorer_test.c',
+      'tests/advgoto_test.c',
       'tests/path_finding_test.c',
       include_directories: [server_inc, include_directories('ai/default')],
       sources: [verhdr],

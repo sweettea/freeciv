@@ -563,10 +563,12 @@ static unsigned stack_risk(const struct tile *ptile,
   risk += danger * risk_cost->fearfulness;
 
   /* Adjust for the risk that we might become stuck (for an indefinite period)
-   * if we enter or try to enter the tile. */
+   * if we enter or try to enter the tile. A unit that ignores ZOC
+   * (get_zoc unset) cannot be stuck by it. */
   if (risk_cost->enemy_zoc_cost != 0
       && (is_non_allied_city_tile(ptile, param->owner)
-          || !is_plr_zoc_srv(param->owner, ptile, param->map)
+          || (param->get_zoc != nullptr
+              && !is_plr_zoc_srv(param->owner, ptile, param->map))
           || is_non_allied_unit_tile(ptile, param->owner,
                                      utype_has_flag(param->utype, UTYF_FLAGLESS)))) {
     /* We could become stuck. */
