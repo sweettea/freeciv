@@ -50,3 +50,22 @@ Test(autoexplorer, likely_native_reads_the_known_neighbours)
   cr_expect_eq(native, 50 + 50 / MAP_NUM_VALID_DIRS * MAP_NUM_VALID_DIRS,
                "likely_native() = %d", native);
 }
+
+/* An AI explorer wants a hut on a tile its player knows, whatever its
+ * hut handicap: H_HUTS hides only huts in unexplored territory. The
+ * default skill level, easy, has H_HUTS. The whole map is known, so
+ * the hut is the tile's only value. */
+Test(autoexplorer, ai_explorer_wants_known_hut)
+{
+  struct player *pplayer = fx_ai_player(nullptr);
+  struct unit *explorer = fx_unit(pplayer, "Explorer", 2, 5, 0);
+  struct tile *hut = fx_tile(4, 5);
+  int desirable;
+
+  tile_add_extra(hut, extra_type_by_rule_name("Hut"));
+  fx_show_all(pplayer);
+  cr_assert(has_handicap(pplayer, H_HUTS));
+
+  desirable = explorer_desirable(hut, pplayer, explorer);
+  cr_expect_gt(desirable, 0, "known hut desirable %d", desirable);
+}

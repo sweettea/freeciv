@@ -254,8 +254,7 @@ static int explorer_desirable(struct tile *ptile, struct player *pplayer,
     desirable = 0;
   }
 
-  if ((!is_ai(pplayer) || !has_handicap(pplayer, H_HUTS))
-      && map_is_known(ptile, pplayer)
+  if (map_is_known(ptile, pplayer)
       && unit_can_enter_hut(punit, ptile)) {
     /* We want to explore huts whenever we can,
      * even if doing so will not uncover any tiles. */
