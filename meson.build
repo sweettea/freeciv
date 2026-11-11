@@ -1777,6 +1777,7 @@ if server_type != 'disabled'
     unit_tests = executable('freeciv-tests',
       'tests/fixture.c',
       'tests/fixture_test.c',
+      'tests/fixture_ai_test.c',
       include_directories: [server_inc, include_directories('ai/default')],
       sources: [verhdr],
       c_args: ['-DFX_DATA_DIR="@0@"'.format(

@@ -61,6 +61,7 @@
 #include "stdinhand.h"
 
 /* server/advisors */
+#include "advdata.h"
 #include "advruleset.h"
 #include "infracache.h"
 
@@ -72,6 +73,7 @@
 
 /* ai */
 #include "aitraits.h"
+#include "difficulty.h"
 
 #include "fixture.h"
 
@@ -83,6 +85,7 @@ static int fx_ncities;
 static struct unit *fx_units[FX_MAX_OBJECTS];
 static int fx_nunits;
 static double fx_last_setup;
+static bool fx_in_phase;
 
 /**********************************************************************//**
   Seconds on the monotonic clock.
@@ -130,6 +133,7 @@ void fx_init(const char *ruleset)
 
   fx_ncities = 0;
   fx_nunits = 0;
+  fx_in_phase = FALSE;
 
   srv_init();
   /* A fixed seed, so a test that draws random numbers (directions,
@@ -216,6 +220,14 @@ void fx_fini(void)
 {
   int i;
 
+  if (fx_in_phase) {
+    players_iterate(pplayer) {
+      CALL_PLR_AI_FUNC(phase_finished, pplayer, pplayer);
+      adv_data_phase_done(pplayer);
+    } players_iterate_end;
+    fx_in_phase = FALSE;
+  }
+
   for (i = 0; i < fx_nunits; i++) {
     struct unit *punit = fx_units[i];
 
@@ -300,15 +312,15 @@ void fx_set_terrain(int x, int y, const char *rule_name)
 }
 
 /**********************************************************************//**
-  See fixture.h.
+  A new player of AI type `ai_tname`, as fx_player() describes.
 **************************************************************************/
-struct player *fx_player(void)
+static struct player *fx_new_player(const char *ai_tname)
 {
-  struct player *pplayer = server_create_player(-1, default_ai_type_name(),
-                                                nullptr, FALSE);
+  struct player *pplayer = server_create_player(-1, ai_tname, nullptr,
+                                                FALSE);
   struct nation_type *pnation;
 
-  cr_assert_not_null(pplayer, "could not create a player");
+  cr_assert_not_null(pplayer, "could not create a %s player", ai_tname);
   server_player_init(pplayer, TRUE, TRUE);
 
   pnation = pick_a_nation(nullptr, TRUE, FALSE, NOT_A_BARBARIAN);
@@ -318,6 +330,51 @@ struct player *fx_player(void)
   pplayer->is_alive = TRUE;
 
   return pplayer;
+}
+
+/**********************************************************************//**
+  See fixture.h.
+**************************************************************************/
+struct player *fx_player(void)
+{
+  return fx_new_player(default_ai_type_name());
+}
+
+/**********************************************************************//**
+  See fixture.h.
+**************************************************************************/
+struct player *fx_ai_player(const char *ai_name)
+{
+  struct player *pplayer;
+
+  if (ai_name == nullptr) {
+    ai_name = default_ai_type_name();
+  }
+  cr_assert_not_null(ai_type_by_name(ai_name),
+                     "the %s AI is not compiled in", ai_name);
+  pplayer = fx_new_player(ai_name);
+
+  /* As aifill() makes an AI player. */
+  pplayer->ai_common.skill_level = game.info.skill_level;
+  set_as_ai(pplayer);
+  set_ai_level_directer(pplayer, game.info.skill_level);
+  CALL_PLR_AI_FUNC(gained_control, pplayer, pplayer);
+
+  return pplayer;
+}
+
+/**********************************************************************//**
+  See fixture.h.
+**************************************************************************/
+void fx_phase_begin(void)
+{
+  /* As begin_phase() does first, for all players in one phase and in
+   * player order. */
+  players_iterate(pplayer) {
+    adv_data_phase_init(pplayer, TRUE);
+    CALL_PLR_AI_FUNC(phase_begin, pplayer, pplayer, TRUE);
+  } players_iterate_end;
+  fx_in_phase = TRUE;
 }
 
 /**********************************************************************//**

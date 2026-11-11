@@ -70,6 +70,20 @@ void fx_set_terrain(int x, int y, const char *rule_name);
  * is the server's default one, as for any player. */
 struct player *fx_player(void);
 
+/* A new AI-controlled player of AI type `ai_name` (nullptr for the
+ * server's default, "classic" in a stock build), set up as aifill()
+ * sets one up: skill level from the game, AI control gained. The AI
+ * type's per-player, per-city and per-unit data are allocated as the
+ * player, its cities and its units are made. */
+struct player *fx_ai_player(const char *ai_name);
+
+/* Start a phase for every player as begin_phase() does: the advisor
+ * data and each AI's phase data (diplomacy intel, danger, the
+ * per-phase caches). Call it after placing players, cities and units
+ * and before calling AI code that reads them; fx_fini() ends the
+ * phase. */
+void fx_phase_begin(void);
+
 /* Put two players at war with each other. */
 void fx_war(struct player *a, struct player *b);
 
