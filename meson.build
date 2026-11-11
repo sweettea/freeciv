@@ -304,6 +304,13 @@ else
     aimodcount = aimodcount + 1
     aisrc = [ aisrc, 'ai/stub/stubai.c' ]
   endif
+  if get_option('aimodules').contains('unfixed')
+    priv_conf_data.set('AI_MOD_STATIC_UNFIXED', 1)
+    if aimodcount == 0
+      priv_conf_data.set('AI_MOD_DEFAULT', '"unfixed"')
+    endif
+    aimodcount = aimodcount + 1
+  endif
 
   if aimodcount == 0
     error('No AI modules enabled, but at least one needed')
@@ -1655,6 +1662,49 @@ ais = static_library('fc_ai',
   sources: [verhdr, specenum],
   include_directories: [server_inc, include_directories('ai/default')]
   )
+
+if get_option('aimodules').contains('unfixed')
+# Vendored copy of the stock AI (see ai/unfixed/README). The
+# force-included unfixed_syms.h renames every global the copies define,
+# so they link beside ai/default without their sources changing.
+ais_unfixed = static_library('fc_ai_unfixed',
+  'ai/unfixed/unfixedai.c',
+  'ai/unfixed/classic/classicai.c',
+  'ai/unfixed/default/daiair.c',
+  'ai/unfixed/default/daiactions.c',
+  'ai/unfixed/default/daicity.c',
+  'ai/unfixed/default/daidata.c',
+  'ai/unfixed/default/daidiplomacy.c',
+  'ai/unfixed/default/daidiplomat.c',
+  'ai/unfixed/default/daidomestic.c',
+  'ai/unfixed/default/daieffects.c',
+  'ai/unfixed/default/daiferry.c',
+  'ai/unfixed/default/daiguard.c',
+  'ai/unfixed/default/daihand.c',
+  'ai/unfixed/default/daihunter.c',
+  'ai/unfixed/default/dailog.c',
+  'ai/unfixed/default/daimilitary.c',
+  'ai/unfixed/default/daiparadrop.c',
+  'ai/unfixed/default/daiplayer.c',
+  'ai/unfixed/default/daisanity.c',
+  'ai/unfixed/default/daisettler.c',
+  'ai/unfixed/default/daitech.c',
+  'ai/unfixed/default/daitools.c',
+  'ai/unfixed/default/daiunit.c',
+  sources: [verhdr, specenum],
+  c_args: ['-include',
+           meson.current_source_dir() / 'ai' / 'unfixed' / 'unfixed_syms.h'],
+  include_directories: [include_directories('ai/unfixed/default',
+                                            'ai/unfixed/classic'),
+                        server_inc]
+  )
+ais = [ais, ais_unfixed]
+
+test('unfixed-frozen',
+     find_program('scripts/check-unfixed-frozen.sh'),
+     args: [meson.current_build_dir()],
+     depends: ais)
+endif
 
 endif
 
