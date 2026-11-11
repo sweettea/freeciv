@@ -2279,6 +2279,111 @@ blocked_find_target_city(const struct action *act,
 }
 
 /**********************************************************************//**
+  Is blocker, a unit action that would block another action, enabled for
+  actor_unit against the blocked action's (resolved) targets?
+**************************************************************************/
+static bool blocker_is_enabled(const struct civ_map *nmap,
+                               const struct action *blocker,
+                               const struct unit *actor_unit,
+                               const struct tile *target_tile,
+                               const struct city *target_city,
+                               const struct unit *target_unit)
+{
+  switch (action_get_target_kind(blocker)) {
+  case ATK_CITY:
+    /* No target: can't be enabled. */
+    return target_city != nullptr
+           && is_action_enabled_unit_on_city(nmap, blocker->id,
+                                             actor_unit, target_city);
+  case ATK_UNIT:
+    return target_unit != nullptr
+           && is_action_enabled_unit_on_unit(nmap, blocker->id,
+                                             actor_unit, target_unit);
+  case ATK_STACK:
+    return target_tile != nullptr
+           && is_action_enabled_unit_on_stack(nmap, blocker->id,
+                                              actor_unit, target_tile);
+  case ATK_TILE:
+    return target_tile != nullptr
+           && is_action_enabled_unit_on_tile(nmap, blocker->id,
+                                             actor_unit, target_tile,
+                                             nullptr);
+  case ATK_EXTRAS:
+    return target_tile != nullptr
+           && is_action_enabled_unit_on_extras(nmap, blocker->id,
+                                               actor_unit, target_tile,
+                                               nullptr);
+  case ATK_SELF:
+    return is_action_enabled_unit_on_self(nmap, blocker->id, actor_unit);
+  case ATK_COUNT:
+    fc_assert_action(action_id_get_target_kind(blocker->id) != ATK_COUNT,
+                     return FALSE);
+    break;
+  }
+
+  return FALSE;
+}
+
+/**********************************************************************//**
+  The reference form of action_is_blocked_by(): every action id is
+  visited, in id order, and the first enabled unit action that would
+  block act is returned.
+**************************************************************************/
+static struct action *
+action_is_blocked_by_scan(const struct civ_map *nmap,
+                          const struct action *act,
+                          const struct unit *actor_unit,
+                          const struct tile *target_tile,
+                          const struct city *target_city,
+                          const struct unit *target_unit)
+{
+  action_iterate(blocker_id) {
+    struct action *blocker = action_by_number(blocker_id);
+
+    if (action_get_actor_kind(blocker) != AAK_UNIT) {
+      /* Currently, only unit's actions may block each other */
+      continue;
+    }
+
+    if (!action_would_be_blocked_by(act, blocker)) {
+      /* It doesn't matter if it is legal. It won't block the action. */
+      continue;
+    }
+
+    if (blocker_is_enabled(nmap, blocker, actor_unit,
+                           target_tile, target_city, target_unit)) {
+      return blocker;
+    }
+  } action_iterate_end;
+
+  /* Not blocked. */
+  return nullptr;
+}
+
+/**********************************************************************//**
+  The form of action_is_blocked_by() that is used when the oracle is off.
+**************************************************************************/
+static struct action *
+action_is_blocked_by_fast(const struct civ_map *nmap,
+                          const struct action *act,
+                          const struct unit *actor_unit,
+                          const struct tile *target_tile,
+                          const struct city *target_city,
+                          const struct unit *target_unit)
+{
+  return action_is_blocked_by_scan(nmap, act, actor_unit,
+                                   target_tile, target_city, target_unit);
+}
+
+/* FREECIV_ACTION_BLOCK_CHECK=1: compute both forms of every
+ * action_is_blocked_by() answer, log_error() any difference and return
+ * the reference's. -1 until the environment has been read. */
+static int action_block_check_mode = -1;
+static long action_block_checks = 0;
+static long action_block_mismatches = 0;
+static int action_block_check_turn = -1;
+
+/**********************************************************************//**
   Returns the action that blocks the specified action or nullptr if the
   specified action isn't blocked.
 
@@ -2297,85 +2402,44 @@ struct action *action_is_blocked_by(const struct civ_map *nmap,
   const struct city *target_city
       = blocked_find_target_city(act, actor_unit, target_tile,
                                  target_city_arg, target_unit);
+  struct action *fast, *ref;
 
-  action_iterate(blocker_id) {
-    struct action *blocker = action_by_number(blocker_id);
+  if (action_block_check_mode < 0) {
+    const char *check = getenv("FREECIV_ACTION_BLOCK_CHECK");
 
-    if (action_get_actor_kind(blocker) != AAK_UNIT) {
-      /* Currently, only unit's actions may block each other */
-      continue;
-    }
+    action_block_check_mode
+      = (check != nullptr && check[0] != '\0' && check[0] != '0') ? 1 : 0;
+  }
 
-    if (!action_would_be_blocked_by(act, blocker)) {
-      /* It doesn't matter if it is legal. It won't block the action. */
-      continue;
-    }
+  fast = action_is_blocked_by_fast(nmap, act, actor_unit,
+                                   target_tile, target_city, target_unit);
+  if (action_block_check_mode == 0) {
+    return fast;
+  }
 
-    switch (action_get_target_kind(blocker)) {
-    case ATK_CITY:
-      if (!target_city) {
-        /* Can't be enabled. No target. */
-        continue;
-      }
-      if (is_action_enabled_unit_on_city(nmap, blocker->id,
-                                         actor_unit, target_city)) {
-        return blocker;
-      }
-      break;
-    case ATK_UNIT:
-      if (!target_unit) {
-        /* Can't be enabled. No target. */
-        continue;
-      }
-      if (is_action_enabled_unit_on_unit(nmap, blocker->id,
-                                         actor_unit, target_unit)) {
-        return blocker;
-      }
-      break;
-    case ATK_STACK:
-      if (!target_tile) {
-        /* Can't be enabled. No target. */
-        continue;
-      }
-      if (is_action_enabled_unit_on_stack(nmap, blocker->id,
-                                          actor_unit, target_tile)) {
-        return blocker;
-      }
-      break;
-    case ATK_TILE:
-      if (!target_tile) {
-        /* Can't be enabled. No target. */
-        continue;
-      }
-      if (is_action_enabled_unit_on_tile(nmap, blocker->id,
-                                         actor_unit, target_tile, nullptr)) {
-        return blocker;
-      }
-      break;
-    case ATK_EXTRAS:
-      if (!target_tile) {
-        /* Can't be enabled. No target. */
-        continue;
-      }
-      if (is_action_enabled_unit_on_extras(nmap, blocker->id,
-                                           actor_unit, target_tile, nullptr)) {
-        return blocker;
-      }
-      break;
-    case ATK_SELF:
-      if (is_action_enabled_unit_on_self(nmap, blocker->id, actor_unit)) {
-        return blocker;
-      }
-      break;
-    case ATK_COUNT:
-      fc_assert_action(action_id_get_target_kind(blocker->id) != ATK_COUNT,
-                       continue);
-      break;
-    }
-  } action_iterate_end;
+  ref = action_is_blocked_by_scan(nmap, act, actor_unit,
+                                  target_tile, target_city, target_unit);
+  action_block_checks++;
+  if (fast != ref) {
+    action_block_mismatches++;
+    log_error("action-block-check mismatch turn=%d action=%s unit=%d"
+              " tile=(%d,%d) fast=%s ref=%s", game.info.turn,
+              action_rule_name(act),
+              actor_unit != nullptr ? actor_unit->id : -1,
+              TILE_XY(target_tile),
+              fast != nullptr ? action_rule_name(fast) : "-",
+              ref != nullptr ? action_rule_name(ref) : "-");
+  }
+  if (action_block_checks % 100000 == 0
+      || game.info.turn != action_block_check_turn) {
+    /* Running totals, at least once a turn, so short games report. */
+    action_block_check_turn = game.info.turn;
+    log_normal("action-block-check turn=%d checks=%ld mismatches=%ld",
+               game.info.turn, action_block_checks,
+               action_block_mismatches);
+  }
 
-  /* Not blocked. */
-  return nullptr;
+  return ref;
 }
 
 /**********************************************************************//**
