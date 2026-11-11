@@ -156,3 +156,36 @@ Test(daiunit, invasion_counts_attacks)
                def_ai_city_data(target, ait)->invasion.attack);
   cr_expect_eq(def_ai_city_data(target, ait)->invasion.occupy, 1);
 }
+
+/* Musketeers on Hills defend at twice their rating, so a Catapult and
+ * a Knights next to them (combined attack below that) are no danger;
+ * adding a second Catapult is. */
+Test(daiunit, hills_danger_uses_defence_squared)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *us = fx_ai_player(nullptr);
+  struct player *enemy = fx_ai_player(nullptr);
+  struct unit *musketeers;
+  enum override_bool result = NO_OVERRIDE;
+  int def, att;
+
+  fx_war(us, enemy);
+  fx_set_terrain(5, 5, "Hills");
+  musketeers = fx_unit(us, "Musketeers", 5, 5, 0);
+  att = adv_unit_att_rating(fx_unit(enemy, "Catapult", 6, 5, 0));
+  att += adv_unit_att_rating(fx_unit(enemy, "Knights", 6, 5, 0));
+  fx_show_all(us);
+  fx_phase_begin();
+
+  def = adv_unit_def_rating_basic(musketeers);
+  cr_assert_gt(att, def);
+  cr_assert_lt(att, 2 * def);
+  dai_consider_tile_dangerous(ait, fx_tile(5, 5), musketeers, &result);
+  cr_expect_eq(result, OVERRIDE_FALSE, "attack %d against defence %d on Hills"
+               " read as dangerous", att, def);
+
+  fx_unit(enemy, "Catapult", 4, 5, 0);
+  result = NO_OVERRIDE;
+  dai_consider_tile_dangerous(ait, fx_tile(5, 5), musketeers, &result);
+  cr_expect_eq(result, OVERRIDE_TRUE);
+}

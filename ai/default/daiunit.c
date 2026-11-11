@@ -3251,7 +3251,9 @@ void dai_consider_tile_dangerous(struct ai_type *ait, struct tile *ptile,
   extras_bonus += tile_extras_defense_bonus(ptile, unit_type_get(punit));
 
   db += (db * extras_bonus) / 100;
-  d = adv_unit_def_rating_basic_squared(punit) * db;
+  /* db is the defence multiplier times ten; the rating is squared, so
+   * the multiplier is too. */
+  d = adv_unit_def_rating_basic_squared(punit) * db / 10 * db;
 
   adjc_iterate(&(wld.map), ptile, ptile1) {
     if (has_handicap(pplayer, H_FOG)
