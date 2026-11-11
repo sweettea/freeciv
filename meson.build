@@ -1854,6 +1854,7 @@ if server_type != 'disabled'
       'tests/upkeep_test.c',
       'tests/savecompat_test.c',
       'tests/unithand_test.c',
+      'tests/airlift_test.c',
       include_directories: [server_inc, include_directories('ai/default')],
       sources: [verhdr],
       c_args: ['-DFX_DATA_DIR="@0@"'.format(
