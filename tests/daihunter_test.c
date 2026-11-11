@@ -125,3 +125,71 @@ ParameterizedTest(struct ruleset_name *p, daihunter, choice_builds_hunter,
                p->ruleset, choice->type);
   adv_free_choice(choice);
 }
+
+ParameterizedTestParameters(daihunter, missile_reaches_target)
+{
+  static struct ruleset_name params[] = {
+    { "classic" }, { "civ2civ3" },
+  };
+
+  return cr_make_param_array(struct ruleset_name, params,
+                             sizeof(params) / sizeof(params[0]));
+}
+
+/**********************************************************************//**
+  Make rows 4 to 6 Ocean, put a hard AI's Submarine at (3, 5) with a
+  Cruise Missile aboard, and return the Submarine. The AI is at war with
+  `*enemy`, made here.
+**************************************************************************/
+static struct unit *sub_setup(const char *ruleset, struct player **enemy)
+{
+  struct player *us;
+  struct unit *sub, *missile;
+  int x, y;
+
+  fx_init(ruleset);
+  for (y = 4; y <= 6; y++) {
+    for (x = 1; x <= 18; x++) {
+      fx_set_terrain(x, y, "Ocean");
+    }
+  }
+  game.info.skill_level = AI_LEVEL_HARD;
+  us = fx_ai_player(nullptr);
+  *enemy = fx_ai_player(nullptr);
+  fx_war(us, *enemy);
+  sub = fx_unit(us, "Submarine", 3, 5, 0);
+  missile = fx_unit(us, "Cruise Missile", 3, 5, 0);
+  cr_assert(unit_transport_load(missile, sub, FALSE));
+  fx_unit_vision(sub);
+  fx_unit_vision(missile);
+
+  return sub;
+}
+
+/* The Submarine's Cruise Missile strikes the hunted Trireme six tiles
+ * off, well inside the missile's one-turn range. */
+ParameterizedTest(struct ruleset_name *p, daihunter, missile_reaches_target,
+                  .fini = fx_fini)
+{
+  struct ai_type *ait;
+  struct player *them;
+  struct unit *sub = sub_setup(p->ruleset, &them);
+  struct unit *missile = unit_list_get(sub->transporting, 0);
+  struct unit *target = fx_unit(them, "Trireme", 9, 5, 0);
+  int target_id = target->id;
+  int missile_id = missile->id;
+
+  fx_show_all(unit_owner(sub));
+  fx_show_all(them);
+  fx_phase_begin();
+  ait = ai_type_by_name(default_ai_type_name());
+  cr_log_info("%s: missile has %d move frags, target %d frags off",
+              p->ruleset, missile->moves_left,
+              6 * terrain_control.move_fragments);
+
+  dai_hunter_try_launch(ait, unit_owner(sub), sub, target);
+  cr_expect_null(game_unit_by_number(missile_id),
+                 "%s: missile still alive", p->ruleset);
+  cr_expect_null(game_unit_by_number(target_id),
+                 "%s: target still alive", p->ruleset);
+}

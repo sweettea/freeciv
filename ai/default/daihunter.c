@@ -324,7 +324,7 @@ static void dai_hunter_try_launch(struct ai_type *ait,
       pfm = pf_map_new(&parameter);
 
       pf_map_move_costs_iterate(pfm, ptile, move_cost, FALSE) {
-        if (move_cost > missile->moves_left / SINGLE_MOVE) {
+        if (move_cost > missile->moves_left) {
           break;
         }
         if (tile_city(ptile)
