@@ -1782,6 +1782,7 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
       enum diplstate_type ds = player_diplstate_get(pplayer, aplayer)->type;
       struct ai_dip_intel *adip = dai_diplomacy_get(ait, pplayer, aplayer);
       struct player *ally_target;
+      bool nag_now;
       struct Clause clause;
 
       /* Meaningless values, but rather not have them unset. */
@@ -1825,7 +1826,8 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
       /* Canvass support from existing friends for our war, and try to
        * make friends with enemies. Then we wait some turns until next time
        * we spam them with our gibbering chatter. */
-      if (adip->spam <= 0) {
+      nag_now = (adip->spam <= 0);
+      if (nag_now) {
         if (!pplayers_allied(pplayer, aplayer)) {
           adip->spam = fc_rand(4) + 3; /* Bugger allies often. */
         } else {
@@ -1861,7 +1863,7 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
           break; /* No need to nag our ally */
         }
 
-        if (adip->spam <= 0) {
+        if (nag_now) {
           /* Count down patience toward AI player (one that can have spam > 0)
            * at the same speed as toward human players. */
           if (adip->ally_patience == 0) {

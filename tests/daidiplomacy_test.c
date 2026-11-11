@@ -159,3 +159,27 @@ Test(daidiplomacy, peace_offered_to_least_loved_when_no_war_planned)
   cr_assert_eq(dai_diplomacy_get(ait, a, b)->countdown, -1);
   cr_expect(proposed(a, b, CLAUSE_PEACE), "no peace offered");
 }
+
+/* An AI calls on an ally that stays at peace with its enemy, and its
+ * patience with that ally runs down over the turns. */
+Test(daidiplomacy, ally_at_peace_with_our_enemy_is_called_to_arms)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *a = fx_ai_player(nullptr);
+  struct player *ally = fx_ai_player(nullptr);
+  struct player *enemy = fx_player();
+  struct ai_dip_intel *adip;
+  int turn;
+
+  fx_diplstate(a, ally, DS_ALLIANCE);
+  fx_war(a, enemy);
+  fx_diplstate(ally, enemy, DS_PEACE);
+  fx_phase_begin();
+  adip = dai_diplomacy_get(ait, a, ally);
+
+  for (turn = 0; turn < 30 && adip->ally_patience == 0; turn++) {
+    dai_diplomacy_actions(ait, a);
+  }
+  cr_expect_lt(adip->ally_patience, 0,
+               "patience %d after %d turns", adip->ally_patience, turn);
+}
