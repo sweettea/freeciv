@@ -451,7 +451,7 @@ adv_want dai_effect_value(struct player *pplayer,
     break;
   case EFT_MOVE_BONUS:
     num = num_affected_units(peffect, adv);
-    v += (8 * v * amount + num);
+    v += (8 * c * amount + num);
     break;
   case EFT_ACTIVITY_TIME:
     /* TODO: As an override, this can be either good or bad,

@@ -81,3 +81,35 @@ Test(daieffects_sandbox, tech_parasite_pct_rounding_to_zero)
                        TRUE, 50, peffect, 1, normal_player_count());
   cr_expect_eq(v, 0, "valued at " ADV_WANT_PRINTF, v);
 }
+
+TestSuite(daieffects, .init = fx_init_classic, .fini = fx_fini);
+
+/* Classic's Magellan's Expedition gives ships +2 moves, the Lighthouse
+ * +1. To a player with no ships yet, both are worth something, and
+ * Magellan's more. */
+Test(daieffects, move_bonus_without_ships)
+{
+  struct player *pplayer = fx_ai_player(nullptr);
+  struct city *pcity = fx_city(pplayer, 5, 5, "Capital");
+  struct effect *lighthouse, *magellan;
+  struct adv_data *adv;
+  bool close;
+  adv_want v_lighthouse, v_magellan;
+
+  lighthouse = building_effect("Lighthouse", EFT_MOVE_BONUS);
+  magellan = building_effect("Magellan's Expedition", EFT_MOVE_BONUS);
+  fx_phase_begin();
+  adv = adv_data_get(pplayer, &close);
+
+  cr_assert_eq(lighthouse->value, 1);
+  cr_assert_eq(magellan->value, 2);
+  v_lighthouse = dai_effect_value(pplayer, adv, pcity, TRUE, 50,
+                                  lighthouse, 1, normal_player_count());
+  v_magellan = dai_effect_value(pplayer, adv, pcity, TRUE, 50,
+                                magellan, 1, normal_player_count());
+  cr_expect_gt(v_lighthouse, 0, "Lighthouse valued at " ADV_WANT_PRINTF,
+               v_lighthouse);
+  cr_expect_gt(v_magellan, v_lighthouse,
+               "Magellan's valued at " ADV_WANT_PRINTF ", Lighthouse at "
+               ADV_WANT_PRINTF, v_magellan, v_lighthouse);
+}
