@@ -207,3 +207,29 @@ Test(daidiplomacy, war_on_a_human_costs_love)
                "love %d, was %d",
                watcher->ai_common.love[player_index(violator)], love);
 }
+
+/* At war, an AI accepts a tech it is researching as a pure gift. */
+Test(daidiplomacy, tech_gift_accepted_at_war)
+{
+  struct player *a = fx_ai_player(nullptr);
+  struct player *h = fx_player();
+  struct advance *padvance = advance_by_rule_name("Alphabet");
+  struct treaty *ptreaty;
+
+  cr_assert_not_null(padvance);
+  fx_war(a, h);
+  fx_tech(h, "Alphabet");
+  research_get(a)->researching = advance_number(padvance);
+  fx_phase_begin();
+
+  handle_diplomacy_init_meeting_req(h, player_number(a));
+  handle_diplomacy_create_clause_req(h, player_number(a), player_number(h),
+                                     CLAUSE_ADVANCE,
+                                     advance_number(padvance));
+  ptreaty = find_treaty(h, a);
+  cr_assert_not_null(ptreaty, "no meeting");
+  cr_assert_eq(clause_list_size(ptreaty->clauses), 1);
+  cr_expect(ptreaty->plr0 == a ? ptreaty->accept0 : ptreaty->accept1,
+            "AI did not accept the gift (tech_cost_style %d)",
+            game.info.tech_cost_style);
+}

@@ -642,11 +642,11 @@ void dai_treaty_evaluate(struct ai_type *ait, struct player *pplayer,
     if (pclause->type != CLAUSE_GOLD && pclause->type != CLAUSE_MAP
         && pclause->type != CLAUSE_SEAMAP && pclause->type != CLAUSE_VISION
         && (pclause->type != CLAUSE_ADVANCE
-            || game.info.tech_cost_style != TECH_COST_CIV1CIV2
-            || pclause->value == research_get(pplayer)->tech_goal
-            || pclause->value == research_get(pplayer)->researching
-            || research_goal_tech_req(presearch, presearch->tech_goal,
-                                      pclause->value))) {
+            || (game.info.tech_cost_style == TECH_COST_CIV1CIV2
+                && pclause->value != research_get(pplayer)->tech_goal
+                && pclause->value != research_get(pplayer)->researching
+                && !research_goal_tech_req(presearch, presearch->tech_goal,
+                                           pclause->value)))) {
       /* We accept the above list of clauses as gifts, even if we are
        * at war. We do not accept tech or cities since these can be used
        * against us, unless we know that we want this tech anyway, or
