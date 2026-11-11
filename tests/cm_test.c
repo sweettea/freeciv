@@ -442,3 +442,73 @@ Test(cm, matches_brute_force)
   cr_expect_eq(mismatches, 0, "%d of %d queries (%d feasible) differ from"
                " brute force", mismatches, checked, feasible);
 }
+
+/**********************************************************************//**
+  The emergency query (minima at -FC_INFINITY, disorder allowed, tile
+  output may be negative) is the server's last resort in
+  auto_arrange_workers(). Every arrangement is sufficient, so it must
+  return the best-scoring one. Big despotic cities with little luxury
+  and no temple, where disorder is in play, are checked against the
+  brute-force oracle.
+**************************************************************************/
+Test(cm, emergency_matches_brute_force)
+{
+  static const char *stripe[] = { "Grassland", "Ocean", "Hills", "Forest",
+                                  "Plains", "Ocean" };
+  static const int rates[][3] = { /* tax, lux, sci */
+    { 40, 0, 60 }, { 60, 0, 40 }, { 30, 10, 60 },
+  };
+  struct player *owner;
+  struct city *pcity;
+  struct cm_parameter param;
+  struct cm_result *result;
+  struct oracle o;
+  int x, y, size, r, checked = 0, mismatches = 0;
+
+  for (x = 0; x < FX_MAP_XSIZE; x++) {
+    for (y = 0; y < FX_MAP_YSIZE; y++) {
+      fx_set_terrain(x, y, stripe[(x + 2 * y) % ARRAY_SIZE(stripe)]);
+    }
+  }
+  fx_set_terrain(8, 8, "Grassland");
+  owner = fx_player();
+  pcity = fx_city(owner, 8, 8, "Test");
+  fx_see_all(owner);
+  result = cm_result_new(pcity);
+  cm_init_emergency_parameter(&param);
+
+  for (size = 6; size <= 9; size++) {
+    city_size_set(pcity, size);
+    memset(pcity->specialists, 0, sizeof(pcity->specialists));
+    pcity->specialists[DEFAULT_SPECIALIST] = size;
+    for (r = 0; r < ARRAY_SIZE(rates); r++) {
+      bool exists, sufficient;
+      int best = 0, got;
+
+      owner->economic.tax = rates[r][0];
+      owner->economic.luxury = rates[r][1];
+      owner->economic.science = rates[r][2];
+      city_refresh_from_main_map(&(wld.map), pcity, nullptr);
+      oracle_run(&o, pcity);
+
+      exists = oracle_best(&o, &param, &best);
+      cr_assert(exists);
+      cm_query_result(pcity, &param, result, TRUE);
+      got = fitness(result->surplus, result->disorder, result->happy,
+                    &param, &sufficient);
+      checked++;
+      if (!result->found_a_valid || result->aborted || got != best) {
+        cr_log_error("size %d tax/lux/sci %d/%d/%d: oracle %d, cm %s %d%s",
+                     size, rates[r][0], rates[r][1], rates[r][2], best,
+                     result->found_a_valid ? "valid" : "none", got,
+                     result->aborted ? " (aborted)" : "");
+        mismatches++;
+      }
+      oracle_free(&o);
+    }
+  }
+
+  cm_result_destroy(result);
+  cr_expect_eq(mismatches, 0, "%d of %d emergency queries differ from"
+               " brute force", mismatches, checked);
+}
