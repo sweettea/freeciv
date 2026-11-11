@@ -21,6 +21,7 @@
 #endif
 
 #include <criterion/criterion.h>
+#include <criterion/parameterized.h>
 
 /* server */
 #include "maphand.h"
@@ -113,4 +114,51 @@ Test(autoexplorer, ai_explorer_avoids_unseen_units)
 
   cr_expect(same_pos(step, fx_tile(2, 4)),
             "the AI's Explorer stepped to (%d, %d)", TILE_XY(step));
+}
+
+struct explore_ruleset {
+  char ruleset[32];
+};
+
+ParameterizedTestParameters(autoexplorer_rs, discount_per_move)
+{
+  static struct explore_ruleset params[] = {
+    { "classic" }, { "civ2civ3" }, { "sandbox" },
+  };
+
+  return cr_make_param_array(struct explore_ruleset, params,
+                             sizeof(params) / sizeof(params[0]));
+}
+
+/* A human Explorer at (2, 10) with no moves left chooses between one
+ * unknown tile at (6, 10) and an unknown pair at (2, 15), (3, 15), one
+ * step farther. Its vision is set to radius_sq 2 in every ruleset, so
+ * the rulesets differ only in how a move is split into fragments; each
+ * step costs a third of a move in all three. The distance discount is
+ * per move, so the pair, worth more than twice the single tile, wins
+ * everywhere. */
+ParameterizedTest(struct explore_ruleset *p, autoexplorer_rs,
+                  discount_per_move, .fini = fx_fini)
+{
+  struct player *human;
+  struct unit *explorer;
+  struct tile *target;
+
+  fx_init(p->ruleset);
+  human = fx_player();
+  ((struct unit_type *) fx_utype("Explorer"))->vision_radius_sq = 2;
+  explorer = fx_unit(human, "Explorer", 2, 10, 0);
+  fx_show_all(human);
+  map_clear_known(fx_tile(6, 10), human);
+  map_clear_known(fx_tile(2, 15), human);
+  map_clear_known(fx_tile(3, 15), human);
+  explorer->moves_left = 0;
+
+  cr_assert_eq(manage_auto_explorer(explorer), MR_OK);
+  target = explorer->goto_tile;
+  cr_assert_not_null(target);
+  cr_expect_geq(index_to_map_pos_y(tile_index(target)), 14,
+                "%s: the Explorer heads for (%d, %d), not the pair",
+                p->ruleset, TILE_XY(target));
+  cr_log_info("%s: target (%d, %d)", p->ruleset, TILE_XY(target));
 }
