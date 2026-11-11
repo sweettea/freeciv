@@ -1927,27 +1927,26 @@ struct adv_choice *military_advisor_choose_build(struct ai_type *ait,
               || (city_data->grave_danger == 0
                   && pplayer->economic.gold
                      > impr_buy_gold_cost(pcity, pimprove, pcity->shield_stock)))
-          && ai_fuzzy(pplayer, TRUE)) {
-        if (pcity->server.adv->building_want[wall_id] > 0) {
+          && ai_fuzzy(pplayer, TRUE)
+          && pcity->server.adv->building_want[wall_id] > 0) {
+        /* building_want is hacked by assess_danger() */
+        adv_want wall_want = pcity->server.adv->building_want[wall_id];
+
+        wall_want = wall_want * (0.5 + (ai_trait_get_value(TRAIT_BUILDER, pplayer)
+                                        / (double) TRAIT_DEFAULT_VALUE / 2));
+        if (urgency == 0 && wall_want > DAI_WANT_BELOW_MIL_EMERGENCY) {
+          wall_want = DAI_WANT_BELOW_MIL_EMERGENCY;
+        }
+        if (wall_want > choice->want) {
           /* NB: great wall is under domestic */
           choice->value.building = pimprove;
-          /* building_want is hacked by assess_danger() */
-          choice->want = pcity->server.adv->building_want[wall_id];
-          choice->want = choice->want * (0.5 + (ai_trait_get_value(TRAIT_BUILDER, pplayer)
-                                                / (double) TRAIT_DEFAULT_VALUE / 2));
-          if (urgency == 0 && choice->want > DAI_WANT_BELOW_MIL_EMERGENCY) {
-            choice->want = DAI_WANT_BELOW_MIL_EMERGENCY;
-          }
+          choice->want = wall_want;
           choice->type = CT_BUILDING;
           adv_choice_set_use(choice, "defense building");
           CITY_LOG(LOG_DEBUG, pcity,
                    "m_a_c_d wants defense building with " ADV_WANT_PRINTF,
                    choice->want);
-        } else {
-          build_walls = FALSE;
         }
-      } else {
-        build_walls = FALSE;
       }
     }
 
@@ -1982,7 +1981,7 @@ struct adv_choice *military_advisor_choose_build(struct ai_type *ait,
             adv_choice_set_use(&uchoice, "police");
           }
 
-          if (!build_walls || uchoice.want > choice->want) {
+          if (uchoice.want > choice->want) {
             adv_choice_copy(choice, &uchoice);
           }
           adv_deinit_choice(&uchoice);

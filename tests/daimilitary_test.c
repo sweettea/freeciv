@@ -230,3 +230,75 @@ Test(daimilitary, civilians_are_not_defenders)
             "chose %s", utype_rule_name(choice->value.utype));
   adv_free_choice(choice);
 }
+
+/* A city with a Phalanx, Writing known, and an enemy Diplomat and
+ * Legion next to it asks for a defensive Diplomat, the want
+ * dai_choose_diplomat_defensive() puts above soldiers. The city is
+ * marked as the wonder city, so the advisor stops after the defence
+ * choice. */
+Test(daimilitary, defensive_diplomat_survives_defender_choice)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *us = fx_ai_player(nullptr);
+  struct player *them = fx_ai_player(nullptr);
+  struct city *pcity;
+  struct adv_choice *choice;
+
+  fx_war(us, them);
+  fx_tech(us, "Writing");
+  pcity = fx_city(us, 5, 5, "Home");
+  fx_unit(us, "Phalanx", 5, 5, 0);
+  fx_unit(them, "Diplomat", 6, 5, 0);
+  fx_unit(them, "Legion", 6, 6, 0);
+  us->ai_common.fuzzy = 0;
+  fx_show_all(us);
+  fx_phase_begin();
+  adv_data_get(us, nullptr)->wonder_city = pcity->id;
+
+  choice = military_advisor_choose_build(ait, &(wld.map), us, pcity,
+                                         nullptr);
+  cr_assert(def_ai_city_data(pcity, ait)->diplomat_threat);
+  cr_assert(is_unit_choice_type(choice->type), "choice type %d",
+            choice->type);
+  cr_expect_str_eq(utype_rule_name(choice->value.utype), "Diplomat");
+  cr_expect_float_eq(choice->want, 16000.0, 1e-9,
+                     "want " ADV_WANT_PRINTF, choice->want);
+  adv_free_choice(choice);
+}
+
+/* As above, with two Phalanxes and City Walls wanted and buildable:
+ * the walls do not displace the defensive Diplomat either. */
+Test(daimilitary, defensive_diplomat_survives_walls_choice)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *us = fx_ai_player(nullptr);
+  struct player *them = fx_ai_player(nullptr);
+  struct city *pcity;
+  struct adv_choice *choice;
+  const struct impr_type *walls;
+
+  fx_war(us, them);
+  fx_tech(us, "Writing");
+  fx_tech(us, "Masonry");
+  pcity = fx_city(us, 5, 5, "Home");
+  fx_unit(us, "Phalanx", 5, 5, 0);
+  fx_unit(us, "Phalanx", 5, 5, 0);
+  fx_unit(them, "Diplomat", 6, 5, 0);
+  fx_unit(them, "Legion", 6, 6, 0);
+  us->ai_common.fuzzy = 0;
+  fx_show_all(us);
+  fx_phase_begin();
+  adv_data_get(us, nullptr)->wonder_city = pcity->id;
+  walls = improvement_by_rule_name("City Walls");
+  pcity->server.adv->building_want[improvement_index(walls)] = 50;
+
+  choice = military_advisor_choose_build(ait, &(wld.map), us, pcity,
+                                         nullptr);
+  cr_assert(def_ai_city_data(pcity, ait)->diplomat_threat);
+  cr_assert(is_unit_choice_type(choice->type), "choice type %d, %s",
+            choice->type, adv_choice_rule_name(choice));
+  cr_expect_str_eq(utype_rule_name(choice->value.utype), "Diplomat");
+  cr_expect_float_eq(choice->want, 16000.0, 1e-9,
+                     "want " ADV_WANT_PRINTF, choice->want);
+  adv_free_choice(choice);
+}
