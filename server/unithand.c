@@ -4263,19 +4263,34 @@ static bool city_add_unit(struct player *pplayer, struct unit *punit,
 
   citizens_update(pcity, unit_nationality(punit));
 
-  if (act_utype->spec_type != nullptr) {
+  if (is_normal_specialist(act_utype->spec_type)) {
     Specialist_type_id sspec = specialist_index(act_utype->spec_type);
 
-    fc_assert_ret_val(pcity->specialists[sspec] < MAX_CITY_SIZE, FALSE);
-    pcity->specialists[sspec]++;
+    /* The new people join as the unit type's specialist */
+    fc_assert_ret_val(MAX_CITY_SIZE - pcity->specialists[sspec] >= amount,
+                      FALSE);
+    pcity->specialists[sspec] += amount;
     /* Refresh the city data. */
     city_refresh(pcity);
   } else {
-    fc_assert_ret_val(amount > 0, FALSE);
-    /* Make the new people something, otherwise city fails the checks */
-    pcity->specialists[DEFAULT_SPECIALIST] += amount;
-    /* Make the new people do something useful */
-    auto_arrange_workers(pcity);  /* this calls city_refresh(pcity) */
+    if (is_super_specialist(act_utype->spec_type)) {
+      Specialist_type_id sspec = specialist_index(act_utype->spec_type);
+
+      /* A superspecialist does not count in the city size */
+      fc_assert_ret_val(pcity->specialists[sspec] < MAX_CITY_SIZE, FALSE);
+      pcity->specialists[sspec]++;
+    } else {
+      fc_assert_ret_val(amount > 0, FALSE);
+    }
+    if (amount > 0) {
+      /* Make the new people something, otherwise city fails the checks */
+      pcity->specialists[DEFAULT_SPECIALIST] += amount;
+      /* Make the new people do something useful */
+      auto_arrange_workers(pcity);  /* this calls city_refresh(pcity) */
+    } else {
+      /* Refresh the city data. */
+      city_refresh(pcity);
+    }
   }
 
   /* Notify the unit owner that the unit successfully joined the city. */

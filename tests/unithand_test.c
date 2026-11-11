@@ -132,3 +132,100 @@ ParameterizedTest(struct found_case *p, unithand, found_city_size,
                  city_size_get(pcity));
   }
 }
+
+/* A joiner of type `utype` in ruleset `ruleset` with `pop_cost`, and
+ * `specialist`, if set, given to the unit type as a ruleset's
+ * "specialist" field would. */
+struct join_case {
+  char ruleset[32];
+  char utype[32];
+  int pop_cost;
+  char specialist[32];
+};
+
+static struct join_case join_cases[] = {
+  { "classic", "Settlers", 1, "" },
+  { "classic", "Settlers", 2, "" },
+  { "classic", "Settlers", 1, "scientist" },
+  { "classic", "Settlers", 2, "scientist" },
+};
+
+ParameterizedTestParameters(unithand, join_city_size)
+{
+  return cr_make_param_array(struct join_case, join_cases,
+                             ARRAY_SIZE(join_cases));
+}
+
+/* Join City adds pop_cost citizens to the city, all accounted for:
+ * working a tile or a specialist, and of the joiner's nationality. A
+ * joiner whose type has a normal specialist adds them as that
+ * specialist. */
+ParameterizedTest(struct join_case *p, unithand, join_city_size,
+                  .fini = fx_fini)
+{
+  struct unit_type *ptype;
+  struct specialist *spec = nullptr;
+  struct player *us;
+  struct unit *joiner;
+  struct city *pcity;
+  int old_size, old_spec = 0;
+  int workers = 0;
+
+  fx_init(p->ruleset);
+  ptype = unit_type_by_rule_name(p->utype);
+  cr_assert_not_null(ptype);
+  ptype->pop_cost = p->pop_cost;
+  if (p->specialist[0] != '\0') {
+    spec = specialist_by_rule_name(p->specialist);
+    cr_assert_not_null(spec);
+    ptype->spec_type = spec;
+  }
+
+  us = fx_player();
+  /* A real city, which auto_arrange_workers() may give any tile, and
+   * the owner's map record of it, which an action against it needs. */
+  fx_see_all(us);
+  create_city(us, fx_tile(10, 10), "Home", us);
+  pcity = tile_city(fx_tile(10, 10));
+  cr_assert_not_null(pcity);
+  update_dumb_city(us, pcity);
+  joiner = fx_unit(us, p->utype, 11, 10, 0);
+  fx_unit_vision(joiner);
+  old_size = city_size_get(pcity);
+  if (spec != nullptr) {
+    old_spec = pcity->specialists[specialist_index(spec)];
+  }
+
+  cr_assert(unit_perform_action(us, joiner->id, pcity->id, 0, "",
+                                ACTION_JOIN_CITY, ACT_REQ_PLAYER),
+            "%s could not join %s", p->utype, city_name_get(pcity));
+
+  city_tile_iterate_skip_free_worked(&(wld.map),
+                                     city_map_radius_sq_get(pcity),
+                                     city_tile(pcity), wtile,
+                                     _index, _x, _y) {
+    if (tile_worked(wtile) == pcity) {
+      workers++;
+    }
+  } city_tile_iterate_skip_free_worked_end;
+
+  cr_log_info("%s (pop_cost %d, specialist \"%s\"): size %d -> %d,"
+              " %d workers, %d specialists, %d citizens",
+              p->utype, p->pop_cost, p->specialist, old_size,
+              city_size_get(pcity), workers, city_specialists(pcity),
+              citizens_count(pcity));
+  cr_expect_eq(city_size_get(pcity), old_size + p->pop_cost);
+  cr_expect_eq(workers + city_specialists(pcity), city_size_get(pcity),
+               "%d workers and %d specialists in a city of size %d",
+               workers, city_specialists(pcity), city_size_get(pcity));
+  cr_expect_eq(citizens_count(pcity), city_size_get(pcity),
+               "%d citizens by nationality in a city of size %d",
+               citizens_count(pcity), city_size_get(pcity));
+  if (spec != nullptr) {
+    cr_expect_eq(pcity->specialists[specialist_index(spec)],
+                 old_spec + p->pop_cost,
+                 "%d %s joined as %d of them", p->pop_cost,
+                 specialist_rule_name(spec),
+                 pcity->specialists[specialist_index(spec)] - old_spec);
+  }
+}
