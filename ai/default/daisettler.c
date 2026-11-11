@@ -814,7 +814,7 @@ static struct cityresult *settler_map_iterate(struct ai_type *ait,
   int cost = unit_build_shield_cost_base(punit);
 
   pfm = pf_map_new(parameter);
-  pf_map_move_costs_iterate(pfm, ptile, move_cost, FALSE) {
+  pf_map_move_costs_iterate(pfm, ptile, move_cost, TRUE) {
     int turns;
 
     if (boat_cost == 0 && pclass->adv.sea_move == MOVE_NONE
