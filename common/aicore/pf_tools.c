@@ -15,6 +15,7 @@
 #include <fc_config.h>
 #endif
 
+#include <limits.h> /* UINT_MAX */
 #include <string.h>
 
 /* utility */
@@ -477,7 +478,8 @@ static unsigned amphibious_extra_cost(const struct tile *ptile,
   }
 
   if (cost != PF_IMPOSSIBLE_MC) {
-    cost *= scale;
+    /* Saturate: path finding holds any large EC at its maximum. */
+    cost = (cost > UINT_MAX / scale ? UINT_MAX : cost * scale);
   }
 
   return cost;

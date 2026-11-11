@@ -15,6 +15,8 @@
 #include <fc_config.h>
 #endif
 
+#include <limits.h> /* USHRT_MAX */
+
 /* utility */
 #include "bitvector.h"
 #include "log.h"
@@ -173,6 +175,21 @@ static inline int pf_total_CC(const struct pf_parameter *param,
                               unsigned cost, unsigned extra)
 {
   return PF_TURN_FACTOR * cost + extra * pf_move_rate(param);
+}
+
+/************************************************************************//**
+  A tile's extra cost as the nodes cache it. An EC is meant to stay well
+  below PF_TURN_FACTOR (one turn), so the cache holds 16 bits; a larger
+  value is held at the cache's maximum, just under a turn, rather than
+  wrapped.
+****************************************************************************/
+static inline unsigned short pf_tile_EC(const struct pf_parameter *param,
+                                        const struct tile *ptile,
+                                        enum known_type known)
+{
+  unsigned ec = param->get_EC(ptile, known, param);
+
+  return MIN(ec, USHRT_MAX);
 }
 
 /************************************************************************//**
@@ -383,7 +400,7 @@ static inline bool pf_normal_node_init(struct pf_normal_map *pfnm,
 
   /* Evaluate the extra cost of the destination */
   if (params->get_EC != nullptr) {
-    node->extra_tile = params->get_EC(ptile, node_known_type, params);
+    node->extra_tile = pf_tile_EC(params, ptile, node_known_type);
 #ifdef ZERO_VARIABLES_FOR_SEARCHING
   } else {
     /* Nodes are allocated by fc_calloc(), so  should be already set to 0. */
@@ -1134,7 +1151,7 @@ static inline bool pf_danger_node_init(struct pf_danger_map *pfdm,
 
   /* Evaluate the extra cost of the destination. */
   if (params->get_EC != nullptr) {
-    node->extra_tile = params->get_EC(ptile, node_known_type, params);
+    node->extra_tile = pf_tile_EC(params, ptile, node_known_type);
 #ifdef ZERO_VARIABLES_FOR_SEARCHING
   } else {
     /* Nodes are allocated by fc_calloc(), so should be already set to 0. */
@@ -2200,7 +2217,7 @@ static inline bool pf_fuel_node_init(struct pf_fuel_map *pffm,
 
   /* Evaluate the extra cost of the destination. */
   if (params->get_EC != nullptr) {
-    node->extra_tile = params->get_EC(ptile, node_known_type, params);
+    node->extra_tile = pf_tile_EC(params, ptile, node_known_type);
 #ifdef ZERO_VARIABLES_FOR_SEARCHING
   } else {
     /* Nodes are allocated by fc_calloc(), so should be already set to 0. */
