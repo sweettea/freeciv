@@ -125,3 +125,68 @@ ParameterizedTest(struct ruleset_name *p, daiparadrop,
                " -> " ADV_WANT_PRINTF, p->ruleset, before, after);
   adv_free_choice(choice);
 }
+
+/**********************************************************************//**
+  A one-tile island at (x, y), ringed with Ocean.
+**************************************************************************/
+static void make_island(int x, int y)
+{
+  int dx, dy;
+
+  for (dx = -1; dx <= 1; dx++) {
+    for (dy = -1; dy <= 1; dy++) {
+      if (dx != 0 || dy != 0) {
+        fx_set_terrain(x + dx, y + dy, "Ocean");
+      }
+    }
+  }
+}
+
+ParameterizedTestParameters(daiparadrop, below_emergency_still_chooses)
+{
+  return cr_make_param_array(struct ruleset_name, rulesets, NUM_RULESETS);
+}
+
+/* A defender want of 150 is far below a military emergency, so the
+ * paratrooper choice still runs, and two enemy island cities nine tiles
+ * off make Paratroopers worth more than that. */
+ParameterizedTest(struct ruleset_name *p, daiparadrop,
+                  below_emergency_still_chooses, .fini = fx_fini)
+{
+  struct ai_type *ait;
+  struct player *us, *them;
+  struct city *pcity;
+  struct adv_choice *choice;
+
+  fx_init(p->ruleset);
+  make_island(14, 5);
+  make_island(14, 12);
+  us = fx_ai_player(nullptr);
+  them = fx_ai_player(nullptr);
+  fx_war(us, them);
+  fx_tech(us, "Combined Arms");
+  pcity = fx_city(us, 5, 5, "Home");
+  fx_city(them, 14, 5, "Isle");
+  fx_city(them, 14, 12, "Rock");
+  fx_show_all(us);
+  fx_show_all(them);
+  fx_phase_begin();
+
+  ait = ai_type_by_name(default_ai_type_name());
+  choice = adv_new_choice();
+  choice->type = CT_DEFENDER;
+  choice->want = 150;
+  cr_assert_lt(choice->want, DAI_WANT_MILITARY_EMERGENCY);
+
+  dai_choose_paratrooper(ait, &(wld.map), us, pcity, choice, TRUE);
+  cr_log_info("%s: %s at want " ADV_WANT_PRINTF, p->ruleset,
+              choice->value.utype != nullptr
+              ? utype_rule_name(choice->value.utype) : "nothing",
+              choice->want);
+  cr_expect_eq(choice->value.utype, fx_utype("Paratroopers"),
+               "%s: chose %s at want " ADV_WANT_PRINTF, p->ruleset,
+               choice->value.utype != nullptr
+               ? utype_rule_name(choice->value.utype) : "nothing",
+               choice->want);
+  adv_free_choice(choice);
+}
