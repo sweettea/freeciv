@@ -492,6 +492,28 @@ Test(daimilitary_civ2civ3, no_trireme_for_big_land)
   adv_free_choice(choice);
 }
 
+/* The player can build a Galleon, which carries Big Land, so the trip
+ * is planned on one. Here a Galleon also needs a Harbour in the city,
+ * which Home lacks; the best boat Home can build is a Trireme. It must
+ * not build that for a Chariot. */
+Test(daimilitary_civ2civ3, no_trireme_when_galleon_needs_harbour)
+{
+  const char *const techs[] = { "Map Making", "The Wheel", "Navigation",
+                                "Seafaring", nullptr };
+  struct unit_type *galleon = unit_type_by_rule_name("Galleon");
+  struct adv_choice *choice;
+
+  requirement_vector_append(&galleon->build_reqs,
+                            req_from_str("Building", "City", FALSE, TRUE,
+                                         FALSE, "Harbour"));
+  choice = attack_overseas("Chariot", techs);
+
+  cr_expect(!builds_useless_ferry(choice, "Chariot"),
+            "builds a %s, want " ADV_WANT_PRINTF,
+            utype_rule_name(choice->value.utype), choice->want);
+  adv_free_choice(choice);
+}
+
 /* A Legion is class Land: the city still builds it a Trireme. */
 Test(daimilitary_civ2civ3, trireme_for_land)
 {
