@@ -2792,8 +2792,10 @@ void dai_manage_unit(struct ai_type *ait, struct player *pplayer,
     TIMING_LOG(AIT_DIPLOMAT, TIMER_STOP);
 
     return;
-  } else if (ptype->adv.worker
+  } else if ((ptype->adv.worker && !is_ferry)
              || unit_is_cityfounder(punit)) {
+    /* A ferry that can also do terrain work (civ2civ3 Transport) is
+     * counted and booked as a ferry, so it must be run as one. */
     dai_manage_settler(ait, pplayer, punit);
 
     return;

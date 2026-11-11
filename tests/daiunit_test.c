@@ -189,3 +189,36 @@ Test(daiunit, hills_danger_uses_defence_squared)
   dai_consider_tile_dangerous(ait, fx_tile(5, 5), musketeers, &result);
   cr_expect_eq(result, OVERRIDE_TRUE);
 }
+
+TestSuite(daiunit_civ2civ3, .init = fx_init_civ2civ3, .fini = fx_fini);
+
+/* The civ2civ3 Transport has the Workers flag. It is still managed as
+ * a ferry: carrying Workers, it makes them its passenger-in-charge. */
+Test(daiunit_civ2civ3, transport_managed_as_ferry)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *us = fx_ai_player(nullptr);
+  struct unit *transport, *workers;
+  int y;
+
+  for (y = 0; y < FX_MAP_YSIZE; y++) {
+    fx_set_terrain(10, y, "Ocean");
+    fx_set_terrain(11, y, "Ocean");
+  }
+  fx_city(us, 9, 5, "Port");
+  /* create_unit() registers the ferry with the AI. */
+  transport = create_unit(us, fx_tile(10, 5), fx_utype("Transport"), 0, 0,
+                          -1);
+  cr_assert_not_null(transport);
+  workers = fx_unit(us, "Workers", 10, 5, 0);
+  cr_assert(unit_transport_load(workers, transport, FALSE));
+  fx_show_all(us);
+  fx_phase_begin();
+
+  cr_assert(dai_is_ferry(transport, ait));
+  cr_assert(unit_type_get(transport)->adv.worker);
+  dai_manage_unit(ait, us, transport);
+  cr_expect_eq(def_ai_unit_data(transport, ait)->passenger, workers->id,
+               "passenger-in-charge %d",
+               def_ai_unit_data(transport, ait)->passenger);
+}
