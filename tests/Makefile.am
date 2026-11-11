@@ -12,6 +12,7 @@ EXTRA_DIST =	README.md			\
 		advdata_test.c			\
 		advgoto_test.c			\
 		advruleset_test.c		\
+		airlift_test.c			\
 		autoexplorer_test.c		\
 		autoworkers_test.c		\
 		bodyguard_test.c		\

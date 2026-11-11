@@ -1850,6 +1850,7 @@ if server_type != 'disabled'
       'tests/autoexplorer_test.c',
       'tests/advgoto_test.c',
       'tests/path_finding_test.c',
+      'tests/airlift_test.c',
       include_directories: [server_inc, include_directories('ai/default')],
       sources: [verhdr],
       c_args: ['-DFX_DATA_DIR="@0@"'.format(
