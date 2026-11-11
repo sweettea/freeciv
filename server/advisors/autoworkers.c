@@ -256,14 +256,14 @@ adv_want adv_workers_road_bonus(const struct civ_map *nmap,
     }
     if (potential_road[5]
         && !real_road[6] && !real_road[3]
-        && (!real_road[5] || !real_road[11])
+        && (!real_road[0] || !real_road[9])
         && (!is_slow[2] || !is_slow[4] || !is_slow[7]
             || !is_slow[1] || !is_slow[0])) {
       bonus++;
     }
     if (potential_road[7]
         && !real_road[6] && !real_road[4]
-        && (!real_road[0] || !real_road[9])
+        && (!real_road[5] || !real_road[11])
         && (!is_slow[2] || !is_slow[3] || !is_slow[0]
             || !is_slow[1] || !is_slow[5])) {
       bonus++;
@@ -403,6 +403,61 @@ static void consider_worker_action(const struct player *pplayer,
       *best_delay = delay;
     }
   }
+}
+
+/**********************************************************************//**
+  The want for the movement that building pextra on ptile saves, beyond
+  the best road already there: the road's connectivity bonus scaled by
+  the move cost it saves. Zero for an extra that is no road with a move
+  bonus.
+**************************************************************************/
+static adv_want road_move_bonus(const struct civ_map *nmap,
+                                struct tile *ptile,
+                                struct extra_type *pextra)
+{
+  struct road_type *proad = extra_road_get(pextra);
+  int mc_multiplier = 1;
+  int mc_divisor = 1;
+  int old_move_cost;
+
+  if (proad == nullptr || !road_provides_move_bonus(proad)) {
+    return 0;
+  }
+
+  old_move_cost = tile_terrain(ptile)->movement_cost * SINGLE_MOVE;
+
+  /* Here 'old' means actually 'without the evaluated': In case of
+   * removal activity it's the value after the removal. */
+
+  extra_type_by_cause_iterate(EC_ROAD, pold) {
+    if (tile_has_extra(ptile, pold) && pold != pextra) {
+      struct road_type *po_road = extra_road_get(pold);
+
+      /* This ignores the fact that new road may be native
+       * to units that old road is not. */
+      if (po_road->move_cost < old_move_cost) {
+        old_move_cost = po_road->move_cost;
+      }
+    }
+  } extra_type_by_cause_iterate_end;
+
+  if (proad->move_cost < old_move_cost) {
+    if (proad->move_cost >= terrain_control.move_fragments) {
+      mc_divisor = proad->move_cost / terrain_control.move_fragments;
+    } else {
+      if (proad->move_cost == 0) {
+        mc_multiplier = 2;
+      }
+      /* Count the saving in thirds of a move, classic's move fragment,
+       * so that it weighs the same against tile output whatever
+       * move_fragments the ruleset has. */
+      mc_multiplier += (old_move_cost - proad->move_cost) * 3
+        / terrain_control.move_fragments;
+    }
+  }
+
+  return adv_workers_road_bonus(nmap, ptile, proad)
+    * mc_multiplier / mc_divisor;
 }
 
 /**********************************************************************//**
@@ -640,7 +695,6 @@ adv_want worker_evaluate_improvements(const struct civ_map *nmap,
 
             if (base_value >= 0) {
               adv_want extra;
-              struct road_type *proad;
 
               turns = pos.turn + get_turns_for_activity_at(punit, eval_act,
                                                            ptile, pextra);
@@ -649,47 +703,7 @@ adv_want worker_evaluate_improvements(const struct civ_map *nmap,
                 turns++;
               }
 
-              proad = extra_road_get(pextra);
-
-              if (proad != nullptr && road_provides_move_bonus(proad)) {
-                int mc_multiplier = 1;
-                int mc_divisor = 1;
-                int old_move_cost = tile_terrain(ptile)->movement_cost * SINGLE_MOVE;
-
-                /* Here 'old' means actually 'without the evaluated': In case of
-                 * removal activity it's the value after the removal. */
-
-                extra_type_by_cause_iterate(EC_ROAD, pold) {
-                  if (tile_has_extra(ptile, pold) && pold != pextra) {
-                    struct road_type *po_road = extra_road_get(pold);
-
-                    /* This ignores the fact that new road may be native
-                     * to units that old road is not. */
-                    if (po_road->move_cost < old_move_cost) {
-                      old_move_cost = po_road->move_cost;
-                    }
-                  }
-                } extra_type_by_cause_iterate_end;
-
-                if (proad->move_cost < old_move_cost) {
-                  if (proad->move_cost >= terrain_control.move_fragments) {
-                    mc_divisor = proad->move_cost / terrain_control.move_fragments;
-                  } else {
-                    if (proad->move_cost == 0) {
-                      mc_multiplier = 2;
-                    } else {
-                      mc_multiplier = 1 - proad->move_cost;
-                    }
-                    mc_multiplier += old_move_cost;
-                  }
-                }
-
-                extra = adv_workers_road_bonus(nmap, ptile, proad)
-                  * mc_multiplier / mc_divisor;
-
-              } else {
-                extra = 0;
-              }
+              extra = road_move_bonus(nmap, ptile, pextra);
 
               if (extra_has_flag(pextra, EF_GLOBAL_WARMING)) {
                 extra -= pplayer->ai_common.warmth;

@@ -1786,6 +1786,8 @@ if server_type != 'disabled'
       'tests/daicity_test.c',
       'tests/daidomestic_test.c',
       'tests/daieffects_test.c',
+      'tests/daisettler_test.c',
+      'tests/autoworkers_test.c',
       include_directories: [server_inc, include_directories('ai/default')],
       sources: [verhdr],
       c_args: ['-DFX_DATA_DIR="@0@"'.format(

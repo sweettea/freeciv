@@ -115,6 +115,12 @@
  * This is % of defense % to increase want by. */
 #define DEFENSE_EMPHASIS 20
 
+/* Once a good enough site is found, the site search goes on this many
+ * turns out for each move per turn the searching unit has: three turns
+ * for a one-move settler. Counted in turns, so the horizon is the same
+ * whatever move_fragments a ruleset has. */
+#define SEARCH_TURNS_PER_MOVE 3
+
 struct tile_data_cache {
   short food;   /* Food output of the tile */
   short trade;  /* Trade output of the tile */
@@ -285,9 +291,13 @@ static struct cityresult *cityresult_fill(struct ai_type *ait,
   struct adv_data *adv = adv_data_get(pplayer, nullptr);
   struct cityresult *result;
   const struct civ_map *nmap = &(wld.map);
+  int trade_priority;
 
   fc_assert_ret_val(adv != nullptr, nullptr);
   fc_assert_ret_val(center != nullptr, nullptr);
+
+  /* Trade that is not wanted as science still becomes gold. */
+  trade_priority = MAX(adv->science_priority, adv->gold_priority);
 
   pplayer->government = adv->goal.govt.gov;
 
@@ -338,7 +348,7 @@ static struct cityresult *cityresult_fill(struct ai_type *ait,
         ptdc->trade = city_tile_output(pcity, ptile, FALSE, O_TRADE);
         /* Weighted sum */
         ptdc->sum = ptdc->food * adv->food_priority
-                    + ptdc->trade * adv->science_priority
+                    + ptdc->trade * trade_priority
                     + ptdc->shield * adv->shield_priority;
         /* Balance perfection */
         ptdc->sum *= PERFECTION / 2;
@@ -440,7 +450,7 @@ static struct cityresult *cityresult_fill(struct ai_type *ait,
     if (game.info.fulltradesize == 1) {
       int trade = result->city_center.tdc->trade
                   + result->best_other.tdc->trade;
-      result->corruption = adv->science_priority
+      result->corruption = trade_priority
                            * city_waste(pcity, O_TRADE, trade, nullptr);
     } else {
       result->corruption = 0;
@@ -449,7 +459,7 @@ static struct cityresult *cityresult_fill(struct ai_type *ait,
     /* Deduct difference in corruption and waste for real cities. Note that it
      * is possible (with notradesize) that we _gain_ value here. */
     city_size_add(pcity, 1);
-    result->corruption = adv->science_priority
+    result->corruption = trade_priority
       * (city_waste(pcity, O_TRADE, result->best_other.tdc->trade, nullptr)
          - pcity->waste[O_TRADE]);
     result->waste = adv->shield_priority
@@ -740,9 +750,12 @@ struct cityresult *city_desirability(struct ai_type *ait, struct player *pplayer
     return nullptr;
   }
 
-  /* Check if another settler has taken a spot within mindist */
-  square_iterate(&(wld.map), ptile, game.info.citymindist-1, tile1) {
-    if (citymap_is_reserved(tile1)) {
+  /* Check if another settler has taken a spot within mindist. Worked
+   * and other reserved tiles nearby are priced in cityresult_fill(). */
+  square_iterate(&(wld.map), ptile, game.info.citymindist - 1, tile1) {
+    struct unit *founder = game_unit_by_number(-citymap_read(tile1));
+
+    if (founder != nullptr && founder->goto_tile == tile1) {
       return nullptr;
     }
   } square_iterate_end;
@@ -815,7 +828,7 @@ static struct cityresult *settler_map_iterate(struct ai_type *ait,
   int cost = unit_build_shield_cost_base(punit);
 
   pfm = pf_map_new(parameter);
-  pf_map_move_costs_iterate(pfm, ptile, move_cost, FALSE) {
+  pf_map_move_costs_iterate(pfm, ptile, move_cost, TRUE) {
     int turns;
 
     if (boat_cost == 0 && pclass->adv.sea_move == MOVE_NONE
@@ -876,7 +889,7 @@ static struct cityresult *settler_map_iterate(struct ai_type *ait,
      * we don't block the establishment of a better city just one
      * further step away. */
     if (best && best->result > RESULT_IS_ENOUGH
-        && turns > parameter->move_rate /* sic -- yeah what an explanation! */
+        && turns > parameter->move_rate * SEARCH_TURNS_PER_MOVE / SINGLE_MOVE
         && best_turn < turns /*+ game.info.min_dist_bw_cities*/) {
       break;
     }
@@ -1053,6 +1066,7 @@ void dai_auto_settler_run(struct ai_type *ait, const struct civ_map *nmap,
   struct tile *best_tile = nullptr;
   struct pf_path *path = nullptr;
   struct city *pcity = nullptr;
+  struct worker_task *best_task = nullptr;
 
   /* Time it will take worker to complete its given task */
   int completion_time = 0;
@@ -1112,8 +1126,6 @@ BUILD_CITY:
   /*** Try find some work ***/
 
   if (unit_has_type_flag(punit, UTYF_WORKERS)) {
-    struct worker_task *best_task;
-
     TIMING_LOG(AIT_WORKERS, TIMER_START);
 
     /* Have nearby cities requests? */
@@ -1207,7 +1219,7 @@ BUILD_CITY:
                                 best_tile, best_act, &best_target,
                                 completion_time)) {
     if (pcity != nullptr) {
-      clear_worker_tasks(pcity);
+      clear_worker_task(pcity, best_task);
     }
   }
 
