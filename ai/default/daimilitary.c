@@ -1834,21 +1834,37 @@ struct adv_choice *military_advisor_choose_build(struct ai_type *ait,
     } normal_specialist_type_iterate_end;
   }
 
-  if (martial_need
-      && unit_list_size(pcity->tile->units) < get_city_bonus(pcity, EFT_MARTIAL_LAW_MAX)) {
-    martial_value = dai_content_effect_value(pplayer, pcity,
-                                             get_city_bonus(pcity, EFT_MARTIAL_LAW_BY_UNIT),
-                                             1, FEELING_FINAL);
+  if (martial_need) {
+    int martial_units = 0;
+
+    /* Count the units city_refresh() would take for martial law */
+    unit_list_iterate(ptile->units, punit) {
+      if (is_martial_law_unit(punit) && unit_owner(punit) == pplayer) {
+        martial_units++;
+      }
+    } unit_list_iterate_end;
+
+    if (martial_units < get_city_bonus(pcity, EFT_MARTIAL_LAW_MAX)) {
+      martial_value = dai_content_effect_value(pplayer, pcity,
+                                               get_city_bonus(pcity, EFT_MARTIAL_LAW_BY_UNIT),
+                                               1, FEELING_FINAL);
+    }
   }
 
   /* Otherwise no need to defend yet */
   if (city_data->danger != 0 || martial_value > 0) {
     struct impr_type *pimprove;
-    int num_defenders = unit_list_size(ptile->units);
+    int num_defenders = 0;
     int wall_id, danger;
     bool build_walls = TRUE;
     bool def_unit_selected = FALSE;
     int qdanger = city_data->danger * city_data->danger;
+
+    unit_list_iterate(ptile->units, punit) {
+      if (!is_special_unit(punit)) {
+        num_defenders++;
+      }
+    } unit_list_iterate_end;
 
     if (qdanger <= 0) {
       /* We only need these defenders because of Martial Law value */

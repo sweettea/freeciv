@@ -30,6 +30,7 @@
 
 /* server */
 #include "aiiface.h"
+#include "cityturn.h"
 
 /* ai/default */
 #include "daimilitary.c"
@@ -156,4 +157,76 @@ Test(daimilitary, defender_within_cost_limit)
                 40, "chose %s", utype_rule_name(choice.value.utype));
   cr_expect_str_eq(utype_rule_name(choice.value.utype), "Musketeers");
   adv_deinit_choice(&choice);
+}
+
+/* Under Monarchy (Martial_Law_Max 3) a city with an entertainer, one
+ * Phalanx, one Workers and one Settlers has room for two more police
+ * units: the civilians impose no martial law. The advisor asks for a
+ * defender. */
+Test(daimilitary, civilians_do_not_fill_martial_law)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *us = fx_ai_player(nullptr);
+  struct city *pcity;
+  struct adv_choice *choice;
+
+  fx_tech(us, "Monarchy");
+  fx_government(us, "Monarchy");
+  pcity = fx_city(us, 5, 5, "Home");
+  fx_unit(us, "Phalanx", 5, 5, 0);
+  fx_unit(us, "Workers", 5, 5, 0);
+  fx_unit(us, "Settlers", 5, 5, 0);
+  us->ai_common.fuzzy = 0;
+  fx_phase_begin();
+  /* Make the one citizen an entertainer. */
+  city_tile_iterate(&(wld.map), city_map_radius_sq_get(pcity),
+                    city_tile(pcity), ptile) {
+    if (tile_worked(ptile) == pcity && ptile != city_tile(pcity)) {
+      tile_set_worked(ptile, nullptr);
+    }
+  } city_tile_iterate_end;
+  pcity->specialists[DEFAULT_SPECIALIST] = city_size_get(pcity);
+  city_refresh(pcity);
+  cr_assert_eq(get_city_bonus(pcity, EFT_MARTIAL_LAW_MAX), 3);
+  cr_assert_eq(pcity->specialists[DEFAULT_SPECIALIST], 1, "%d specialists, size %d",
+               pcity->specialists[DEFAULT_SPECIALIST], city_size_get(pcity));
+
+  choice = military_advisor_choose_build(ait, &(wld.map), us, pcity,
+                                         nullptr);
+  cr_expect_eq(choice->type, CT_DEFENDER, "choice type %d", choice->type);
+  cr_expect_gt(choice->want, 0, "want " ADV_WANT_PRINTF, choice->want);
+  adv_free_choice(choice);
+}
+
+/* With one enemy Legion able to reach the city within three turns
+ * (urgency 1) and one Phalanx there, a Workers in the city does not
+ * count as a second defender: the advisor asks for a defender. The
+ * city is marked as the wonder city, so the advisor stops after the
+ * defence choice. */
+Test(daimilitary, civilians_are_not_defenders)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *us = fx_ai_player(nullptr);
+  struct player *them = fx_ai_player(nullptr);
+  struct city *pcity;
+  struct adv_choice *choice;
+
+  fx_war(us, them);
+  pcity = fx_city(us, 5, 5, "Home");
+  fx_unit(us, "Phalanx", 5, 5, 0);
+  fx_unit(us, "Workers", 5, 5, 0);
+  fx_unit(them, "Legion", 8, 5, 0);
+  us->ai_common.fuzzy = 0;
+  fx_show_all(us);
+  fx_phase_begin();
+  adv_data_get(us, nullptr)->wonder_city = pcity->id;
+
+  choice = military_advisor_choose_build(ait, &(wld.map), us, pcity,
+                                         nullptr);
+  cr_assert_eq(def_ai_city_data(pcity, ait)->urgency, 1);
+  cr_assert_eq(choice->type, CT_DEFENDER, "choice type %d", choice->type);
+  cr_expect(utype_has_role(choice->value.utype, L_DEFEND_GOOD)
+            || utype_has_role(choice->value.utype, L_DEFEND_OK),
+            "chose %s", utype_rule_name(choice->value.utype));
+  adv_free_choice(choice);
 }
