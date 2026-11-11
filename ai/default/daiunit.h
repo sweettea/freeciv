@@ -42,6 +42,8 @@ struct unit_ai {
   int target; /* Target we hunt */
   bv_player hunted; /* If a player is hunting us, set by that player */
   bool done;  /* We are done controlling this unit this turn */
+  int boat_wait_turn; /* Turn the current wait for a boat began, or -1.
+                       * Not saved: after a load the wait restarts. */
 
   enum ai_unit_task task;
 };

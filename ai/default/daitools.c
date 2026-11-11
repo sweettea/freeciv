@@ -696,6 +696,7 @@ void dai_unit_new_task(struct ai_type *ait, struct unit *punit,
   }
 
   unit_data->task = task;
+  unit_data->boat_wait_turn = -1;
 
   /* Verify and set the goto destination. Eventually this can be a lot more
    * stringent, but for now we don't want to break things too badly. */

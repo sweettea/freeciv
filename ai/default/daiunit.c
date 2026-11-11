@@ -1985,8 +1985,12 @@ static bool dai_find_boat_for_unit(struct ai_type *ait, struct unit *punit)
   bool alive = TRUE;
   int ferryboat = 0;
   struct pf_path *path_to_ferry = nullptr;
+  struct unit_ai *unit_data = def_ai_unit_data(punit, ait);
 
   UNIT_LOG(LOG_CARAVAN, punit, "requesting a boat!");
+  if (unit_data->boat_wait_turn < 0) {
+    unit_data->boat_wait_turn = game.info.turn;
+  }
   ferryboat = aiferry_find_boat(ait, punit, 1, &path_to_ferry);
   /* Going to meet the boat */
   if ((ferryboat <= 0)) {
@@ -2113,6 +2117,10 @@ static void dai_caravan_goto(struct ai_type *ait, struct player *pplayer,
     }
   }
 
+  if (alive && unit_transported(punit)) {
+    unit_data->boat_wait_turn = -1;
+  }
+
   /* If moving didn't kill us, and we got to the destination, handle it. */
   if (alive && real_map_distance(dest_city->tile, unit_tile(punit)) <= 1) {
     /* Release the boat! */
@@ -2236,7 +2244,8 @@ static bool dai_is_unit_tired_waiting_boat(struct ai_type *ait,
         /* If we're being transported */
         return FALSE;
       }
-      if ((punit->birth_turn + 15 < game.info.turn)) {
+      if (unit_data->boat_wait_turn >= 0
+          && unit_data->boat_wait_turn + 15 < game.info.turn) {
         /* We are tired of waiting */
         int ferrys = aiferry_avail_boats(ait, punit->owner);
 
@@ -2244,7 +2253,7 @@ static bool dai_is_unit_tired_waiting_boat(struct ai_type *ait,
           /* There are no ferrys available... give up */
           return TRUE;
         } else {
-          if (punit->birth_turn + 20 < game.info.turn) {
+          if (unit_data->boat_wait_turn + 20 < game.info.turn) {
             /* We are fed up! */
             return TRUE;
           }
@@ -3433,6 +3442,7 @@ void dai_unit_init(struct ai_type *ait, struct unit *punit)
   unit_data->passenger = 0;
   unit_data->bodyguard = 0;
   unit_data->charge = 0;
+  unit_data->boat_wait_turn = -1;
 
   unit_set_ai_data(punit, ait, unit_data);
 }

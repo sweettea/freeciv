@@ -222,3 +222,91 @@ Test(daiunit_civ2civ3, transport_managed_as_ferry)
                "passenger-in-charge %d",
                def_ai_unit_data(transport, ait)->passenger);
 }
+
+/* An old Caravan at Home (7, 5), coastal, with an overseas trade task
+ * for Partner (15, 5) across the sea at x = 8..11. Turn 30; the
+ * Caravan was built 25 turns ago. No boats. */
+static struct unit *boat_wait_scene(struct ai_type *ait, struct player *us)
+{
+  struct city *home, *partner;
+  struct unit *caravan;
+  int x, y;
+
+  for (x = 8; x <= 11; x++) {
+    for (y = 0; y < FX_MAP_YSIZE; y++) {
+      fx_set_terrain(x, y, "Ocean");
+    }
+  }
+  home = fx_city(us, 7, 5, "Home");
+  partner = fx_city(us, 15, 5, "Partner");
+  caravan = fx_unit(us, "Caravan", 7, 5, 0);
+  caravan->homecity = home->id;
+  fx_show_all(us);
+  fx_phase_begin();
+
+  game.info.turn = 30;
+  caravan->birth_turn = game.info.turn - 25;
+  dai_unit_new_task(ait, caravan, AIUNIT_TRADE, city_tile(partner));
+  cr_assert_eq(caravan->goto_tile, city_tile(partner));
+  cr_assert(!goto_is_sane(caravan, city_tile(partner)));
+  cr_assert_eq(aiferry_avail_boats(ait, us), 0);
+
+  return caravan;
+}
+
+/* The wait for a boat is timed from the request, not from the unit's
+ * birth: not tired when the target is new, nor 15 turns after asking;
+ * tired 16 turns after. */
+Test(daiunit, caravan_boat_wait_from_request)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *us = fx_ai_player(nullptr);
+  struct unit *caravan = boat_wait_scene(ait, us);
+
+  cr_expect(!dai_is_unit_tired_waiting_boat(ait, caravan),
+            "tired on the turn it got the target");
+  cr_assert(dai_find_boat_for_unit(ait, caravan));
+  game.info.turn = 45;
+  cr_expect(!dai_is_unit_tired_waiting_boat(ait, caravan),
+            "tired 15 turns after asking");
+  game.info.turn = 46;
+  cr_expect(dai_is_unit_tired_waiting_boat(ait, caravan),
+            "not tired 16 turns after asking");
+}
+
+/* A new task restarts the wait. */
+Test(daiunit, caravan_boat_wait_cleared_by_new_task)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *us = fx_ai_player(nullptr);
+  struct unit *caravan = boat_wait_scene(ait, us);
+  struct tile *dest = caravan->goto_tile;
+
+  cr_assert(dai_find_boat_for_unit(ait, caravan));
+  game.info.turn = 40;
+  dai_unit_new_task(ait, caravan, AIUNIT_TRADE, dest);
+  game.info.turn = 46;
+  cr_expect(!dai_is_unit_tired_waiting_boat(ait, caravan),
+            "tired 6 turns into the new task");
+}
+
+/* Boarding ends the wait: a Caravan that boarded and is back ashore
+ * waits afresh. */
+Test(daiunit, caravan_boat_wait_cleared_by_boarding)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *us = fx_ai_player(nullptr);
+  struct unit *caravan = boat_wait_scene(ait, us);
+  struct unit *boat = fx_unit(us, "Transport", 7, 5, 0);
+
+  cr_assert(dai_find_boat_for_unit(ait, caravan));
+  game.info.turn = 40;
+  cr_assert(unit_transport_load(caravan, boat, FALSE));
+  caravan->moves_left = 0;
+  dai_caravan_goto(ait, us, caravan, tile_city(caravan->goto_tile), FALSE,
+                   TRUE, FALSE);
+  cr_assert(unit_transport_unload(caravan));
+  game.info.turn = 46;
+  cr_expect(!dai_is_unit_tired_waiting_boat(ait, caravan),
+            "tired 6 turns after boarding");
+}
