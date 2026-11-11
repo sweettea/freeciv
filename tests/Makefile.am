@@ -42,6 +42,7 @@ EXTRA_DIST =	README.md			\
 		header_guard.sh			\
 		path_finding_test.c		\
 		pf_tools_test.c			\
+		research_test.c			\
 		rs_test_res/ruleset_is.lua	\
 		rs_test_res/ruleset_list_dist.txt \
 		rs_test_res/ruleset_list_opt.txt \
@@ -49,4 +50,5 @@ EXTRA_DIST =	README.md			\
 		rulesets_autohelp.sh.in		\
 		src-check.sh			\
 		trailing_spaces.sh		\
+		upkeep_test.c			\
 		va_list.sh

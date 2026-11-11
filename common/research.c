@@ -1075,7 +1075,7 @@ int player_tech_upkeep(const struct player *pplayer)
   members = 0;
   research_players_iterate(presearch, contributor) {
     total_research_factor += (get_player_bonus(contributor, EFT_TECH_COST_PCT) / 100.0
-                              + (is_ai(contributor)
+                              * (is_ai(contributor)
                                  ? contributor->ai_common.science_cost / 100.0
                                  : 1));
     members++;
