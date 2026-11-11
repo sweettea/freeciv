@@ -1699,6 +1699,11 @@ ais_unfixed = static_library('fc_ai_unfixed',
                         server_inc]
   )
 ais = [ais, ais_unfixed]
+
+test('unfixed-frozen',
+     find_program('scripts/check-unfixed-frozen.sh'),
+     args: [meson.current_build_dir()],
+     depends: ais)
 endif
 
 endif
