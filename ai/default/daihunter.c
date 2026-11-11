@@ -453,8 +453,19 @@ int dai_hunter_manage(struct ai_type *ait, struct player *pplayer,
   pfm = pf_map_new(&parameter);
 
   if (original_target) {
+    /* A separate map: querying pfm would advance its iteration. */
+    struct pf_map *opfm = pf_map_new(&parameter);
+    int original_dist = pf_map_move_cost(opfm, unit_tile(original_target));
+
+    pf_map_destroy(opfm);
     dai_hunter_juiciness(pplayer, punit, original_target,
                          &original_threat, &original_cost);
+    /* Reduced by distance as each candidate's threat is below. */
+    if (original_dist == PF_IMPOSSIBLE_MC) {
+      original_threat = 0;
+    } else {
+      original_threat /= original_dist + 1;
+    }
   }
 
   pf_map_move_costs_iterate(pfm, ptile, move_cost, FALSE) {

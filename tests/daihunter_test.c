@@ -193,3 +193,49 @@ ParameterizedTest(struct ruleset_name *p, daihunter, missile_reaches_target,
   cr_expect_null(game_unit_by_number(target_id),
                  "%s: target still alive", p->ruleset);
 }
+
+ParameterizedTestParameters(daihunter, prefers_closer_target)
+{
+  static struct ruleset_name params[] = {
+    { "classic" }, { "civ2civ3" },
+  };
+
+  return cr_make_param_array(struct ruleset_name, params,
+                             sizeof(params) / sizeof(params[0]));
+}
+
+/* A Horsemen still holding last turn's target, a Catapult ten tiles off,
+ * sees an identical Catapult two tiles off. Both stacks are worth the
+ * same, so the near one, its threat divided by a smaller distance, wins.
+ * No city: a fixture city fails a sanity check once units move near it. */
+ParameterizedTest(struct ruleset_name *p, daihunter, prefers_closer_target,
+                  .fini = fx_fini)
+{
+  struct ai_type *ait;
+  struct player *us, *them;
+  struct unit *far, *near, *hunter;
+  int want;
+
+  fx_init(p->ruleset);
+  game.info.skill_level = AI_LEVEL_HARD;
+  us = fx_ai_player(nullptr);
+  them = fx_ai_player(nullptr);
+  fx_war(us, them);
+  far = fx_unit(them, "Catapult", 15, 5, 0);
+  near = fx_unit(them, "Catapult", 7, 5, 0);
+  hunter = fx_unit(us, "Horsemen", 5, 5, 0);
+  fx_unit_vision(hunter);
+  fx_show_all(us);
+  fx_show_all(them);
+  fx_phase_begin();
+
+  ait = ai_type_by_name(default_ai_type_name());
+  def_ai_unit_data(hunter, ait)->target = far->id;
+
+  want = dai_hunter_manage(ait, us, hunter);
+  cr_log_info("%s: want %d, target %d (near %d, far %d)", p->ruleset, want,
+              def_ai_unit_data(hunter, ait)->target, near->id, far->id);
+  cr_expect_eq(def_ai_unit_data(hunter, ait)->target, near->id,
+               "%s: target %d, near Catapult %d, far %d", p->ruleset,
+               def_ai_unit_data(hunter, ait)->target, near->id, far->id);
+}
