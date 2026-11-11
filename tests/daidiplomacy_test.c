@@ -183,3 +183,27 @@ Test(daidiplomacy, ally_at_peace_with_our_enemy_is_called_to_arms)
   cr_expect_lt(adip->ally_patience, 0,
                "patience %d after %d turns", adip->ally_patience, turn);
 }
+
+/* An AI thinks less of a player who breaks a peace treaty, also when
+ * the victim is a human player. */
+Test(daidiplomacy, war_on_a_human_costs_love)
+{
+  struct player *watcher = fx_ai_player(nullptr);
+  struct player *violator = fx_player();
+  struct player *victim = fx_player();
+  int love;
+
+  fx_diplstate(violator, victim, DS_PEACE);
+  fx_diplstate(watcher, violator, DS_PEACE);
+  fx_phase_begin();
+  love = watcher->ai_common.love[player_index(violator)];
+
+  handle_diplomacy_cancel_pact(violator, player_number(victim),
+                               clause_type_invalid());
+  cr_assert(pplayers_at_war(violator, victim), "%s",
+            diplstate_type_name(player_diplstate_get(violator,
+                                                     victim)->type));
+  cr_expect_lt(watcher->ai_common.love[player_index(violator)], love,
+               "love %d, was %d",
+               watcher->ai_common.love[player_index(violator)], love);
+}

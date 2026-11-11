@@ -1994,7 +1994,9 @@ void dai_incident(struct ai_type *ait, enum incident_type type,
                   struct player *receiver,
                   struct player *violator, struct player *victim)
 {
-  if (!is_ai(receiver) || violator == receiver) {
+  /* A war declaration is told only to its victim, but every AI player
+   * judges the violator, whoever controls the victim. */
+  if ((!is_ai(receiver) && type != INCIDENT_WAR) || violator == receiver) {
     return;
   }
 
