@@ -1773,6 +1773,32 @@ if server_type != 'disabled'
     win_subsystem: 'console'
     )
 
+  if criterion_dep.found()
+    unit_tests = executable('freeciv-tests',
+      'tests/fixture.c',
+      'tests/fixture_test.c',
+      include_directories: [server_inc, include_directories('ai/default')],
+      sources: [verhdr],
+      c_args: ['-DFX_DATA_DIR="@0@"'.format(
+                 meson.current_source_dir() / 'data')],
+      link_with: [server_lib, common_lib, ais],
+      dependencies: [criterion_dep, m_dep, net_dep, readline_dep,
+                     gettext_dep, fcdb_dep],
+      install: false)
+    # MALLOC_PERTURB_ (which meson sets at random) makes the ruleset
+    # load ten times slower, mostly in the kernel, so it is turned off.
+    # meson reads per-test results as TAP from stdout. libfreeciv logs
+    # to stdout too, so the shell sends the suite's stdout to stderr and
+    # Criterion's TAP report to the original stdout (fd 3).
+    test('unit', find_program('sh'),
+         args: ['-c', 'exec "$0" --tap=/dev/fd/3 3>&1 1>&2', unit_tests],
+         protocol: 'tap',
+         depends: unit_tests,
+         env: ['FREECIV_DATA_PATH=' + meson.current_source_dir() / 'data',
+               'MALLOC_PERTURB_=0'],
+         timeout: 300)
+  endif
+
   install_data(
     'lua/database.lua',
     install_dir : join_paths(get_option('sysconfdir'), 'freeciv')
