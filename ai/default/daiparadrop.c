@@ -393,8 +393,8 @@ void dai_choose_paratrooper(struct ai_type *ait, const struct civ_map *nmap,
   unit_type_iterate(u_type) {
     struct unit *virtual_unit;
 
-    if (!utype_can_do_action(u_type, ACTION_PARADROP)
-        && !utype_can_do_action(u_type, ACTION_PARADROP_CONQUER)) {
+    if (!utype_can_do_action_result(u_type, ACTRES_PARADROP)
+        && !utype_can_do_action_result(u_type, ACTRES_PARADROP_CONQUER)) {
       continue;
     }
 
