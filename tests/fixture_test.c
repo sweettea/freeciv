@@ -228,3 +228,24 @@ Test(fixture, unit_vision, .init = fx_init_classic, .fini = fx_fini)
   cr_expect_eq(unit_tile(punit), fx_tile(6, 5));
   cr_expect(map_is_known_and_seen(fx_tile(7, 5), pplayer, V_MAIN));
 }
+
+/* A unit with fx_unit_vision() lets its owner see an enemy unit next to
+ * it; without, the owner only knows the map. A unit the server removes
+ * during the test is left alone by fx_fini(). */
+Test(fixture, unit_vision_shows_units, .init = fx_init_classic,
+     .fini = fx_fini)
+{
+  struct player *a = fx_player();
+  struct player *b = fx_player();
+  struct unit *ours = fx_unit(a, "Warriors", 5, 5, 0);
+  struct unit *theirs = fx_unit(b, "Warriors", 6, 5, 0);
+
+  fx_war(a, b);
+  fx_show_all(a);
+  cr_expect(!can_player_see_unit(a, theirs));
+  fx_unit_vision(ours);
+  cr_expect(can_player_see_unit(a, theirs));
+
+  wipe_unit(theirs, ULR_KILLED, ours->owner);
+  cr_expect_eq(unit_list_size(b->units), 0);
+}

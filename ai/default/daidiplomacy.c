@@ -642,11 +642,11 @@ void dai_treaty_evaluate(struct ai_type *ait, struct player *pplayer,
     if (pclause->type != CLAUSE_GOLD && pclause->type != CLAUSE_MAP
         && pclause->type != CLAUSE_SEAMAP && pclause->type != CLAUSE_VISION
         && (pclause->type != CLAUSE_ADVANCE
-            || game.info.tech_cost_style != TECH_COST_CIV1CIV2
-            || pclause->value == research_get(pplayer)->tech_goal
-            || pclause->value == research_get(pplayer)->researching
-            || research_goal_tech_req(presearch, presearch->tech_goal,
-                                      pclause->value))) {
+            || (game.info.tech_cost_style == TECH_COST_CIV1CIV2
+                && pclause->value != research_get(pplayer)->tech_goal
+                && pclause->value != research_get(pplayer)->researching
+                && !research_goal_tech_req(presearch, presearch->tech_goal,
+                                           pclause->value)))) {
       /* We accept the above list of clauses as gifts, even if we are
        * at war. We do not accept tech or cities since these can be used
        * against us, unless we know that we want this tech anyway, or
@@ -778,7 +778,8 @@ void dai_treaty_accepted(struct ai_type *ait, struct player *pplayer,
     int i = total_balance / ((city_list_size(pplayer->cities) * 10) + 1);
 
     i = MIN(i, ai->diplomacy.love_incr * 150) * 10;
-    pplayer->ai_common.love[player_index(aplayer)] += i;
+    pplayer->ai_common.love[player_index(aplayer)]
+      = MIN(pplayer->ai_common.love[player_index(aplayer)] + i, MAX_AI_LOVE);
     DIPLO_LOG(ait, LOG_DIPL2, pplayer, aplayer, "gift increased love by %d", i);
   }
 
@@ -1334,6 +1335,29 @@ static void dai_declare_war(struct ai_type *ait, struct player *pplayer,
 }
 
 /******************************************************************//**
+  The countdown value that makes us stubborn about peace once a war for
+  this reason has begun. Values below -1 count up to the neutral -1.
+**********************************************************************/
+static int war_stubbornness(enum war_reason reason)
+{
+  switch (reason) {
+  case DAI_WR_SPACE:
+  case DAI_WR_NONE:
+    return -10;
+  case DAI_WR_BEHAVIOR:
+  case DAI_WR_HATRED:
+  case DAI_WR_EXCUSE:
+    return -20;
+  case DAI_WR_ALLIANCE:
+    return -3;
+  }
+
+  fc_assert_msg(FALSE, "Unknown war reason %d.", reason);
+
+  return -1;
+}
+
+/******************************************************************//**
   Go to war. Explain to target why we did it, and set countdown to
   some negative value to make us a bit stubborn to avoid immediate
   reversal to ceasefire.
@@ -1350,33 +1374,33 @@ static void dai_go_to_war(struct ai_type *ait, struct player *pplayer,
   case DAI_WR_SPACE:
     dai_diplo_notify(target, _("*%s (AI)* Space will never be yours."),
                      player_name(pplayer));
-    adip->countdown = -10;
+    adip->countdown = war_stubbornness(reason);
     break;
   case DAI_WR_BEHAVIOR:
     dai_diplo_notify(target,
                      _("*%s (AI)* I have tolerated your vicious antics "
                        "long enough! To war!"),
                      player_name(pplayer));
-    adip->countdown = -20;
+    adip->countdown = war_stubbornness(reason);
     break;
   case DAI_WR_NONE:
     dai_diplo_notify(target, _("*%s (AI)* Peace in ... some other time."),
                      player_name(pplayer));
-    adip->countdown = -10;
+    adip->countdown = war_stubbornness(reason);
     break;
   case DAI_WR_HATRED:
     dai_diplo_notify(target,
                      _("*%s (AI)* Finally I get around to you! Did "
                        "you really think you could get away with your crimes?"),
                      player_name(pplayer));
-    adip->countdown = -20;
+    adip->countdown = war_stubbornness(reason);
     break;
   case DAI_WR_EXCUSE:
     dai_diplo_notify(target,
                      _("*%s (AI)* Your covert hostilities brought "
                        "this war upon you!"),
                      player_name(pplayer));
-    adip->countdown = -20;
+    adip->countdown = war_stubbornness(reason);
     break;
   case DAI_WR_ALLIANCE:
     if (adip->at_war_with_ally) {
@@ -1385,7 +1409,7 @@ static void dai_go_to_war(struct ai_type *ait, struct player *pplayer,
                          "your last mistake!"),
                        player_name(pplayer),
                        player_name(adip->at_war_with_ally));
-      adip->countdown = -3;
+      adip->countdown = war_stubbornness(reason);
     } else {
       /* Ooops! */
       DIPLO_LOG(ait, LOG_DIPL, pplayer, target, "Wanted to declare war "
@@ -1613,6 +1637,11 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
     return;
   }
 
+  if (has_handicap(pplayer, H_AWAY)) {
+    /* Away mode keeps the absent human's relations as they left them. */
+    return;
+  }
+
   /*** If we are greviously insulted, go to war immediately. ***/
 
   players_iterate_alive(aplayer) {
@@ -1686,7 +1715,9 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
   players_iterate_alive(aplayer) {
     int turns; /* Turns since contact */
 
-    if (NEVER_MET(pplayer, aplayer)) {
+    /* Barbarians and animals are at war with everyone from the start;
+     * that war is no target of ours. */
+    if (NEVER_MET(pplayer, aplayer) || is_barbarian(aplayer)) {
       continue;
     }
     turns = game.info.turn;
@@ -1725,6 +1756,9 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
     }
     DIPLO_LOG(ait, LOG_DEBUG, pplayer, target, "plans war for spoils");
     war_countdown(ait, pplayer, target, 4 + map_size_checked(), war_reason);
+  } else {
+    /* The least loved player is no target unless we plan war on them. */
+    target = nullptr;
   }
 
   /*** Declare war - against enemies of allies ***/
@@ -1761,6 +1795,9 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
         if (!WAR(pplayer, aplayer)) {
           DIPLO_LOG(ait, LOG_DIPL2, pplayer, aplayer, "Declaring war!");
           dai_go_to_war(ait, pplayer, aplayer, adip->war_reason);
+        } else {
+          /* The war began without our declaration. */
+          adip->countdown = war_stubbornness(adip->war_reason);
         }
       } else if (adip->countdown < -1) {
         /* Negative countdown less than -1 is war stubbornness */
@@ -1776,6 +1813,8 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
         && diplomacy_possible(pplayer, aplayer)) {
       enum diplstate_type ds = player_diplstate_get(pplayer, aplayer)->type;
       struct ai_dip_intel *adip = dai_diplomacy_get(ait, pplayer, aplayer);
+      struct player *ally_target;
+      bool nag_now;
       struct Clause clause;
 
       /* Meaningless values, but rather not have them unset. */
@@ -1819,7 +1858,8 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
       /* Canvass support from existing friends for our war, and try to
        * make friends with enemies. Then we wait some turns until next time
        * we spam them with our gibbering chatter. */
-      if (adip->spam <= 0) {
+      nag_now = (adip->spam <= 0);
+      if (nag_now) {
         if (!pplayers_allied(pplayer, aplayer)) {
           adip->spam = fc_rand(4) + 3; /* Bugger allies often. */
         } else {
@@ -1836,11 +1876,11 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
         if (adip->at_war_with_ally) {
           break;
         }
-        target = nullptr;
+        ally_target = nullptr;
         players_iterate_alive(eplayer) {
           if (WAR(pplayer, eplayer)
               && !pplayers_at_war(aplayer, eplayer)) {
-            target = eplayer;
+            ally_target = eplayer;
             break;
           }
         } players_iterate_alive_end;
@@ -1850,12 +1890,12 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
           /* Share techs only with team mates and allies we really like. */
           dai_share(ait, pplayer, aplayer);
         }
-        if (!target || !target->is_alive) {
+        if (!ally_target || !ally_target->is_alive) {
           adip->ally_patience = 0;
           break; /* No need to nag our ally */
         }
 
-        if (adip->spam <= 0) {
+        if (nag_now) {
           /* Count down patience toward AI player (one that can have spam > 0)
            * at the same speed as toward human players. */
           if (adip->ally_patience == 0) {
@@ -1863,7 +1903,7 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
                              _("*%s (AI)* Greetings our most trustworthy "
                                "ally. We call upon you to destroy our enemy, %s."),
                              player_name(pplayer),
-                             player_name(target));
+                             player_name(ally_target));
             adip->ally_patience--;
           } else if (adip->ally_patience == -1) {
             if (fc_rand(5) == 1) {
@@ -1872,7 +1912,7 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
                                  "made war with our enemy, %s. Why do I need to remind "
                                  "you of your promises?"),
                                player_name(pplayer),
-                               player_name(target));
+                               player_name(ally_target));
               adip->ally_patience--;
             }
           } else if (fc_rand(5) == 1
@@ -1883,7 +1923,7 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
                                "enemy, %s! This is unacceptable; our alliance is no "
                                "more!"),
                              player_name(pplayer),
-                             player_name(target));
+                             player_name(ally_target));
             DIPLO_LOG(ait, LOG_DIPL2, pplayer, aplayer,
                       "breaking useless alliance");
             /* To peace */
@@ -1986,7 +2026,9 @@ void dai_incident(struct ai_type *ait, enum incident_type type,
                   struct player *receiver,
                   struct player *violator, struct player *victim)
 {
-  if (!is_ai(receiver) || violator == receiver) {
+  /* A war declaration is told only to its victim, but every AI player
+   * judges the violator, whoever controls the victim. */
+  if ((!is_ai(receiver) && type != INCIDENT_WAR) || violator == receiver) {
     return;
   }
 

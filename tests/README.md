@@ -82,6 +82,8 @@ equal to map (x, y). The helpers, all in `tests/fixture.h`:
   makes a tech known, `fx_government()` changes government.
 - `fx_show_all()` shows a player the whole map; `fx_see_all()` also
   gives it vision of every tile, which a city needs to work them.
+- `fx_unit_vision()` gives a unit the vision a real unit has, so its
+  owner sees units next to it (actions against a unit need that).
 - `fx_phase_begin()` starts a phase as the server does: advisor data
   and each AI's phase data. Call it after placing things and before
   calling AI or advisor code that reads them.

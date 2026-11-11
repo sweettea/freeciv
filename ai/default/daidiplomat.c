@@ -619,6 +619,7 @@ static bool dai_diplomat_bribe_nearby(struct ai_type *ait,
     struct unit *pvictim = tile_other_players_unit(ptile, pplayer);
     int sanity = punit->id;
     const struct unit_type *ptype;
+    struct tile *bribee_tile;
 
     if (pos.total_MC > punit->moves_left) {
       /* Didn't find anything within range. */
@@ -628,15 +629,22 @@ static bool dai_diplomat_bribe_nearby(struct ai_type *ait,
     if (!pvictim
         || !POTENTIALLY_HOSTILE_PLAYER(ait, pplayer, unit_owner(pvictim))
         || unit_list_size(ptile->units) > 1
-        || tile_city(ptile)
-        || !is_action_enabled_unit_on_unit(nmap, ACTION_SPY_BRIBE_UNIT,
-                                           punit, pvictim)) {
+        || tile_city(ptile)) {
+      continue;
+    }
+
+    /* We would bribe from the tile next to the victim, after moving. */
+    bribee_tile = mapstep(nmap, pos.tile, DIR_REVERSE(pos.dir_to_here));
+    if (!action_prob_possible(
+           action_speculate_unit_on_unit(nmap, ACTION_SPY_BRIBE_UNIT,
+                                         punit, unit_home(punit),
+                                         bribee_tile, TRUE, pvictim))) {
       continue;
     }
 
     /* Calculate if enemy is a threat */
     /* First find best defender on our tile */
-    unit_list_iterate(ptile->units, aunit) {
+    unit_list_iterate(unit_tile(punit)->units, aunit) {
       const struct unit_type *atype = unit_type_get(aunit);
 
       newval = DEFENSE_POWER(atype);
@@ -677,10 +685,8 @@ static bool dai_diplomat_bribe_nearby(struct ai_type *ait,
 
     /* Found someone! */
     {
-      struct tile *bribee_tile;
       struct pf_path *path;
 
-      bribee_tile = mapstep(nmap, pos.tile, DIR_REVERSE(pos.dir_to_here));
       path = pf_map_path(pfm, bribee_tile);
       if (!path || !adv_unit_execute_path(punit, path)
           || punit->moves_left <= 0) {

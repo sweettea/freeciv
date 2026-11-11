@@ -15,8 +15,11 @@ EXTRA_DIST =	README.md			\
 		copyright.sh			\
 		daiair_test.c			\
 		daicity_test.c			\
+		daidiplomacy_test.c		\
+		daidiplomat_test.c		\
 		daidomestic_test.c		\
 		daieffects_test.c		\
+		daihand_test.c			\
 		daihunter_test.c		\
 		daimilitary_test.c		\
 		daiparadrop_test.c		\
