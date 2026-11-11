@@ -1335,6 +1335,29 @@ static void dai_declare_war(struct ai_type *ait, struct player *pplayer,
 }
 
 /******************************************************************//**
+  The countdown value that makes us stubborn about peace once a war for
+  this reason has begun. Values below -1 count up to the neutral -1.
+**********************************************************************/
+static int war_stubbornness(enum war_reason reason)
+{
+  switch (reason) {
+  case DAI_WR_SPACE:
+  case DAI_WR_NONE:
+    return -10;
+  case DAI_WR_BEHAVIOR:
+  case DAI_WR_HATRED:
+  case DAI_WR_EXCUSE:
+    return -20;
+  case DAI_WR_ALLIANCE:
+    return -3;
+  }
+
+  fc_assert_msg(FALSE, "Unknown war reason %d.", reason);
+
+  return -1;
+}
+
+/******************************************************************//**
   Go to war. Explain to target why we did it, and set countdown to
   some negative value to make us a bit stubborn to avoid immediate
   reversal to ceasefire.
@@ -1351,33 +1374,33 @@ static void dai_go_to_war(struct ai_type *ait, struct player *pplayer,
   case DAI_WR_SPACE:
     dai_diplo_notify(target, _("*%s (AI)* Space will never be yours."),
                      player_name(pplayer));
-    adip->countdown = -10;
+    adip->countdown = war_stubbornness(reason);
     break;
   case DAI_WR_BEHAVIOR:
     dai_diplo_notify(target,
                      _("*%s (AI)* I have tolerated your vicious antics "
                        "long enough! To war!"),
                      player_name(pplayer));
-    adip->countdown = -20;
+    adip->countdown = war_stubbornness(reason);
     break;
   case DAI_WR_NONE:
     dai_diplo_notify(target, _("*%s (AI)* Peace in ... some other time."),
                      player_name(pplayer));
-    adip->countdown = -10;
+    adip->countdown = war_stubbornness(reason);
     break;
   case DAI_WR_HATRED:
     dai_diplo_notify(target,
                      _("*%s (AI)* Finally I get around to you! Did "
                        "you really think you could get away with your crimes?"),
                      player_name(pplayer));
-    adip->countdown = -20;
+    adip->countdown = war_stubbornness(reason);
     break;
   case DAI_WR_EXCUSE:
     dai_diplo_notify(target,
                      _("*%s (AI)* Your covert hostilities brought "
                        "this war upon you!"),
                      player_name(pplayer));
-    adip->countdown = -20;
+    adip->countdown = war_stubbornness(reason);
     break;
   case DAI_WR_ALLIANCE:
     if (adip->at_war_with_ally) {
@@ -1386,7 +1409,7 @@ static void dai_go_to_war(struct ai_type *ait, struct player *pplayer,
                          "your last mistake!"),
                        player_name(pplayer),
                        player_name(adip->at_war_with_ally));
-      adip->countdown = -3;
+      adip->countdown = war_stubbornness(reason);
     } else {
       /* Ooops! */
       DIPLO_LOG(ait, LOG_DIPL, pplayer, target, "Wanted to declare war "
@@ -1772,6 +1795,9 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
         if (!WAR(pplayer, aplayer)) {
           DIPLO_LOG(ait, LOG_DIPL2, pplayer, aplayer, "Declaring war!");
           dai_go_to_war(ait, pplayer, aplayer, adip->war_reason);
+        } else {
+          /* The war began without our declaration. */
+          adip->countdown = war_stubbornness(adip->war_reason);
         }
       } else if (adip->countdown < -1) {
         /* Negative countdown less than -1 is war stubbornness */

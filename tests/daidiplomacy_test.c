@@ -277,3 +277,34 @@ Test(daidiplomacy, away_mode_keeps_shared_vision)
   dai_diplomacy_actions(ait, h);
   cr_expect(gives_shared_vision(h, friend), "shared vision removed");
 }
+
+/* A war countdown that reaches 0 when the war has already begun ends
+ * there: the AI is then stubborn about peace, as after its own
+ * declaration. */
+Test(daidiplomacy, countdown_ends_when_war_came_first)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *a = fx_ai_player(nullptr);
+  struct player *b = fx_ai_player(nullptr);
+  struct ai_dip_intel *adip;
+  int love;
+
+  /* Met long ago, so a cease-fire is priced by love, not given in good
+   * faith. */
+  old_contact(a, b, DS_PEACE);
+  fx_phase_begin();
+  a->ai_common.love[player_index(b)] = -MAX_AI_LOVE / 2;
+  adip = dai_diplomacy_get(ait, a, b);
+  war_countdown(ait, a, b, 1, DAI_WR_HATRED);
+  /* b strikes first. */
+  handle_diplomacy_cancel_pact(b, player_number(a), clause_type_invalid());
+  cr_assert(pplayers_at_war(a, b));
+
+  dai_diplomacy_actions(ait, a);
+  cr_assert_eq(adip->countdown, 0);
+  love = a->ai_common.love[player_index(b)];
+  dai_diplomacy_actions(ait, a);
+  cr_expect_lt(adip->countdown, -1, "countdown %d", adip->countdown);
+  /* b started the war: no tantrum over it. */
+  cr_expect_eq(a->ai_common.love[player_index(b)], love);
+}
