@@ -633,9 +633,9 @@ static struct pf_path *find_rampage_target(struct unit *punit,
     thresh = (move_needed ? thresh_move : thresh_adj);
     want = (want < 0 ? -want : want);
 
-    if (want > max_want && want > thresh) {
-      /* The new want exceeds both the previous maximum
-       * and the relevant threshold, so it's worth recording */
+    if (want > max_want && want >= thresh) {
+      /* The new want exceeds the previous maximum and reaches
+       * the relevant threshold, so it's worth recording */
       max_want = want;
       ptile = iter_tile;
     }

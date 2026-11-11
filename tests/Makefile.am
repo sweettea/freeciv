@@ -14,6 +14,7 @@ EXTRA_DIST =	README.md			\
 		combat_test.c			\
 		copyright.sh			\
 		daimilitary_test.c		\
+		daiunit_test.c			\
 		fcintl.sh			\
 		fixture.c			\
 		fixture.h			\
