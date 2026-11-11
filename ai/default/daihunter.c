@@ -499,7 +499,8 @@ int dai_hunter_manage(struct ai_type *ait, struct player *pplayer,
       }
 
       target_tile = unit_tile(target);
-      if (!unit_attack_unit_at_tile_result(punit, NULL, target, target_tile)) {
+      if (unit_attack_unit_at_tile_result(punit, NULL, target, target_tile)
+          != ATT_OK) {
         /* We can't attack the target */
         continue;
       }
