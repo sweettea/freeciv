@@ -633,9 +633,9 @@ static struct pf_path *find_rampage_target(struct unit *punit,
     thresh = (move_needed ? thresh_move : thresh_adj);
     want = (want < 0 ? -want : want);
 
-    if (want > max_want && want > thresh) {
-      /* The new want exceeds both the previous maximum
-       * and the relevant threshold, so it's worth recording */
+    if (want > max_want && want >= thresh) {
+      /* The new want exceeds the previous maximum and reaches
+       * the relevant threshold, so it's worth recording */
       max_want = want;
       ptile = iter_tile;
     }
@@ -1068,7 +1068,7 @@ static void single_invader(struct ai_city *city_data,
                                 action_by_number(ACTION_ATTACK))) {
     attacks = 1;
   } else {
-    attacks = utype->move_rate;
+    attacks = utype->move_rate / SINGLE_MOVE;
   }
   city_data->invasion.attack += attacks;
   if (which == INVASION_OCCUPY) {
@@ -1503,7 +1503,7 @@ adv_want find_something_to_kill(struct ai_type *ait, struct player *pplayer,
                                       action_by_number(ACTION_ATTACK))) {
           reserves++;
         } else {
-          reserves += punit_type->move_rate;
+          reserves += punit_type->move_rate / SINGLE_MOVE;
         }
       }
 
@@ -1985,8 +1985,12 @@ static bool dai_find_boat_for_unit(struct ai_type *ait, struct unit *punit)
   bool alive = TRUE;
   int ferryboat = 0;
   struct pf_path *path_to_ferry = nullptr;
+  struct unit_ai *unit_data = def_ai_unit_data(punit, ait);
 
   UNIT_LOG(LOG_CARAVAN, punit, "requesting a boat!");
+  if (unit_data->boat_wait_turn < 0) {
+    unit_data->boat_wait_turn = game.info.turn;
+  }
   ferryboat = aiferry_find_boat(ait, punit, 1, &path_to_ferry);
   /* Going to meet the boat */
   if ((ferryboat <= 0)) {
@@ -2113,6 +2117,10 @@ static void dai_caravan_goto(struct ai_type *ait, struct player *pplayer,
     }
   }
 
+  if (alive && unit_transported(punit)) {
+    unit_data->boat_wait_turn = -1;
+  }
+
   /* If moving didn't kill us, and we got to the destination, handle it. */
   if (alive && real_map_distance(dest_city->tile, unit_tile(punit)) <= 1) {
     /* Release the boat! */
@@ -2236,7 +2244,8 @@ static bool dai_is_unit_tired_waiting_boat(struct ai_type *ait,
         /* If we're being transported */
         return FALSE;
       }
-      if ((punit->birth_turn + 15 < game.info.turn)) {
+      if (unit_data->boat_wait_turn >= 0
+          && unit_data->boat_wait_turn + 15 < game.info.turn) {
         /* We are tired of waiting */
         int ferrys = aiferry_avail_boats(ait, punit->owner);
 
@@ -2244,7 +2253,7 @@ static bool dai_is_unit_tired_waiting_boat(struct ai_type *ait,
           /* There are no ferrys available... give up */
           return TRUE;
         } else {
-          if (punit->birth_turn + 20 < game.info.turn) {
+          if (unit_data->boat_wait_turn + 20 < game.info.turn) {
             /* We are fed up! */
             return TRUE;
           }
@@ -2792,8 +2801,10 @@ void dai_manage_unit(struct ai_type *ait, struct player *pplayer,
     TIMING_LOG(AIT_DIPLOMAT, TIMER_STOP);
 
     return;
-  } else if (ptype->adv.worker
+  } else if ((ptype->adv.worker && !is_ferry)
              || unit_is_cityfounder(punit)) {
+    /* A ferry that can also do terrain work (civ2civ3 Transport) is
+     * counted and booked as a ferry, so it must be run as one. */
     dai_manage_settler(ait, pplayer, punit);
 
     return;
@@ -3251,7 +3262,9 @@ void dai_consider_tile_dangerous(struct ai_type *ait, struct tile *ptile,
   extras_bonus += tile_extras_defense_bonus(ptile, unit_type_get(punit));
 
   db += (db * extras_bonus) / 100;
-  d = adv_unit_def_rating_basic_squared(punit) * db;
+  /* db is the defence multiplier times ten; the rating is squared, so
+   * the multiplier is too. */
+  d = adv_unit_def_rating_basic_squared(punit) * db / 10 * db;
 
   adjc_iterate(&(wld.map), ptile, ptile1) {
     if (has_handicap(pplayer, H_FOG)
@@ -3429,6 +3442,7 @@ void dai_unit_init(struct ai_type *ait, struct unit *punit)
   unit_data->passenger = 0;
   unit_data->bodyguard = 0;
   unit_data->charge = 0;
+  unit_data->boat_wait_turn = -1;
 
   unit_set_ai_data(punit, ait, unit_data);
 }
