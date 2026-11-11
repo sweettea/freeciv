@@ -1858,7 +1858,6 @@ struct adv_choice *military_advisor_choose_build(struct ai_type *ait,
     int wall_id, danger;
     bool build_walls = TRUE;
     bool def_unit_selected = FALSE;
-    int qdanger = city_data->danger * city_data->danger;
 
     unit_list_iterate(ptile->units, punit) {
       if (!is_special_unit(punit)) {
@@ -1866,24 +1865,25 @@ struct adv_choice *military_advisor_choose_build(struct ai_type *ait,
       }
     } unit_list_iterate_end;
 
-    if (qdanger <= 0) {
+    if (city_data->danger <= 0) {
       /* We only need these defenders because of Martial Law value */
       danger = 0;
       build_walls = FALSE; /* Walls don't provide Martial Law */
     } else {
       /* First determine the danger. It is measured in percents of our
-       * defensive strength, capped at 200 + urgency */
-      if (qdanger >= our_def) {
+       * defensive strength, capped at 200 + urgency. city_data->danger
+       * and our_def are both quadratic in unit ratings. */
+      if (city_data->danger >= our_def) {
         if (urgency == 0) {
           /* Don't waste money */
           danger = 100;
         } else if (our_def == 0) {
           danger = 200 + urgency;
         } else {
-          danger = MIN(200, 100 * qdanger / our_def) + urgency;
+          danger = MIN(200, 100 * city_data->danger / our_def) + urgency;
         }
       } else {
-        danger = 100 * qdanger / our_def;
+        danger = 100 * city_data->danger / our_def;
       }
 
       if (pcity->surplus[O_SHIELD] <= 0 && our_def != 0) {

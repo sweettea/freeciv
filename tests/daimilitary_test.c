@@ -336,3 +336,91 @@ Test(daimilitary, walls_want_steady_under_steady_threat)
                      "second call: want " ADV_WANT_PRINTF ", urgency %u",
                      *want, urgency);
 }
+
+/* Run military_advisor_choose_build() for a city of `defenders`
+ * Phalanxes against `attackers` enemy Legions next to it, and return
+ * the defender want, which is the danger in percent of our defence.
+ * The city is marked as the wonder city, so the advisor stops after
+ * the defence choice. */
+static adv_want phalanxes_vs_legions(int defenders, int attackers)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *us = fx_ai_player(nullptr);
+  struct player *them = fx_ai_player(nullptr);
+  struct city *pcity;
+  struct adv_choice *choice;
+  struct ai_city *city_data;
+  adv_want want;
+  int i;
+
+  fx_war(us, them);
+  fx_tech(us, "Bronze Working");
+  fx_set_terrain(4, 5, "Forest");
+  pcity = fx_city(us, 5, 5, "Home");
+  /* A capital whose citizen works the Forest has shields to spare. */
+  city_add_improvement(pcity, improvement_by_rule_name("Palace"));
+  pcity->specialists[DEFAULT_SPECIALIST] = 0;
+  tile_set_worked(fx_tile(4, 5), pcity);
+  city_refresh(pcity);
+  for (i = 0; i < defenders; i++) {
+    fx_unit(us, "Phalanx", 5, 5, 0);
+  }
+  for (i = 0; i < attackers; i++) {
+    fx_unit(them, "Legion", 6, 4 + i, 0);
+  }
+  us->ai_common.fuzzy = 0;
+  fx_show_all(us);
+  fx_phase_begin();
+  adv_data_get(us, nullptr)->wonder_city = pcity->id;
+  cr_assert_gt(pcity->surplus[O_SHIELD], 0, "prod %d usage %d waste %d spec %d",
+               pcity->prod[O_SHIELD], pcity->usage[O_SHIELD], pcity->waste[O_SHIELD],
+               pcity->specialists[DEFAULT_SPECIALIST]);
+
+  choice = military_advisor_choose_build(ait, &(wld.map), us, pcity,
+                                         nullptr);
+  city_data = def_ai_city_data(pcity, ait);
+  want = choice->want;
+  cr_log_info("%s: %d Phalanx vs %d Legion: danger %d our_def %d "
+              "urgency %d shield surplus %d want " ADV_WANT_PRINTF,
+              game.control.name, defenders, attackers, city_data->danger,
+              assess_defense_quadratic(ait, pcity), city_data->urgency,
+              pcity->surplus[O_SHIELD], want);
+  cr_assert_eq(choice->type, CT_DEFENDER, "choice type %d", choice->type);
+  adv_free_choice(choice);
+
+  return want;
+}
+
+/* Two Phalanxes in a city outmatch one Legion next to it: the danger
+ * is below our defence, so the defender want stays under 100. */
+Test(daimilitary, danger_below_defense_classic)
+{
+  adv_want want = phalanxes_vs_legions(2, 1);
+
+  cr_expect_lt(want, 100, "want " ADV_WANT_PRINTF, want);
+}
+
+/* One Phalanx against three Legions is outmatched: the want reaches
+ * the 200 + urgency cap. */
+Test(daimilitary, danger_above_defense_classic)
+{
+  adv_want want = phalanxes_vs_legions(1, 3);
+
+  cr_expect_gt(want, 200, "want " ADV_WANT_PRINTF, want);
+}
+
+TestSuite(daimilitary_civ2civ3, .init = fx_init_civ2civ3, .fini = fx_fini);
+
+Test(daimilitary_civ2civ3, danger_below_defense)
+{
+  adv_want want = phalanxes_vs_legions(2, 1);
+
+  cr_expect_lt(want, 100, "want " ADV_WANT_PRINTF, want);
+}
+
+Test(daimilitary_civ2civ3, danger_above_defense)
+{
+  adv_want want = phalanxes_vs_legions(1, 3);
+
+  cr_expect_gt(want, 200, "want " ADV_WANT_PRINTF, want);
+}
