@@ -1779,6 +1779,7 @@ if server_type != 'disabled'
       'tests/fixture_test.c',
       'tests/fixture_ai_test.c',
       'tests/daimilitary_test.c',
+      'tests/daidiplomacy_test.c',
       'tests/bodyguard_test.c',
       'tests/combat_test.c',
       include_directories: [server_inc, include_directories('ai/default')],

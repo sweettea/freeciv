@@ -1686,7 +1686,9 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
   players_iterate_alive(aplayer) {
     int turns; /* Turns since contact */
 
-    if (NEVER_MET(pplayer, aplayer)) {
+    /* Barbarians and animals are at war with everyone from the start;
+     * that war is no target of ours. */
+    if (NEVER_MET(pplayer, aplayer) || is_barbarian(aplayer)) {
       continue;
     }
     turns = game.info.turn;
