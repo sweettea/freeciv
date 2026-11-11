@@ -337,7 +337,7 @@ static void dai_choose_trade_route(struct ai_type *ait, struct city *pcity,
   } unit_list_iterate_end;
 
   max_routes = max_trade_routes(pcity);
-  unassigned_caravans = caravan_units - (max_routes - trade_routes);
+  unassigned_caravans = MAX(0, caravan_units - (max_routes - trade_routes));
   trade_routes += caravan_units;
 
   /* We consider only initial benefit from establishing trade route.

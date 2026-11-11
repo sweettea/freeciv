@@ -1782,6 +1782,7 @@ if server_type != 'disabled'
       'tests/bodyguard_test.c',
       'tests/combat_test.c',
       'tests/daicity_test.c',
+      'tests/daidomestic_test.c',
       'tests/daieffects_test.c',
       include_directories: [server_inc, include_directories('ai/default')],
       sources: [verhdr],

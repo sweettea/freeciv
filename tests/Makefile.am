@@ -14,6 +14,7 @@ EXTRA_DIST =	README.md			\
 		combat_test.c			\
 		copyright.sh			\
 		daicity_test.c			\
+		daidomestic_test.c		\
 		daieffects_test.c		\
 		daimilitary_test.c		\
 		fcintl.sh			\
