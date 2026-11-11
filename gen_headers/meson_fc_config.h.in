@@ -20,6 +20,7 @@
 #mesondefine AI_MOD_STATIC_CLASSIC
 #mesondefine AI_MOD_STATIC_TEX
 #mesondefine AI_MOD_STATIC_STUB
+#mesondefine AI_MOD_STATIC_UNFIXED
 
 /* Enable AI modules */
 #mesondefine AI_MODULES

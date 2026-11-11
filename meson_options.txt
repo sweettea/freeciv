@@ -75,7 +75,7 @@ option('server',
 
 option('aimodules',
        type: 'array',
-       choices: ['classic', 'tex', 'stub'],
+       choices: ['classic', 'tex', 'stub', 'unfixed'],
        value: ['classic', 'tex'],
        description: 'AI modules to include to the server')
 
