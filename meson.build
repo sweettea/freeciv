@@ -1852,6 +1852,7 @@ if server_type != 'disabled'
       'tests/path_finding_test.c',
       'tests/research_test.c',
       'tests/upkeep_test.c',
+      'tests/savecompat_test.c',
       include_directories: [server_inc, include_directories('ai/default')],
       sources: [verhdr],
       c_args: ['-DFX_DATA_DIR="@0@"'.format(
