@@ -1904,7 +1904,7 @@ static int min_food_surplus_for_fastest_growth(struct cm_state *state)
   struct city *pcity = state->pcity;
   int city_radius_sq = city_map_radius_sq_get(pcity);
   citizens city_size = city_size_get(pcity);
-  int max_surplus = -game.info.food_cost * city_size;
+  int max_surplus = -pcity->usage[O_FOOD];
   bool is_celebrating = base_city_celebrating(pcity);
   citizens workers = city_size;
   int food_needed = city_granary_size(city_size) - pcity->food_stock;

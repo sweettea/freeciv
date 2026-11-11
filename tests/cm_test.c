@@ -28,9 +28,14 @@
 #include "game.h"
 #include "map.h"
 #include "specialist.h"
+#include "unit.h"
+#include "unitlist.h"
 
 /* common/aicore */
 #include "cm.h"
+
+/* server */
+#include "cityturn.h"
 
 #include "fixture.h"
 
@@ -140,6 +145,88 @@ Test(cm, max_growth_grows_fastest)
                result->surplus[O_FOOD], best_turns, best_food);
 
   cm_result_destroy(result);
+}
+
+/**********************************************************************//**
+  A city feeding a Settlers still grows fastest under max_growth: for
+  every granary fill, the governor finds a valid arrangement that grows
+  in as few turns as the most food the city can make.
+**************************************************************************/
+Test(cm, max_growth_with_food_upkeep)
+{
+  struct player *owner;
+  struct city *pcity;
+  struct unit *settlers;
+  struct cm_parameter food_param, param;
+  struct cm_result *result;
+  int size, stock, bad = 0, checked = 0;
+
+  fill_map("Forest");
+  fx_set_terrain(5, 5, "Grassland");
+  fx_set_terrain(4, 5, "Grassland");
+  fx_set_terrain(6, 5, "Grassland");
+  fx_set_terrain(5, 4, "Grassland");
+  fx_set_terrain(5, 6, "Grassland");
+  owner = fx_player();
+  pcity = sized_city(owner, 5, 5, 1);
+  settlers = fx_unit(owner, "Settlers", 5, 5, 0);
+  settlers->homecity = pcity->id;
+  unit_list_prepend(pcity->units_supported, settlers);
+  city_refresh(pcity);
+  cr_assert_eq(settlers->upkeep[O_FOOD], 1);
+  result = cm_result_new(pcity);
+
+  cm_init_parameter(&food_param);
+  output_type_iterate(o) {
+    food_param.factor[o] = 0;
+  } output_type_iterate_end;
+  food_param.factor[O_FOOD] = 1;
+  food_param.happy_factor = 0;
+
+  cm_init_parameter(&param);
+  param.factor[O_SHIELD] = 10;
+  param.max_growth = TRUE;
+
+  for (size = 1; size <= 4; size++) {
+    int granary;
+
+    city_size_set(pcity, size);
+    memset(pcity->specialists, 0, sizeof(pcity->specialists));
+    pcity->specialists[DEFAULT_SPECIALIST] = size;
+    city_refresh(pcity);
+    granary = city_granary_size(size);
+
+    for (stock = 0; stock < granary; stock++) {
+      int best_food, best_turns, turns;
+
+      pcity->food_stock = stock;
+      cm_query_result(pcity, &food_param, result, FALSE);
+      best_food = result->surplus[O_FOOD];
+      best_turns = turns_to_grow(pcity, best_food);
+      if (best_turns <= 0) {
+        continue;
+      }
+
+      cm_query_result(pcity, &param, result, FALSE);
+      turns = turns_to_grow(pcity, result->surplus[O_FOOD]);
+      checked++;
+      if (!result->found_a_valid || turns != best_turns) {
+        if (bad < 10) {
+          cr_log_error("size %d stock %d/%d: max_growth %s, food %d (%d"
+                       " turns); best food %d (%d turns)", size, stock,
+                       granary, result->found_a_valid ? "valid" : "none",
+                       result->surplus[O_FOOD], turns, best_food,
+                       best_turns);
+        }
+        bad++;
+      }
+    }
+  }
+
+  cm_result_destroy(result);
+  cr_expect_gt(checked, 0);
+  cr_expect_eq(bad, 0, "%d of %d granary fills miss fastest growth", bad,
+               checked);
 }
 
 /* A brute-force solver for checking cm_query_result(): every way to
