@@ -279,12 +279,12 @@ static void dai_manage_taxes(struct ai_type *ait, struct player *pplayer)
   /* Get the estimates for tax with the current rates. */
   distribute(trade, AI_RATE_COUNT, rates_save, result);
 
-  /* The delta between the estimate and the real value. */
-  delta_tax = (result[AI_RATE_TAX] - expenses) - income;
+  /* The delta between the estimate and the real value. Both are gross
+   * income, before expenses. */
+  delta_tax = result[AI_RATE_TAX] - income;
 
   log_base(LOGLEVEL_TAX, "%s [tax] estimated=%d real=%d (delta=%d)",
-           player_name(pplayer), result[AI_RATE_TAX] - expenses, income,
-           delta_tax);
+           player_name(pplayer), result[AI_RATE_TAX], income, delta_tax);
 
   /* Find minimum tax rate which gives us a positive balance for gold and
    * science. We assume that we want science most and luxuries least here,
