@@ -233,3 +233,27 @@ Test(daidiplomacy, tech_gift_accepted_at_war)
             "AI did not accept the gift (tech_cost_style %d)",
             game.info.tech_cost_style);
 }
+
+/* A big gift raises the AI's love, but never past MAX_AI_LOVE. */
+Test(daidiplomacy, gift_love_stays_in_range)
+{
+  struct player *a = fx_ai_player(nullptr);
+  struct player *h = fx_player();
+  int love;
+
+  fx_diplstate(a, h, DS_PEACE);
+  fx_phase_begin();
+  h->economic.gold = 5000;
+  love = a->ai_common.love[player_index(h)];
+
+  handle_diplomacy_init_meeting_req(h, player_number(a));
+  handle_diplomacy_create_clause_req(h, player_number(a), player_number(h),
+                                     CLAUSE_GOLD, 5000);
+  handle_diplomacy_accept_treaty_req(h, player_number(a));
+  cr_assert_null(find_treaty(h, a), "treaty not concluded");
+  cr_assert_eq(h->economic.gold, 0);
+
+  cr_expect_gt(a->ai_common.love[player_index(h)], love);
+  cr_expect_leq(a->ai_common.love[player_index(h)], MAX_AI_LOVE,
+                "love %d", a->ai_common.love[player_index(h)]);
+}

@@ -778,7 +778,8 @@ void dai_treaty_accepted(struct ai_type *ait, struct player *pplayer,
     int i = total_balance / ((city_list_size(pplayer->cities) * 10) + 1);
 
     i = MIN(i, ai->diplomacy.love_incr * 150) * 10;
-    pplayer->ai_common.love[player_index(aplayer)] += i;
+    pplayer->ai_common.love[player_index(aplayer)]
+      = MIN(pplayer->ai_common.love[player_index(aplayer)] + i, MAX_AI_LOVE);
     DIPLO_LOG(ait, LOG_DIPL2, pplayer, aplayer, "gift increased love by %d", i);
   }
 
