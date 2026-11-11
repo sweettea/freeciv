@@ -47,6 +47,7 @@ EXTRA_DIST =	README.md			\
 		rs_test_res/ruleset_list_opt.txt \
 		rs_test_res/generate_ruleset_loads.sh \
 		rulesets_autohelp.sh.in		\
+		savecompat_test.c		\
 		src-check.sh			\
 		trailing_spaces.sh		\
 		va_list.sh
