@@ -124,3 +124,35 @@ Test(daiunit, virtual_attacker_targets_enemy)
   cr_expect_eq(dest, city_tile(target), "target (%d, %d)", TILE_XY(dest));
   unit_virtual_destroy(legion);
 }
+
+/* A Legion on its way to an enemy city counts as one attack on it, not
+ * one per move fragment. */
+Test(daiunit, invasion_counts_attacks)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *us = fx_ai_player(nullptr);
+  struct player *enemy = fx_ai_player(nullptr);
+  struct city *target;
+  struct unit *legion, *armor;
+  struct tile *dest = nullptr;
+
+  fx_war(us, enemy);
+  fx_city(us, 2, 5, "Home");
+  target = fx_city(enemy, 12, 5, "Target");
+  fx_unit(enemy, "Phalanx", 12, 5, 0);
+  fx_unit(enemy, "Phalanx", 12, 5, 0);
+  legion = fx_unit(us, "Legion", 6, 5, 0);
+  legion->activity = ACTIVITY_GOTO;
+  legion->goto_tile = city_tile(target);
+  armor = fx_unit(us, "Armor", 4, 5, 0);
+  fx_show_all(us);
+  fx_show_all(enemy);
+  fx_phase_begin();
+
+  (void) find_something_to_kill(ait, us, armor, &dest, nullptr, nullptr,
+                                nullptr, nullptr, nullptr);
+  cr_expect_eq(def_ai_city_data(target, ait)->invasion.attack, 1,
+               "invasion.attack %d",
+               def_ai_city_data(target, ait)->invasion.attack);
+  cr_expect_eq(def_ai_city_data(target, ait)->invasion.occupy, 1);
+}

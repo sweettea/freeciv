@@ -1068,7 +1068,7 @@ static void single_invader(struct ai_city *city_data,
                                 action_by_number(ACTION_ATTACK))) {
     attacks = 1;
   } else {
-    attacks = utype->move_rate;
+    attacks = utype->move_rate / SINGLE_MOVE;
   }
   city_data->invasion.attack += attacks;
   if (which == INVASION_OCCUPY) {
@@ -1503,7 +1503,7 @@ adv_want find_something_to_kill(struct ai_type *ait, struct player *pplayer,
                                       action_by_number(ACTION_ATTACK))) {
           reserves++;
         } else {
-          reserves += punit_type->move_rate;
+          reserves += punit_type->move_rate / SINGLE_MOVE;
         }
       }
 
