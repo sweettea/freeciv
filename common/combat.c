@@ -751,7 +751,7 @@ int get_virtual_defense_power(const struct civ_map *nmap,
     db += tile_terrain(ptile)->defense_bonus / (100 / POWER_FACTOR);
   }
   defensepower *= db;
-  defensepower *= vlevel->power_fact / 100;
+  defensepower = defensepower * vlevel->power_fact / 100;
   if (!is_native_tile_to_class(defclass, ptile)) {
     defensepower = defensepower * defclass->non_native_def_pct / 100;
   }

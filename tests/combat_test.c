@@ -21,6 +21,8 @@
 #include <criterion/criterion.h>
 #include <criterion/parameterized.h>
 
+#include <stdlib.h>
+
 /* common */
 #include "actions.h"
 #include "city.h"
@@ -165,5 +167,82 @@ ParameterizedTest(struct ruleset_site *p, combat,
                       bonus[i], power[i], name[j], bonus[j], power[j]);
       }
     }
+  }
+}
+
+struct ruleset_utype_terrain {
+  char ruleset[16];
+  char utype[32];
+  char terrain[32];
+};
+
+ParameterizedTestParameters(combat, virtual_defence_veteran)
+{
+  static struct ruleset_utype_terrain params[] = {
+    { "classic", "Musketeers", "Hills" },
+    { "classic", "Phalanx", "Grassland" },
+    { "civ2civ3", "Musketeers", "Hills" },
+    { "civ2civ3", "Musketeers", "Mountains" },
+  };
+
+  return cr_make_param_array(struct ruleset_utype_terrain, params,
+                             sizeof(params) / sizeof(params[0]));
+}
+
+/**********************************************************************//**
+  get_virtual_defense_power() of a unit type at each veteran level
+  scales by that level's power_fact in full: strength times terrain
+  times power_fact, divided once at the end. And it agrees, to within
+  the real path's two roundings, with get_total_defense_power() of a
+  real unit of that type and level on the same tile.
+**************************************************************************/
+ParameterizedTest(struct ruleset_utype_terrain *p, combat,
+                  virtual_defence_veteran, .fini = fx_fini)
+{
+  const struct unit_type *def, *att;
+  struct player *owner, *enemy;
+  struct unit *attacker;
+  int bonus, levels, v;
+
+  fx_init(p->ruleset);
+  def = fx_utype(p->utype);
+  att = fx_utype("Warriors");
+  owner = fx_player();
+  enemy = fx_player();
+  fx_set_terrain(5, 5, p->terrain);
+  bonus = fx_terrain(p->terrain)->defense_bonus;
+  levels = utype_veteran_levels(def);
+
+  /* Keep the terrain bonus a whole number of POWER_FACTOR steps, so
+   * the expected value below is exact and only power_fact is tested. */
+  cr_assert_eq(bonus % (100 / POWER_FACTOR), 0,
+               "%s %s bonus %d is not a multiple of %d", p->ruleset,
+               p->terrain, bonus, 100 / POWER_FACTOR);
+  cr_assert_geq(levels, 2, "%s %s has %d veteran levels", p->ruleset,
+                p->utype, levels);
+  attacker = fx_unit(enemy, "Warriors", 6, 5, 0);
+
+  for (v = 0; v < levels; v++) {
+    int pf = utype_veteran_level(def, v)->power_fact;
+    int expected = def->defense_strength * POWER_FACTOR * (100 + bonus)
+                   * pf / (100 * 100);
+    int virt = get_virtual_defense_power(&(wld.map), nullptr, def, owner,
+                                         fx_tile(5, 5), FALSE, v);
+    int virt_att = get_virtual_defense_power(&(wld.map), att, def, owner,
+                                             fx_tile(5, 5), FALSE, v);
+    struct unit *real = fx_unit(owner, p->utype, 5, 5, v);
+    int total = get_total_defense_power(attacker, real);
+    /* The real path truncates after power_fact and again after the
+     * terrain; the first loss is scaled by the terrain multiplier. */
+    int slack = (100 + bonus) / 100 + 1;
+
+    cr_expect_eq(virt, expected,
+                 "%s %s on %s, veteran %d (power_fact %d): virtual "
+                 "defence %d, expected %d", p->ruleset, p->utype,
+                 p->terrain, v, pf, virt, expected);
+    cr_expect_leq(abs(virt_att - total), slack,
+                  "%s %s on %s, veteran %d (power_fact %d): virtual "
+                  "defence %d, real unit %d", p->ruleset, p->utype,
+                  p->terrain, v, pf, virt_att, total);
   }
 }
