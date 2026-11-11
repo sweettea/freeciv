@@ -1614,6 +1614,11 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
     return;
   }
 
+  if (has_handicap(pplayer, H_AWAY)) {
+    /* Away mode keeps the absent human's relations as they left them. */
+    return;
+  }
+
   /*** If we are greviously insulted, go to war immediately. ***/
 
   players_iterate_alive(aplayer) {

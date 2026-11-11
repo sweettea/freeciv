@@ -28,6 +28,7 @@
 /* server */
 #include "aiiface.h"
 #include "animals.h"
+#include "plrhand.h"
 
 /* ai/default */
 #include "daidiplomacy.c"
@@ -256,4 +257,23 @@ Test(daidiplomacy, gift_love_stays_in_range)
   cr_expect_gt(a->ai_common.love[player_index(h)], love);
   cr_expect_leq(a->ai_common.love[player_index(h)], MAX_AI_LOVE,
                 "love %d", a->ai_common.love[player_index(h)]);
+}
+
+/* A human player in away mode keeps the shared vision they gave to a
+ * peace partner: away mode does no diplomacy. */
+Test(daidiplomacy, away_mode_keeps_shared_vision)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *h = fx_player();
+  struct player *friend = fx_player();
+
+  fx_diplstate(h, friend, DS_PEACE);
+  give_shared_vision(h, friend);
+  fx_phase_begin();
+  player_set_to_ai_mode(h, AI_LEVEL_AWAY);
+  cr_assert(is_ai(h));
+  cr_assert(has_handicap(h, H_AWAY));
+
+  dai_diplomacy_actions(ait, h);
+  cr_expect(gives_shared_vision(h, friend), "shared vision removed");
 }
