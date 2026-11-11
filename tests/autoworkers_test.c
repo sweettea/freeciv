@@ -19,6 +19,7 @@
 #endif
 
 #include <criterion/criterion.h>
+#include <criterion/parameterized.h>
 
 /* common */
 #include "extras.h"
@@ -127,6 +128,36 @@ Test(autoworkers, road_move_bonus_classic)
 {
   cr_expect_eq((int) road_move_bonus_on("Grassland"), 3);
   cr_expect_eq((int) road_move_bonus_on("Hills"), 6);
+}
+
+struct ruleset_name {
+  char name[32];
+};
+
+ParameterizedTestParameters(autoworkers_rs, road_move_bonus_same_saving)
+{
+  static struct ruleset_name params[] = {
+    { "civ2civ3" }, { "sandbox" }, { "goldkeep" },
+  };
+
+  return cr_make_param_array(struct ruleset_name, params,
+                             sizeof(params) / sizeof(params[0]));
+}
+
+/* These rulesets' Road also costs 1/3 of a move, in more move
+ * fragments than classic's three, so it saves what classic's does and
+ * gets the same bonus. */
+ParameterizedTest(struct ruleset_name *p, autoworkers_rs,
+                  road_move_bonus_same_saving, .fini = fx_fini)
+{
+  fx_init(p->name);
+  cr_assert_eq(extra_road_get(extra_type_by_rule_name("Road"))->move_cost
+               * 3, terrain_control.move_fragments,
+               "%s Road is not 1/3 move", p->name);
+  cr_expect_eq((int) road_move_bonus_on("Grassland"), 3, "%s Grassland %d",
+               p->name, (int) road_move_bonus_on("Grassland"));
+  cr_expect_eq((int) road_move_bonus_on("Hills"), 6, "%s Hills %d",
+               p->name, (int) road_move_bonus_on("Forest"));
 }
 
 /* A worker request for a Road on (x, y) at `pcity`, as a client sends

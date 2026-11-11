@@ -447,10 +447,12 @@ static adv_want road_move_bonus(const struct civ_map *nmap,
     } else {
       if (proad->move_cost == 0) {
         mc_multiplier = 2;
-      } else {
-        mc_multiplier = 1 - proad->move_cost;
       }
-      mc_multiplier += old_move_cost;
+      /* Count the saving in thirds of a move, classic's move fragment,
+       * so that it weighs the same against tile output whatever
+       * move_fragments the ruleset has. */
+      mc_multiplier += (old_move_cost - proad->move_cost) * 3
+        / terrain_control.move_fragments;
     }
   }
 
