@@ -37,6 +37,9 @@
 #include "unitlist.h"
 #include "unittype.h"
 
+/* server */
+#include "unittools.h"
+
 #include "fixture.h"
 
 /* Parameters are copied into each test's worker process, so they hold
@@ -177,4 +180,24 @@ Test(fixture, player_state, .init = fx_init_classic, .fini = fx_fini)
   cr_expect_str_eq(government_rule_name(government_of_player(a)),
                    "Monarchy");
   cr_expect(can_change_to_government(a, government_of_player(a)));
+}
+
+/* A unit with fx_unit_vision() lets its owner see an enemy unit next to
+ * it; without, the owner only knows the map. A unit the server removes
+ * during the test is left alone by fx_fini(). */
+Test(fixture, unit_vision, .init = fx_init_classic, .fini = fx_fini)
+{
+  struct player *a = fx_player();
+  struct player *b = fx_player();
+  struct unit *ours = fx_unit(a, "Warriors", 5, 5, 0);
+  struct unit *theirs = fx_unit(b, "Warriors", 6, 5, 0);
+
+  fx_war(a, b);
+  fx_show_all(a);
+  cr_expect(!can_player_see_unit(a, theirs));
+  fx_unit_vision(ours);
+  cr_expect(can_player_see_unit(a, theirs));
+
+  wipe_unit(theirs, ULR_KILLED, ours->owner);
+  cr_expect_eq(unit_list_size(b->units), 0);
 }

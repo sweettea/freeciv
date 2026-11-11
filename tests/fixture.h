@@ -118,8 +118,14 @@ struct city *fx_city(struct player *owner, int x, int y, const char *name);
 
 /* A virtual unit of type `utype` (rule name) at (x, y) with full hp
  * and the given veteran level, registered in the index, the tile's
- * unit list and the owner's unit list. Homeless. */
+ * unit list and the owner's unit list. Homeless. Server code a test
+ * calls may remove it (a bribe, a death); fx_fini() then leaves it be. */
 struct unit *fx_unit(struct player *owner, const char *utype, int x, int y,
                      int veteran);
+
+/* Give `punit` the vision a unit made by create_unit() has, so that its
+ * owner sees the tiles around it (and the units on them) now. A unit
+ * from fx_unit() has none. */
+void fx_unit_vision(struct unit *punit);
 
 #endif /* FC__TESTS_FIXTURE_H */
