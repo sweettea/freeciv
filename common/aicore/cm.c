@@ -1953,14 +1953,6 @@ static int min_food_surplus_for_fastest_growth(struct cm_state *state)
     }
   } city_map_iterate_end;
 
-  if (max_surplus <= 0) {
-    return max_surplus;
-  }
-
-  if (food_needed <= 0) {
-    return 0;
-  }
-
   tile_type_vector_iterate(&state->lattice_by_prod[O_FOOD], ptype) {
     int num = tile_vector_size(&ptype->tiles);
 
@@ -1971,6 +1963,14 @@ static int min_food_surplus_for_fastest_growth(struct cm_state *state)
     max_surplus += num * ptype->production[O_FOOD];
     workers -= num;
   } tile_type_vector_iterate_end;
+
+  if (max_surplus <= 0) {
+    return max_surplus;
+  }
+
+  if (food_needed <= 0) {
+    return 0;
+  }
 
   /* min_turns will always be positive because if food_needed or
    * max_surplus are non-positive, this function returns earlier. */
