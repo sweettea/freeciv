@@ -185,16 +185,16 @@ int utype_upkeep_cost(const struct unit_type *ut, const struct unit *punit,
     }
   }
 
-  val *= get_target_bonus_effects(nullptr,
-                                  &(const struct req_context) {
-                                    .player   = pplayer,
-                                    .output   = get_output_type(otype),
-                                    .unittype = ut,
-                                    .unit     = punit,
-                                    .tile     = ptile,
-                                    .city     = pcity
-                                  },
-                                  nullptr, EFT_UPKEEP_PCT) / 100;
+  val = val * get_target_bonus_effects(nullptr,
+                                     &(const struct req_context) {
+                                       .player   = pplayer,
+                                       .output   = get_output_type(otype),
+                                       .unittype = ut,
+                                       .unit     = punit,
+                                       .tile     = ptile,
+                                       .city     = pcity
+                                     },
+                                     nullptr, EFT_UPKEEP_PCT) / 100;
 
   return val;
 }
