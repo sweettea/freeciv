@@ -143,7 +143,11 @@ static bool explorer_goto(struct unit *punit, struct tile *ptile)
   pft_fill_unit_parameter(&parameter, nmap, punit);
   parameter.omniscience = !has_handicap(pplayer, H_MAP);
   parameter.get_TB = explorer_tb;
-  adv_avoid_risks(&parameter, &risk_cost, punit, NORMAL_STACKING_FEARFULNESS);
+  if (is_ai(pplayer)) {
+    /* The risk cost reads every unit on the map, seen or not. */
+    adv_avoid_risks(&parameter, &risk_cost, punit,
+                    NORMAL_STACKING_FEARFULNESS);
+  }
 
   /* Show the destination in the client */
   punit->goto_tile = ptile;
