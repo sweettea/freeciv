@@ -52,4 +52,5 @@ EXTRA_DIST =	README.md			\
 		src-check.sh			\
 		trailing_spaces.sh		\
 		upkeep_test.c			\
+		unithand_test.c			\
 		va_list.sh
