@@ -1393,10 +1393,28 @@ adv_want find_something_to_kill(struct ai_type *ait, struct player *pplayer,
     parameter.omniscience = !has_handicap(pplayer, H_MAP);
     ferry_map = pf_map_new(&parameter);
   } else {
-    boattype = best_role_unit_for_player(pplayer, L_FERRYBOAT);
-    if (boattype == nullptr) {
-      /* We pretend that we can have the simplest boat to stimulate tech. */
+    int i;
+
+    /* Plan on the best boat we can build that can carry us. A boat
+     * that cannot carry us is never boarded (is_boat_free() checks), so
+     * planning on one only builds boats nobody uses. */
+    for (i = num_role_units(L_FERRYBOAT) - 1; i >= 0; i--) {
+      boattype = get_role_unit(L_FERRYBOAT, i);
+      if (can_unit_type_transport(boattype, punit_class)
+          && can_player_build_unit_now(pplayer, boattype, RPT_CERTAIN)) {
+        break;
+      }
+      boattype = nullptr;
+    }
+    if (boattype == nullptr
+        && best_role_unit_for_player(pplayer, L_FERRYBOAT) == nullptr) {
+      /* We can build no boat at all. We pretend that we can have the
+       * simplest boat to stimulate tech, if it can carry us. */
       boattype = get_role_unit(L_FERRYBOAT, 0);
+      if (boattype != nullptr
+          && !can_unit_type_transport(boattype, punit_class)) {
+        boattype = nullptr;
+      }
     }
     if (boattype != nullptr && harbor) {
       /* Let's simulate a boat at 'punit' position. */
