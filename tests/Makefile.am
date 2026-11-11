@@ -8,9 +8,17 @@ src-check:
 
 CLEANFILES = check-output
 
-EXTRA_DIST =	check_macros.sh			\
+EXTRA_DIST =	README.md			\
+		bodyguard_test.c		\
+		check_macros.sh			\
+		combat_test.c			\
 		copyright.sh			\
+		daimilitary_test.c		\
 		fcintl.sh			\
+		fixture.c			\
+		fixture.h			\
+		fixture_ai_test.c		\
+		fixture_test.c			\
 		generate_rs_not_broken.sh	\
 		generate_rs_save.sh		\
 		generate_rs_upgrade.sh		\

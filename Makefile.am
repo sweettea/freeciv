@@ -99,12 +99,14 @@ EXTRA_DIST =	autogen.sh 			\
 		meson.build			\
 		meson_options.txt		\
 		scripts/build_tolua.sh		\
+		scripts/check-tests.sh		\
 		scripts/generate_doc.sh		\
 		scripts/mapimg2anim		\
 		scripts/setup_auth_server.sh	\
 		scripts/replace			\
 		scripts/diff_ignore		\
 		scripts/freeciv.supp		\
+		subprojects/criterion.wrap	\
 		$(docs)
 
 noinst_HEADERS = fc_version
