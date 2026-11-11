@@ -37,6 +37,9 @@
 #include "unitlist.h"
 #include "unittype.h"
 
+/* server */
+#include "unittools.h"
+
 #include "fixture.h"
 
 /* Parameters are copied into each test's worker process, so they hold
@@ -177,4 +180,18 @@ Test(fixture, player_state, .init = fx_init_classic, .fini = fx_fini)
   cr_expect_str_eq(government_rule_name(government_of_player(a)),
                    "Monarchy");
   cr_expect(can_change_to_government(a, government_of_player(a)));
+}
+
+/* A fixture unit the server destroys during the test is left alone by
+ * fx_fini(). */
+Test(fixture, unit_dies, .init = fx_init_classic, .fini = fx_fini)
+{
+  struct player *pplayer = fx_player();
+  struct unit *punit = fx_unit(pplayer, "Warriors", 5, 5, 0);
+  int id = punit->id;
+
+  fx_unit(pplayer, "Settlers", 5, 5, 0);
+  wipe_unit(punit, ULR_KILLED, nullptr);
+  cr_expect_null(game_unit_by_number(id));
+  cr_expect_eq(unit_list_size(fx_tile(5, 5)->units), 1);
 }

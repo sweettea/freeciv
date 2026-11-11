@@ -118,7 +118,9 @@ struct city *fx_city(struct player *owner, int x, int y, const char *name);
 
 /* A virtual unit of type `utype` (rule name) at (x, y) with full hp
  * and the given veteran level, registered in the index, the tile's
- * unit list and the owner's unit list. Homeless. */
+ * unit list and the owner's unit list. Homeless. The test may let the
+ * server destroy it (combat, wipe_unit()); fx_fini() frees only the
+ * ones still alive. */
 struct unit *fx_unit(struct player *owner, const char *utype, int x, int y,
                      int veteran);
 
