@@ -4347,10 +4347,13 @@ static bool city_build(struct player *pplayer, struct unit *punit,
   create_city(pplayer, ptile, name, nationality);
   size = act_utype->city_size;
   pcity = tile_city(ptile); /* A callback may destroy or replace it any time */
-  if (nullptr != pcity && nullptr != act_utype->spec_type) {
-    sid = specialist_index(act_utype->spec_type);
-    if (is_super_specialist_id(sid) && pcity->specialists[sid] < MAX_CITY_SIZE) {
-      pcity->specialists[sid]++;
+  if (nullptr != pcity) {
+    if (nullptr != act_utype->spec_type) {
+      sid = specialist_index(act_utype->spec_type);
+      if (is_super_specialist_id(sid)
+          && pcity->specialists[sid] < MAX_CITY_SIZE) {
+        pcity->specialists[sid]++;
+      }
     }
     if (size > 1) {
       city_change_size(pcity, size, nationality, -1, nullptr);

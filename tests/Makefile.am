@@ -49,4 +49,5 @@ EXTRA_DIST =	README.md			\
 		rulesets_autohelp.sh.in		\
 		src-check.sh			\
 		trailing_spaces.sh		\
+		unithand_test.c			\
 		va_list.sh
