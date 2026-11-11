@@ -25,7 +25,6 @@
 #include <fc_config.h>
 #endif
 
-#include <signal.h>
 
 #include <criterion/criterion.h>
 
@@ -129,29 +128,33 @@ Test(bodyguard, link_survives_transfer)
                "aiguard_guard_of() no longer returns Y");
 }
 
-/* The crash this leads to (RM #2451). The test passes while the code
- * segfaults.
+/* X attacks and kills Y, its guard until the transfer made Y an enemy.
  *
- * dai_unit_attack() reads bodyguard = aiguard_guard_of(X) before the
- * action, so it holds a pointer to Y, now an enemy unit standing on the
- * target tile. The attack kills Y: wipe_unit() frees the struct after
- * the AI's unit_free hook has cleared its server.ais slots. The
- * function then checks only that X survived, and since X moved onto
- * the tile it reads def_ai_unit_data(bodyguard, ait)->charge through
- * the freed struct's NULL slot.
+ * dai_unit_attack() must not keep a pointer to the bodyguard across the
+ * action: wipe_unit() frees Y after the AI's unit_free hook has cleared
+ * its server.ais slots, and X then stands on the tile it won.
  *
- * The read is reached only if X occupies the tile it won, so
- * occupychance is 100 here; classic defaults it to 0, civ2civ3 (the
- * ruleset of the game the crash was seen in) sets 100. Y has 1 hp so
- * Armor cannot lose the roll. */
-Test(bodyguard, attack_kills_ex_guard_crashes, .signal = SIGSEGV)
+ * X occupies the tile only if occupychance allows, so it is 100 here;
+ * classic defaults it to 0, civ2civ3 sets 100. Y has 1 hp so Armor
+ * cannot lose the roll. */
+Test(bodyguard, attack_kills_ex_guard)
 {
   struct scene s;
+  struct tile *target;
+  int x_id, y_id;
 
   scene_init(&s, "classic");
   scene_transfer(&s);
   game.server.occupychance = 100;
   s.y->hp = 1;
+  target = unit_tile(s.y);
+  x_id = s.x->id;
+  y_id = s.y->id;
 
-  (void) dai_unit_attack(s.ait, s.x, unit_tile(s.y));
+  (void) dai_unit_attack(s.ait, s.x, target);
+
+  cr_expect_null(game_unit_by_number(y_id), "Y survived the attack");
+  cr_assert_not_null(game_unit_by_number(x_id), "X did not survive");
+  cr_expect_eq(unit_tile(game_unit_by_number(x_id)), target,
+               "X did not occupy the tile it won");
 }
