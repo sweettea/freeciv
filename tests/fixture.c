@@ -49,6 +49,7 @@
 #include "unit.h"
 #include "unitlist.h"
 #include "unittype.h"
+#include "vision.h"
 
 /* server */
 #include "aiiface.h"
@@ -62,6 +63,7 @@
 #include "settings.h"
 #include "srv_main.h"
 #include "stdinhand.h"
+#include "unittools.h"
 
 /* server/advisors */
 #include "advdata.h"
@@ -240,6 +242,11 @@ void fx_fini(void)
     if (game_unit_by_number(fx_unit_ids[i]) != punit) {
       /* Died in the test; the server freed it. */
       continue;
+    }
+    if (punit->server.vision != nullptr) {
+      vision_clear_sight(punit->server.vision);
+      vision_free(punit->server.vision);
+      punit->server.vision = nullptr;
     }
     unit_list_remove(unit_tile(punit)->units, punit);
     unit_list_remove(unit_owner(punit)->units, punit);
@@ -493,4 +500,15 @@ struct unit *fx_unit(struct player *owner, const char *utype, int x, int y,
   fx_units[fx_nunits++] = punit;
 
   return punit;
+}
+
+/**********************************************************************//**
+  See fixture.h.
+**************************************************************************/
+void fx_unit_vision(struct unit *punit)
+{
+  cr_assert_null(punit->server.vision, "unit %d already has vision",
+                 punit->id);
+  punit->server.vision = vision_new(unit_owner(punit), unit_tile(punit));
+  unit_refresh_vision(punit);
 }

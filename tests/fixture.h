@@ -124,4 +124,9 @@ struct city *fx_city(struct player *owner, int x, int y, const char *name);
 struct unit *fx_unit(struct player *owner, const char *utype, int x, int y,
                      int veteran);
 
+/* Give a fixture unit the vision source a real unit has, so its owner
+ * sees the units around it and the unit can move (unit_move() swaps the
+ * source). fx_fini() clears it. */
+void fx_unit_vision(struct unit *punit);
+
 #endif /* FC__TESTS_FIXTURE_H */

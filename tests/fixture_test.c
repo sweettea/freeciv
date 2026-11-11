@@ -27,6 +27,7 @@
 #include "game.h"
 #include "government.h"
 #include "map.h"
+#include "movement.h"
 #include "nation.h"
 #include "player.h"
 #include "research.h"
@@ -38,6 +39,7 @@
 #include "unittype.h"
 
 /* server */
+#include "maphand.h"
 #include "unittools.h"
 
 #include "fixture.h"
@@ -194,4 +196,21 @@ Test(fixture, unit_dies, .init = fx_init_classic, .fini = fx_fini)
   wipe_unit(punit, ULR_KILLED, nullptr);
   cr_expect_null(game_unit_by_number(id));
   cr_expect_eq(unit_list_size(fx_tile(5, 5)->units), 1);
+}
+
+/* A fixture unit given vision lets its owner see the tiles around it,
+ * and it can move with unit_move(). */
+Test(fixture, unit_vision, .init = fx_init_classic, .fini = fx_fini)
+{
+  struct player *pplayer = fx_player();
+  struct unit *punit = fx_unit(pplayer, "Warriors", 5, 5, 0);
+
+  cr_expect(!map_is_known_and_seen(fx_tile(6, 5), pplayer, V_MAIN));
+  fx_unit_vision(punit);
+  cr_expect(map_is_known_and_seen(fx_tile(6, 5), pplayer, V_MAIN));
+
+  unit_move(punit, fx_tile(6, 5), SINGLE_MOVE, nullptr, FALSE, FALSE,
+            FALSE, FALSE, FALSE);
+  cr_expect_eq(unit_tile(punit), fx_tile(6, 5));
+  cr_expect(map_is_known_and_seen(fx_tile(7, 5), pplayer, V_MAIN));
 }
