@@ -110,6 +110,11 @@ void fx_government(struct player *pplayer, const char *rule_name);
  * actor's player to know the city, so call this after placing them. */
 void fx_show_all(struct player *pplayer);
 
+/* Give `pplayer` main-layer vision of every tile, as a unit on each tile
+ * would, revealing them. A city can only work tiles its owner sees, so
+ * call this before arranging a fixture city's workers. */
+void fx_see_all(struct player *pplayer);
+
 /* A virtual city of size 1 owned by `owner` on (x, y): registered in
  * the index and the owner's city list, its centre tile worked and
  * owned, its citizens of the owner's nationality, given its advisor

@@ -178,3 +178,17 @@ Test(fixture, player_state, .init = fx_init_classic, .fini = fx_fini)
                    "Monarchy");
   cr_expect(can_change_to_government(a, government_of_player(a)));
 }
+
+/* A city works only tiles its owner sees; fx_see_all() makes them
+ * workable. */
+Test(fixture, see_all, .init = fx_init_classic, .fini = fx_fini)
+{
+  struct player *owner = fx_player();
+  struct city *pcity = fx_city(owner, 5, 5, "Home");
+
+  cr_expect(!city_can_work_tile(pcity, fx_tile(6, 5)));
+  fx_see_all(owner);
+  cr_expect(city_can_work_tile(pcity, fx_tile(6, 5)));
+  cr_expect(city_can_work_tile(pcity, fx_tile(0, 0)) == FALSE);
+  cr_expect_eq(tile_get_known(fx_tile(19, 19), owner), TILE_KNOWN_SEEN);
+}

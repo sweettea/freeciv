@@ -49,6 +49,7 @@
 #include "unit.h"
 #include "unitlist.h"
 #include "unittype.h"
+#include "vision.h"
 
 /* server */
 #include "aiiface.h"
@@ -87,6 +88,8 @@ static struct city *fx_cities[FX_MAX_OBJECTS];
 static int fx_ncities;
 static struct unit *fx_units[FX_MAX_OBJECTS];
 static int fx_nunits;
+static struct vision *fx_visions[FX_MAX_OBJECTS];
+static int fx_nvisions;
 static double fx_last_setup;
 static bool fx_in_phase;
 
@@ -251,6 +254,13 @@ void fx_fini(void)
     destroy_city_virtual(pcity);
   }
   fx_ncities = 0;
+
+  /* After the cities: losing sight of a city's tiles rearranges it. */
+  for (i = 0; i < fx_nvisions; i++) {
+    vision_clear_sight(fx_visions[i]);
+    vision_free(fx_visions[i]);
+  }
+  fx_nvisions = 0;
 
   server_game_free();
   stdinhand_free();
@@ -438,6 +448,22 @@ void fx_government(struct player *pplayer, const char *rule_name)
 void fx_show_all(struct player *pplayer)
 {
   map_show_all(pplayer);
+}
+
+/**********************************************************************//**
+  See fixture.h.
+**************************************************************************/
+void fx_see_all(struct player *pplayer)
+{
+  const v_radius_t sight = V_RADIUS(FX_MAP_XSIZE * FX_MAP_XSIZE
+                                    + FX_MAP_YSIZE * FX_MAP_YSIZE, -1, -1);
+  struct vision *vision;
+
+  cr_assert(fx_nvisions < FX_MAX_OBJECTS, "fixture vision table is full");
+  vision = vision_new(pplayer, fx_tile(FX_MAP_XSIZE / 2, FX_MAP_YSIZE / 2));
+  vision_reveal_tiles(vision, TRUE);
+  vision_change_sight(vision, sight);
+  fx_visions[fx_nvisions++] = vision;
 }
 
 /**********************************************************************//**
