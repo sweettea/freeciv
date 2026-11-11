@@ -1059,6 +1059,7 @@ void dai_auto_settler_run(struct ai_type *ait, const struct civ_map *nmap,
   struct tile *best_tile = nullptr;
   struct pf_path *path = nullptr;
   struct city *pcity = nullptr;
+  struct worker_task *best_task = nullptr;
 
   /* Time it will take worker to complete its given task */
   int completion_time = 0;
@@ -1118,8 +1119,6 @@ BUILD_CITY:
   /*** Try find some work ***/
 
   if (unit_has_type_flag(punit, UTYF_WORKERS)) {
-    struct worker_task *best_task;
-
     TIMING_LOG(AIT_WORKERS, TIMER_START);
 
     /* Have nearby cities requests? */
@@ -1213,7 +1212,7 @@ BUILD_CITY:
                                 best_tile, best_act, &best_target,
                                 completion_time)) {
     if (pcity != nullptr) {
-      clear_worker_tasks(pcity);
+      clear_worker_task(pcity, best_task);
     }
   }
 

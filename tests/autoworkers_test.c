@@ -23,9 +23,17 @@
 /* common */
 #include "extras.h"
 #include "road.h"
+#include "workertask.h"
+
+/* server */
+#include "aiiface.h"
 
 /* server/advisors */
 #include "autoworkers.c"
+#include "infracache.h"
+
+/* ai/default */
+#include "daisettler.h"
 
 #include "fixture.h"
 
@@ -95,4 +103,53 @@ Test(autoworkers, road_bonus_is_rotation_invariant)
     }
   }
   cr_expect_eq(bad, 0, "%d of %d turned sets differ", bad, 3 << 12);
+}
+
+/* A worker request for a Road on (x, y) at `pcity`, as a client sends
+ * one. */
+static void request_road(struct city *pcity, int x, int y)
+{
+  struct worker_task *ptask = fc_malloc(sizeof(*ptask));
+
+  worker_task_init(ptask);
+  ptask->ptile = fx_tile(x, y);
+  ptask->act = ACTIVITY_GEN_ROAD;
+  ptask->tgt = extra_type_by_rule_name("Road");
+  ptask->want = 100;
+  cr_assert_not_null(ptask->tgt);
+  worker_task_list_append(pcity->task_reqs, ptask);
+}
+
+/* An AI worker that takes one of two requests of a city leaves the
+ * other in place. */
+Test(autoworkers, ai_worker_takes_one_request)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *pplayer = fx_ai_player(nullptr);
+  struct city *pcity = fx_city(pplayer, 5, 5, "Home");
+  struct unit *punit = fx_unit(pplayer, "Workers", 6, 5, 0);
+  struct workermap *state;
+
+  request_road(pcity, 6, 5);
+  request_road(pcity, 4, 5);
+  fx_show_all(pplayer);
+  fx_phase_begin();
+
+  state = fc_calloc(MAP_INDEX_SIZE, sizeof(*state));
+  whole_map_iterate(&(wld.map), ptile) {
+    state[tile_index(ptile)].enroute = -1;
+    state[tile_index(ptile)].eta = FC_INFINITY;
+  } whole_map_iterate_end;
+  citymap_turn_init(pplayer);
+  initialize_infrastructure_cache(pplayer);
+
+  dai_auto_settler_run(ait, &(wld.map), pplayer, punit, state);
+
+  cr_expect_eq(punit->activity, ACTIVITY_GEN_ROAD, "activity %s",
+               unit_activity_name(punit->activity));
+  cr_assert_eq(worker_task_list_size(pcity->task_reqs), 1,
+               "%d requests left", worker_task_list_size(pcity->task_reqs));
+  cr_expect(same_pos(worker_task_list_get(pcity->task_reqs, 0)->ptile,
+                     fx_tile(4, 5)));
+  FC_FREE(state);
 }
