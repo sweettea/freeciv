@@ -19,6 +19,7 @@
 #include <fc_config.h>
 #endif
 
+#include <signal.h>
 #include <stdlib.h>
 #include <time.h>
 
@@ -135,7 +136,9 @@ void fx_init(const char *ruleset)
    * traits under traitdistribution EVEN) draws the same ones each run. */
   fc_srand(1);
   init_connections();
-  con_log_init(nullptr, LOG_ERROR, -1);
+  /* A failed fc_assert() raises SIGABRT, so it fails the test instead
+   * of only being logged. */
+  con_log_init(nullptr, LOG_ERROR, SIGABRT);
   settings_init(FALSE);
   stdinhand_init();
   server_game_init(FALSE);

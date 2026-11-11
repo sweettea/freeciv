@@ -27,7 +27,11 @@
  *   TestSuite(mysuite, .init = fx_init_civ2civ3, .fini = fx_fini);
  *
  * Criterion runs every test in its own process, so each test starts
- * from a fresh fixture and nothing a test changes reaches another. */
+ * from a fresh fixture and nothing a test changes reaches another.
+ *
+ * A failed fc_assert() raises SIGABRT, which Criterion reports as a
+ * crash. A test that documents such a failure says so with
+ * `.signal = SIGABRT`. */
 
 #include <stdbool.h>
 
