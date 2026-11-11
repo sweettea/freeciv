@@ -13,7 +13,10 @@ EXTRA_DIST =	README.md			\
 		check_macros.sh			\
 		combat_test.c			\
 		copyright.sh			\
+		daiair_test.c			\
+		daihunter_test.c		\
 		daimilitary_test.c		\
+		daiparadrop_test.c		\
 		fcintl.sh			\
 		fixture.c			\
 		fixture.h			\
