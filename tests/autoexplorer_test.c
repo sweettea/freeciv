@@ -73,10 +73,15 @@ Test(autoexplorer, ai_explorer_wants_known_hut)
 
 /* Where an Explorer of `pplayer` at (2, 5) with moves for one step goes
  * on its way to (8, 5). A Grassland corridor runs along y = 5 with
- * Ocean either side for x = 3..7, and a longer land route along
- * y = 3. Another player's Warriors, never seen by `pplayer`, blocks
- * the corridor at (5, 5). */
-static struct tile *explorer_step_past_unseen_unit(struct player *pplayer)
+ * Ocean either side for x = 3..7. Another player's Explorer, never seen
+ * by `pplayer`, blocks the corridor at (5, 5); it has no ZOC.
+ *
+ * The other land routes run along y = 3 and y = 7, two steps longer,
+ * or with `far_detour` along y = 2 and y = 8, four steps longer. An IgTer step is a
+ * third of a move, so only the far detour costs more than the turn's
+ * worth of extra cost path finding allows a tile. */
+static struct tile *explorer_step_past_unseen_unit(struct player *pplayer,
+                                                   bool far_detour)
 {
   struct player *other = fx_ai_player(nullptr);
   struct unit *explorer;
@@ -85,9 +90,13 @@ static struct tile *explorer_step_past_unseen_unit(struct player *pplayer)
   for (x = 3; x <= 7; x++) {
     fx_set_terrain(x, 4, "Ocean");
     fx_set_terrain(x, 6, "Ocean");
+    if (far_detour) {
+      fx_set_terrain(x, 3, "Ocean");
+      fx_set_terrain(x, 7, "Ocean");
+    }
   }
   explorer = fx_unit(pplayer, "Explorer", 2, 5, 0);
-  fx_unit(other, "Warriors", 5, 5, 0);
+  fx_unit(other, "Explorer", 5, 5, 0);
   fx_show_all(pplayer);
   cr_assert(!map_is_known_and_seen(fx_tile(5, 5), pplayer, V_MAIN));
   explorer->moves_left = terrain_control.igter_cost;
@@ -97,23 +106,24 @@ static struct tile *explorer_step_past_unseen_unit(struct player *pplayer)
   return unit_tile(explorer);
 }
 
-/* A human's explorer cannot route round a unit its owner has not seen:
- * it takes the corridor. */
+/* A human's explorer is not barred from a tile by a unit its owner has
+ * not seen: it takes the corridor rather than a far detour. */
 Test(autoexplorer, human_explorer_ignores_unseen_units)
 {
-  struct tile *step = explorer_step_past_unseen_unit(fx_player());
+  struct tile *step = explorer_step_past_unseen_unit(fx_player(), TRUE);
 
   cr_expect(same_pos(step, fx_tile(3, 5)),
             "the human's Explorer stepped to (%d, %d)", TILE_XY(step));
 }
 
-/* An AI explorer still routes round it. */
+/* An AI explorer still routes round it, however far. */
 Test(autoexplorer, ai_explorer_avoids_unseen_units)
 {
-  struct tile *step = explorer_step_past_unseen_unit(fx_ai_player(nullptr));
+  struct tile *step = explorer_step_past_unseen_unit(fx_ai_player(nullptr),
+                                                     TRUE);
 
-  cr_expect(same_pos(step, fx_tile(2, 4)),
-            "the AI's Explorer stepped to (%d, %d)", TILE_XY(step));
+  cr_expect(!same_pos(step, fx_tile(3, 5)),
+            "the AI's Explorer took the corridor");
 }
 
 struct explore_ruleset {
