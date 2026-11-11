@@ -580,6 +580,13 @@ int dai_hunter_manage(struct ai_type *ait, struct player *pplayer,
                dist1,
                dist2);
       /* Ok, now we FINALLY have a target worth destroying! */
+      if (!is_virtual && unit_data->task == AIUNIT_HUNTER
+          && original_target != NULL && original_target != target) {
+        /* dai_unit_new_task() below clears the hunted bit of the target
+         * we record, so release the one we are leaving here. */
+        BV_CLR(def_ai_unit_data(original_target, ait)->hunted,
+               player_index(pplayer));
+      }
       unit_data->target = target->id;
       if (is_virtual) {
         pf_map_destroy(pfm);

@@ -239,3 +239,47 @@ ParameterizedTest(struct ruleset_name *p, daihunter, prefers_closer_target,
                "%s: target %d, near Catapult %d, far %d", p->ruleset,
                def_ai_unit_data(hunter, ait)->target, near->id, far->id);
 }
+
+ParameterizedTestParameters(daihunter, switch_frees_old_target)
+{
+  static struct ruleset_name params[] = {
+    { "classic" }, { "civ2civ3" },
+  };
+
+  return cr_make_param_array(struct ruleset_name, params,
+                             sizeof(params) / sizeof(params[0]));
+}
+
+/* A Horsemen hunting a far Catapult switches to a near one; the far one
+ * is no longer marked hunted by its player, so another hunter may take
+ * it. */
+ParameterizedTest(struct ruleset_name *p, daihunter, switch_frees_old_target,
+                  .fini = fx_fini)
+{
+  struct ai_type *ait;
+  struct player *us, *them;
+  struct unit *far, *near, *hunter;
+
+  fx_init(p->ruleset);
+  game.info.skill_level = AI_LEVEL_HARD;
+  us = fx_ai_player(nullptr);
+  them = fx_ai_player(nullptr);
+  fx_war(us, them);
+  far = fx_unit(them, "Catapult", 15, 5, 0);
+  near = fx_unit(them, "Catapult", 7, 5, 0);
+  hunter = fx_unit(us, "Horsemen", 5, 5, 0);
+  fx_unit_vision(hunter);
+  fx_show_all(us);
+  fx_show_all(them);
+  fx_phase_begin();
+
+  ait = ai_type_by_name(default_ai_type_name());
+  def_ai_unit_data(hunter, ait)->target = far->id;
+  dai_unit_new_task(ait, hunter, AIUNIT_HUNTER, unit_tile(far));
+  cr_assert(BV_ISSET(def_ai_unit_data(far, ait)->hunted, player_index(us)));
+
+  (void) dai_hunter_manage(ait, us, hunter);
+  cr_assert_eq(def_ai_unit_data(hunter, ait)->target, near->id);
+  cr_expect(!BV_ISSET(def_ai_unit_data(far, ait)->hunted, player_index(us)),
+            "%s: far Catapult still marked hunted", p->ruleset);
+}
