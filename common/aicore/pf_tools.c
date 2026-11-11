@@ -747,9 +747,9 @@ pft_fill_utype_default_parameter(struct pf_parameter *parameter,
   pft_fill_default_parameter(parameter, nmap, punittype);
 
   parameter->start_tile = pstart_tile;
-  parameter->moves_left_initially = punittype->move_rate;
   parameter->move_rate = utype_move_rate(punittype, pstart_tile, powner,
                                          veteran_level, punittype->hp);
+  parameter->moves_left_initially = parameter->move_rate;
   if (utype_fuel(punittype)) {
     parameter->fuel_left_initially = utype_fuel(punittype);
     parameter->fuel = utype_fuel(punittype);
