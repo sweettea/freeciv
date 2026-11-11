@@ -9,8 +9,14 @@ src-check:
 CLEANFILES = check-output
 
 EXTRA_DIST =	README.md			\
+		advdata_test.c			\
+		advgoto_test.c			\
+		advruleset_test.c		\
+		autoexplorer_test.c		\
+		autoworkers_test.c		\
 		bodyguard_test.c		\
 		check_macros.sh			\
+		cm_test.c			\
 		combat_test.c			\
 		copyright.sh			\
 		daiair_test.c			\
@@ -23,6 +29,7 @@ EXTRA_DIST =	README.md			\
 		daihunter_test.c		\
 		daimilitary_test.c		\
 		daiparadrop_test.c		\
+		daisettler_test.c		\
 		daiunit_test.c			\
 		fcintl.sh			\
 		fixture.c			\
@@ -33,6 +40,8 @@ EXTRA_DIST =	README.md			\
 		generate_rs_save.sh		\
 		generate_rs_upgrade.sh		\
 		header_guard.sh			\
+		path_finding_test.c		\
+		pf_tools_test.c			\
 		rs_test_res/ruleset_is.lua	\
 		rs_test_res/ruleset_list_dist.txt \
 		rs_test_res/ruleset_list_opt.txt \
