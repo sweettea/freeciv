@@ -101,3 +101,42 @@ Test(daidiplomacy, spoils_war_with_animals)
 {
   spoils_war_planned(TRUE);
 }
+
+/* Whether pplayer has put a clause of `type` on the table with
+ * aplayer. */
+static bool proposed(struct player *pplayer, struct player *aplayer,
+                     enum clause_type type)
+{
+  struct treaty *ptreaty = find_treaty(pplayer, aplayer);
+
+  if (ptreaty == nullptr) {
+    return FALSE;
+  }
+  clause_list_iterate(ptreaty->clauses, pclause) {
+    if (pclause->type == type) {
+      return TRUE;
+    }
+  } clause_list_iterate_end;
+
+  return FALSE;
+}
+
+/* An AI at war with a human offers a cease-fire, also when it has an
+ * ally, listed before the enemy, who is at peace with that enemy. */
+Test(daidiplomacy, ceasefire_offered_past_an_idle_ally)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *a = fx_ai_player(nullptr);
+  struct player *ally = fx_ai_player(nullptr);
+  struct player *enemy = fx_player();
+
+  fx_diplstate(a, ally, DS_ALLIANCE);
+  fx_war(a, enemy);
+  fx_diplstate(ally, enemy, DS_PEACE);
+  fx_phase_begin();
+  cr_assert_lt(player_index(ally), player_index(enemy));
+
+  dai_diplomacy_actions(ait, a);
+  cr_expect(proposed(a, enemy, CLAUSE_CEASEFIRE),
+            "no cease-fire offered to the enemy");
+}

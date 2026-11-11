@@ -1778,6 +1778,7 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
         && diplomacy_possible(pplayer, aplayer)) {
       enum diplstate_type ds = player_diplstate_get(pplayer, aplayer)->type;
       struct ai_dip_intel *adip = dai_diplomacy_get(ait, pplayer, aplayer);
+      struct player *ally_target;
       struct Clause clause;
 
       /* Meaningless values, but rather not have them unset. */
@@ -1838,11 +1839,11 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
         if (adip->at_war_with_ally) {
           break;
         }
-        target = nullptr;
+        ally_target = nullptr;
         players_iterate_alive(eplayer) {
           if (WAR(pplayer, eplayer)
               && !pplayers_at_war(aplayer, eplayer)) {
-            target = eplayer;
+            ally_target = eplayer;
             break;
           }
         } players_iterate_alive_end;
@@ -1852,7 +1853,7 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
           /* Share techs only with team mates and allies we really like. */
           dai_share(ait, pplayer, aplayer);
         }
-        if (!target || !target->is_alive) {
+        if (!ally_target || !ally_target->is_alive) {
           adip->ally_patience = 0;
           break; /* No need to nag our ally */
         }
@@ -1865,7 +1866,7 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
                              _("*%s (AI)* Greetings our most trustworthy "
                                "ally. We call upon you to destroy our enemy, %s."),
                              player_name(pplayer),
-                             player_name(target));
+                             player_name(ally_target));
             adip->ally_patience--;
           } else if (adip->ally_patience == -1) {
             if (fc_rand(5) == 1) {
@@ -1874,7 +1875,7 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
                                  "made war with our enemy, %s. Why do I need to remind "
                                  "you of your promises?"),
                                player_name(pplayer),
-                               player_name(target));
+                               player_name(ally_target));
               adip->ally_patience--;
             }
           } else if (fc_rand(5) == 1
@@ -1885,7 +1886,7 @@ void dai_diplomacy_actions(struct ai_type *ait, struct player *pplayer)
                                "enemy, %s! This is unacceptable; our alliance is no "
                                "more!"),
                              player_name(pplayer),
-                             player_name(target));
+                             player_name(ally_target));
             DIPLO_LOG(ait, LOG_DIPL2, pplayer, aplayer,
                       "breaking useless alliance");
             /* To peace */
