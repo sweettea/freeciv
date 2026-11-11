@@ -166,3 +166,23 @@ Test(advdata, nuclear_unit_is_a_nuclear_threat)
                "threats.nuclear = %d",
                adv_data_get(us, nullptr)->threats.nuclear);
 }
+
+/* Rating the governments leaves the player's real tax rates as they
+ * were, though some trial governments have a lower maximum rate. */
+Test(advdata, best_government_keeps_rates)
+{
+  struct player *pplayer = fx_ai_player(nullptr);
+
+  fx_city(pplayer, 5, 5, "Capital");
+  fx_government(pplayer, "Democracy");
+  pplayer->economic.tax = 10;
+  pplayer->economic.luxury = 0;
+  pplayer->economic.science = 90;
+  fx_phase_begin();
+  adv_data_get(pplayer, nullptr)->govt_reeval = 0;
+
+  adv_best_government(pplayer);
+  cr_expect_eq(pplayer->economic.science, 90, "science %d tax %d lux %d",
+               pplayer->economic.science, pplayer->economic.tax,
+               pplayer->economic.luxury);
+}

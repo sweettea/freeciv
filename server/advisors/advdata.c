@@ -1019,6 +1019,7 @@ void adv_best_government(struct player *pplayer)
 
   if (adv->govt_reeval == 0) {
     const struct research *presearch = research_get(pplayer);
+    const struct player_economic real_rates = pplayer->economic;
 
     governments_iterate(gov) {
       adv_want val = 0;
@@ -1041,8 +1042,11 @@ void adv_best_government(struct player *pplayer)
 
         pplayer->government = gov;
         /* Ideally we should change tax rates here, but since
-         * this is a rather big CPU operation, we'd rather not. */
-        check_player_max_rates(pplayer);
+         * this is a rather big CPU operation, we'd rather not.
+         * Each trial starts from the real rates, so the order the
+         * governments are tried in does not matter. */
+        pplayer->economic = real_rates;
+        player_limit_to_max_rates(pplayer);
         city_list_iterate(pplayer->cities, acity) {
           auto_arrange_workers(acity);
         } city_list_iterate_end;
@@ -1077,6 +1081,7 @@ void adv_best_government(struct player *pplayer)
     } governments_iterate_end;
     /* Now reset our gov to it's real state. */
     pplayer->government = current_gov;
+    pplayer->economic = real_rates;
     city_list_iterate(pplayer->cities, acity) {
       auto_arrange_workers(acity);
     } city_list_iterate_end;
