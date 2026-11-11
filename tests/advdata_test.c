@@ -85,3 +85,51 @@ Test(advdata, dead_enemy_has_no_dangerous_allies)
             "C counts as allied with A's enemy");
   cr_expect(!adv_is_player_dangerous(a, c), "C is dangerous to A");
 }
+
+/* Give `pplayer` a city at (x, y) with the Great Library. */
+static void great_library(struct player *pplayer, int x, int y)
+{
+  struct city *pcity = fx_city(pplayer, x, y, "Library");
+
+  city_add_improvement(pcity, improvement_by_rule_name("Great Library"));
+  city_refresh_for_player(pplayer);
+  /* As the game start does, so its research knows what is reachable. */
+  research_update(research_get(pplayer));
+}
+
+/* The classic Great Library (Tech_Parasite 2) grants a tech known to
+ * two other research teams. A tech that one rival knows and another
+ * only researches is not free, so science is still wanted. */
+Test(advdata, tech_parasite_needs_known_techs)
+{
+  struct player *pplayer = fx_ai_player(nullptr);
+  struct player *knows = fx_ai_player(nullptr);
+  struct player *researching = fx_ai_player(nullptr);
+  struct advance *bronze = advance_by_rule_name("Bronze Working");
+
+  great_library(pplayer, 5, 5);
+  fx_tech(knows, "Bronze Working");
+  research_get(researching)->researching = advance_number(bronze);
+  fx_phase_begin();
+
+  cr_expect(adv_wants_science(pplayer), "science not wanted");
+}
+
+/* The sandbox Great Library is Tech_Parasite_Pct_Max 30: with four
+ * research teams one other team knowing a tech is enough, so science
+ * is not wanted while one does. */
+TestSuite(advdata_sandbox, .init = fx_init_sandbox, .fini = fx_fini);
+
+Test(advdata_sandbox, tech_parasite_pct_max)
+{
+  struct player *pplayer = fx_ai_player(nullptr);
+  struct player *knows = fx_ai_player(nullptr);
+
+  fx_ai_player(nullptr);
+  fx_ai_player(nullptr);
+  great_library(pplayer, 5, 5);
+  fx_tech(knows, "Bronze Working");
+  fx_phase_begin();
+
+  cr_expect(!adv_wants_science(pplayer), "science wanted");
+}

@@ -144,19 +144,27 @@ static void adv_data_city_impr_calc(struct player *pplayer,
   Check if the player still takes advantage of EFT_TECH_PARASITE.
   Research is useless if there are still techs which may be given to the
   player for free.
+
+  The test is the one do_tech_parasite_effects() makes when it grants a
+  tech: enough other research teams know it.
 **************************************************************************/
 static bool player_has_really_useful_tech_parasite(struct player* pplayer)
 {
-  struct research *presearch, *aresearch;
-  int players_needed = get_player_bonus(pplayer, EFT_TECH_PARASITE);
+  struct research *presearch;
+  int mod_abs = get_player_bonus(pplayer, EFT_TECH_PARASITE);
+  int mod = (research_count()
+             * get_player_bonus(pplayer, EFT_TECH_PARASITE_PCT_MAX)) / 100;
 
-  if (players_needed == 0) {
+  if (mod <= 0 && mod_abs <= 0) {
     return FALSE;
+  }
+  if (mod <= 0 || (mod_abs > 0 && mod_abs <= mod)) {
+    mod = mod_abs;
   }
 
   presearch = research_get(pplayer);
   advance_index_iterate(A_FIRST, tech) {
-    int players_having;
+    int teams_knowing;
 
     if (!research_invention_gettable(presearch, tech,
                                      game.info.tech_parasite_allow_holes)
@@ -164,22 +172,16 @@ static bool player_has_really_useful_tech_parasite(struct player* pplayer)
       continue;
     }
 
-    players_having = 0;
+    teams_knowing = 0;
 
-    players_iterate_alive(aplayer) {
-      if (aplayer == pplayer) {
-        continue;
-      }
-
-      aresearch = research_get(aplayer);
-      if (TECH_KNOWN == research_invention_state(aresearch, tech)
-          || aresearch->researching == tech) {
-        players_having++;
-        if (players_having >= players_needed) {
+    researches_iterate(aresearch) {
+      if (TECH_KNOWN == research_invention_state(aresearch, tech)) {
+        teams_knowing++;
+        if (teams_knowing >= mod) {
           return TRUE;
         }
       }
-    } players_iterate_alive_end;
+    } researches_iterate_end;
   } advance_index_iterate_end;
 
   return FALSE;
