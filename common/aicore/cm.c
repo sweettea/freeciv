@@ -913,7 +913,6 @@ static int compare_tile_type_by_fitness(const void *va, const void *vb)
 }
 
 static Output_type_id compare_key;
-static double compare_key_trade_bonus;
 
 /************************************************************************//**
   Compare by the production of type compare_key.
@@ -930,22 +929,13 @@ static int compare_tile_type_by_stat(const void *va, const void *vb)
     return 0;
   }
 
-  /* Consider the influence of trade on science, luxury, gold
-     for compute_max_stats_heuristics, which uses these sorted arrays,
-     it is essential, that the sorting is correct, else promising
-     branches get pruned */
-  double valuea = (*a)->production[compare_key] +
-                    compare_key_trade_bonus * (*a)->production[O_TRADE];
-  double valueb = (*b)->production[compare_key] +
-                    compare_key_trade_bonus * (*b)->production[O_TRADE];
-
-  /* Most production of what we care about goes first */
-  /* Double compare is ok, both values are calculated in the same way
-     and should only be considered equal, if equal in compare_key
-     and O_TRADE */
-  if (valuea != valueb) {
+  /* Most production of what we care about goes first. Sort by the raw
+   * stat alone: compute_max_stats_heuristic() takes the stat from this
+   * order and the trade from the trade order, so the sum is an upper
+   * bound only if each order maximises its own output. */
+  if ((*a)->production[compare_key] != (*b)->production[compare_key]) {
     /* b-a so we sort big numbers first */
-    return valueb - valuea;
+    return (*b)->production[compare_key] - (*a)->production[compare_key];
   }
 
   return compare_tile_type_by_lattice_order(*a, *b);
@@ -1861,11 +1851,8 @@ static bool bb_next(struct cm_state *state, bool negative_ok)
 ****************************************************************************/
 static struct cm_state *cm_state_init(struct city *pcity, bool negative_ok)
 {
-  const int SCIENCE = 0, TAX = 1, LUXURY = 2;
-  const struct player *pplayer = city_owner(pcity);
   int numtypes;
   struct cm_state *state = fc_malloc(sizeof(*state));
-  int rates[3];
   citizens csize = city_size_get(pcity);
 
   log_base(LOG_CM_STATE, "creating cm_state for %s (size %d)",
@@ -1879,8 +1866,6 @@ static struct cm_state *cm_state_init(struct city *pcity, bool negative_ok)
   init_tile_lattice(pcity, &state->lattice);
   numtypes = tile_type_vector_size(&state->lattice);
 
-  get_tax_rates(pplayer, rates);
-
   /* For the heuristic, make sorted copies of the lattice */
   output_type_iterate(stat_index) {
     int lsize = tile_type_vector_size(&state->lattice);
@@ -1889,21 +1874,6 @@ static struct cm_state *cm_state_init(struct city *pcity, bool negative_ok)
       tile_type_vector_init(&state->lattice_by_prod[stat_index]);
       tile_type_vector_copy(&state->lattice_by_prod[stat_index], &state->lattice);
       compare_key = stat_index;
-      /* Calculate effect of 1 trade production on interesting production */
-      switch (stat_index) {
-      case O_SCIENCE:
-        compare_key_trade_bonus = rates[SCIENCE] * pcity->bonus[O_TRADE] / 100.0;
-        break;
-      case O_LUXURY:
-        compare_key_trade_bonus = rates[LUXURY] * pcity->bonus[O_TRADE] / 100.0;
-        break;
-      case O_GOLD:
-        compare_key_trade_bonus = rates[TAX] * pcity->bonus[O_TRADE] / 100.0;
-        break;
-      default:
-        compare_key_trade_bonus = 0.0;
-        break;
-      }
       qsort(state->lattice_by_prod[stat_index].p, lsize,
             sizeof(*state->lattice_by_prod[stat_index].p),
             compare_tile_type_by_stat);
