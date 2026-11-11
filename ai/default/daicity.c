@@ -88,7 +88,8 @@
 #define city_range_iterate(city_here, list, range, city)                \
 {                                                                       \
   city_list_iterate(list, city) {                                       \
-    if (range == REQ_RANGE_PLAYER                                       \
+    if (range == REQ_RANGE_WORLD                                        \
+        || range == REQ_RANGE_PLAYER                                    \
         || range == REQ_RANGE_TEAM                                      \
         || range == REQ_RANGE_ALLIANCE                                  \
         || (range == REQ_RANGE_TRADE_ROUTE                              \
@@ -1682,11 +1683,11 @@ static void adjust_improvement_wants_by_effects(struct ai_type *ait,
     }
   }
 
-  if (!is_convert) {
+  if (!is_convert && !already) {
     /* Adjust by building cost */
     /* FIXME: ought to reduce by upkeep cost and amortise by building cost */
     v -= (impr_build_shield_cost(pcity, pimprove)
-         / (pcity->surplus[O_SHIELD] * 10 + 1));
+         / (MAX(pcity->surplus[O_SHIELD], 0) * 10 + 1));
   }
 
   /* Find number of cities per range.  */
@@ -1765,7 +1766,7 @@ static void adjust_improvement_wants_by_effects(struct ai_type *ait,
     n_needed_techs = tech_vector_size(&needed_techs);
     if ((active || n_needed_techs) && !impossible_to_get) {
       adv_want v1 = dai_effect_value(pplayer, ai, pcity, capital,
-                                     turns, peffect, range, nplayers);
+                                     turns, peffect, cities[range], nplayers);
       /* v1 could be negative (the effect could be undesirable),
        * although it is usually positive.
        * For example, in the default ruleset, Communism decreases the

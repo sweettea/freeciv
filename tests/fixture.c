@@ -339,7 +339,14 @@ static struct player *fx_new_player(const char *ai_tname)
   pnation = pick_a_nation(nullptr, TRUE, FALSE, NOT_A_BARBARIAN);
   cr_assert_not_null(pnation, "no free playable nation");
   player_set_nation(pplayer, pnation);
+  /* As final_ruleset_adjustments() does at game start. */
+  pplayer->government = init_government_of_nation(pnation);
+  if (pnation->init_government == game.government_during_revolution) {
+    pplayer->revolution_finishes = 0;
+  }
   ai_traits_init(pplayer);
+  /* As srv_ready() does for every player at game start. */
+  adv_data_analyze_rulesets(pplayer);
   pplayer->is_alive = TRUE;
 
   return pplayer;
@@ -480,6 +487,7 @@ struct city *fx_city(struct player *owner, int x, int y, const char *name)
   idex_register_city(&wld, pcity);
   city_list_prepend(owner->cities, pcity);
   tile_set_owner(ptile, owner, ptile);
+  city_choose_build_default(&(wld.map), pcity);
   tile_set_worked(ptile, pcity);
   citizens_init(pcity);
   if (game.info.citizen_nationality) {

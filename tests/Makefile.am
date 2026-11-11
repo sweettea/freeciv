@@ -13,6 +13,9 @@ EXTRA_DIST =	README.md			\
 		check_macros.sh			\
 		combat_test.c			\
 		copyright.sh			\
+		daicity_test.c			\
+		daidomestic_test.c		\
+		daieffects_test.c		\
 		daimilitary_test.c		\
 		fcintl.sh			\
 		fixture.c			\

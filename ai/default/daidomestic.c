@@ -340,7 +340,7 @@ static void dai_choose_trade_route(struct ai_type *ait, struct city *pcity,
   } unit_list_iterate_end;
 
   max_routes = max_trade_routes(pcity);
-  unassigned_caravans = caravan_units - (max_routes - trade_routes);
+  unassigned_caravans = MAX(0, caravan_units - (max_routes - trade_routes));
   trade_routes += caravan_units;
 
   /* We consider only initial benefit from establishing trade route.
@@ -621,7 +621,7 @@ struct adv_choice *domestic_advisor_choose_build(struct ai_type *ait,
     adv_choice_set_use(cur, "improvement");
     building_advisor_choose(pcity, cur);
     cur->want = cur->want * (0.5 + (ai_trait_get_value(TRAIT_BUILDER, pplayer)
-                                    / TRAIT_DEFAULT_VALUE / 2));
+                                    / (double) TRAIT_DEFAULT_VALUE / 2));
     choice = adv_better_choice_free(choice, cur);
 
     /* Consider building caravan-type units for trade route */

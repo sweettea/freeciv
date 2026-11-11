@@ -69,8 +69,10 @@ struct tile *fx_tile(int x, int y);
 void fx_set_terrain(int x, int y, const char *rule_name);
 
 /* A new human-controlled player with the next free playable nation,
- * its traits drawn, alive, and in no contact with anybody. Its AI type
- * is the server's default one, as for any player. */
+ * under that nation's initial government, its traits drawn, its
+ * advisor's ruleset analysis done, alive, and in no contact with
+ * anybody. Its AI type is the server's default one, as for any
+ * player. */
 struct player *fx_player(void);
 
 /* A new AI-controlled player of AI type `ai_name` (nullptr for the
@@ -116,9 +118,9 @@ void fx_show_all(struct player *pplayer);
 void fx_see_all(struct player *pplayer);
 
 /* A virtual city of size 1 owned by `owner` on (x, y): registered in
- * the index and the owner's city list, its centre tile worked and
- * owned, its citizens of the owner's nationality, given its advisor
- * data, and refreshed. */
+ * the index and the owner's city list, building what create_city()
+ * would start it on, its centre tile worked and owned, its citizens of
+ * the owner's nationality, given its advisor data, and refreshed. */
 struct city *fx_city(struct player *owner, int x, int y, const char *name);
 
 /* A virtual unit of type `utype` (rule name) at (x, y) with full hp
