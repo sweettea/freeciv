@@ -356,8 +356,8 @@ static int calculate_want_for_paratrooper(struct unit *punit,
     if (pplayers_allied(pplayer, city_owner(pcity))) {
       profit += city_size_get(pcity)
                 * multiplier * real_map_distance(ptile_city, ptile) / 2;
-    } else {
-
+    } else if (pplayers_at_war(pplayer, city_owner(pcity))) {
+      /* Same test as the drop into an enemy city */
       profit += city_size_get(pcity) * multiplier
                 * real_map_distance(ptile_city, ptile);
     }
@@ -386,15 +386,16 @@ void dai_choose_paratrooper(struct ai_type *ait, const struct civ_map *nmap,
 
   /* military_advisor_choose_build() does something idiotic,
    * this function should not be called if there is danger... */
-  if (choice->want >= 100 && choice->type != CT_ATTACKER) {
+  if (choice->want >= DAI_WANT_MILITARY_EMERGENCY
+      && choice->type != CT_ATTACKER) {
     return;
   }
 
   unit_type_iterate(u_type) {
     struct unit *virtual_unit;
 
-    if (!utype_can_do_action(u_type, ACTION_PARADROP)
-        && !utype_can_do_action(u_type, ACTION_PARADROP_CONQUER)) {
+    if (!utype_can_do_action_result(u_type, ACTRES_PARADROP)
+        && !utype_can_do_action_result(u_type, ACTRES_PARADROP_CONQUER)) {
       continue;
     }
 

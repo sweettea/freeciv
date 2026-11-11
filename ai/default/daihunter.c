@@ -324,7 +324,7 @@ static void dai_hunter_try_launch(struct ai_type *ait,
       pfm = pf_map_new(&parameter);
 
       pf_map_move_costs_iterate(pfm, ptile, move_cost, FALSE) {
-        if (move_cost > missile->moves_left / SINGLE_MOVE) {
+        if (move_cost > missile->moves_left) {
           break;
         }
         if (tile_city(ptile)
@@ -453,8 +453,19 @@ int dai_hunter_manage(struct ai_type *ait, struct player *pplayer,
   pfm = pf_map_new(&parameter);
 
   if (original_target) {
+    /* A separate map: querying pfm would advance its iteration. */
+    struct pf_map *opfm = pf_map_new(&parameter);
+    int original_dist = pf_map_move_cost(opfm, unit_tile(original_target));
+
+    pf_map_destroy(opfm);
     dai_hunter_juiciness(pplayer, punit, original_target,
                          &original_threat, &original_cost);
+    /* Reduced by distance as each candidate's threat is below. */
+    if (original_dist == PF_IMPOSSIBLE_MC) {
+      original_threat = 0;
+    } else {
+      original_threat /= original_dist + 1;
+    }
   }
 
   pf_map_move_costs_iterate(pfm, ptile, move_cost, FALSE) {
@@ -499,7 +510,8 @@ int dai_hunter_manage(struct ai_type *ait, struct player *pplayer,
       }
 
       target_tile = unit_tile(target);
-      if (!unit_attack_unit_at_tile_result(punit, NULL, target, target_tile)) {
+      if (unit_attack_unit_at_tile_result(punit, NULL, target, target_tile)
+          != ATT_OK) {
         /* We can't attack the target */
         continue;
       }
@@ -568,6 +580,13 @@ int dai_hunter_manage(struct ai_type *ait, struct player *pplayer,
                dist1,
                dist2);
       /* Ok, now we FINALLY have a target worth destroying! */
+      if (!is_virtual && unit_data->task == AIUNIT_HUNTER
+          && original_target != NULL && original_target != target) {
+        /* dai_unit_new_task() below clears the hunted bit of the target
+         * we record, so release the one we are leaving here. */
+        BV_CLR(def_ai_unit_data(original_target, ait)->hunted,
+               player_index(pplayer));
+      }
       unit_data->target = target->id;
       if (is_virtual) {
         pf_map_destroy(pfm);

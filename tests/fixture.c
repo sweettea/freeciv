@@ -63,6 +63,7 @@
 #include "settings.h"
 #include "srv_main.h"
 #include "stdinhand.h"
+#include "unittools.h"
 
 /* server/advisors */
 #include "advdata.h"
@@ -82,11 +83,14 @@
 #include "fixture.h"
 
 /* The cities and units the helpers made, freed by fx_fini() before the
- * game is, because the server's own teardown expects real ones. */
+ * game is, because the server's own teardown expects real ones. A unit
+ * may die during the test, so its id is kept to tell whether the
+ * pointer is still live. */
 #define FX_MAX_OBJECTS 256
 static struct city *fx_cities[FX_MAX_OBJECTS];
 static int fx_ncities;
 static struct unit *fx_units[FX_MAX_OBJECTS];
+static int fx_unit_ids[FX_MAX_OBJECTS];
 static int fx_nunits;
 static struct vision *fx_visions[FX_MAX_OBJECTS];
 static int fx_nvisions;
@@ -237,6 +241,15 @@ void fx_fini(void)
   for (i = 0; i < fx_nunits; i++) {
     struct unit *punit = fx_units[i];
 
+    if (game_unit_by_number(fx_unit_ids[i]) != punit) {
+      /* Died in the test; the server freed it. */
+      continue;
+    }
+    if (punit->server.vision != nullptr) {
+      vision_clear_sight(punit->server.vision);
+      vision_free(punit->server.vision);
+      punit->server.vision = nullptr;
+    }
     unit_list_remove(unit_tile(punit)->units, punit);
     unit_list_remove(unit_owner(punit)->units, punit);
     idex_unregister_unit(&wld, punit);
@@ -516,7 +529,19 @@ struct unit *fx_unit(struct player *owner, const char *utype, int x, int y,
   unit_tile_set(punit, ptile);
   unit_list_prepend(ptile->units, punit);
   unit_list_prepend(owner->units, punit);
+  fx_unit_ids[fx_nunits] = punit->id;
   fx_units[fx_nunits++] = punit;
 
   return punit;
+}
+
+/**********************************************************************//**
+  See fixture.h.
+**************************************************************************/
+void fx_unit_vision(struct unit *punit)
+{
+  cr_assert_null(punit->server.vision, "unit %d already has vision",
+                 punit->id);
+  punit->server.vision = vision_new(unit_owner(punit), unit_tile(punit));
+  unit_refresh_vision(punit);
 }

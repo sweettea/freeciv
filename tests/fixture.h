@@ -125,8 +125,15 @@ struct city *fx_city(struct player *owner, int x, int y, const char *name);
 
 /* A virtual unit of type `utype` (rule name) at (x, y) with full hp
  * and the given veteran level, registered in the index, the tile's
- * unit list and the owner's unit list. Homeless. */
+ * unit list and the owner's unit list. Homeless. The test may let the
+ * server destroy it (combat, wipe_unit()); fx_fini() frees only the
+ * ones still alive. */
 struct unit *fx_unit(struct player *owner, const char *utype, int x, int y,
                      int veteran);
+
+/* Give a fixture unit the vision source a real unit has, so its owner
+ * sees the units around it and the unit can move (unit_move() swaps the
+ * source). fx_fini() clears it. */
+void fx_unit_vision(struct unit *punit);
 
 #endif /* FC__TESTS_FIXTURE_H */
