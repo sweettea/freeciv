@@ -302,3 +302,37 @@ Test(daimilitary, defensive_diplomat_survives_walls_choice)
                      "want " ADV_WANT_PRINTF, choice->want);
   adv_free_choice(choice);
 }
+
+/* An enemy Legion next to an empty city is urgent, overwhelming
+ * danger: assess_danger() sets the City Walls want to 200 + urgency,
+ * and a second call under the same threat leaves it there. */
+Test(daimilitary, walls_want_steady_under_steady_threat)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *us = fx_ai_player(nullptr);
+  struct player *them = fx_ai_player(nullptr);
+  struct city *pcity;
+  const struct impr_type *walls;
+  adv_want *want;
+  unsigned int urgency;
+
+  fx_war(us, them);
+  fx_tech(us, "Masonry");
+  pcity = fx_city(us, 5, 5, "Home");
+  fx_unit(them, "Legion", 6, 5, 0);
+  fx_show_all(us);
+  fx_phase_begin();
+  walls = improvement_by_rule_name("City Walls");
+  want = &pcity->server.adv->building_want[improvement_index(walls)];
+  *want = 50;
+
+  urgency = assess_danger(ait, &(wld.map), pcity, nullptr);
+  cr_assert_gt(urgency, 0);
+  cr_expect_float_eq(*want, 200 + urgency, 1e-9,
+                     "first call: want " ADV_WANT_PRINTF ", urgency %u",
+                     *want, urgency);
+  urgency = assess_danger(ait, &(wld.map), pcity, nullptr);
+  cr_expect_float_eq(*want, 200 + urgency, 1e-9,
+                     "second call: want " ADV_WANT_PRINTF ", urgency %u",
+                     *want, urgency);
+}
