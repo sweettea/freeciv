@@ -118,7 +118,8 @@ Test(fixture_ai, find_something_to_kill)
   cr_expect_eq(dest, city_tile(target));
 }
 
-/* The diplomacy phase runs for AI players in contact. */
+/* The diplomacy phase runs for AI players in contact: two AIs at war
+ * with nothing between them agree to stop. */
 Test(fixture_ai, diplomacy_actions)
 {
   struct ai_type *ait = ai_type_by_name(default_ai_type_name());
@@ -131,5 +132,6 @@ Test(fixture_ai, diplomacy_actions)
   dai_diplomacy_actions(ait, a);
   dai_diplomacy_actions(ait, b);
   cr_expect_not_null(dai_diplomacy_get(ait, a, b));
-  cr_expect(pplayers_at_war(a, b));
+  cr_expect(!pplayers_at_war(a, b), "still %s",
+            diplstate_type_name(player_diplstate_get(a, b)->type));
 }

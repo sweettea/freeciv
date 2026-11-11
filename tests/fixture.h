@@ -35,6 +35,9 @@
 
 #include <stdbool.h>
 
+/* common */
+#include "player.h"
+
 struct city;
 struct player;
 struct terrain;
@@ -84,8 +87,23 @@ struct player *fx_ai_player(const char *ai_name);
  * phase. */
 void fx_phase_begin(void);
 
-/* Put two players at war with each other. */
+/* Put two players in diplomatic state `type` with each other, in
+ * contact, with the state's 16-turn countdown (armistice, ceasefire)
+ * full. */
+void fx_diplstate(struct player *a, struct player *b,
+                  enum diplstate_type type);
+
+/* fx_diplstate(a, b, DS_WAR). */
 void fx_war(struct player *a, struct player *b);
+
+/* Make the tech `rule_name` known to `pplayer`'s research, as a
+ * savegame load does, and refresh its cities. */
+void fx_tech(struct player *pplayer, const char *rule_name);
+
+/* Change `pplayer`'s government to `rule_name` at once, without a
+ * revolution, through government_change(): rates are capped and its
+ * cities refreshed. */
+void fx_government(struct player *pplayer, const char *rule_name);
 
 /* Show `pplayer` the whole map as it stands now: terrain, and the
  * cities on it as sites it knows. Actions against a city need the

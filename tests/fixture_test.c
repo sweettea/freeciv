@@ -25,9 +25,12 @@
 /* common */
 #include "city.h"
 #include "game.h"
+#include "government.h"
 #include "map.h"
 #include "nation.h"
 #include "player.h"
+#include "research.h"
+#include "tech.h"
 #include "terrain.h"
 #include "tile.h"
 #include "unit.h"
@@ -136,4 +139,42 @@ ParameterizedTest(struct ruleset_name *p, fixture, any_ruleset,
   cr_expect_eq(city_list_size(pplayer->cities), 1);
   fx_unit(pplayer, utype_rule_name(utype_by_number(0)), 5, 5, 0);
   cr_expect_eq(unit_list_size(fx_tile(5, 5)->units), 1);
+}
+
+/* Diplomatic states, techs and governments set through the helpers
+ * read back through the common accessors. */
+Test(fixture, player_state, .init = fx_init_classic, .fini = fx_fini)
+{
+  struct player *a = fx_player();
+  struct player *b = fx_player();
+  struct player *c = fx_player();
+  Tech_type_id monarchy = advance_number(advance_by_rule_name("Monarchy"));
+
+  fx_diplstate(a, b, DS_ALLIANCE);
+  cr_expect(pplayers_allied(a, b));
+  cr_expect(pplayers_allied(b, a));
+  cr_expect(player_diplstate_get(a, b)->contact_turns_left > 0);
+  fx_diplstate(a, c, DS_ARMISTICE);
+  cr_expect_eq(player_diplstate_get(c, a)->type, DS_ARMISTICE);
+  cr_expect_eq(player_diplstate_get(c, a)->turns_left, 16);
+  cr_expect(!pplayers_at_war(a, c));
+  fx_war(b, c);
+  cr_expect(pplayers_at_war(c, b));
+
+  cr_expect_neq(research_invention_state(research_get(a), monarchy),
+                TECH_KNOWN);
+  fx_tech(a, "Ceremonial Burial");
+  fx_tech(a, "Alphabet");
+  fx_tech(a, "Code of Laws");
+  fx_tech(a, "Monarchy");
+  cr_expect_eq(research_invention_state(research_get(a), monarchy),
+               TECH_KNOWN);
+  cr_expect_neq(research_invention_state(research_get(b), monarchy),
+                TECH_KNOWN);
+
+  fx_city(a, 5, 5, "Capital");
+  fx_government(a, "Monarchy");
+  cr_expect_str_eq(government_rule_name(government_of_player(a)),
+                   "Monarchy");
+  cr_expect(can_change_to_government(a, government_of_player(a)));
 }

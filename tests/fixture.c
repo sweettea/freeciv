@@ -35,12 +35,14 @@
 #include "citizens.h"
 #include "city.h"
 #include "game.h"
+#include "government.h"
 #include "idex.h"
 #include "improvement.h"
 #include "map.h"
 #include "movement.h"
 #include "nation.h"
 #include "player.h"
+#include "research.h"
 #include "tech.h"
 #include "terrain.h"
 #include "tile.h"
@@ -51,6 +53,7 @@
 /* server */
 #include "aiiface.h"
 #include "citytools.h"
+#include "cityturn.h"
 #include "console.h"
 #include "diplhand.h"
 #include "maphand.h"
@@ -380,10 +383,53 @@ void fx_phase_begin(void)
 /**********************************************************************//**
   See fixture.h.
 **************************************************************************/
+void fx_diplstate(struct player *a, struct player *b,
+                  enum diplstate_type type)
+{
+  struct player_diplstate *ab = player_diplstate_get(a, b);
+  struct player_diplstate *ba = player_diplstate_get(b, a);
+
+  set_diplstate_type(ab, ba, type);
+  ab->turns_left = ba->turns_left = 16;
+  ab->first_contact_turn = ba->first_contact_turn = game.info.turn;
+  ab->contact_turns_left = ba->contact_turns_left
+    = game.server.contactturns;
+}
+
+/**********************************************************************//**
+  See fixture.h.
+**************************************************************************/
 void fx_war(struct player *a, struct player *b)
 {
-  set_diplstate_type(player_diplstate_get(a, b),
-                     player_diplstate_get(b, a), DS_WAR);
+  fx_diplstate(a, b, DS_WAR);
+}
+
+/**********************************************************************//**
+  See fixture.h.
+**************************************************************************/
+void fx_tech(struct player *pplayer, const char *rule_name)
+{
+  struct advance *padvance = advance_by_rule_name(rule_name);
+  struct research *presearch = research_get(pplayer);
+
+  cr_assert_not_null(padvance, "no tech \"%s\" in %s", rule_name,
+                     game.server.rulesetdir);
+  /* As a savegame load sets a known tech. */
+  research_invention_set(presearch, advance_number(padvance), TECH_KNOWN);
+  research_update(presearch);
+  city_refresh_for_player(pplayer);
+}
+
+/**********************************************************************//**
+  See fixture.h.
+**************************************************************************/
+void fx_government(struct player *pplayer, const char *rule_name)
+{
+  struct government *gov = government_by_rule_name(rule_name);
+
+  cr_assert_not_null(gov, "no government \"%s\" in %s", rule_name,
+                     game.server.rulesetdir);
+  government_change(pplayer, gov, FALSE);
 }
 
 /**********************************************************************//**
