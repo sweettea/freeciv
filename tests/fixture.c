@@ -329,6 +329,11 @@ static struct player *fx_new_player(const char *ai_tname)
   pnation = pick_a_nation(nullptr, TRUE, FALSE, NOT_A_BARBARIAN);
   cr_assert_not_null(pnation, "no free playable nation");
   player_set_nation(pplayer, pnation);
+  /* As final_ruleset_adjustments() does at game start. */
+  pplayer->government = init_government_of_nation(pnation);
+  if (pnation->init_government == game.government_during_revolution) {
+    pplayer->revolution_finishes = 0;
+  }
   ai_traits_init(pplayer);
   /* As srv_ready() does for every player at game start. */
   adv_data_analyze_rulesets(pplayer);

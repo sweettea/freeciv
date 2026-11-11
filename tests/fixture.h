@@ -69,9 +69,10 @@ struct tile *fx_tile(int x, int y);
 void fx_set_terrain(int x, int y, const char *rule_name);
 
 /* A new human-controlled player with the next free playable nation,
- * its traits drawn, its advisor's ruleset analysis done, alive, and in
- * no contact with anybody. Its AI type is the server's default one, as
- * for any player. */
+ * under that nation's initial government, its traits drawn, its
+ * advisor's ruleset analysis done, alive, and in no contact with
+ * anybody. Its AI type is the server's default one, as for any
+ * player. */
 struct player *fx_player(void);
 
 /* A new AI-controlled player of AI type `ai_name` (nullptr for the
