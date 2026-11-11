@@ -90,3 +90,32 @@ Test(daidiplomat, bribes_a_unit_two_tiles_away)
 {
   bribes_at(2);
 }
+
+/* A lone Diplomat next to an enemy Mech. Inf. is under threat, so it
+ * may spend its reserve to bribe the Mech. Inf. away. */
+Test(daidiplomat, threat_to_the_diplomat_unlocks_the_reserve)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *a = fx_ai_player(nullptr);
+  struct player *b = fx_ai_player(nullptr);
+  struct unit *dipl, *mech;
+  int cost;
+
+  fx_war(a, b);
+  dipl = fx_unit(a, "Diplomat", 5, 5, 0);
+  mech = fx_unit(b, "Mech. Inf.", 6, 5, 0);
+  fx_show_all(a);
+  fx_unit_vision(dipl);
+  fx_phase_begin();
+
+  /* Enough gold for the bribe, but not without the reserve. */
+  cost = unit_bribe_cost(mech, a, dipl);
+  a->ai_common.maxbuycost = 100;
+  a->economic.gold = cost + 50;
+  cr_assert_gt(cost, a->economic.gold - dai_gold_reserve(a));
+
+  (void) bribe_nearby(ait, dipl);
+  cr_expect_eq(unit_list_size(b->units), 0,
+               "the Mech. Inf. is still %s (cost %d, gold %d)",
+               nation_adjective_for_player(b), cost, a->economic.gold);
+}

@@ -644,7 +644,7 @@ static bool dai_diplomat_bribe_nearby(struct ai_type *ait,
 
     /* Calculate if enemy is a threat */
     /* First find best defender on our tile */
-    unit_list_iterate(ptile->units, aunit) {
+    unit_list_iterate(unit_tile(punit)->units, aunit) {
       const struct unit_type *atype = unit_type_get(aunit);
 
       newval = DEFENSE_POWER(atype);
