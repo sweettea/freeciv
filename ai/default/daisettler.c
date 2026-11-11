@@ -743,9 +743,12 @@ struct cityresult *city_desirability(struct ai_type *ait, struct player *pplayer
     return nullptr;
   }
 
-  /* Check if another settler has taken a spot within mindist */
-  square_iterate(&(wld.map), ptile, game.info.citymindist-1, tile1) {
-    if (citymap_is_reserved(tile1)) {
+  /* Check if another settler has taken a spot within mindist. Worked
+   * and other reserved tiles nearby are priced in cityresult_fill(). */
+  square_iterate(&(wld.map), ptile, game.info.citymindist - 1, tile1) {
+    struct unit *founder = game_unit_by_number(-citymap_read(tile1));
+
+    if (founder != nullptr && founder->goto_tile == tile1) {
       return nullptr;
     }
   } square_iterate_end;

@@ -24,6 +24,7 @@
 #include "ai.h"
 #include "extras.h"
 #include "research.h"
+#include "specialist.h"
 
 /* server */
 #include "aiiface.h"
@@ -130,4 +131,65 @@ Test(daisettler, trade_valued_without_science)
                 ADV_WANT_PRINTF " with (science %g, gold %g)",
                 without_science, with_science,
                 (double) sci_priority, (double) adv->gold_priority);
+}
+
+/* A site three tiles from our city, legal under citymindist 2, is
+ * still a site when the city works the tile between them. */
+Test(daisettler, site_next_to_worked_tile)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *pplayer = fx_ai_player(nullptr);
+  struct city *pcity = fx_city(pplayer, 5, 5, "Home");
+  struct unit *punit = fx_unit(pplayer, "Settlers", 12, 5, 0);
+  struct cityresult *cr;
+
+  cr_assert_eq(game.info.citymindist, 2);
+  fx_show_all(pplayer);
+  fx_phase_begin();
+
+  /* Its one citizen works (7, 5). */
+  city_tile_iterate(&(wld.map), city_map_radius_sq_get(pcity),
+                    city_tile(pcity), ptile) {
+    if (tile_worked(ptile) == pcity && ptile != city_tile(pcity)) {
+      tile_set_worked(ptile, nullptr);
+    }
+  } city_tile_iterate_end;
+  specialist_type_iterate(sp) {
+    pcity->specialists[sp] = 0;
+  } specialist_type_iterate_end;
+  tile_set_worked(fx_tile(7, 5), pcity);
+  citymap_turn_init(pplayer);
+
+  cr_assert(city_can_be_built_here(&(wld.map), fx_tile(8, 5), punit,
+                                   FALSE));
+  cr = city_desirability(ait, pplayer, punit, fx_tile(8, 5));
+  cr_expect_not_null(cr, "site (8, 5) refused");
+  if (cr != nullptr) {
+    cityresult_destroy(cr);
+  }
+  tile_set_worked(fx_tile(7, 5), nullptr);
+}
+
+/* A site within citymindist of another founder's target spot is not a
+ * site. */
+Test(daisettler, site_next_to_founder_target)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *pplayer = fx_ai_player(nullptr);
+  struct unit *other = fx_unit(pplayer, "Settlers", 7, 6, 0);
+  struct unit *punit = fx_unit(pplayer, "Settlers", 12, 5, 0);
+  struct cityresult *cr;
+
+  cr_assert_eq(game.info.citymindist, 2);
+  fx_show_all(pplayer);
+  fx_phase_begin();
+  citymap_turn_init(pplayer);
+  adv_unit_new_task(other, AUT_BUILD_CITY, fx_tile(7, 5));
+  cr_assert(same_pos(other->goto_tile, fx_tile(7, 5)));
+
+  cr = city_desirability(ait, pplayer, punit, fx_tile(8, 5));
+  cr_expect_null(cr, "site (8, 5) taken beside a founder's target");
+  if (cr != nullptr) {
+    cityresult_destroy(cr);
+  }
 }
