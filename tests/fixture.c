@@ -330,6 +330,8 @@ static struct player *fx_new_player(const char *ai_tname)
   cr_assert_not_null(pnation, "no free playable nation");
   player_set_nation(pplayer, pnation);
   ai_traits_init(pplayer);
+  /* As srv_ready() does for every player at game start. */
+  adv_data_analyze_rulesets(pplayer);
   pplayer->is_alive = TRUE;
 
   return pplayer;
