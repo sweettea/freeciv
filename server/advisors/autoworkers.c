@@ -256,14 +256,14 @@ adv_want adv_workers_road_bonus(const struct civ_map *nmap,
     }
     if (potential_road[5]
         && !real_road[6] && !real_road[3]
-        && (!real_road[5] || !real_road[11])
+        && (!real_road[0] || !real_road[9])
         && (!is_slow[2] || !is_slow[4] || !is_slow[7]
             || !is_slow[1] || !is_slow[0])) {
       bonus++;
     }
     if (potential_road[7]
         && !real_road[6] && !real_road[4]
-        && (!real_road[0] || !real_road[9])
+        && (!real_road[5] || !real_road[11])
         && (!is_slow[2] || !is_slow[3] || !is_slow[0]
             || !is_slow[1] || !is_slow[5])) {
       bonus++;
