@@ -1681,11 +1681,11 @@ static void adjust_improvement_wants_by_effects(struct ai_type *ait,
     }
   }
 
-  if (!is_convert) {
+  if (!is_convert && !already) {
     /* Adjust by building cost */
     /* FIXME: ought to reduce by upkeep cost and amortise by building cost */
     v -= (impr_build_shield_cost(pcity, pimprove)
-         / (pcity->surplus[O_SHIELD] * 10 + 1));
+         / (MAX(pcity->surplus[O_SHIELD], 0) * 10 + 1));
   }
 
   /* Find number of cities per range.  */

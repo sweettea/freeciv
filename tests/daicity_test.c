@@ -44,11 +44,47 @@ static adv_want building_want(struct city *pcity, const char *impr_name)
   cr_assert_not_null(pimprove, "no building \"%s\"", impr_name);
   city_list_iterate(pplayer->cities, acity) {
     def_ai_city_data(acity, ait)->building_turn = game.info.turn;
+    def_ai_city_data(acity, ait)->building_wait = BUILDING_WAIT_MINIMUM;
   } city_list_iterate_end;
   dai_build_adv_init(ait, pplayer);
   dai_build_adv_adjust(ait, pplayer, nullptr);
 
   return pcity->server.adv->building_want[improvement_index(pimprove)];
+}
+
+/* Make `pcity` the home of `punit`, paying its upkeep. */
+static void home_unit(struct unit *punit, struct city *pcity)
+{
+  punit->homecity = pcity->id;
+  unit_list_prepend(pcity->units_supported, punit);
+  city_refresh(pcity);
+}
+
+/* Unhome `punit` from `pcity`. */
+static void unhome_unit(struct unit *punit, struct city *pcity)
+{
+  unit_list_remove(pcity->units_supported, punit);
+  punit->homecity = IDENTITY_NUMBER_ZERO;
+  city_refresh(pcity);
+}
+
+/* Home Warriors standing in `pcity` there until its shield surplus is
+ * 0; returns the last one homed. */
+static struct unit *home_warriors_to_break_even(struct city *pcity)
+{
+  struct unit *punit = nullptr;
+  int i;
+
+  for (i = 0; i < 10 && pcity->surplus[O_SHIELD] > 0; i++) {
+    punit = fx_unit(city_owner(pcity), "Warriors",
+                    index_to_map_pos_x(tile_index(city_tile(pcity))),
+                    index_to_map_pos_y(tile_index(city_tile(pcity))), 0);
+    home_unit(punit, pcity);
+  }
+  cr_assert_eq(pcity->surplus[O_SHIELD], 0);
+  cr_assert_not_null(punit);
+
+  return punit;
 }
 
 TestSuite(daicity, .init = fx_init_classic, .fini = fx_fini);
@@ -74,6 +110,68 @@ Test(daicity, temple_make_content_in_content_city)
   cr_expect_eq(with, without,
                "Temple want " ADV_WANT_PRINTF " with Mysticism, "
                ADV_WANT_PRINTF " without", with, without);
+}
+
+/* A city short of shields will not finish a building any sooner, so a
+ * deficit does not make a building more wanted than at break-even. */
+Test(daicity, shield_deficit_does_not_cheapen_buildings)
+{
+  struct player *pplayer = fx_ai_player(nullptr);
+  struct city *pcity = fx_city(pplayer, 5, 5, "Capital");
+  adv_want even, deficit;
+
+  fx_government(pplayer, "Despotism");
+  fx_tech(pplayer, "Ceremonial Burial");
+  home_warriors_to_break_even(pcity);
+  home_unit(fx_unit(pplayer, "Warriors", 5, 5, 0), pcity);
+  cr_assert_eq(pcity->surplus[O_SHIELD], -1);
+  fx_phase_begin();
+  deficit = building_want(pcity, "Temple");
+
+  unhome_unit(unit_list_get(pcity->units_supported, 0), pcity);
+  cr_assert_eq(pcity->surplus[O_SHIELD], 0);
+  even = building_want(pcity, "Temple");
+
+  cr_expect_leq(deficit, even,
+                "Temple want " ADV_WANT_PRINTF " at surplus -1, "
+                ADV_WANT_PRINTF " at 0", deficit, even);
+}
+
+/* A building the city has costs nothing more to build, so how much the
+ * AI holds Gunpowder against the Barracks it owns does not depend on
+ * the city's shield surplus. The Warriors are the same either way; only
+ * who pays their upkeep changes. */
+Test(daicity, owned_building_has_no_build_cost)
+{
+  struct ai_type *ait = ai_type_by_name(default_ai_type_name());
+  struct player *pplayer = fx_ai_player(nullptr);
+  struct city *pcity = fx_city(pplayer, 5, 5, "Capital");
+  struct advance *gunpowder = advance_by_rule_name("Gunpowder");
+  struct impr_type *barracks = improvement_by_rule_name("Barracks");
+  adv_want *tech_want = def_ai_player_data(pplayer, ait)->tech_want;
+  struct unit *last;
+  adv_want even, surplus;
+
+  fx_government(pplayer, "Despotism");
+  city_add_improvement(pcity, barracks);
+  city_refresh(pcity);
+  last = home_warriors_to_break_even(pcity);
+  fx_phase_begin();
+  def_ai_city_data(pcity, ait)->building_wait = BUILDING_WAIT_MINIMUM;
+
+  tech_want[advance_index(gunpowder)] = 0;
+  adjust_improvement_wants_by_effects(ait, pplayer, pcity, barracks, TRUE);
+  even = tech_want[advance_index(gunpowder)];
+
+  unhome_unit(last, pcity);
+  cr_assert_eq(pcity->surplus[O_SHIELD], 1);
+  tech_want[advance_index(gunpowder)] = 0;
+  adjust_improvement_wants_by_effects(ait, pplayer, pcity, barracks, TRUE);
+  surplus = tech_want[advance_index(gunpowder)];
+
+  cr_expect_eq(surplus, even,
+               "Gunpowder want " ADV_WANT_PRINTF " at surplus 1, "
+               ADV_WANT_PRINTF " at 0", surplus, even);
 }
 
 TestSuite(daicity_civ2civ3, .init = fx_init_civ2civ3, .fini = fx_fini);
