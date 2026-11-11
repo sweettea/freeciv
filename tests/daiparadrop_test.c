@@ -190,3 +190,34 @@ ParameterizedTest(struct ruleset_name *p, daiparadrop,
                choice->want);
   adv_free_choice(choice);
 }
+
+ParameterizedTestParameters(daiparadrop, counts_only_war_cities)
+{
+  return cr_make_param_array(struct ruleset_name, rulesets, NUM_RULESETS);
+}
+
+/* A foreign city at peace or in ceasefire is no drop target, so it adds
+ * nothing to the paratrooper's worth; the same city at war does. */
+ParameterizedTest(struct ruleset_name *p, daiparadrop,
+                  counts_only_war_cities, .fini = fx_fini)
+{
+  struct city *pcity = drop_setup(p->ruleset, TRUE);
+  struct player *us = city_owner(pcity);
+  struct player *them = city_owner(tile_city(fx_tile(12, 5)));
+  struct unit *para = unit_virtual_create(us, pcity,
+                                          fx_utype("Paratroopers"), 0);
+  int war, peace, ceasefire;
+
+  war = calculate_want_for_paratrooper(para, city_tile(pcity));
+  fx_diplstate(us, them, DS_PEACE);
+  peace = calculate_want_for_paratrooper(para, city_tile(pcity));
+  fx_diplstate(us, them, DS_CEASEFIRE);
+  ceasefire = calculate_want_for_paratrooper(para, city_tile(pcity));
+  unit_virtual_destroy(para);
+
+  cr_log_info("%s: war %d, peace %d, ceasefire %d", p->ruleset,
+              war, peace, ceasefire);
+  cr_expect_lt(peace, war, "%s: peace %d, war %d", p->ruleset, peace, war);
+  cr_expect_eq(ceasefire, peace, "%s: ceasefire %d, peace %d", p->ruleset,
+               ceasefire, peace);
+}

@@ -356,8 +356,8 @@ static int calculate_want_for_paratrooper(struct unit *punit,
     if (pplayers_allied(pplayer, city_owner(pcity))) {
       profit += city_size_get(pcity)
                 * multiplier * real_map_distance(ptile_city, ptile) / 2;
-    } else {
-
+    } else if (pplayers_at_war(pplayer, city_owner(pcity))) {
+      /* Same test as the drop into an enemy city */
       profit += city_size_get(pcity) * multiplier
                 * real_map_distance(ptile_city, ptile);
     }
