@@ -254,6 +254,10 @@ adv_want dai_effect_value(struct player *pplayer,
     break;
   case EFT_TECH_PARASITE_PCT_MAX:
     amount = (amount * research_count()) / 100;
+    if (amount <= 0) {
+      /* As in do_tech_parasite_effects(): no effect. */
+      break;
+    }
     fc__fallthrough;
   case EFT_TECH_PARASITE:
     {
